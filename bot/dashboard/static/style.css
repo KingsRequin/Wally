@@ -3611,7 +3611,16 @@ body.is-mobile .mobile-back-btn {
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.ovl-bloc-compte { font-size: 0.68rem; color: var(--text-muted); }
+.ovl-bloc-compte {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  /* Ni capitales ni interlettrage : le titre les porte, mais un compte de trois
+     membres les portait aussi et débordait sur deux lignes, par-dessus lui. */
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .ovl-aide { font-size: 0.68rem; color: var(--text-muted); line-height: 1.4; }
 .ovl-vide { padding: 10px; font-size: 0.78rem; color: var(--text-secondary); list-style: none; }
 
@@ -3696,6 +3705,80 @@ body.is-mobile .mobile-back-btn {
   padding: 7px 9px 2px;
 }
 
+/* ── Chercher dans la liste ──────────────────────────────────────────────
+   Trente-sept lignes dont vingt-six partent au même endroit : retrouver
+   « celui qui s'appelle apex quelque chose » se faisait à l'œil. */
+
+.ovl-filtres { display: flex; gap: 6px; min-width: 0; }
+.ovl-recherche {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.ovl-recherche:focus-within { border-color: rgba(6, 182, 212, 0.5); }
+.ovl-recherche input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+}
+.ovl-recherche input:focus { outline: none; }
+.ovl-recherche input::placeholder { color: var(--text-muted); }
+
+.ovl-filtre-chip {
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ovl-filtre-chip:hover { color: var(--text-primary); }
+.ovl-filtre-chip.actif {
+  color: #7fdbe8;
+  background: rgba(6, 182, 212, 0.12);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+/* Le raccourci vers ce qui est caché. Les trente-sept éléments sont TOUJOURS
+   dans chaque scène — seul `hidden` les distingue —, et remontrer un masqué
+   demandait de le retrouver à l'œil dans une liste barrée. */
+.ovl-reveler {
+  padding: 10px;
+  font: inherit;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ovl-reveler:hover {
+  border-style: solid;
+  border-color: rgba(6, 182, 212, 0.45);
+  color: var(--text-primary);
+}
+/* Le menu du « + » peut lister trente-six lignes : il défile plutôt que de
+   dépasser du bas de l'écran. */
+.ovl-menu-liste { max-height: 340px; overflow-y: auto; min-width: 240px; }
+
 /* ── La liste des éléments ───────────────────────────────────────────── */
 
 .ovl-elements {
@@ -3703,8 +3786,13 @@ body.is-mobile .mobile-back-btn {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 420px;
+  /* La colonne suit la hauteur du canvas : le panneau tient alors dans un
+     écran, et la liste défile toute seule au lieu d'allonger la page. */
+  flex: 1;
+  min-height: 240px;
+  max-height: 62vh;
   overflow-y: auto;
+  padding-right: 3px;
 }
 .ovl-el {
   display: flex;
@@ -3742,9 +3830,16 @@ body.is-mobile .mobile-back-btn {
 .ovl-el.masque .ovl-el-nom { color: var(--text-muted); text-decoration: line-through; }
 .ovl-el.glisse { opacity: 0.4; }
 .ovl-el-poignee { color: var(--text-muted); cursor: grab; font-size: 0.8rem; flex-shrink: 0; }
-.ovl-el-corps { flex: 1; min-width: 0; }
+/* Nom, pastille et clé sur UNE ligne, comme dans les onglets : la clé empilée
+   sous le nom doublait la hauteur de chacune des trente-sept lignes. Le nom
+   rétrécit, la clé et la pastille gardent leur place — c'est le nom qu'on
+   reconnaît tronqué, jamais l'inverse. */
+.ovl-el-corps { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+.ovl-el-corps .ovl-point,
+.ovl-groupe-corps .ovl-point { align-self: center; }
 .ovl-el-nom {
-  display: block;
+  flex: 1;
+  min-width: 0;
   font-size: 0.78rem;
   color: var(--text-primary);
   white-space: nowrap;
@@ -3752,7 +3847,7 @@ body.is-mobile .mobile-back-btn {
   text-overflow: ellipsis;
 }
 .ovl-el-cle {
-  display: block;
+  flex-shrink: 0;
   font-size: 0.62rem;
   font-family: var(--font-mono, monospace);
   color: var(--text-muted);
@@ -4568,7 +4663,11 @@ body.is-mobile .mobile-back-btn {
 .ovl-stepper-btn:last-child { border-left: 1px solid rgba(255, 255, 255, 0.08); }
 .ovl-stepper-btn:hover:not(:disabled) { color: var(--text-primary); background: rgba(6, 182, 212, 0.12); }
 .ovl-stepper-btn:disabled { opacity: 0.3; cursor: default; }
-.ovl-stepper input {
+/* Sélecteur à DEUX classes : une classe simple perd contre les règles de champ
+   générales du dashboard, qui imposaient 12 px de marge intérieure et une
+   police de 14 px. La valeur sortait tronquée — « 0.6 » pour 0.66. Même
+   famille que le curseur de taille réduit à zéro pixel. */
+.ovl-inspecteur .ovl-stepper input {
   flex: 0 0 56px;
   width: 56px;
   padding: 6px 4px;
@@ -4587,7 +4686,7 @@ body.is-mobile .mobile-back-btn {
 .ovl-stepper input::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .ovl-stepper input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 
-.ovl-taille-valeur {
+.ovl-inspecteur .ovl-taille-valeur {
   /* `flex` et pas seulement `width` : la largeur seule perd contre les règles
      de champ du dashboard, et le champ mangeait 136 px des 190 du bloc. */
   flex: 0 0 64px;
@@ -4601,8 +4700,8 @@ body.is-mobile .mobile-back-btn {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
 }
-.ovl-taille-valeur:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
-.ovl-taille-valeur:disabled { opacity: 0.4; }
+.ovl-inspecteur .ovl-taille-valeur:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
+.ovl-inspecteur .ovl-taille-valeur:disabled { opacity: 0.4; }
 
 .ovl-bascule {
   display: flex;

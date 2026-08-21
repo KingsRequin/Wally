@@ -240,6 +240,40 @@ window.OverlayAdmin = (function () {
   let outilsOuverts = false;    // le panneau d'outils de la sélection
   let derniereAnalyse = null;   // le dernier calcul de chevauchements
 
+  /** Ce que la LISTE montre. Dans le navigateur, comme la vue : chercher un
+   *  élément n'est pas une décision de mise en scène, et rangé dans le modèle
+   *  ce serait une modification de plus à publier.
+   *
+   *  `texte` cherche dans le nom lisible ET dans la clé technique : on connaît
+   *  l'un ou l'autre selon qu'on vient du panneau ou d'un log.
+   */
+  const filtre = { texte: "", masques: false, modifies: false };
+
+  function filtreActif() {
+    return !!filtre.texte || filtre.masques || filtre.modifies;
+  }
+
+  /** Cet élément passe-t-il le filtre ? `modifie` : l'élément diffère-t-il de
+   *  ce qui est à l'antenne (calculé une fois par rendu, pas une fois par
+   *  ligne). */
+  function passeFiltre(cle, element, modifie) {
+    if (filtre.masques && !element.hidden) return false;
+    if (filtre.modifies && !modifie) return false;
+    if (!filtre.texte) return true;
+    const t = filtre.texte;
+    return cle.toLowerCase().indexOf(t) >= 0
+      || libelle(cle).toLowerCase().indexOf(t) >= 0;
+  }
+
+  /** Les clés modifiées depuis l'antenne, dans la scène affichée. Un objet et
+   *  non un tableau : la liste le consulte une fois par ligne. */
+  function clesModifiees() {
+    const scene = sceneCourante();
+    if (!scene) return {};
+    const change = diffAntenne().parScene[scene.slug];
+    return (change && change.cles) || {};
+  }
+
   /** Les tailles LUES dans l'aperçu : clé → [largeur, hauteur] en pixels du
    *  canvas 1920. Une clé absente vaut « pas mesurable » — le widget n'affiche
    *  rien —, et le repère retombe alors sur l'estimation.
@@ -1758,12 +1792,17 @@ window.OverlayAdmin = (function () {
     (etat.layout.scenes || []).forEach(function (scene) {
       const lignes = diffScene(parSlug[scene.slug], scene);
       let elements = 0;
+      // Les clés touchées, pour la pastille ambre de chaque ligne de la liste.
+      // Rendues ici plutôt que recalculées là-bas : c'est le même parcours, et
+      // deux calculs du « modifié » auraient divergé au premier champ ajouté.
+      const cles = {};
       lignes.forEach(function (l) {
-        if (l.cle) elements += 1;
+        if (l.cle) { elements += 1; cles[l.cle] = true; }
         resultat.liste.push({ slug: scene.slug, scene: scene.nom, cle: l.cle,
                               nom: l.nom, d: l.d });
       });
-      resultat.parScene[scene.slug] = { n: lignes.length, elements: elements };
+      resultat.parScene[scene.slug] = { n: lignes.length, elements: elements,
+                                        cles: cles };
       delete parSlug[scene.slug];
     });
     // Ce qui n'existe plus n'a plus d'onglet — et sa disparition est justement
@@ -2157,18 +2196,28 @@ window.OverlayAdmin = (function () {
     groupes.forEach(function (g) {
       (g.membres || []).forEach(function (cle) { parCle[cle] = g.id; });
     });
+    // Le « modifié » de chaque ligne EN FAIT PARTIE : sans lui, la pastille
+    // ambre n'apparaîtrait qu'au prochain changement de nom ou de visibilité —
+    // c'est-à-dire jamais, puisque déplacer un élément ne touche ni l'un ni
+    // l'autre. Calculé une fois ici, pas une fois par ligne.
+    const modifiees = clesModifiees();
     const els = (scene.ordre || []).map(function (cle) {
       const el = scene.elements[cle];
       if (!el) return cle + "\u0001absent";
       return [cle, libelle(cle), description(cle), el.hidden ? 1 : 0,
-              el.locked ? 1 : 0, parCle[cle] || ""].join("\u0001");
+              el.locked ? 1 : 0, parCle[cle] || "",
+              modifiees[cle] ? 1 : 0].join("\u0001");
     });
     const gs = groupes.map(function (g) {
       return [g.id, g.nom, estReplie(g.id) ? 1 : 0,
               membresPresents(g).join(",")].join("\u0001");
     });
+    // Et le filtre : il décide de QUI est affiché. Oublié ici, taper dans la
+    // recherche ne redessinerait rien — la liste se croirait à jour.
     return scene.slug + "\u0002" + els.join("\u0002")
-      + "\u0003" + gs.join("\u0002");
+      + "\u0003" + gs.join("\u0002")
+      + "\u0003" + filtre.texte
+      + (filtre.masques ? "M" : "") + (filtre.modifies ? "D" : "");
   }
 
   /** La sélection posée sur les lignes DÉJÀ là : deux classes par élément, une
@@ -2208,6 +2257,9 @@ window.OverlayAdmin = (function () {
     // la bulle resterait plantée à l'écran.
     masquerInfobulle();
     liste.innerHTML = "";
+    const modifiees = clesModifiees();
+    const cherche = filtreActif();
+
     // Un groupe s'affiche à la place de son PREMIER membre, et emporte les
     // autres avec lui — même règle que l'empilement (`ordreGroupe`), qui est
     // normalisé à chaque changement de groupe. Cette forme-ci reste juste même
@@ -2218,22 +2270,127 @@ window.OverlayAdmin = (function () {
       (g.membres || []).forEach(function (cle) { parCle[cle] = g; });
     });
     const faits = {};
-    let groupes = 0;
+    let groupes = 0, affiches = 0;
     (scene.ordre || []).forEach(function (cle) {
       const element = scene.elements[cle];
       if (!element) return;   // une clé d'ordre sans élément : on l'ignore
+      // FILTRÉ : la liste passe À PLAT, sans en-têtes de groupe. Chercher, ce
+      // n'est pas parcourir une structure — c'est trouver un élément, et un
+      // en-tête « Bloc Apex (1 sur 5) » ne dit rien d'utile pendant ce
+      // geste-là. Cela évite aussi d'offrir un œil de groupe qui agirait sur
+      // quatre membres invisibles.
+      if (cherche) {
+        if (!passeFiltre(cle, element, modifiees[cle])) return;
+        affiches += 1;
+        liste.appendChild(itemElement(cle, element, modifiees[cle]));
+        return;
+      }
       const groupe = parCle[cle];
-      if (!groupe) { liste.appendChild(itemElement(cle, element)); return; }
+      if (!groupe) {
+        affiches += 1;
+        liste.appendChild(itemElement(cle, element, modifiees[cle]));
+        return;
+      }
       if (faits[groupe.id]) return;
       faits[groupe.id] = true;
       groupes += 1;
-      liste.appendChild(itemGroupe(groupe));
+      liste.appendChild(itemGroupe(groupe, modifiees));
     });
-    if (noeuds.compteElements) {
-      noeuds.compteElements.textContent = (scene.ordre || []).length + " éléments"
-        + (groupes ? " · " + groupes + " groupe" + (groupes > 1 ? "s" : "") : "");
+
+    if (cherche && !affiches) {
+      liste.appendChild(creer("li", "ovl-vide",
+        "Aucun élément ne correspond. Vider le filtre les remontre tous."));
+    }
+    rendreCompteListe(scene, groupes, cherche ? affiches : -1);
+    if (noeuds.aideListe) {
+      noeuds.aideListe.textContent = cherche
+        ? "Liste filtrée : le glisser est suspendu — il déplacerait un élément "
+          + "par-dessus ceux qui sont cachés. « Derrière » et « Devant » de la "
+          + "bande d'inspection règlent le rang sans vider le filtre."
+        : "Glisser pour changer le rang : ce qui est en haut passe devant. "
+          + "Le point ambre marque un élément modifié depuis l'antenne.";
     }
     appliquerSurvol();
+  }
+
+  /** L'en-tête de la liste : ce que la scène montre, et ce qu'elle cache.
+   *
+   *  « 37 éléments » ne disait rien : les trente-sept sont TOUJOURS là, dans
+   *  toutes les scènes — c'est `hidden` qui les distingue, et c'est lui qu'on
+   *  vient régler.
+   */
+  function rendreCompteListe(scene, groupes, affiches) {
+    if (!noeuds.compteElements) return;
+    const cles = (scene.ordre || []).filter(function (c) {
+      return !!scene.elements[c];
+    });
+    let visibles = 0;
+    cles.forEach(function (c) { if (!scene.elements[c].hidden) visibles += 1; });
+    const masques = cles.length - visibles;
+    noeuds.compteElements.textContent = affiches >= 0
+      ? affiches + " sur " + cles.length + " affichés"
+      : visibles + " visible" + (visibles > 1 ? "s" : "")
+        + " · " + masques + " masqué" + (masques > 1 ? "s" : "")
+        + (groupes ? " · " + groupes + " groupe" + (groupes > 1 ? "s" : "") : "");
+    if (noeuds.reveler) {
+      noeuds.reveler.style.display = masques ? "" : "none";
+      noeuds.reveler.textContent = "+ Rendre visible un des " + masques
+        + " éléments masqués";
+    }
+  }
+
+  /** Le menu du « + » : les éléments masqués de la scène, un clic les remontre.
+   *
+   *  Posé sur `<body>` en `position: fixed`, comme le menu des groupes : la
+   *  liste est en `overflow-y: auto` et le rognerait.
+   */
+  function ouvrirMenuMasques(hote) {
+    if (menuOuvert && menuOuvert.dataset.reveler === "1") { fermerMenu(); return; }
+    fermerMenu();
+    const scene = sceneCourante();
+    if (!scene) return;
+    const masques = (scene.ordre || []).filter(function (c) {
+      const el = scene.elements[c];
+      return el && el.hidden;
+    });
+    if (!masques.length) {
+      notifier("Tout est déjà visible dans cette scène.");
+      return;
+    }
+    const menu = creer("div", "ovl-menu ovl-menu-flottant ovl-menu-liste");
+    menu.dataset.reveler = "1";
+    masques.forEach(function (cle) {
+      const el = scene.elements[cle];
+      const b = actionMenu(menu, libelle(cle) + " · " + cle, !el.locked,
+        function () {
+          if (el.locked) {
+            notifier("« " + libelle(cle) + " » est verrouillé : le cadenas de "
+              + "sa ligne le libère.", "error");
+            return;
+          }
+          el.hidden = false;
+          apresBascule(cle);
+        });
+      // Un verrouillé reste LISTÉ et grisé : absent, on le chercherait dans la
+      // liste sans comprendre pourquoi il n'est pas là.
+      if (el.locked) b.title = "Verrouillé : ni déplacé, ni masqué, ni remontré.";
+    });
+    document.body.appendChild(menu);
+    menuOuvert = menu;
+    menuHote = hote;
+    const r = hote.getBoundingClientRect();
+    const m = menu.getBoundingClientRect();
+    let gauche = Math.max(8, Math.min(r.left, window.innerWidth - m.width - 8));
+    let haut = r.bottom + 4;
+    if (haut + m.height > window.innerHeight - 8) {
+      haut = Math.max(8, r.top - m.height - 4);
+    }
+    menu.style.left = gauche + "px";
+    menu.style.top = haut + "px";
+    setTimeout(function () {
+      document.addEventListener("pointerdown", fermerAuClicDehors, true);
+      document.addEventListener("scroll", fermerMenu, true);
+    }, 0);
   }
 
   /** Une ligne de groupe : l'en-tête pliable, puis les membres.
@@ -2244,9 +2401,10 @@ window.OverlayAdmin = (function () {
    *  un seul glisser, et les membres de tous les groupes repliés seraient
    *  repoussés à la fin de la scène.
    */
-  function itemGroupe(groupe) {
+  function itemGroupe(groupe, modifiees) {
     const scene = sceneCourante();
     const membres = membresPresents(groupe);
+    const touche = membres.some(function (c) { return (modifiees || {})[c]; });
     const item = creer("li", "ovl-groupe");
     item.dataset.groupe = groupe.id;
     item.draggable = true;
@@ -2269,6 +2427,13 @@ window.OverlayAdmin = (function () {
 
     const corps = creer("div", "ovl-groupe-corps");
     corps.appendChild(creer("span", "ovl-groupe-nom", groupe.nom));
+    // La pastille du groupe : un membre replié qui a bougé ne se voit nulle
+    // part, et c'est précisément ce qu'on publie sans l'avoir vu.
+    if (touche) {
+      const point = creer("span", "ovl-point");
+      point.title = "Au moins un membre a bougé depuis l'antenne.";
+      corps.appendChild(point);
+    }
     corps.addEventListener("click", function () { selectionnerGroupe(groupe); });
     poserInfobulle(corps, "Sélectionner le groupe entier — c'est-à-dire ses "
       + membres.length + " membres : " + membres.map(libelle).join(", ")
@@ -2318,7 +2483,8 @@ window.OverlayAdmin = (function () {
 
     const liste = creer("ul", "ovl-groupe-membres");
     membres.forEach(function (cle) {
-      liste.appendChild(itemElement(cle, scene.elements[cle]));
+      liste.appendChild(itemElement(cle, scene.elements[cle],
+                                    (modifiees || {})[cle]));
     });
     item.appendChild(liste);
     brancherGlisser(item, groupe.id);
@@ -2381,10 +2547,14 @@ window.OverlayAdmin = (function () {
     }, 0);
   }
 
-  function itemElement(cle, element) {
+  function itemElement(cle, element, modifie) {
     const item = creer("li", "ovl-el");
     item.dataset.cle = cle;
-    item.draggable = true;
+    // Une liste FILTRÉE ne se réordonne pas : `appliquerOrdreDepuisDom()` lit
+    // la liste pour en tirer l'empilement, et il n'y verrait qu'une partie des
+    // clés — les autres seraient repoussées à la fin de la scène au premier
+    // glisser. Le rang se règle alors par « Derrière » / « Devant ».
+    item.draggable = !filtreActif();
     if (cle === etat.elementCourant) item.classList.add("actif");
     if (estSelectionne(cle)) item.classList.add("selectionne");
     if (element.hidden) item.classList.add("masque");
@@ -2396,6 +2566,11 @@ window.OverlayAdmin = (function () {
     // petit — c'est elle qui apparaît dans les logs et dans le JSON exporté.
     corps.appendChild(creer("span", "ovl-el-nom", libelle(cle)));
     corps.appendChild(creer("span", "ovl-el-cle", cle));
+    if (modifie) {
+      const point = creer("span", "ovl-point");
+      point.title = "Modifié depuis l'antenne — le détail est dans le pied.";
+      corps.appendChild(point);
+    }
     item.appendChild(corps);
     poserInfobulle(corps, description(cle));
 
@@ -5820,6 +5995,77 @@ window.OverlayAdmin = (function () {
     });
   }
 
+  /** L'icône « chercher », en SVG comme celle du copier : un emoji loupe sort
+   *  en carré vide dans un navigateur sans police emoji couleur. */
+  function iconeLoupe() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "13");
+    svg.setAttribute("height", "13");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("aria-hidden", "true");
+    ["M21 21l-6-6", "M17 10a7 7 0 11-14 0 7 7 0 0114 0z"].forEach(function (d) {
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  /** Chercher dans la liste, et n'en garder qu'une partie.
+   *
+   *  Trente-sept lignes dont vingt-six partent au même endroit : retrouver
+   *  « celui qui s'appelle apex quelque chose » se faisait à l'œil, en
+   *  déroulant. Le filtre cherche dans le nom lisible ET dans la clé technique
+   *  — on connaît l'un ou l'autre selon qu'on vient du panneau ou d'un log.
+   */
+  function barreFiltres() {
+    const barre = creer("div", "ovl-filtres");
+
+    const champ = creer("div", "ovl-recherche");
+    champ.appendChild(iconeLoupe());
+    noeuds.recherche = document.createElement("input");
+    noeuds.recherche.type = "search";
+    noeuds.recherche.placeholder = "Filtrer par nom ou par clé";
+    noeuds.recherche.setAttribute("aria-label", "Filtrer les éléments");
+    noeuds.recherche.addEventListener("input", function () {
+      filtre.texte = noeuds.recherche.value.trim().toLowerCase();
+      rendreElements();
+    });
+    champ.appendChild(noeuds.recherche);
+    barre.appendChild(champ);
+
+    /** Une pastille de filtre. Les deux ne s'excluent pas : « masqués ET
+     *  modifiés » est une question qu'on se pose vraiment avant de publier. */
+    function pastille(cle, texte, titre) {
+      const b = creer("button", "ovl-filtre-chip", texte);
+      b.type = "button";
+      b.title = titre;
+      b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", function () {
+        filtre[cle] = !filtre[cle];
+        b.classList.toggle("actif", filtre[cle]);
+        b.setAttribute("aria-pressed", filtre[cle] ? "true" : "false");
+        rendreElements();
+      });
+      barre.appendChild(b);
+      return b;
+    }
+
+    pastille("masques", "Masqués",
+      "Ne garder que ce qui est éteint dans CETTE scène. C'est le réglage qui "
+      + "distingue vos scènes les unes des autres.");
+    pastille("modifies", "Modifiés",
+      "Ne garder que ce qui a bougé depuis l'antenne — la même chose que le "
+      + "point ambre, mais sur toute la liste d'un coup.");
+
+    return barre;
+  }
+
   /** La barre d'onglets, en tête du panneau : le titre, les scènes, « + Scène »
    *  et l'adresse OBS de celle qu'on règle. */
   function barreScenes() {
@@ -6187,10 +6433,26 @@ window.OverlayAdmin = (function () {
     noeuds.compteElements = creer("span", "ovl-bloc-compte", "");
     titreElements.appendChild(noeuds.compteElements);
     lateral.appendChild(titreElements);
+    lateral.appendChild(barreFiltres());
     noeuds.listeElements = creer("ul", "ovl-elements");
     lateral.appendChild(noeuds.listeElements);
-    lateral.appendChild(creer("div", "ovl-aide",
-      "Glisser pour changer le rang : ce qui est en haut passe devant."));
+
+    // Le raccourci vers ce qui est caché. Les trente-sept éléments sont
+    // TOUJOURS dans chaque scène — seul `hidden` les distingue —, et remontrer
+    // un masqué demandait de le retrouver à l'œil dans une liste barrée.
+    noeuds.reveler = creer("button", "ovl-reveler", "+ Rendre visible");
+    noeuds.reveler.title = "Les éléments masqués de cette scène. Un clic en "
+      + "remontre un — rien ne part à l'antenne avant « Mettre à l'antenne ».";
+    noeuds.reveler.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      ouvrirMenuMasques(noeuds.reveler);
+    });
+    lateral.appendChild(noeuds.reveler);
+
+    noeuds.aideListe = creer("div", "ovl-aide",
+      "Glisser pour changer le rang : ce qui est en haut passe devant. "
+      + "Le point ambre marque un élément modifié depuis l'antenne.");
+    lateral.appendChild(noeuds.aideListe);
     corps.appendChild(lateral);
 
     conteneur.appendChild(corps);
@@ -6369,6 +6631,11 @@ window.OverlayAdmin = (function () {
     // Le diff avec l'antenne. Exposé pour être TESTÉ, et c'est le seul moyen :
     // ce qu'il OUBLIERAIT de comparer ne se verrait pas en le lisant, mais un
     // soir de live sous la forme d'un réglage parti sans être annoncé.
+    // Le filtre de la liste. Exposé pour être TESTÉ : ce qu'il laisse passer se
+    // vérifie à l'œil, mais ce que la SIGNATURE en retient ne se voit pas — et
+    // une signature qui l'oublie fige la liste sur son état d'avant.
+    filtre: filtre,
+    passeFiltre: passeFiltre,
     // Le pas de rang. Exposé pour être TESTÉ : sa garde ne se voit pas en le
     // lisant — c'est `normaliserOrdre` qui DÉFAIT le pas quand il sortirait
     // l'élément de son groupe, deux appels plus loin.
