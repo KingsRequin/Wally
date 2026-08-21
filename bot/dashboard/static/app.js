@@ -3800,7 +3800,7 @@ async function _renderSystemeOverlay(panel) {
         </div>
         <p class="overlay-card-desc">
           Affiche une image de la galerie quand un viewer tape <code style="color:var(--accent)">${imageCmd}</code> dans le chat.
-          Animation entrée/sortie configurable ci-dessous.
+          Sa place, sa durée et ses animations se règlent dans « Mise en scène », par scène.
         </p>
         <div class="overlay-card-toggle-row">
           <span class="overlay-card-toggle-label">Activer</span>

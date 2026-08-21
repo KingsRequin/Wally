@@ -212,6 +212,18 @@ def test_le_dashboard_nenvoie_plus_les_reglages_daffichage_de_la_galerie():
     assert "random_filter" in js
 
 
+def test_le_dashboard_ne_promet_plus_de_regler_les_animations():
+    """Un TEXTE qui annonce « animation entrée/sortie configurable ci-dessous »
+    survit au retrait des champs qu'il décrit. La promesse devient fausse sans
+    que rien ne le signale — la définition même du réglage qui ment, et ce
+    chantier existe pour fermer celui-là."""
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+          / "app.js").read_text(encoding="utf-8")
+    assert "configurable ci-dessous" not in js
+    assert "Animation entrée" not in js
+
+
 def test_le_dashboard_ne_garde_aucune_liste_danimations():
     """`ANIMATE_CSS_IN`/`OUT` étaient la seconde liste recopiée en JavaScript
     que ce chantier existe pour supprimer. Leurs seuls lecteurs étaient les deux
