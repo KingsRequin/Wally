@@ -22,6 +22,21 @@ LAYOUT_KEY = "overlay:layout"
 # dater la publication de la dernière ÉDITION du navigateur — pas de l'écriture.
 MAJ_KEY = "overlay:layout:maj"
 
+# La graine des réglages de la galerie a-t-elle été semée ?
+#
+# Les quatre réglages d'affichage du widget `image` — durée, animations d'entrée
+# et de sortie, durée d'animation — vivaient dans `config.yaml`
+# (`overlay_image`), GLOBALEMENT, pendant que tous les autres widgets se
+# réglaient par scène. Deux autorités sur la même question : c'est la signature
+# de défaut que ce dépôt traque, et elle se referme ici.
+#
+# Un DRAPEAU et pas une comparaison aux défauts : sans lui, chaque boot
+# écraserait le choix du streamer avec la valeur d'un fichier qu'il ne regarde
+# plus, et il ne pourrait jamais rien régler durablement. Et comparer aux
+# défauts ne dirait rien — régler `image` sur exactement la valeur livrée est
+# une décision comme une autre.
+GRAINE_IMAGE_KEY = "overlay:layout:image_migre"
+
 # L'application raisonne en Europe/Paris ; l'hôte est en UTC. Un horodatage naïf
 # afficherait « publié à 19:14 » pour une publication de 21:14.
 _FUSEAU = ZoneInfo("Europe/Paris")
@@ -87,3 +102,69 @@ async def date_maj(db) -> str | None:
     except Exception as exc:  # noqa: BLE001 — une date manquante n'efface rien
         logger.warning("Overlay layout : date de publication illisible ({e})", e=exc)
         return None
+
+
+async def semer_reglages_image(db, config) -> bool:
+    """Recopie UNE FOIS les réglages de `overlay_image` dans les trois scènes.
+
+    Appelée au boot, et pas depuis `charger_layout` : celui-ci est sur le chemin
+    public, appelé à chaque ouverture de page et à chaque redimensionnement de
+    la source OBS. Y poser une migration coûterait une lecture de plus à chaque
+    fois, et deux requêtes simultanées pourraient la jouer deux fois.
+
+    Rend `True` si quelque chose a été semé — pour le dire dans les logs, une
+    migration silencieuse se cherchant longtemps le jour où l'on se demande d'où
+    vient une valeur.
+    """
+    if db is None:
+        return False
+    try:
+        if await db.get_state(GRAINE_IMAGE_KEY):
+            return False
+    except Exception as exc:  # noqa: BLE001 — une base muette ne migre rien
+        logger.warning("Overlay layout : graine `image` illisible ({e})", e=exc)
+        return False
+
+    img = getattr(config, "overlay_image", None)
+    if img is None:
+        # Pas de section : rien à semer, mais la graine est FAITE — sinon on
+        # rouvrirait la question à chaque boot, pour rien.
+        await _marquer_graine(db)
+        return False
+
+    graine = {
+        "duree": getattr(img, "display_duration", 0) or 0,
+        "anim_entree": getattr(img, "animation_in", "") or "",
+        "anim_sortie": getattr(img, "animation_out", "") or "",
+        "anim_duree": getattr(img, "animation_duration", 0) or 0,
+    }
+    try:
+        layout = await charger_layout(db)
+        for scene in layout["scenes"]:
+            scene["elements"].setdefault("image", {}).update(graine)
+        # `fusionner` borne ce qui vient du fichier : il s'édite à la main, et
+        # une animation retirée d'animate.css ou une durée absurde doit y
+        # reprendre son défaut comme tout ce qui entre dans ce modèle.
+        range_ = fusionner(layout)
+        # Écrit SANS passer par `enregistrer_layout` : celui-ci pose la date de
+        # mise à l'antenne, et une graine n'est pas une publication. Le panneau
+        # annoncerait « à l'antenne depuis 17:22 » pour une migration que
+        # personne n'a demandée.
+        await db.set_state(LAYOUT_KEY, json.dumps(range_, ensure_ascii=False))
+        await _marquer_graine(db)
+    except Exception as exc:  # noqa: BLE001 — un overlay mal réglé vaut mieux qu'un overlay mort
+        logger.warning("Overlay layout : graine `image` impossible ({e!r})", e=exc)
+        return False
+    logger.info(
+        "Overlay : réglages de la galerie repris de config.yaml vers les scènes "
+        "({d} s, {i} → {o}) — ils se règlent désormais dans « Mise en scène »",
+        d=graine["duree"], i=graine["anim_entree"], o=graine["anim_sortie"])
+    return True
+
+
+async def _marquer_graine(db) -> None:
+    try:
+        await db.set_state(GRAINE_IMAGE_KEY, "1")
+    except Exception as exc:  # noqa: BLE001
+        # Le pire cas est de resemer au prochain boot : on le dit, on continue.
+        logger.warning("Overlay layout : drapeau de graine non posé ({e!r})", e=exc)

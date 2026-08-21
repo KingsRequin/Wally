@@ -1050,6 +1050,14 @@ async def main() -> None:
     journal.start(scheduler=shared_scheduler)
     rss_feed.start(shared_scheduler)
     await action_scheduler.reload_all()
+
+    # Les réglages d'affichage de la galerie quittent `config.yaml` pour le
+    # layout, où ils se règlent PAR SCÈNE comme ceux de tous les autres widgets.
+    # Une fois, au boot : `charger_layout` est sur le chemin public (chaque
+    # ouverture de page, chaque redimensionnement de la source OBS), et deux
+    # requêtes simultanées pourraient y jouer la migration deux fois.
+    from bot.core.overlay_layout_store import semer_reglages_image
+    await semer_reglages_image(db, config)
     shared_scheduler.start()
     logger.info("Shared scheduler started (journal + actions + rss)")
 

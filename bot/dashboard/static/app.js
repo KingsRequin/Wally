@@ -4044,20 +4044,18 @@ async function loadOverlayConfigInPanel(container) {
   const cmdInput = document.createElement('input'); cmdInput.type = 'text'; cmdInput.id = 'oi-command-s'; cmdInput.className = 'neo-input'; cmdInput.value = oi.command || '!image'; cmdInput.style.width = '120px'; cmdRow.appendChild(cmdInput);
   oiSection.appendChild(cmdRow);
 
-  const durRow = document.createElement('div'); durRow.className = 'form-row';
-  const durLabel = document.createElement('label'); durLabel.textContent = 'Durée affichage (s)'; durRow.appendChild(durLabel);
-  const durRange = document.createElement('input'); durRange.type = 'range'; durRange.id = 'oi-duration-s'; durRange.min = '5'; durRange.max = '60'; durRange.value = oi.display_duration || 15; durRow.appendChild(durRange);
-  const durVal = document.createElement('span'); durVal.id = 'oi-duration-val-s'; durVal.textContent = (oi.display_duration || 15) + 's'; durRow.appendChild(durVal);
-  oiSection.appendChild(durRow);
-
-  oiSection.appendChild(makeFormRow('Animation entrée', makeSelect('oi-anim-in-s', ANIMATE_CSS_IN, oi.animation_in)));
-  oiSection.appendChild(makeFormRow('Animation sortie', makeSelect('oi-anim-out-s', ANIMATE_CSS_OUT, oi.animation_out)));
-
-  const adRow = document.createElement('div'); adRow.className = 'form-row';
-  const adLabel = document.createElement('label'); adLabel.textContent = 'Durée animation (s)'; adRow.appendChild(adLabel);
-  const adRange = document.createElement('input'); adRange.type = 'range'; adRange.id = 'oi-anim-duration-s'; adRange.min = '0.5'; adRange.max = '3'; adRange.step = '0.1'; adRange.value = oi.animation_duration || 1; adRow.appendChild(adRange);
-  const adVal = document.createElement('span'); adVal.id = 'oi-anim-duration-val-s'; adVal.textContent = (oi.animation_duration || 1) + 's'; adRow.appendChild(adVal);
-  oiSection.appendChild(adRow);
+  // Les quatre réglages d'AFFICHAGE — durée, animations d'entrée et de sortie,
+  // durée d'animation — sont partis dans « Mise en scène », où ils se règlent
+  // PAR SCÈNE comme ceux de tous les autres widgets. Ils vivaient ici,
+  // globalement : deux endroits pour la même question, dont l'un que le panneau
+  // de mise en scène ignorait. Laisser un champ mort rouvrirait le doublon.
+  const oiRenvoi = document.createElement('div');
+  oiRenvoi.className = 'form-row';
+  oiRenvoi.style.opacity = '0.75';
+  oiRenvoi.style.fontSize = '0.8rem';
+  oiRenvoi.textContent = "Durée d'affichage et animations : onglet « Mise en "
+    + "scène », élément « Image de la galerie » — et par scène.";
+  oiSection.appendChild(oiRenvoi);
 
   oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter-s', ['all','top','recent'], oi.random_filter)));
 
@@ -4068,19 +4066,16 @@ async function loadOverlayConfigInPanel(container) {
 
   container.appendChild(oiSection);
 
-  durRange.addEventListener('input', function() { durVal.textContent = durRange.value + 's'; });
-  adRange.addEventListener('input', function() { adVal.textContent = adRange.value + 's'; });
 }
 
 async function saveOverlayImageConfigSysteme() {
   const sw = document.getElementById('overlay-switch-image');
+  // Les quatre réglages d'affichage ne sont plus envoyés d'ici : ils vivent
+  // dans le layout. Les laisser partirait la valeur d'un champ disparu — donc
+  // `NaN` — et écraserait ce que la scène porte.
   const body = { overlay_image: {
     enabled: sw ? sw.classList.contains('on') : false,
     command: document.getElementById('oi-command-s').value,
-    display_duration: parseInt(document.getElementById('oi-duration-s').value),
-    animation_in: document.getElementById('oi-anim-in-s').value,
-    animation_out: document.getElementById('oi-anim-out-s').value,
-    animation_duration: parseFloat(document.getElementById('oi-anim-duration-s').value),
     random_filter: document.getElementById('oi-filter-s').value,
   }};
   const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
@@ -4792,8 +4787,6 @@ async function pollOverlayStatusForTab() {
 
 // ── Overlay Config (Admin) ────────────────────────────────────────────────────
 
-const ANIMATE_CSS_IN = ['fadeIn','fadeInDown','fadeInLeft','fadeInRight','fadeInUp','bounceIn','bounceInDown','bounceInLeft','bounceInRight','bounceInUp','zoomIn','zoomInDown','zoomInLeft','zoomInRight','zoomInUp','slideInDown','slideInLeft','slideInRight','slideInUp','flipInX','flipInY','backInDown','backInLeft','backInRight','backInUp','rotateIn'];
-const ANIMATE_CSS_OUT = ['fadeOut','fadeOutDown','fadeOutLeft','fadeOutRight','fadeOutUp','bounceOut','bounceOutDown','bounceOutLeft','bounceOutRight','bounceOutUp','zoomOut','zoomOutDown','zoomOutLeft','zoomOutRight','zoomOutUp','slideOutDown','slideOutLeft','slideOutRight','slideOutUp','flipOutX','flipOutY','backOutDown','backOutLeft','backOutRight','backOutUp','rotateOut'];
 
 async function loadOverlayConfig() {
   const r = await apiFetch('/api/admin/config');
@@ -4918,41 +4911,18 @@ async function loadOverlayConfig() {
   cmdRow.appendChild(cmdInput);
   oiSection.appendChild(cmdRow);
 
-  // Duration slider
-  const durRow = document.createElement('div');
-  durRow.className = 'form-row';
-  const durLabel = document.createElement('label');
-  durLabel.textContent = 'Durée affichage (s)';
-  durRow.appendChild(durLabel);
-  const durRange = document.createElement('input');
-  durRange.type = 'range'; durRange.id = 'oi-duration';
-  durRange.min = '5'; durRange.max = '60'; durRange.value = oi.display_duration || 15;
-  durRow.appendChild(durRange);
-  const durVal = document.createElement('span');
-  durVal.id = 'oi-duration-val'; durVal.textContent = (oi.display_duration || 15) + 's';
-  durRow.appendChild(durVal);
-  oiSection.appendChild(durRow);
-
-  // Animation in
-  oiSection.appendChild(makeFormRow('Animation entrée', makeSelect('oi-anim-in', ANIMATE_CSS_IN, oi.animation_in)));
-
-  // Animation out
-  oiSection.appendChild(makeFormRow('Animation sortie', makeSelect('oi-anim-out', ANIMATE_CSS_OUT, oi.animation_out)));
-
-  // Animation duration slider
-  const adRow = document.createElement('div');
-  adRow.className = 'form-row';
-  const adLabel = document.createElement('label');
-  adLabel.textContent = 'Durée animation (s)';
-  adRow.appendChild(adLabel);
-  const adRange = document.createElement('input');
-  adRange.type = 'range'; adRange.id = 'oi-anim-duration';
-  adRange.min = '0.5'; adRange.max = '3'; adRange.step = '0.1'; adRange.value = oi.animation_duration || 1;
-  adRow.appendChild(adRange);
-  const adVal = document.createElement('span');
-  adVal.id = 'oi-anim-duration-val'; adVal.textContent = (oi.animation_duration || 1) + 's';
-  adRow.appendChild(adVal);
-  oiSection.appendChild(adRow);
+  // Les quatre réglages d'AFFICHAGE — durée, animations d'entrée et de sortie,
+  // durée d'animation — sont partis dans « Mise en scène », où ils se règlent
+  // PAR SCÈNE comme ceux de tous les autres widgets. Ils vivaient ici,
+  // globalement : deux endroits pour la même question, dont l'un que le panneau
+  // de mise en scène ignorait. Laisser un champ mort rouvrirait le doublon.
+  const oiRenvoi = document.createElement('div');
+  oiRenvoi.className = 'form-row';
+  oiRenvoi.style.opacity = '0.75';
+  oiRenvoi.style.fontSize = '0.8rem';
+  oiRenvoi.textContent = "Durée d'affichage et animations : onglet « Mise en "
+    + "scène », élément « Image de la galerie » — et par scène.";
+  oiSection.appendChild(oiRenvoi);
 
   // Filter
   oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter', ['all','top','recent'], oi.random_filter)));
@@ -4980,8 +4950,6 @@ async function loadOverlayConfig() {
   document.getElementById('ig-quality')?.addEventListener('change', updateCostEstimate);
   document.getElementById('ig-size')?.addEventListener('change', updateCostEstimate);
 
-  durRange.addEventListener('input', function() { durVal.textContent = durRange.value + 's'; });
-  adRange.addEventListener('input', function() { adVal.textContent = adRange.value + 's'; });
 }
 
 async function updateCostEstimate() {
@@ -5011,13 +4979,12 @@ async function saveImageGenConfig() {
 }
 
 async function saveOverlayImageConfig() {
+  // Les quatre réglages d'affichage ne partent plus d'ici : ils vivent dans le
+  // layout, par scène. Les laisser enverrait la valeur d'un champ disparu —
+  // donc `NaN` — et écraserait ce que la scène porte.
   const body = { overlay_image: {
     enabled: document.getElementById('oi-enabled').checked,
     command: document.getElementById('oi-command').value,
-    display_duration: parseInt(document.getElementById('oi-duration').value),
-    animation_in: document.getElementById('oi-anim-in').value,
-    animation_out: document.getElementById('oi-anim-out').value,
-    animation_duration: parseFloat(document.getElementById('oi-anim-duration').value),
     random_filter: document.getElementById('oi-filter').value,
   }};
   const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
