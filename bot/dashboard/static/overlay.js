@@ -69,6 +69,35 @@
   const GLITCH = { etats: 5, saccade: 30, decalage: 14 };
   const GLITCH_MS = GLITCH.etats * GLITCH.saccade;
 
+  // ── Les réglages de rythme de la scène ───────────────────────────────────
+  //
+  // Les widgets dont la sortie est décidée par leur PROPRE mécanique, et que la
+  // durée réglée dans la scène ne doit donc pas piloter :
+  //   · `clip` sort sur la fin de la vidéo (`video.duration + 5`) — une durée
+  //     posée par-dessus couperait le clip au milieu ;
+  //   · `virus_popup` reçoit sa durée en ENTRÉE d'un plan de fenêtres calculé
+  //     (`WallyVirus.rythme` → `fenetres`) : elle y est déjà remplacée, plus
+  //     bas, et un second minuteur ferait tomber l'écran bleu de nettoyage à
+  //     côté de son plan.
+  const DUREE_INTERNE = new Set(["clip", "virus_popup"]);
+
+  /** Pose une animation d'`animate.css` sur un nœud.
+   *
+   *  Sa sœur `animDe()`, qui lit les réglages de la scène, est déclarée avec
+   *  `estSolo`/`masqueWally` — les trois lisent `reglages`, et ce fichier les
+   *  garde groupées sous sa déclaration.
+   *
+   *  `glitch` et `aucune` ne sont pas des classes : le premier est la rafale
+   *  maison (jouée ailleurs), le second ne fait rien. Les traiter ici évite à
+   *  chaque appelant de répéter la condition.
+   */
+  function animer(noeud, nom, ms, boucle) {
+    if (!noeud || nom === "aucune" || nom === "glitch") return;
+    noeud.style.setProperty("--animate-duration", (ms / 1000) + "s");
+    noeud.classList.add("animate__animated", "animate__" + nom);
+    if (boucle) noeud.classList.add("animate__infinite");
+  }
+
   /** La bulle part en glitch.
    *
    *  `nettoyer` est indispensable : la rafale écrit les quatre propriétés EN
@@ -111,7 +140,14 @@
       // l'écran indéfiniment. Effet de bord du décalage de 90 ms.
       // La durée d'affichage part de l'apparition RÉELLE, ce qui est aussi
       // ce que le serveur a calculé.
-      hideTimer = setTimeout(popBubble, Math.max(1, durationSeconds || 3) * 1000);
+      //
+      // La durée réglée pour la bulle dans cette scène l'emporte sur celle-ci.
+      // Zéro vaut « auto » : le repli de 3 s d'avant ce réglage, qui est la
+      // valeur livrée — une bulle ne change donc de rythme que si on le lui
+      // demande.
+      const regleeBulle = Number((reglages.bubble || {}).duree) || 0;
+      hideTimer = setTimeout(popBubble,
+        (regleeBulle || Math.max(1, durationSeconds || 3)) * 1000);
     }, 90);
   }
 
@@ -898,6 +934,9 @@
       // tel qu'il est à cet instant.
       stockFrais((medias) => {
         if (!box.isConnected) return;
+        // `p.seconds` porte DÉJÀ la durée réglée dans la scène quand il y en a
+        // une : elle est posée en amont, dans `showWidget`, sur les deux champs
+        // à la fois. Le builder n'a donc rien à savoir du modèle.
         const duree = Math.max(3, Math.min(300,
           Number(p.seconds) || window.WallyVirus.dureeSelonStock(medias.length)));
         lancerSpamVirus(box, medias, duree);
@@ -1447,6 +1486,48 @@
   function showWidget(kind, params) {
     const build = BUILDERS[kind];
     if (!build) return;
+
+    // Le délai réglé décale l'APPARITION, pas la sortie : le minuteur de durée
+    // ne part qu'une fois la carte montée. Posé ici, avant la file d'attente,
+    // pour que le délai reste un simple retard de l'événement — réserver la
+    // place sans rien monter ferait patienter les autres devant du vide.
+    //
+    // Rangé dans `minuteurs` comme le reste, et pas dans une variable à part :
+    // `clearAll()` vide cette table, et un widget qui surgit APRÈS un « enlève
+    // tout » est un fantôme — ce fichier en a déjà payé plusieurs. La clé est
+    // préfixée pour ne pas écraser le minuteur de SORTIE du même `kind`.
+    //
+    // `_delai_consomme` est ce qui empêche la boucle : le second passage porte
+    // le drapeau et tombe droit dans le montage.
+    // Le spam de popups est le seul dont la durée pilote DEUX choses : le plan
+    // de fenêtres (`seconds`) et la sortie de la carte (`duration`), que le
+    // serveur publie séparés — l'écran bleu de nettoyage vit dans leur écart.
+    // Ne remplacer que le premier laisserait la carte partir avant la fin de
+    // son propre plan : réglé à 60 s là où le serveur en annonce 30, l'écran
+    // bleu ne serait JAMAIS vu. On les décale donc ensemble, en conservant
+    // l'écart tel que le serveur l'a calculé — plutôt que de recopier ici la
+    // durée du bleu, qui vit en Python et divergerait.
+    if (kind === "virus_popup") {
+      const reglee = Number((reglages.virus_popup || {}).duree) || 0;
+      if (reglee > 0) {
+        const ecart = Math.max(
+          0, (Number(params.duration) || 0) - (Number(params.seconds) || 0));
+        params = Object.assign({}, params,
+                               { seconds: reglee, duration: reglee + ecart });
+      }
+    }
+
+    const delai = Number((reglages[kind] || {}).delai) || 0;
+    if (delai > 0 && !params._delai_consomme) {
+      const cle = "delai:" + kind;
+      clearTimeout(minuteurs.get(cle));
+      minuteurs.set(cle, setTimeout(() => {
+        minuteurs.delete(cle);
+        showWidget(kind, Object.assign({}, params, { _delai_consomme: true }));
+      }, delai * 1000));
+      return;
+    }
+
     // La file ne sert QU'À ceux qui n'ont pas de place. Elle valait autrefois
     // pour tout ce qui arrivait pendant qu'un widget était là, quel qu'il
     // soit : deux cartes qui ne se gênent pas se succédaient sur une minute au
@@ -1824,16 +1905,39 @@
       mountWheel(box.querySelector(".wheel-canvas"), params);
     }
 
+    // ── Les animations réglées pour ce widget dans cette scène ───────────
+    //
+    // `glitch` — le défaut — ne pose AUCUNE classe : la transition CSS de
+    // `.visible` reste seule, c'est-à-dire l'entrée d'avant ce chantier.
+    const anim = animDe(kind);
+    if (!refresh) animer(box, anim.entree, anim.ms, false);
+    // L'insistance se rejoue en boucle pendant tout l'affichage. Posée sur le
+    // CONTENU et non sur la carte : deux `animation` sur un même nœud se
+    // remplacent au lieu de se cumuler, et la carte porte déjà son entrée.
+    if (!refresh && anim.insistance !== "aucune") {
+      animer(box.firstElementChild, anim.insistance, anim.ms, true);
+    }
+
     // Une partie en cours ne s'efface pas toute seule : le pendu doit rester
     // sous les yeux du chat tant qu'on y joue. Un booléen plutôt qu'une durée
     // nulle — `Number(0) || 12` vaut 12, le piège serait invisible.
     if (params.sticky === true) return;
 
+    // La durée réglée pour CE widget dans CETTE scène l'emporte sur celle que
+    // le serveur envoie : c'est le streamer qui décide de son habillage. Zéro
+    // vaut « auto », c'est-à-dire le comportement d'avant ce réglage — et c'est
+    // la valeur livrée, pour que rien ne change tant que personne n'y touche.
+    // Un simple repli n'aurait quasiment jamais rien fait : tous les événements
+    // portent déjà une durée.
+    const dureeReglee = DUREE_INTERNE.has(kind)
+      ? 0 : (Number((reglages[kind] || {}).duree) || 0);
     // Le serveur décide (animation + lecture) ; ce plafond n'est qu'un garde-fou.
     // 180 s et non 30 : le serveur émet jusqu'à 124 s (sondage de 120 s + 4),
     // et un sondage de 60 s disparaissait de l'écran à mi-parcours, les viewers
     // n'ayant plus la question sous les yeux pour voter.
-    const seconds = Math.min(180, Math.max(2, Number(params.duration) || 12));
+    const seconds = dureeReglee > 0
+      ? dureeReglee
+      : Math.min(180, Math.max(2, Number(params.duration) || 12));
     minuteurs.set(kind, setTimeout(() => {
       minuteurs.delete(kind);
       // Le widget éclate comme la bulle, mais plus large : il apparaît quelques
@@ -1846,12 +1950,28 @@
       // `position: absolute` : hors flux, la carte ne dimensionnait plus son
       // conteneur et se téléportait le temps de sa sortie.
       box.classList.add("leaving");
-      // Une carte est plus large qu'une bulle : elle encaisse un décalage plus
-      // franc sans sortir du cadre.
-      WallyGlitch.rafale(box, { ...GLITCH, decalage: 22 }).then(() => {
-        WallyGlitch.nettoyer(box);
-        box.classList.remove("visible");
-      });
+      // La rafale garde SA durée (5 × 30 ms), quoi qu'on règle : `anim_duree`
+      // ne la pilote pas. Faire suivre le relais à une durée réglée ferait
+      // attendre la carte suivante pour rien.
+      const sortieMs = anim.sortie === "glitch" ? GLITCH_MS : anim.ms;
+      if (anim.sortie === "glitch") {
+        // Une carte est plus large qu'une bulle : elle encaisse un décalage
+        // plus franc sans sortir du cadre.
+        WallyGlitch.rafale(box, { ...GLITCH, decalage: 22 }).then(() => {
+          WallyGlitch.nettoyer(box);
+          box.classList.remove("visible");
+        });
+      } else {
+        // Les classes d'ENTRÉE partent d'abord : deux `animation` sur un même
+        // nœud se remplacent, et sans ce ménage la sortie ne se jouerait
+        // jamais. Un minuteur et non `animationend` — une carte chassée pendant
+        // sa sortie déclenche `animationcancel`, et si `animate.min.css`
+        // n'était pas servi l'événement n'arriverait jamais. Piège déjà payé
+        // sur l'image de la galerie, quelques centaines de lignes plus bas.
+        box.classList.remove("animate__animated", "animate__" + anim.entree);
+        animer(box, anim.sortie, sortieMs, false);
+        setTimeout(() => box.classList.remove("visible"), sortieMs);
+      }
       // Suivi lui aussi : ce timer interne n'était annulé nulle part. Un vote
       // arrivant pendant les 300 ms de sortie reconstruisait le widget, puis le
       // nettoyage orphelin l'effaçait — et `playNext()` pouvait enchaîner sur
@@ -1859,8 +1979,8 @@
       // Appelée à la fin de la rafale : la suivante entre quand la précédente
       // a fini de se parasiter. Deux cartes pleines l'une sur l'autre seraient
       // illisibles.
-      relaisTimer = setTimeout(playNext, GLITCH_MS);
-      setTimeout(() => disposeWidget(box), GLITCH_MS + 260);
+      relaisTimer = setTimeout(playNext, sortieMs);
+      setTimeout(() => disposeWidget(box), sortieMs + 260);
     }, seconds * 1000));
   }
 
@@ -2299,10 +2419,24 @@
 
     function montrer(data) {
       if (masque || !data || !data.image_url) return;
-      const animIn = data.animation_in || "fadeIn";
-      const animOut = data.animation_out || "fadeOut";
-      const duree = (Number(data.display_duration) || 15) * 1000;
-      const animS = Number(data.animation_duration) || 1;
+      // Les quatre réglages viennent désormais de la SCÈNE et non de
+      // `config.yaml` : la galerie se règle comme tous les autres widgets, et
+      // PAR SCÈNE. `data.*` reste en repli — la graine qui recopie les valeurs
+      // du fichier dans le layout arrive en phase 5, et une page ouverte
+      // entre-temps ne doit pas perdre le réglage de l'owner.
+      //
+      // `glitch` est écarté ici : c'est le défaut commun des menus, mais la
+      // galerie n'a jamais eu de rafale — elle entre en fondu depuis toujours.
+      // Le laisser passer ferait disparaître son animation.
+      const reg = reglages.image || {};
+      const animIn = (reg.anim_entree && reg.anim_entree !== "glitch")
+        ? reg.anim_entree : (data.animation_in || "fadeIn");
+      const animOut = (reg.anim_sortie && reg.anim_sortie !== "glitch")
+        ? reg.anim_sortie : (data.animation_out || "fadeOut");
+      const duree = ((Number(reg.duree) || 0)
+        || Number(data.display_duration) || 15) * 1000;
+      const animS = Number(reg.anim_duree) > 0
+        ? Number(reg.anim_duree) : (Number(data.animation_duration) || 1);
 
       clearTimeout(minuteurSortie);
       clearTimeout(minuteurFin);
@@ -2406,6 +2540,24 @@
     }
     return !el.wally_visible;
   }
+  /** Les réglages d'animation de CE widget dans CETTE scène, avec leurs replis.
+   *
+   *  Troisième lectrice de `reglages`, déclarée avec les deux autres. Les
+   *  replis reproduisent le comportement d'avant ce réglage : la rafale de
+   *  glitch, et sa durée. Un layout rangé avant ce chantier ne porte aucun de
+   *  ces champs — il doit rendre exactement ce qu'il rendait.
+   */
+  function animDe(kind) {
+    const r = reglages[kind] || {};
+    const s = Number(r.anim_duree);
+    return {
+      entree: r.anim_entree || "glitch",
+      sortie: r.anim_sortie || "glitch",
+      insistance: r.anim_insistance || "aucune",
+      ms: (s > 0 ? s : GLITCH_MS / 1000) * 1000,
+    };
+  }
+
   async function chargerLayout() {
     try {
       const r = await fetch(
