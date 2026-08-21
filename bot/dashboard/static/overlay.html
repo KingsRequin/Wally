@@ -1253,19 +1253,64 @@
     }
 
     /* Vague d'emote — elle surgit et repart : c'est un éclat, pas un panneau. */
-    /* Raid — le nom de celui qui débarque, en grand. La carte doit tenir tête
-       aux confettis qui traversent l'écran derrière elle, d'où le fond plus
-       opaque et la bordure dorée. */
+    /* ── Raid ──────────────────────────────────────────────────────────────
+       Le moment le plus fort d'un live. La carte porte le NOM ; la lumière, la
+       secousse et les confettis vivent dans `#raid-fx`, plus bas.
+
+       Aucun `z-index` négatif sur les rayons ni sur l'anneau : `.raid` porte
+       une animation avec `transform`, donc un CONTEXTE D'EMPILEMENT — un enfant
+       en z-index négatif y serait peint SOUS le fond de la carte, c'est-à-dire
+       invisible. Ce sont donc trois frères positionnés, et l'ordre du document
+       suffit : rayons, anneau, puis le corps par-dessus. */
     .raid {
-      padding: 14px 26px;
+      position: relative;
+      /* Pas de fond ni de cadre ICI : c'est `.raid-corps` qui les porte, sans
+         quoi il masquerait l'anneau qui tourne autour de lui. La boîte de
+         `.raid` est celle de son seul enfant dans le flux — le corps —, donc le
+         placement et la mesure du panneau ne changent pas de nature. */
+      animation: raid-in .6s cubic-bezier(.2, 1.55, .35, 1);
+    }
+    /* Les rayons derrière la carte. Carré, et centré par des marges plutôt que
+       par un `translate` : la rotation a besoin du `transform` pour elle seule.
+       Le masque radial éteint les rayons vers l'extérieur — un disque net
+       aurait un bord, et un bord se lit comme une boîte, pas comme une
+       lumière. */
+    .raid-rayons {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 560px; height: 560px;
+      margin: -280px 0 0 -280px;
+      background: repeating-conic-gradient(from 0deg,
+        rgba(255, 209, 102, .17) 0deg 4.5deg,
+        transparent 4.5deg 30deg);
+      -webkit-mask-image: radial-gradient(circle, #000 8%, transparent 62%);
+      mask-image: radial-gradient(circle, #000 8%, transparent 62%);
+      animation: raid-rayons 11s linear infinite;
+      pointer-events: none;
+    }
+    /* L'anneau doré, qui tourne. C'est l'ANGLE du dégradé qui tourne, pas le
+       nœud : faire pivoter un rectangle de 260 x 110 ferait balayer ses coins
+       hors de la carte. `@property` est ce qui rend un angle animable. */
+    @property --raid-angle {
+      syntax: "<angle>"; inherits: false; initial-value: 0deg;
+    }
+    .raid-halo {
+      position: absolute;
+      inset: -2px;
+      border-radius: calc(var(--r-lg) + 2px);
+      background: conic-gradient(from var(--raid-angle),
+        var(--gold), #fff6d8, var(--wally), var(--gold), #fff6d8, var(--gold));
+      animation: raid-halo 2.6s linear infinite;
+      pointer-events: none;
+    }
+    .raid-corps {
+      position: relative;
+      padding: 15px 28px;
       background: var(--glass);
-      border: 1px solid rgba(255, 209, 102, .45);
       border-radius: var(--r-lg);
       text-align: center;
       color: #fff;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
-      box-shadow: 0 4px 24px rgba(255, 209, 102, .16);
-      animation: raid-in .55s cubic-bezier(.22, 1.5, .4, 1);
     }
     .raid-tag {
       font-family: var(--display);
@@ -1283,11 +1328,121 @@
     .raid-count {
       margin-top: 5px; font-size: 12.5px;
       color: var(--dim);
+      /* Le compteur MONTE de zéro : sans chasse fixe, la carte tressaute à
+         chaque chiffre pendant toute la montée. */
       font-variant-numeric: tabular-nums;
     }
     @keyframes raid-in {
-      0%   { transform: scale(.72) translateY(14px); opacity: 0; }
+      0%   { transform: scale(.62) translateY(22px); opacity: 0; }
+      55%  { opacity: 1; }
       100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    @keyframes raid-rayons { to { transform: rotate(1turn); } }
+    @keyframes raid-halo   { to { --raid-angle: 360deg; } }
+
+    /* ── Raid : la couche d'effets plein cadre ─────────────────────────────
+       Posée par `overlay_raid.js` au moment du raid, retirée du DOM 4,2 s plus
+       tard. Enfant de `#stage` et JAMAIS de `<body>` : `#stage` ne porte aucun
+       `transform` hors secousse (le piège du bloc conteneur payé sur `.meme` et
+       `.virus-popup`), et il hérite de `#stage.hidden` — overlay masqué, pas de
+       fête fantôme.
+
+       `inset: -5%` et non `0` : la secousse déplace `#stage`, donc cette couche
+       avec lui. À ras bord, chaque secousse découvrirait une bande vide sur
+       deux côtés du cadre. */
+    #raid-fx {
+      position: absolute;
+      inset: -5%;
+      overflow: hidden;
+      pointer-events: none;
+      /* Au-dessus des widgets — `overlay_layout.js` leur donne 1..N — et sous
+         l'écran bleu du spam (999), qui garde le dernier mot. */
+      z-index: 900;
+    }
+    /* Chaque couche pose SA géométrie. Pas de règle partagée `#raid-fx > *` :
+       elle vaudrait (1,0,1) contre (0,1,0) pour une classe, donc son `inset: 0`
+       l'emporterait sur celui des faisceaux — qui seraient restés à ras du
+       cadre, découvrant leurs coins à la rotation. Le même piège de
+       spécificité que `body.widget-on #bubble` contre `[data-element] > *`. */
+
+    /* Le flash. Une seule propriété animée, et c'est `opacity` : l'overlay
+       tourne à côté du jeu et de l'encodage, rien ici ne déclenche de repaint
+       plein cadre par frame. */
+    .raid-flash {
+      position: absolute; inset: 0; opacity: 0;
+      background: radial-gradient(circle at 50% 55%,
+        rgba(255, 255, 255, .92), rgba(255, 209, 102, .5) 42%, transparent 72%);
+      animation: raid-flash .35s ease-out;
+    }
+    /* Les faisceaux de projecteurs : UN nœud, pas six. Un `conic-gradient`
+       porte les douze rayons d'un coup et sa rotation ne coûte qu'une seule
+       couche composée par le GPU — six nœuds en rotation, ce serait six
+       couches sur la machine qui ENCODE le live.
+
+       Carré plus grand que la diagonale du cadre, sinon la rotation
+       découvrirait ses coins. Centré par marges : le `transform` sert à
+       tourner, il ne peut pas servir aussi à centrer.
+
+       130 vmax et pas davantage : la demi-diagonale de ce cadre agrandi de 5 %
+       de chaque côté vaut au plus 0,78 vmax, donc 1,56 vmax de côté suffit à
+       le couvrir dans toutes les proportions. Ce n'est pas de la coquetterie —
+       le nœud devient une TEXTURE sur le GPU qui encode le live, et 170 vmax
+       en réclamaient 42 Mo là où 130 en prennent 25. */
+    .raid-faisceaux {
+      position: absolute; opacity: 0;
+      top: 50%; left: 50%;
+      width: 130vmax; height: 130vmax;
+      margin: -65vmax 0 0 -65vmax;
+      background: repeating-conic-gradient(from 0deg,
+        rgba(255, 209, 102, .2) 0deg 6deg,
+        transparent 6deg 30deg);
+      /* `screen` : de la lumière ADDITIVE là où les faisceaux croisent le
+         flash et la vignette — sans quoi trois voiles dorés s'empilent et
+         ternissent au lieu d'éclairer. Le blend ne va PAS au-delà de cette
+         page : c'est OBS qui compose l'overlay sur le jeu, aucun mode CSS
+         n'atteint l'image de la capture. */
+      mix-blend-mode: screen;
+      animation: raid-faisceaux 4.2s linear;
+    }
+    /* La vignette dorée, qui pulse deux fois depuis les bords. */
+    .raid-vignette {
+      position: absolute; inset: 0; opacity: 0;
+      background: radial-gradient(ellipse at 50% 50%,
+        transparent 40%, rgba(255, 209, 102, .34) 100%);
+      animation: raid-vignette 4.2s ease-in-out;
+    }
+    @keyframes raid-flash {
+      0%   { opacity: 0; }
+      12%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    @keyframes raid-faisceaux {
+      0%   { opacity: 0;   transform: rotate(0deg); }
+      7%   { opacity: .9; }
+      68%  { opacity: .5; }
+      100% { opacity: 0;   transform: rotate(155deg); }
+    }
+    @keyframes raid-vignette {
+      0%, 100% { opacity: 0; }
+      10%      { opacity: 1; }
+      42%      { opacity: .3; }
+      64%      { opacity: .85; }
+    }
+
+    /* La secousse. Elle porte sur `#stage`, c'est-à-dire sur l'HABILLAGE :
+       l'image du jeu ne bouge pas, la source navigateur d'OBS ne dessine que
+       cette page. `translate` seul — un `scale` ferait respirer tout l'overlay
+       et un `filter` coûterait un repaint par frame. */
+    #stage.raid-secousse { animation: raid-secousse .42s cubic-bezier(.36, .07, .19, .97); }
+    @keyframes raid-secousse {
+      0%, 100% { transform: translate(0, 0); }
+      10%  { transform: translate(-10px, 5px); }
+      22%  { transform: translate(9px, -7px); }
+      36%  { transform: translate(-8px, -3px); }
+      50%  { transform: translate(7px, 6px); }
+      64%  { transform: translate(-5px, -4px); }
+      78%  { transform: translate(4px, 2px); }
+      90%  { transform: translate(-2px, 0); }
     }
 
     .wave {
@@ -1964,6 +2119,7 @@
   <script src="/static/overlay_apex.js"></script>
   <script src="/static/overlay_virus.js"></script>
   <script src="/static/overlay_sons.js"></script>
+  <script src="/static/overlay_raid.js"></script>
   <script src="/static/overlay.js"></script>
 </body>
 </html>

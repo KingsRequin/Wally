@@ -47,6 +47,7 @@ _OVERLAY_FILES = (
     "overlay_apex.js",
     "overlay_virus.js",
     "overlay_sons.js",
+    "overlay_raid.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
     # et non script : la page en charge une depuis que ces deux zones y ont été
@@ -485,7 +486,7 @@ _ECHANTILLONS: dict[str, dict] = {
     "prediction": {"bet": "Azraël finit top 5", "outcome": "wrong"},
     "quote":     {"text": "Dans le doute, je fais exploser la maison",
                   "author": "Azraël"},
-    "raid":      {"from": "kingsrequin", "viewers": 42},
+    "raid":      {"raider": "kingsrequin", "viewers": 42},
     "wave":      {"viewers": 120},
     # `virus_popup` n'a PAS d'échantillon de durée : elle est posée plus bas à
     # partir du dossier (`_SPECTACLES_ENTIERS`), comme pour un vrai achat. Une

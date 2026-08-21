@@ -38,12 +38,20 @@
   // que le point de départ pour qui pose la source sans y toucher.
   const VOLUME = 0.64;
 
-  const GENRES = ["popup", "bsod"];
+  // Les tiroirs, en phase avec `GENRES` de `bot/core/sons.py` — la route
+  // publique refuse tout genre absent de LA liste du serveur.
+  //
+  // `raid` sonne UNE fois, quand des inconnus débarquent. Son dossier est vide
+  // pour l'instant (choix de l'owner) : rien dedans, rien qui sonne, et pas une
+  // erreur — c'est déjà le contrat des deux autres.
+  const GENRES = ["popup", "bsod", "raid"];
 
   let ctx = null;
   let maitre = null;
-  // { popup: [{nom, buffer}], bsod: [...] } — décodé une fois, rejoué à volonté.
-  const tampons = { popup: [], bsod: [] };
+  // { popup: [{nom, buffer}], … } — décodé une fois, rejoué à volonté. Dérivé de
+  // `GENRES` et non recopié : un tiroir oublié ici serait un genre qui ne sonne
+  // jamais, sans un mot.
+  const tampons = Object.fromEntries(GENRES.map((g) => [g, []]));
   // Les sources en train de sonner, pour pouvoir toutes les couper d'un coup.
   const vivantes = new Set();
   // Le chargement en cours, s'il y en a un. Le boot de la page et le
@@ -162,6 +170,12 @@
     return jouer("popup", true);
   }
 
+  /* Un raid : des inconnus débarquent. Une seule fois, à sa hauteur exacte —
+     ce n'est pas un ding parmi trois cents, c'est l'événement. */
+  function raid() {
+    return jouer("raid", false);
+  }
+
   /* Coupe net tout ce qui sonne. */
   function couperTout() {
     vivantes.forEach((src) => {
@@ -178,10 +192,10 @@
   }
 
   window.WallySons = {
-    charger, popup, bsod, couperTout,
+    charger, popup, bsod, raid, couperTout,
     // Pour les tests : ce que la page a réellement en mémoire, et ce qui sonne.
-    inventaire: () => ({ popup: tampons.popup.map((s) => s.nom),
-                         bsod: tampons.bsod.map((s) => s.nom) }),
+    inventaire: () => Object.fromEntries(
+      GENRES.map((g) => [g, tampons[g].map((s) => s.nom)])),
     nbVivantes: () => vivantes.size,
     SILENCE_MS, VOLUME, PITCH_MIN, PITCH_MAX,
   };

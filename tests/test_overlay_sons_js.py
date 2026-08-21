@@ -39,7 +39,8 @@ global.AudioContext = class {
   decodeAudioData(brut) { decodes++; return Promise.resolve({taille: brut.byteLength}); }
   resume() { this.state = "running"; return Promise.resolve(); }
 };
-let inventaireServeur = {popup: ["ding.mp3", "erreur.wav"], bsod: ["impact.mp3"]};
+let inventaireServeur = {popup: ["ding.mp3", "erreur.wav"], bsod: ["impact.mp3"],
+                         raid: ["fanfare.mp3"]};
 let appelsListe = 0;
 global.fetch = async (url) => {
   if (url === "/api/public/sons") {
@@ -71,8 +72,9 @@ def test_les_sons_du_dossier_sont_decodes_une_fois_chacun():
       await S.charger();
       sortie({inv: S.inventaire(), decodes});
     """)
-    assert r["inv"] == {"popup": ["ding.mp3", "erreur.wav"], "bsod": ["impact.mp3"]}
-    assert r["decodes"] == 3
+    assert r["inv"] == {"popup": ["ding.mp3", "erreur.wav"], "bsod": ["impact.mp3"],
+                        "raid": ["fanfare.mp3"]}
+    assert r["decodes"] == 4
 
 
 def test_recharger_ne_retelecharge_pas_ce_qui_est_deja_decode():
@@ -83,7 +85,7 @@ def test_recharger_ne_retelecharge_pas_ce_qui_est_deja_decode():
       await S.charger(); await S.charger(); await S.charger();
       sortie({decodes, inv: S.inventaire()});
     """)
-    assert r["decodes"] == 3
+    assert r["decodes"] == 4
     assert r["inv"]["popup"] == ["ding.mp3", "erreur.wav"]
 
 
@@ -101,11 +103,11 @@ def test_deux_chargements_simultanes_ne_doublent_pas_le_tirage():
 def test_un_son_retire_du_dossier_cesse_de_sonner():
     r = _node("""
       await S.charger();
-      inventaireServeur = {popup: ["ding.mp3"], bsod: []};
+      inventaireServeur = {popup: ["ding.mp3"], bsod: [], raid: []};
       await S.charger();
       sortie(S.inventaire());
     """)
-    assert r == {"popup": ["ding.mp3"], "bsod": []}
+    assert r == {"popup": ["ding.mp3"], "bsod": [], "raid": []}
 
 
 def test_un_dossier_injoignable_ne_casse_rien():
@@ -117,7 +119,7 @@ def test_un_dossier_injoignable_ne_casse_rien():
       S.popup();
       sortie({inv: S.inventaire(), demarrees: demarrees.length});
     """)
-    assert r["inv"] == {"popup": [], "bsod": []}
+    assert r["inv"] == {"popup": [], "bsod": [], "raid": []}
     assert r["demarrees"] == 0
 
 
@@ -144,7 +146,7 @@ def test_le_chaos_n_a_AUCUN_plafond():
     """)
     assert r["demarrees"] == 400
     assert r["vivantes"] == 400
-    assert r["decodes"] == 3
+    assert r["decodes"] == 4
 
 
 def test_les_dings_ne_sonnent_pas_tous_a_la_meme_hauteur():
@@ -162,7 +164,7 @@ def test_un_dossier_de_popups_vide_ne_fait_pas_sonner_l_ecran_bleu():
     """Les deux tiroirs sont séparés : un impact grave lâché au milieu du spam
     parce que le dossier des dings est vide serait pire que le silence."""
     r = _node("""
-      inventaireServeur = {popup: [], bsod: ["impact.mp3"]};
+      inventaireServeur = {popup: [], bsod: ["impact.mp3"], raid: []};
       await S.charger();
       S.popup();
       sortie(demarrees.length);
@@ -212,9 +214,35 @@ def test_sans_contexte_audio_rien_n_explose():
         require(%s);
         window.WallySons.popup();
         window.WallySons.bsod();
+        window.WallySons.raid();
         window.WallySons.couperTout();
         console.log(JSON.stringify(window.WallySons.inventaire()));
         """ % json.dumps(str(_STATIC / "overlay_sons.js"))],
         capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout.strip()) == {"popup": [], "bsod": []}
+    assert json.loads(r.stdout.strip()) == {"popup": [], "bsod": [], "raid": []}
+
+
+def test_un_raid_sonne_une_fois_et_garde_sa_hauteur():
+    """Ce n'est pas un ding parmi trois cents : c'est l'événement. Le varier en
+    hauteur, comme les popups, le ferait sonner faux d'un raid à l'autre."""
+    r = _node("""
+      await S.charger();
+      S.raid();
+      sortie({demarrees: demarrees.length,
+              hauteurs: demarrees.map(s => s.playbackRate.value)});
+    """)
+    assert r["demarrees"] == 1
+    assert r["hauteurs"] == [1]
+
+
+def test_un_dossier_de_raid_vide_reste_muet_sans_broncher():
+    """Le dossier est livré VIDE (choix de l'owner) : la fête doit avoir lieu
+    quand même, et les deux autres tiroirs ne doivent pas la dépanner."""
+    r = _node("""
+      inventaireServeur = {popup: ["ding.mp3"], bsod: ["impact.mp3"], raid: []};
+      await S.charger();
+      S.raid();
+      sortie(demarrees.length);
+    """)
+    assert r == 0

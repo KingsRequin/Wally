@@ -570,22 +570,35 @@
     raid(p) {
       // Le moment le plus fort d'un live : des inconnus débarquent d'un coup.
       // Le NOM domine la carte — c'est quelqu'un qu'on remercie, pas un compteur.
+      //
+      // Les rayons et l'anneau doré sont des FRÈRES du corps, pas des
+      // pseudo-éléments en z-index négatif : `.raid` porte une animation avec
+      // `transform`, donc un contexte d'empilement, où un enfant négatif
+      // passerait sous le fond de la carte — c'est-à-dire nulle part.
       const box = el("div", "raid");
+      const corps = el("div", "raid-corps");
       const tag = el("div", "raid-tag");
       tag.textContent = "RAID";
       const nom = el("div", "raid-name");
       const raider = String(p.raider || "").trim();
       nom.textContent = raider ? `Merci ${raider} !` : "On se fait raid !";
-      box.append(tag, nom);
+      corps.append(tag, nom);
+      box.append(el("div", "raid-rayons"), el("div", "raid-halo"), corps);
 
       // Twitch peut annoncer un raid sans compte fiable : plutôt rien qu'un
       // « 0 spectateur » qui sonne comme un échec.
       const n = Number(p.viewers) || 0;
       if (n > 0) {
         const compte = el("div", "raid-count");
-        compte.textContent = n > 1
-          ? `${n} personnes débarquent` : "une personne débarque";
-        box.appendChild(compte);
+        if (n > 1) {
+          // Le nombre MONTE de zéro : un raid, c'est un flux de gens qui
+          // arrivent, pas un total posé d'emblée.
+          compte.textContent = libelleRaid(0);
+          compterJusqua(compte, n);
+        } else {
+          compte.textContent = "une personne débarque";
+        }
+        corps.appendChild(compte);
       }
       return box;
     },
@@ -1052,6 +1065,36 @@
     const n = document.createElement(tag);
     n.className = className;
     return n;
+  }
+
+  // Le compteur d'un raid monte de zéro à son total. `requestAnimationFrame` et
+  // non un intervalle : l'overlay tourne à côté du jeu et de l'encodage, et un
+  // intervalle continue de tirer même sur les frames sautées.
+  const COMPTE_MS = 1200;
+
+  /* L'accord se fait sur la valeur COURANTE, pas sur le total : en montant, le
+   * compteur passe par 0 et par 1, et « 1 personnes débarquent » s'affiche le
+   * temps de deux frames si le libellé est figé d'avance. */
+  const libelleRaid = (v) => (v > 1 ? `${v} personnes débarquent`
+                                    : `${v} personne débarque`);
+
+  function compterJusqua(noeud, total) {
+    if (typeof requestAnimationFrame !== "function") {
+      noeud.textContent = libelleRaid(total);
+      return;
+    }
+    let t0 = null;
+    const pas = (t) => {
+      if (t0 === null) t0 = t;
+      const p = Math.min(1, (t - t0) / COMPTE_MS);
+      // Décélération : les premiers chiffres défilent, les derniers se lisent.
+      noeud.textContent = libelleRaid(Math.round(total * (1 - Math.pow(1 - p, 3))));
+      // La carte a pu être retirée entre deux frames — un widget solo qui prend
+      // la place, un raid annulé. On s'arrête là plutôt que d'écrire jusqu'au
+      // bout dans un nœud détaché.
+      if (p < 1 && noeud.isConnected) requestAnimationFrame(pas);
+    };
+    requestAnimationFrame(pas);
   }
 
   function faceEl(className, label) {
@@ -1737,36 +1780,23 @@
 
   // Les couleurs de l'overlay, pas celles de la fête foraine : les accents de
   // la palette, plus un blanc qui accroche l'œil sur une image de jeu.
-  // Lus au premier raid, pas au chargement : le CSS est prêt bien avant.
+  // Lues au premier raid, pas au chargement : le CSS est prêt bien avant.
   // Le cyan `#06b6d4` qui traînait ici venait du DASHBOARD — l'overlay, lui,
   // n'a jamais eu ce bleu.
+  //
+  // Elles sont PASSÉES à `overlay_raid.js`, qui ne connaît pas la palette : les
+  // recopier là-bas en ferait une seconde source de vérité, qui divergerait au
+  // premier ajustement de couleur.
   const confettiColors = () => [token("who"), token("info"), token("gold"), "#ffffff"];
 
-  function burstConfetti(viewers) {
-    // Absente si le fichier n'a pas été servi : un overlay sans confettis reste
-    // un overlay, alors qu'une exception ici tuerait tout le rendu du widget.
-    if (typeof window.confetti !== "function") return;
-
-    // Un raid de 5 et un raid de 300, ce n'est pas le même moment — mais le
-    // plafond compte autant : l'overlay tourne à côté du jeu et de l'encodage.
-    const n = Math.max(0, Number(viewers) || 0);
-    const count = Math.round(60 + Math.min(n, 200) * 0.7);   // 60 → 200
-
-    // Deux canons depuis les bas-côtés : les particules montent en croisant
-    // l'écran. Tirer du centre les ferait retomber sur la carte et la masquer.
-    for (const x of [0.1, 0.9]) {
-      window.confetti({
-        particleCount: Math.round(count / 2),
-        angle: x < 0.5 ? 60 : 120,
-        spread: 62,
-        startVelocity: 48,
-        origin: { x, y: 0.95 },
-        colors: confettiColors(),
-        disableForReducedMotion: false,
-        scalar: 0.9,
-        ticks: 220,          // ~3,5 s de vol : la carte en reste 10
-      });
-    }
+  /* La fête plein écran d'un raid — flash, faisceaux, vignette, secousse et
+   * trois vagues de confettis. Tout est dans `overlay_raid.js` : absent si le
+   * fichier n'a pas été servi, auquel cas la carte s'affiche seule plutôt que
+   * de tout emporter dans une exception.
+   */
+  function celebrerRaid() {
+    if (!window.WallyRaid) return;
+    window.WallyRaid.celebrer(stage, confettiColors());
   }
 
   // Les couleurs des secteurs. Deux voisins ne doivent jamais se ressembler :
@@ -1900,7 +1930,7 @@
     // Les confettis vivent HORS du builder : ils ne sont pas un élément du
     // widget mais un effet plein écran, et ils doivent partir au moment exact
     // où la carte apparaît — pas à sa construction.
-    if (kind === "raid" && !refresh) burstConfetti(params.viewers);
+    if (kind === "raid" && !refresh) celebrerRaid();
     if (kind === "wheel" && !refresh) {
       mountWheel(box.querySelector(".wheel-canvas"), params);
     }

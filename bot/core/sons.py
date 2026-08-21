@@ -30,10 +30,15 @@ _MEDIA_TYPES = {
     ".m4a": "audio/mp4",
 }
 
-# Les deux moments du spectacle. Sert aussi de garde : la route publique reçoit
-# le genre depuis l'URL, et tout ce qui n'est pas dans cette liste est refusé
-# avant de toucher au disque.
-GENRES = ("popup", "bsod")
+# Les moments du spectacle. Sert aussi de garde : la route publique reçoit le
+# genre depuis l'URL, et tout ce qui n'est pas dans cette liste est refusé avant
+# de toucher au disque.
+#
+# `raid/` sonne UNE fois, à l'instant où des inconnus débarquent. Le dossier est
+# livré vide à la demande de l'owner (2026-08-21, « configurable, pas de son
+# pour le moment ») : dossier absent ou vide, la fête est simplement muette —
+# le jour où un fichier y est déposé, il sonne sans rebuild.
+GENRES = ("popup", "bsod", "raid")
 
 # Un ding, pas une bande-son. Au-delà, le décodage bloque la page du live le
 # temps du chargement — et un son de plusieurs mégaoctets sur une fenêtre qui
