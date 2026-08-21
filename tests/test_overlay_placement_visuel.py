@@ -133,3 +133,28 @@ def test_les_cartes_acceptent_de_retrecir_sous_un_plafond():
     html = (_STATIC / "overlay.html").read_text(encoding="utf-8")
     regle = html[html.index("[data-element] > * {"):]
     assert "min-width: 0" in regle[:120]
+
+
+def test_un_widget_plein_cadre_echappe_au_plafond_de_largeur():
+    """`[data-element] { max-width: 92vw }` est une garde pour des widgets qui
+    ont leur TAILLE PROPRE : « ne déborde pas de l'écran ». Un widget dont la
+    définition est de SATURER l'écran doit y échapper, sinon il laisse une bande
+    vierge — mesuré 1472 sur 1600 de source, soit 8 % de l'écran.
+
+    Le contrôle part du MODÈLE et non d'une liste écrite ici : tout élément dont
+    `WallyLayout.TAILLES` annonce la largeur du canvas est plein cadre par
+    déclaration, et doit avoir son exception. Un second widget plein écran
+    ajouté un jour sans exception casse ce test au lieu de sortir rogné en
+    live."""
+    js = (_STATIC / "overlay_layout.js").read_text(encoding="utf-8")
+    html = (_STATIC / "overlay.html").read_text(encoding="utf-8")
+    import re as _re
+    # Les entrées de `TAILLES` qui atteignent la largeur du canvas.
+    bloc = js[js.index("const TAILLES = {"):js.index("const TAILLE_DEFAUT")]
+    pleins = _re.findall(r"(\w+):\s*\[\s*1920\s*,", bloc)
+    assert pleins, "aucun widget plein cadre trouvé : la table a changé de forme"
+    for cle in pleins:
+        motif = _re.compile(
+            r'\[data-element="' + cle + r'"\]\s*\{[^}]*max-width:\s*none')
+        assert motif.search(html), (
+            f"`{cle}` déclare la largeur du canvas mais reste plafonné à 92 %")

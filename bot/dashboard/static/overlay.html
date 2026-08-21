@@ -185,6 +185,20 @@
        d'éléments empilés dans le coin. Volontairement GROSSIER — trois zones,
        pas vingt-six réglages recopiés du Python, qui divergeraient au premier
        ajustement. Le placement réel vient de `/api/public/overlay-layout`. */
+    /* Le spam de popups ÉCHAPPE au plafond de 92 %.
+       Ce plafond est une garde pour des widgets qui ont leur taille propre :
+       « ne déborde pas de l'écran ». Le spam, lui, a pour DÉFINITION de saturer
+       l'écran — sa boîte de 1920 × 1080 dans `WallyLayout.TAILLES` n'est pas une
+       estimation, c'est ce qu'il couvre. Plafonné, il laissait une bande de 8 %
+       vierge sur la droite : mesuré 1472 pour 1600 de source.
+       Le défaut précédait le réglage `largeur_max` — la carte débordait alors du
+       conteneur et rattrapait une partie de l'écart par accident. `min-width: 0`,
+       qui rend ce réglage réel, a supprimé ce rattrapage et l'a rendu visible :
+       1728 → 1590 sur 1920. On traite donc la cause, pas le symptôme.
+       `none` et pas `100vw` : c'est `width: max-content` qui dimensionne, et le
+       contenu vaut déjà `100vw`. */
+    [data-element="virus_popup"] { max-width: none; }
+
     [data-element] { left: 50%; top: 50%; transform: translate(-50%, -50%); }
     [data-element="avatar"] {
       left: auto; top: auto; right: 3%; bottom: 20%; transform: scale(.55);
