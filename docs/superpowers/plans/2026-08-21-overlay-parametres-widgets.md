@@ -758,7 +758,14 @@ et le comprendre, jamais ajuster le chiffre attendu pour faire passer.
 `opacite`, `rotation`, `miroir`, `largeur_max` deviennent visibles. Bind-mount :
 pas de rebuild, un rechargement du navigateur suffit.
 
-### Tâche 2.1 — `placer()` écrit les quatre universels
+### Tâche 2.1 — `styleDepuisElement()` compose les quatre universels
+
+> **Corrigé à l'exécution (2026-08-21).** Cette tâche prévoyait une règle CSS
+> `[data-element] > *` : impossible, `body.widget-on #bubble` et
+> `body[data-side="right"] #avatar-slot` la battent en spécificité. Voir §D5 du
+> design, corrigé lui aussi. La rotation se compose désormais dans le
+> `transform` du conteneur, encadrée d'un aller-retour de recentrage dont le
+> sens suit le coin d'ancrage. Aucun fichier CSS n'est touché.
 
 **Fichiers :**
 - Modifier : `bot/dashboard/static/overlay_layout.js` (`placer`)

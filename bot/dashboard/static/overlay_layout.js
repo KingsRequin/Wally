@@ -188,9 +188,56 @@ window.WallyLayout = (function () {
     const h = a.h === "right" ? 100 - el.x : el.x;
     const v = a.v === "bottom" ? 100 - el.y : el.y;
     const echelle = (el.scale || 1) * facteurCanvas();
+
+    // ── L'inclinaison et le miroir réglés dans la scène ──────────────────
+    //
+    // Ils s'ajoutent à la chaîne du CONTENEUR, et non à une règle CSS visant
+    // l'enfant comme prévu à la conception. La raison est mesurée, pas
+    // supposée : `body.widget-on #bubble` et `body[data-side="right"]
+    // #avatar-slot` posent DÉJÀ un `transform` sur l'enfant direct, avec une
+    // spécificité (1,1,1) qu'un `[data-element] > *` (0,1,0) ne peut pas
+    // atteindre. La règle enfant aurait été écrasée sur exactement les deux
+    // éléments les plus visibles de l'overlay — et seulement sur eux, ce qui
+    // est le genre de défaut qu'on ne trouve qu'un soir de live.
+    //
+    // Le problème que la règle enfant devait résoudre reste entier : le
+    // `transform-origin` du conteneur est un COIN, donc un `rotate()` posé là
+    // tourne l'élément autour de son point d'ancrage et le DÉPLACE en
+    // l'inclinant. La parade est l'aller-retour ci-dessous : on amène l'origine
+    // au centre, on tourne, on revient. Les pourcentages d'un `translate` se
+    // mesurent sur la taille NON transformée, donc l'aller et le retour
+    // s'annulent exactement, quelle que soit l'échelle.
+    //
+    // Et son SENS suit le coin : `translate(50%, 50%)` depuis un coin haut-
+    // gauche tombe sur le centre, mais depuis un coin bas-droit il tombe HORS
+    // de l'élément.
+    //
+    // Rien n'est ajouté quand rien n'est réglé : la chaîne reste alors celle
+    // d'avant ce chantier, à l'octet près, sur les trente-sept éléments des
+    // trois scènes.
+    const rot = Number(el.rotation) || 0;
+    const mir = el.miroir ? -1 : 1;
+    let recentre = "";
+    if (rot !== 0 || mir === -1) {
+      const dx = a.h === "right" ? -50 : 50;
+      const dy = a.v === "bottom" ? -50 : 50;
+      recentre = ` translate(${dx}%, ${dy}%) rotate(${rot}deg)`
+        + ` scaleX(${mir}) translate(${-dx}%, ${-dy}%)`;
+    }
+
     return {
       [a.h]: h + "%",
       [a.v]: v + "%",
+      // L'opacité règle le conteneur, donc la carte ET son ombre. Une clé
+      // absente — un layout rangé avant ce chantier — ne pose RIEN : `opacity`
+      // à zéro par défaut effacerait tout l'overlay.
+      opacity: (el.opacite === undefined || el.opacite === null)
+        ? "" : String(el.opacite),
+      // La largeur maximale REMPLACE le `max-width: 92vw` que `[data-element]`
+      // porte déjà, en pixels du canvas de référence — elle subit donc la même
+      // échelle que le reste. À zéro on rend la main au CSS, et non « 0px »,
+      // qui écraserait la carte à rien.
+      maxWidth: (Number(el.largeur_max) > 0) ? el.largeur_max + "px" : "",
       // `scale` AVANT `translate`, et pas l'inverse : les pourcentages d'un
       // `translate` se mesurent toujours sur la taille NON transformée. Écrit
       // `translate(-50%) scale(s)`, le décalage valait la moitié de la taille
@@ -200,7 +247,7 @@ window.WallyLayout = (function () {
       // échelle que l'élément et le point d'ancrage tombe juste.
       // Invisible tant que `scale` valait 1 ET la source 1920 de large ;
       // relevé sur la surface du panneau de mise en scène, qui est étroite.
-      transform: `scale(${echelle}) translate(${a.tx}, ${a.ty})`,
+      transform: `scale(${echelle}) translate(${a.tx}, ${a.ty})${recentre}`,
       transformOrigin: `${a.h === "right" ? "right" : "left"} ${a.v === "bottom" ? "bottom" : "top"}`,
     };
   }

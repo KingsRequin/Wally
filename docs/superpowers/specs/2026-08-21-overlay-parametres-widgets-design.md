@@ -130,40 +130,60 @@ Le même mot, deux sens, deux plages. La table passe donc de
 dépendrait de l'ordre d'écriture de la table — un défaut invisible qui ne se
 verrait qu'un jour de live.
 
-### D5 — Rotation et miroir passent par des variables CSS, pas par le `transform` du conteneur
+### D5 — Rotation et miroir se composent dans le `transform` du conteneur, avec correction d'origine
+
+**Cette section a été corrigée le 2026-08-21 en exécutant la phase 2 : la
+solution d'origine — une règle CSS `[data-element] > *` — ne peut pas
+fonctionner.** Elle est conservée ici sous sa forme corrigée, avec la raison,
+parce que c'est le genre d'erreur qu'on refait.
 
 Le conteneur d'un élément porte déjà
 `transform: scale(e) translate(tx, ty)`, dans **cet ordre**, pour une raison
 payée cher : écrit `translate(-50%) scale(s)`, un widget centré à 50 %
 atterrissait à 30 % de large. Et son `transform-origin` est un **coin**
-(`left top`, `right bottom`…), pas le centre.
+(`left top`, `right bottom`…), pas le centre. Un `rotate()` ajouté en bout de
+cette chaîne ferait donc tourner l'élément autour de son point d'ancrage : il se
+déplacerait à l'écran en même temps qu'il s'incline.
 
-Ajouter `rotate()` en bout de cette chaîne ferait tourner l'élément autour de son
-coin d'ancrage : un widget incliné de 15° se déplacerait à l'écran en même temps
-qu'il s'incline. On ne veut pas ça, et rectifier par un `transform-origin: center`
-casserait le placement.
+**Pourquoi la règle CSS sur l'enfant ne marche pas.** `overlay.html` pose déjà
+`body.widget-on #bubble { transform: translateY(6px) scale(.97) }` et
+`body[data-side="right"] #avatar-slot { transform: scaleX(-1) }`. Ces sélecteurs
+pèsent (1,1,1) ; un `[data-element] > *` pèse (0,1,0) et perd. La règle aurait
+donc été écrasée sur **exactement les deux éléments les plus visibles de
+l'overlay**, et seulement sur eux — un défaut qui ne se voit qu'en live, sur la
+bulle et l'avatar. Un wrapper dédié aurait contourné le conflit, au prix d'un
+nœud de plus dans les trente-sept conteneurs et d'un CSS à retoucher partout.
 
-Donc : `placer()` écrit `opacity` en direct, et pose `--ovl-rotation` /
-`--ovl-miroir` en **variables CSS sur le conteneur**. Une règle d'`overlay.html`
-les applique à l'enfant, avec `transform-origin: center` :
+**La parade retenue** tient dans `styleDepuisElement()`, la fonction pure : on
+amène l'origine au centre, on tourne, on revient.
 
-La règle `[data-element] > *` **existe déjà** dans `overlay.html` (elle pose
-`grid-area: pile`, ce qui superpose la carte qui sort et celle qui entre) : on
-l'étend, on n'en crée pas une seconde.
-
-```css
-[data-element] > * {
-  grid-area: pile;                                    /* existant */
-  transform: rotate(var(--ovl-rotation, 0deg)) scaleX(var(--ovl-miroir, 1));
-  transform-origin: center;
-}
+```js
+transform: scale(e) translate(tx, ty)
+           translate(dx%, dy%) rotate(a) scaleX(m) translate(-dx%, -dy%)
 ```
 
-**À vérifier au navigateur** (pas seulement en test) : `avatar` et `rotator` ont
-des enfants qui portent déjà des transforms — la règle ne doit pas les écraser.
-Si elle les écrase, ces deux-là reçoivent un wrapper dédié. Rappel du dépôt :
-`transform: none` fait déborder un enfant en rotation d'un parent arrondi, et un
-test vert ne prouve pas qu'un panneau monte en prod.
+Les pourcentages d'un `translate` se mesurent sur la taille **non transformée** :
+l'aller et le retour s'annulent donc exactement, quelle que soit l'échelle. Et
+le **sens** du recentrage suit le coin — `dx = -50` quand l'ancrage mesure
+depuis la droite, `+50` sinon ; idem pour `dy` et le bas. `translate(50%, 50%)`
+depuis un coin bas-droit tomberait hors de l'élément.
+
+Le suffixe n'est ajouté **que** si quelque chose est réglé : sans inclinaison ni
+miroir, la chaîne reste celle d'avant ce chantier, à l'octet près, sur les
+trente-sept éléments des trois scènes. Un test l'exige.
+
+Trois bénéfices non prévus : l'aperçu du panneau hérite gratuitement (son
+`styleApercu()` réutilise déjà `styleDepuisElement`), aucune règle CSS nouvelle
+n'entre en conflit de spécificité, et tout reste dans le point d'écriture unique
+du style.
+
+**Limite connue, traitée en phase 4 :** `geometrie()` (panneau) recalcule la
+boîte d'un élément depuis `x`/`y`/`anchor`/`scale` sans tenir compte de
+l'inclinaison. Le point d'ancrage ne bouge pas — la rotation est centrée — donc
+le glisser reste juste, mais la boîte **englobante** d'un élément incliné est
+plus grande que son rectangle : le détecteur de chevauchement et les poignées
+raisonneront un peu court tant que la phase 4 n'aura pas posé
+`w' = |w·cos a| + |h·sin a|`.
 
 ### D6 — `image` quitte `config.yaml` pour le layout
 
