@@ -24,6 +24,9 @@ window.OverlayAdmin = (function () {
   const URL_LAYOUT = "/api/admin/overlay/layout";
   const URL_APERCU = "/api/admin/overlay/preview";
   const CANVAS_W = 1920;
+  // La hauteur logique de la page d'overlay. Elle ne sert qu'à l'AFFICHER dans
+  // le badge : la surface, elle, tient son 16/9 du CSS (`aspect-ratio`).
+  const CANVAS_H = 1080;
   // Au-delà, on considère que l'aperçu ne viendra pas et on reste sur les
   // rectangles nommés. Un aperçu absent ne doit jamais empêcher de placer.
   const APERCU_DELAI_MS = 8000;
@@ -143,6 +146,9 @@ window.OverlayAdmin = (function () {
   // d'écran : exprimée en pourcentage, elle accrocherait deux fois plus fort
   // sur une surface deux fois plus petite.
   const GRILLE = 10, AIMANT_PX = 8;
+  // Les graduations des deux règles, en pourcentage. Cinq repères : au-delà,
+  // les chiffres se touchent sur une règle de 18 px de haut.
+  const GRADUATIONS = [0, 25, 50, 75, 100];
   const COINS = ["nw", "ne", "sw", "se"];
   const TOUCHES = {
     ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
@@ -217,6 +223,22 @@ window.OverlayAdmin = (function () {
   let survoleMarques = [];    // les nœuds portant la marque, pour la retirer
                               // UNIQUE : la liste éclaire l'aperçu, pas l'inverse
   let raccourcisPoses = false;  // l'écouteur clavier du document, posé une fois
+
+  /** Ce que la surface MONTRE. Dans le navigateur et pas dans le modèle : c'est
+   *  un confort de lecture, pas une décision de mise en scène. Rangé dans le
+   *  modèle, changer de vue serait une modification à publier.
+   *
+   *  `vue` : « les-deux » (le défaut), « apercu », « cadres ». `aides` : les
+   *  repères posés SUR la surface, indépendants les uns des autres.
+   */
+  let vue = "les-deux";
+  const aides = { grille: true, zoneSure: false, capture: true };
+  // L'aperçu a-t-il chargé une VRAIE page d'overlay ? Distinct de la vue : on
+  // peut vouloir cacher un aperçu qui marche, et il ne faut pas confondre les
+  // deux — c'est ce qui décide du style des repères.
+  let apercuPret = false;
+  let outilsOuverts = false;    // le panneau d'outils de la sélection
+  let derniereAnalyse = null;   // le dernier calcul de chevauchements
 
   /** Les tailles LUES dans l'aperçu : clé → [largeur, hauteur] en pixels du
    *  canvas 1920. Une clé absente vaut « pas mesurable » — le widget n'affiche
@@ -3061,6 +3083,10 @@ window.OverlayAdmin = (function () {
         n.classList.toggle("chevauche", !!marques[n.dataset.cle]);
       });
     }
+    // Gardée pour le clic de la pastille : il sélectionne les éléments en
+    // cause, et il ne peut pas les recalculer — l'analyse dépend des tailles
+    // mesurées à l'instant du rendu.
+    derniereAnalyse = analyse;
     if (!noeuds.chevauchements) return;
     noeuds.chevauchements.textContent = texteChevauchements(analyse);
     noeuds.chevauchements.classList.toggle("alerte", analyse.paires.length > 0);
@@ -3097,7 +3123,8 @@ window.OverlayAdmin = (function () {
     // Le document qu'on mesurait s'en va : garder ses tailles collerait les
     // repères d'une scène sur une autre.
     oublierMesures();
-    noeuds.cadre.classList.remove("avec-apercu");
+    apercuPret = false;
+    majClassesVue();
     montrerRetry(false);
     etatApercu("Aperçu : chargement de " + urlScene(slug) + "…");
     clearTimeout(apercuMinuteur);
@@ -3118,7 +3145,8 @@ window.OverlayAdmin = (function () {
     }
     if (!ok) { echecApercu(); return; }
     clearTimeout(apercuMinuteur);
-    noeuds.cadre.classList.add("avec-apercu");
+    apercuPret = true;
+    majClassesVue();
     montrerRetry(false);
     etatApercu("Aperçu de " + urlScene(apercuSlug)
       + " — la mise en scène PUBLIÉE, pas le brouillon en cours.");
@@ -3139,14 +3167,23 @@ window.OverlayAdmin = (function () {
     // (tous les repères repassent en pointillés) au lieu de garder à l'écran
     // des chiffres qui ne correspondent plus à rien.
     oublierMesures();
-    noeuds.cadre.classList.remove("avec-apercu");
+    apercuPret = false;
+    majClassesVue();
     montrerRetry(true);
     etatApercu("Aperçu indisponible — placement sur les rectangles nommés.");
     rendreSurface();
   }
 
+  /** L'état de l'aperçu.
+   *
+   *  En INFOBULLE du badge et non en texte de barre : la phrase porte l'adresse
+   *  complète de la scène, elle faisait deux cents pixels de large sous le
+   *  canvas pour une information qu'on lit une fois. Le point de couleur, lui,
+   *  se voit sans lire.
+   */
   function etatApercu(texte) {
-    if (noeuds.apercuEtat) noeuds.apercuEtat.textContent = texte;
+    if (!noeuds.badge) return;
+    noeuds.badge.title = texte;
   }
 
   /** L'iframe fait 1920×1080 LOGIQUES, puis on la réduit par `scale()`.
@@ -3161,7 +3198,11 @@ window.OverlayAdmin = (function () {
     if (!noeuds.apercu || !noeuds.cadre) return;
     const largeur = noeuds.cadre.clientWidth || 0;
     if (!largeur) return;
-    noeuds.apercu.style.transform = "scale(" + (largeur / CANVAS_W) + ")";
+    const facteur = largeur / CANVAS_W;
+    noeuds.apercu.style.transform = "scale(" + facteur + ")";
+    // Le même facteur, DIT : sans lui, « ce rectangle fait 422 px » ne se
+    // rapporte à rien de ce qu'on a sous les yeux.
+    rendreEchelle(facteur);
   }
 
   // ── Les tailles RÉELLES, lues dans l'aperçu ─────────────────────────────
@@ -3433,6 +3474,11 @@ window.OverlayAdmin = (function () {
    *  Sans ce compte, les pointillés se lisent comme un choix graphique. */
   function rendreCompteMesures() {
     if (!noeuds.apercuMesures) return;
+    // Le point d'état du badge suit le même fait que les pointillés : sait-on
+    // de quoi on parle, ou devine-t-on ?
+    if (noeuds.badgePoint) {
+      noeuds.badgePoint.classList.toggle("ok", apercuPret);
+    }
     const scene = sceneCourante();
     const cles = (scene && scene.ordre) || [];
     // Le MÊME critère que le pointillé (`tailleRendue().reelle`), et non la
@@ -4692,55 +4738,175 @@ window.OverlayAdmin = (function () {
 
   // ── La barre de réglages ────────────────────────────────────────────────
 
-  function construireReglages(hote) {
-    const titre = creer("div", "ovl-reglages-nom", "—");
-    noeuds.reglageNom = titre;
-    hote.appendChild(titre);
+  /** Un cran de rang pour l'élément choisi. `-1` le rapproche du spectateur.
+   *
+   *  L'empilement ne se réglait que par glisser dans la liste : un geste
+   *  imprécis sur trente-sept lignes, et invisible pour qui regarde la surface.
+   *  Deux boutons font le même travail sur l'élément qu'on a sous les yeux.
+   */
+  function deplacerRang(delta) {
+    const scene = sceneCourante();
+    const cle = etat.elementCourant;
+    if (!scene || !cle) return;
+    const ordre = scene.ordre || [];
+    const i = ordre.indexOf(cle);
+    if (i < 0) return;
+    const j = i + delta;
+    if (j < 0 || j >= ordre.length) {
+      notifier(delta < 0 ? "Déjà tout devant." : "Déjà tout derrière.");
+      return;
+    }
+    const avant = ordre.slice();
+    ordre.splice(i, 1);
+    ordre.splice(j, 0, cle);
+    // Les membres d'un groupe restent contigus. Un pas qui sortirait l'élément
+    // du sien est donc défait ici — et il faut le DIRE, sinon le bouton passe
+    // pour cassé : on clique, rien ne bouge, rien ne s'explique.
+    normaliserOrdre(scene);
+    const rendu = scene.ordre;
+    if (rendu.length === avant.length
+        && rendu.every(function (c, k) { return avant[k] === c; })) {
+      notifier("« " + libelle(cle) + " » est dans un groupe : le groupe se "
+        + "déplace d'un bloc, par son en-tête dans la liste.", "error");
+      return;
+    }
+    marquerModifie();
+    rendreElements();
+    rendreSurface();
+    rendreReglages();
+  }
 
-    /** Un champ numérique de la barre.
-     *
-     *  `proprietaire` : la clé de l'élément qui SEUL porte ce réglage, ou
-     *  `null` pour un champ commun à tous. C'est une garde au point d'écriture,
-     *  pas seulement un affichage — un champ caché reste dans le document, et
-     *  ce qui protège vraiment est le refus d'écrire, jamais le `display`.
-     */
+  /** La bande d'inspection : tout ce qui règle l'élément CHOISI, sur une seule
+   *  ligne sous le canvas.
+   *
+   *  Elle remplace la barre de réglages verticale. Le gain n'est pas
+   *  esthétique : les champs sont maintenant à côté du repère qu'ils
+   *  déplacent, et l'ancrage — le réglage le moins compris du panneau — montre
+   *  enfin des flèches plutôt que nine carrés muets dont le seul indice était
+   *  une infobulle en anglais.
+   */
+  function bandeInspection(hote) {
+    const identite = creer("div", "ovl-insp-identite");
+    noeuds.reglageNom = creer("div", "ovl-reglages-nom", "—");
+    identite.appendChild(noeuds.reglageNom);
+    noeuds.inspCle = creer("div", "ovl-insp-cle", "");
+    identite.appendChild(noeuds.inspCle);
+    hote.appendChild(identite);
+
+    /** Écrit un champ numérique. Point d'écriture UNIQUE des trois chemins
+     *  (saisie, − , +) : trois copies de cette garde auraient divergé, et
+     *  c'est elle qui refuse d'écrire sur un élément verrouillé. */
+    function ecrire(def, valeur, proprietaire) {
+      if (proprietaire && etat.elementCourant !== proprietaire) return;
+      const element = elementCourant();
+      // Le `disabled` posé au rendu ne protège de rien si la valeur peut encore
+      // entrer par ici (un navigateur qui garde le focus, un script). La garde
+      // est au POINT D'ÉCRITURE.
+      if (!element || element.locked) return;
+      const borne = borner(valeur, def[2], def[3], element[def[0]]);
+      if (borne === element[def[0]]) return;
+      element[def[0]] = borne;
+      // La source nomme LE champ et L'élément : taper « 12.5 » est un geste,
+      // mais passer au champ voisin — ou au même champ d'un autre élément — en
+      // est un autre, et doit rester annulable à part.
+      marquerModifie("champ:" + def[0] + ":" + (etat.elementCourant || ""));
+      rendreSurface();
+    }
+
+    /** Un champ numérique encadré de deux pas. `proprietaire` : la clé de
+     *  l'élément qui SEUL porte ce réglage, ou `null` pour un champ commun. */
     function champNumerique(def, proprietaire) {
-      const bloc = creer("label", "ovl-champ");
+      const bloc = creer("div", "ovl-insp-champ");
       if (def[5]) bloc.title = def[5];
       bloc.appendChild(creer("span", "ovl-champ-label", def[1]));
+      const boite = creer("div", "ovl-stepper");
+      const moins = creer("button", "ovl-stepper-btn", "−");
+      moins.type = "button";
+      moins.setAttribute("aria-label", def[1] + " : un pas en moins");
       const input = document.createElement("input");
       input.type = "number";
       input.min = String(def[2]);
       input.max = String(def[3]);
       input.step = String(def[4]);
-      input.addEventListener("input", function () {
-        if (proprietaire && etat.elementCourant !== proprietaire) return;
-        const element = elementCourant();
-        // Verrouillé : le champ est déjà grisé, mais un `disabled` posé au
-        // rendu ne protège de rien si la valeur peut encore entrer par ici (un
-        // navigateur qui garde le focus, un script). La garde est au POINT
-        // D'ÉCRITURE.
-        if (!element || element.locked) return;
-        // Un champ vidé pour être resaisi ne vaut PAS zéro : sans ça,
-        // l'élément filait dans le coin haut-gauche entre deux frappes.
-        if (input.value.trim() === "") return;
-        element[def[0]] = borner(input.value, def[2], def[3], element[def[0]]);
-        // La source nomme LE champ et L'élément : taper « 12.5 » est un geste,
-        // mais passer au champ voisin — ou au même champ d'un autre élément —
-        // en est un autre, et doit rester annulable à part.
-        marquerModifie("champ:" + def[0] + ":" + (etat.elementCourant || ""));
-        rendreSurface();
+      input.setAttribute("aria-label", def[1]);
+      const plus = creer("button", "ovl-stepper-btn", "+");
+      plus.type = "button";
+      plus.setAttribute("aria-label", def[1] + " : un pas en plus");
+      moins.addEventListener("click", function () {
+        const el = elementCourant();
+        if (el) ecrire(def, arrondi(el[def[0]] - def[4]), proprietaire);
+        rendreReglages();
       });
-      bloc.appendChild(input);
+      plus.addEventListener("click", function () {
+        const el = elementCourant();
+        if (el) ecrire(def, arrondi(el[def[0]] + def[4]), proprietaire);
+        rendreReglages();
+      });
+      input.addEventListener("input", function () {
+        // Un champ vidé pour être resaisi ne vaut PAS zéro : sans ça, l'élément
+        // filait dans le coin haut-gauche entre deux frappes.
+        if (input.value.trim() === "") return;
+        ecrire(def, input.value, proprietaire);
+      });
+      boite.appendChild(moins);
+      boite.appendChild(input);
+      boite.appendChild(plus);
+      bloc.appendChild(boite);
       hote.appendChild(bloc);
-      return { bloc: bloc, input: input };
+      return { bloc: bloc, input: input, pas: [moins, plus] };
     }
 
     noeuds.champs = {};
-    [["x", "X %", POS_MIN, POS_MAX, PAS_FIN], ["y", "Y %", POS_MIN, POS_MAX, PAS_FIN],
-     ["scale", "Taille", ECHELLE_MIN, ECHELLE_MAX, 0.05]].forEach(function (def) {
-      noeuds.champs[def[0]] = champNumerique(def, null).input;
+    noeuds.pas = {};
+    [["x", "X %", POS_MIN, POS_MAX, PAS_FIN,
+      "La position horizontale du POINT D'ANCRAGE, en pourcentage de la largeur."],
+     ["y", "Y %", POS_MIN, POS_MAX, PAS_FIN,
+      "La position verticale du POINT D'ANCRAGE, en pourcentage de la hauteur."],
+    ].forEach(function (def) {
+      const champ = champNumerique(def, null);
+      noeuds.champs[def[0]] = champ.input;
+      noeuds.pas[def[0]] = champ.pas;
     });
+
+    // La taille au curseur ET au chiffre : le curseur pour chercher, le chiffre
+    // pour reproduire à l'identique sur une autre scène. Les deux écrivent le
+    // même champ, au même endroit.
+    const defTaille = ["scale", "Taille", ECHELLE_MIN, ECHELLE_MAX, 0.05,
+                       "L'agrandissement de l'élément. 1 = sa taille de "
+                       + "livraison."];
+    const blocTaille = creer("div", "ovl-insp-taille");
+    blocTaille.title = defTaille[5];
+    blocTaille.appendChild(creer("span", "ovl-champ-label", "Taille"));
+    noeuds.tailleCurseur = document.createElement("input");
+    noeuds.tailleCurseur.type = "range";
+    noeuds.tailleCurseur.min = String(ECHELLE_MIN);
+    noeuds.tailleCurseur.max = String(ECHELLE_MAX);
+    noeuds.tailleCurseur.step = "0.01";
+    noeuds.tailleCurseur.setAttribute("aria-label", "Taille");
+    noeuds.tailleCurseur.addEventListener("input", function () {
+      ecrire(defTaille, noeuds.tailleCurseur.value, null);
+      if (noeuds.champs.scale && document.activeElement !== noeuds.champs.scale) {
+        const el = elementCourant();
+        if (el) noeuds.champs.scale.value = String(arrondi(el.scale));
+      }
+    });
+    blocTaille.appendChild(noeuds.tailleCurseur);
+    const saisieTaille = document.createElement("input");
+    saisieTaille.type = "number";
+    saisieTaille.className = "ovl-taille-valeur";
+    saisieTaille.min = String(ECHELLE_MIN);
+    saisieTaille.max = String(ECHELLE_MAX);
+    saisieTaille.step = String(defTaille[4]);
+    saisieTaille.setAttribute("aria-label", "Taille, au chiffre");
+    saisieTaille.addEventListener("input", function () {
+      if (saisieTaille.value.trim() === "") return;
+      ecrire(defTaille, saisieTaille.value, null);
+      const el = elementCourant();
+      if (el) noeuds.tailleCurseur.value = String(el.scale);
+    });
+    blocTaille.appendChild(saisieTaille);
+    noeuds.champs.scale = saisieTaille;
+    hote.appendChild(blocTaille);
 
     // Les réglages propres à un élément, à la suite des champs communs. Cachés
     // tant que leur élément n'est pas le principal de la sélection.
@@ -4749,14 +4915,59 @@ window.OverlayAdmin = (function () {
       CHAMPS_PROPRES[cle].forEach(function (def) {
         const champ = champNumerique(def, cle);
         noeuds.champsPropres.push({ proprietaire: cle, def: def,
-                                    bloc: champ.bloc, input: champ.input });
+                                    bloc: champ.bloc, input: champ.input,
+                                    pas: champ.pas });
       });
     });
 
+    // L'ancrage, avec ses flèches. Neuf carrés muets ne disaient pas ce qu'ils
+    // faisaient, et leur seul indice était une infobulle en anglais
+    // (« bottom-left ») — la clé du modèle, pas une explication.
+    const blocAncrage = creer("div", "ovl-insp-groupe");
+    blocAncrage.appendChild(creer("span", "ovl-champ-label", "Ancrage"));
+    const grille = creer("div", "ovl-ancrages");
+    grille.title = "Le point de l'élément que la position repère. En changer ne "
+      + "déplace pas l'élément : x et y sont recalculés pour qu'il reste où il est.";
+    noeuds.ancrages = {};
+    ANCRAGES.forEach(function (a) {
+      const b = creer("button", "ovl-ancrage", flecheAncrage(a));
+      b.type = "button";
+      b.dataset.ancrage = a;
+      b.title = "Ancrer en " + nomAncrage(a);
+      b.setAttribute("aria-label", "Ancrer en " + nomAncrage(a));
+      b.addEventListener("click", function () {
+        const element = elementCourant();
+        if (!element || element.locked || element.anchor === a) return;
+        const r = boiteCalque();
+        reancrer(element, etat.elementCourant, a,
+                 r ? r.width : 0, r ? r.height : 0);
+        marquerModifie();
+        rendreReglages();
+        rendreSurface();
+      });
+      noeuds.ancrages[a] = b;
+      grille.appendChild(b);
+    });
+    blocAncrage.appendChild(grille);
+    hote.appendChild(blocAncrage);
+
+    const blocRang = creer("div", "ovl-insp-groupe");
+    blocRang.appendChild(creer("span", "ovl-champ-label", "Rang"));
+    const rangs = creer("div", "ovl-segment");
+    noeuds.rangDerriere = boutonSegment(rangs, "Derrière",
+      "Passe l'élément d'un cran EN ARRIÈRE : ce qui le chevauche le couvrira.");
+    noeuds.rangDerriere.addEventListener("click", function () { deplacerRang(1); });
+    noeuds.rangDevant = boutonSegment(rangs, "Devant",
+      "Passe l'élément d'un cran EN AVANT : il couvrira ce qui le chevauche.");
+    noeuds.rangDevant.addEventListener("click", function () { deplacerRang(-1); });
+    blocRang.appendChild(rangs);
+    hote.appendChild(blocRang);
+
+    hote.appendChild(creer("div", "ovl-espace"));
+
     // Une question DISTINCTE de « l'élément occupe-t-il seul la scène » : on
     // peut vouloir un meme qui chasse les autres widgets mais garde Wally à
-    // côté, pour qu'il le commente. Une case par élément, comme le reste de
-    // cette barre : elle porte le réglage de l'élément choisi.
+    // côté, pour qu'il le commente.
     const bascule = creer("label", "ovl-bascule");
     bascule.title = "Décoché, cet élément efface l'avatar et la bulle le temps "
       + "de son affichage. Coché, Wally reste à l'écran à côté de lui.";
@@ -4773,28 +4984,17 @@ window.OverlayAdmin = (function () {
     noeuds.wallyVisible = coche;
     hote.appendChild(bascule);
 
-    const grille = creer("div", "ovl-ancrages");
-    grille.title = "Le point de l'élément que la position repère. En changer ne "
-      + "déplace pas l'élément : x et y sont recalculés pour qu'il reste où il est.";
-    noeuds.ancrages = {};
-    ANCRAGES.forEach(function (a) {
-      const b = creer("button", "ovl-ancrage");
-      b.dataset.ancrage = a;
-      b.title = a;
-      b.addEventListener("click", function () {
-        const element = elementCourant();
-        if (!element || element.locked || element.anchor === a) return;
-        const r = boiteCalque();
-        reancrer(element, etat.elementCourant, a,
-                 r ? r.width : 0, r ? r.height : 0);
-        marquerModifie();
-        rendreReglages();
-        rendreSurface();
-      });
-      noeuds.ancrages[a] = b;
-      grille.appendChild(b);
+    // Le plus gros gain de temps du panneau, à portée de main plutôt que replié
+    // avec les outils : trente-sept éléments × trois scènes se règlent une fois,
+    // pas trois. Le libellé DIT combien de scènes vont être touchées.
+    noeuds.copierScenes = creer("button", "ovl-lien ovl-lien-cadre", "Copier vers les autres scènes");
+    noeuds.copierScenes.title = "Copie la position, l'ancrage et l'échelle de la "
+      + "sélection vers TOUTES les autres scènes. Une confirmation dit combien "
+      + "d'éléments et dans quelles scènes avant d'écrire quoi que ce soit.";
+    noeuds.copierScenes.addEventListener("click", function () {
+      propager(selection(), "la sélection");
     });
-    hote.appendChild(grille);
+    hote.appendChild(noeuds.copierScenes);
   }
 
   function elementCourant() {
@@ -4817,19 +5017,32 @@ window.OverlayAdmin = (function () {
   function rendreReglages() {
     if (!noeuds.champs) return;
     const element = elementCourant();
+    const scene = sceneCourante();
     // Le cadenas bloque TOUT ce qui touche au placement : position, taille et
     // ancrage compris. Sans ça, le verrou n'arrêtait que le glisser — on
     // déplaçait par les champs un élément qu'on croyait à l'abri.
     const fige = !!(element && element.locked);
+    const titre = fige ? "Verrouillé : le cadenas de la liste le libère." : "";
     noeuds.reglageNom.textContent = element
-      ? libelle(etat.elementCourant) + " · " + etat.elementCourant
-        + (fige ? " · 🔒 verrouillé" : "")
+      ? libelle(etat.elementCourant) + (fige ? " · 🔒 verrouillé" : "")
       : "Aucun élément choisi";
+    // La clé technique et le rang, sous le nom : la clé est ce qui apparaît
+    // dans les logs et dans le modèle, le rang est ce que « Devant / Derrière »
+    // déplace — sans lui, les deux boutons agissent à l'aveugle.
+    if (noeuds.inspCle) {
+      const rang = element && scene
+        ? (scene.ordre || []).indexOf(etat.elementCourant) : -1;
+      noeuds.inspCle.textContent = element
+        ? etat.elementCourant + (rang >= 0 ? " · rang " + (rang + 1) : "")
+        : "";
+    }
     ["x", "y", "scale"].forEach(function (cle) {
       const input = noeuds.champs[cle];
       input.disabled = !element || fige;
-      input.title = fige
-        ? "Verrouillé : le cadenas de la liste le libère." : "";
+      input.title = titre;
+      ((noeuds.pas || {})[cle] || []).forEach(function (b) {
+        b.disabled = !element || fige;
+      });
       // On n'écrase pas un champ en cours de saisie : la valeur sauterait sous
       // les doigts à chaque frappe.
       if (element && document.activeElement !== input) {
@@ -4838,14 +5051,21 @@ window.OverlayAdmin = (function () {
         input.value = "";
       }
     });
+    if (noeuds.tailleCurseur) {
+      noeuds.tailleCurseur.disabled = !element || fige;
+      noeuds.tailleCurseur.title = titre;
+      if (element && document.activeElement !== noeuds.tailleCurseur) {
+        noeuds.tailleCurseur.value = String(element.scale);
+      }
+    }
     (noeuds.champsPropres || []).forEach(function (champ) {
-      // Le champ n'existe que pour SON élément : sur les trente-trois autres,
+      // Le champ n'existe que pour SON élément : sur les trente-six autres,
       // il n'y a rien à régler et rien à montrer.
       const sien = !!element && etat.elementCourant === champ.proprietaire;
       champ.bloc.hidden = !sien;
       champ.input.disabled = !sien || fige;
-      champ.input.title = fige
-        ? "Verrouillé : le cadenas de la liste le libère." : "";
+      champ.input.title = titre;
+      (champ.pas || []).forEach(function (b) { b.disabled = !sien || fige; });
       if (!sien) { champ.input.value = ""; return; }
       if (document.activeElement === champ.input) return;
       // Un modèle rangé avant l'ajout du champ ne le porte pas : on montre
@@ -4857,6 +5077,22 @@ window.OverlayAdmin = (function () {
     if (noeuds.wallyVisible) {
       noeuds.wallyVisible.disabled = !element;
       noeuds.wallyVisible.checked = !!element && gardeWally(element);
+    }
+    if (noeuds.rangDerriere) {
+      const ordre = (scene && scene.ordre) || [];
+      const rang = element ? ordre.indexOf(etat.elementCourant) : -1;
+      noeuds.rangDerriere.disabled = rang < 0 || rang >= ordre.length - 1;
+      noeuds.rangDevant.disabled = rang <= 0;
+    }
+    if (noeuds.copierScenes) {
+      // Le libellé DIT combien de scènes vont être touchées : « copier vers les
+      // autres scènes » sur un panneau qui n'en a qu'une ne copie nulle part.
+      const autres = autresScenes().length;
+      noeuds.copierScenes.textContent = autres
+        ? "Copier vers " + (autres > 1 ? "les " + autres + " autres scènes"
+                                       : "l'autre scène")
+        : "Aucune autre scène";
+      noeuds.copierScenes.disabled = !autres || !selection().length;
     }
     ANCRAGES.forEach(function (a) {
       noeuds.ancrages[a].classList.toggle("actif", !!element && element.anchor === a);
@@ -5030,6 +5266,7 @@ window.OverlayAdmin = (function () {
     rendreElements();
     rendreSurface();
     rendreReglages();
+    rendreBadgeCanvas();
     rendreBarrePublication();
   }
 
@@ -5106,7 +5343,10 @@ window.OverlayAdmin = (function () {
     noeuds.fond.src = image;
     noeuds.fond.style.opacity = String(bornerOpaciteFond(opacite) / 100);
     if (noeuds.fondOpacite) noeuds.fondOpacite.value = String(bornerOpaciteFond(opacite));
-    majControlesFond(true);
+    // Et non `majControlesFond(true)` : c'est `majReperesAide()` qui décide
+    // désormais de ce qu'on voit, et lui seul allume la bascule. Poser l'image
+    // sans repasser par lui la laissait cachée par le `display` du tour d'avant.
+    majReperesAide();
   }
 
   function retirerFondAffiche() {
@@ -5115,7 +5355,7 @@ window.OverlayAdmin = (function () {
     }
     noeuds.fond = null;
     oublierFond();
-    majControlesFond(false);
+    majReperesAide();
     notifier("Capture de fond retirée.");
   }
 
@@ -5125,57 +5365,125 @@ window.OverlayAdmin = (function () {
     });
   }
 
-  function barreApercu() {
-    const barre = creer("div", "ovl-apercu-barre");
-    noeuds.apercuEtat = creer("span", "ovl-apercu-etat", "Aperçu : en attente…");
-    barre.appendChild(noeuds.apercuEtat);
+  // ── La barre du canvas ──────────────────────────────────────────────────
+  //
+  // Ce qui décide de CE QU'ON VOIT sur la surface, et rien d'autre. Les gestes
+  // qui touchent au modèle vivent ailleurs : dans la bande d'inspection pour
+  // l'élément choisi, dans le panneau d'outils pour la sélection.
+  //
+  // Trois états de vue et non deux bascules indépendantes : « aperçu visible »
+  // et « repères estompés » se combinaient en quatre cases dont une n'a aucun
+  // sens (pas d'aperçu ET repères estompés — un cadre vide). Un segment à trois
+  // positions dit la même chose sans le cas absurde.
+  const VUES = [
+    ["les-deux", "Aperçu + cadres",
+     "La page réelle, avec les repères de placement par-dessus."],
+    ["apercu", "Aperçu seul",
+     "Les repères s'effacent pour laisser voir la page. Celui qu'on règle, et "
+     + "celui qu'on survole, restent nets."],
+    ["cadres", "Cadres seuls",
+     "La page est masquée : on ne place plus que des rectangles nommés. Utile "
+     + "quand l'aperçu bouge trop pour viser."],
+  ];
 
-    // Combien de repères portent une taille LUE. Sans ce compte, les pointillés
-    // passeraient pour une coquetterie graphique au lieu de dire « je ne sais
-    // pas encore ».
-    noeuds.apercuMesures = creer("span", "ovl-apercu-mesures", "aucune taille mesurée");
-    barre.appendChild(noeuds.apercuMesures);
-
-    // Les chevauchements entre éléments qui peuvent être à l'écran en même
-    // temps. À côté du compte des mesures, parce que les deux se lisent
-    // ensemble : un chevauchement « indéterminé » l'est faute de mesure.
-    noeuds.chevauchements = creer("span", "ovl-chevauchements", "aucun chevauchement");
-    barre.appendChild(noeuds.chevauchements);
-
-    // Sans lui, une seule coupure réseau laisse le repli en place jusqu'au
-    // prochain changement de scène — et il n'y a pas toujours de seconde scène
-    // vers laquelle aller et revenir. Un bouton explicite plutôt qu'un
-    // rechargement automatique : `rendreSurface()` est rappelée à chaque
-    // frappe, une relance par frappe serait un pilonnage.
-    noeuds.apercuRetry = creer("button", "btn btn-sm", "Réessayer");
-    noeuds.apercuRetry.style.display = "none";
-    noeuds.apercuRetry.addEventListener("click", function () {
-      const slug = apercuSlug;
-      apercuSlug = null;
-      chargerApercu(slug);
+  /** Pose sur la surface ce que le segment de vue demande.
+   *
+   *  `avec-apercu` ne dépend PAS que du chargement : elle dit « la page est
+   *  visible dessous », et c'est elle qui rend les repères discrets. En
+   *  « cadres seuls » il n'y a rien dessous — la retirer redonne aux repères
+   *  leur style plein, sans une seule règle CSS dupliquée.
+   */
+  function majClassesVue() {
+    if (!noeuds.cadre) return;
+    const cadre = noeuds.cadre;
+    cadre.classList.toggle("avec-apercu", apercuPret && vue !== "cadres");
+    cadre.classList.toggle("reperes-estompes", vue === "apercu");
+    cadre.classList.toggle("cadres-seuls", vue === "cadres");
+    (noeuds.vues || []).forEach(function (b) {
+      b.classList.toggle("actif", b.dataset.vue === vue);
+      b.setAttribute("aria-pressed", b.dataset.vue === vue ? "true" : "false");
     });
-    barre.appendChild(noeuds.apercuRetry);
+  }
 
-    const tous = creer("button", "btn btn-sm", "Tout afficher");
-    tous.title = "Pose un repère nommé à la place de chaque élément visible, "
-      + "dans l'aperçu de CETTE scène seulement. Ils s'effacent au bout de 30 s.";
-    tous.addEventListener("click", function () { testerTous(); });
-    barre.appendChild(tous);
+  function choisirVue(nom) {
+    if (vue === nom) return;
+    vue = nom;
+    majClassesVue();
+  }
 
-    const estomper = creer("label", "ovl-estomper");
-    const caseEstomper = document.createElement("input");
-    caseEstomper.type = "checkbox";
-    caseEstomper.addEventListener("change", function () {
-      noeuds.cadre.classList.toggle("reperes-estompes", caseEstomper.checked);
+  /** Les repères d'aide posés SUR la surface : la grille d'aimantation, la zone
+   *  sûre, la capture de stream. Trois bascules indépendantes — elles ne
+   *  s'excluent pas, on veut souvent les trois à la fois. */
+  function majReperesAide() {
+    if (noeuds.grille) noeuds.grille.style.display = aides.grille ? "" : "none";
+    if (noeuds.zoneSure) noeuds.zoneSure.style.display = aides.zoneSure ? "" : "none";
+    if (noeuds.fond) noeuds.fond.style.display = aides.capture ? "" : "none";
+    (noeuds.aides || []).forEach(function (b) {
+      // « Capture de jeu » n'est allumée que s'il y a une capture À MONTRER :
+      // allumée sans image, elle promettrait un fond qu'on ne voit pas, et le
+      // clic suivant l'éteindrait sans que rien ne change à l'écran.
+      const on = b.dataset.aide === "capture"
+        ? (!!noeuds.fond && aides.capture) : !!aides[b.dataset.aide];
+      b.classList.toggle("actif", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
     });
-    estomper.appendChild(caseEstomper);
-    estomper.appendChild(creer("span", null, "Estomper les repères"));
-    estomper.title = "Les rectangles de placement s'effacent pour laisser voir "
-      + "l'aperçu. Celui qu'on règle, et celui qu'on survole, restent nets.";
-    barre.appendChild(estomper);
+    majControlesFond(!!noeuds.fond && aides.capture);
+  }
+
+  /** Un groupe de boutons collés, façon segment. */
+  function segment(hote) {
+    const g = creer("div", "ovl-segment");
+    hote.appendChild(g);
+    return g;
+  }
+
+  function boutonSegment(hote, texte, titre) {
+    const b = creer("button", "ovl-segment-btn", texte);
+    b.type = "button";
+    if (titre) b.title = titre;
+    hote.appendChild(b);
+    return b;
+  }
+
+  function barreCanvas() {
+    const barre = creer("div", "ovl-canvas-barre");
+
+    // ── ce qu'on voit ──
+    const gVue = segment(barre);
+    noeuds.vues = VUES.map(function (v) {
+      const b = boutonSegment(gVue, v[1], v[2]);
+      b.dataset.vue = v[0];
+      b.addEventListener("click", function () { choisirVue(v[0]); });
+      return b;
+    });
+
+    // ── les repères d'aide ──
+    const gAide = segment(barre);
+    noeuds.aides = [];
+
+    const bGrille = boutonSegment(gAide, "Grille 10 %",
+      "Le quadrillage de l'aimantation. Les repères s'y accrochent quand on "
+      + "les glisse — Alt suspend l'accroche.");
+    bGrille.dataset.aide = "grille";
+    bGrille.addEventListener("click", function () {
+      aides.grille = !aides.grille;
+      majReperesAide();
+    });
+    noeuds.aides.push(bGrille);
+
+    const bZone = boutonSegment(gAide, "Zone sûre",
+      "Une marge de 5 % sur les quatre bords. Ce qui en sort risque d'être "
+      + "rogné par l'affichage du spectateur ou couvert par l'interface Twitch.");
+    bZone.dataset.aide = "zoneSure";
+    bZone.addEventListener("click", function () {
+      aides.zoneSure = !aides.zoneSure;
+      majReperesAide();
+    });
+    noeuds.aides.push(bZone);
 
     // La capture de stream en fond : on place par rapport au décor réel — le
-    // cadre du chat, la zone de jeu — plutôt que dans le vide.
+    // cadre du chat, la zone de jeu — plutôt que dans le vide. Sans capture
+    // posée, le bouton en demande une ; avec, il la montre ou la cache.
     const fichierFond = document.createElement("input");
     fichierFond.type = "file";
     fichierFond.accept = "image/*";
@@ -5188,6 +5496,7 @@ window.OverlayAdmin = (function () {
         preparerFond(f, function (url) {
           const opacite = noeuds.fondOpacite
             ? bornerOpaciteFond(noeuds.fondOpacite.value) : FOND_OPACITE_DEFAUT;
+          aides.capture = true;
           appliquerFond(url, opacite);
           const range = rangerFond(url, opacite);
           notifier(range
@@ -5201,13 +5510,20 @@ window.OverlayAdmin = (function () {
     });
     barre.appendChild(fichierFond);
 
-    const boutonFond = creer("button", "btn btn-sm", "Fond…");
-    boutonFond.title = "Affiche une capture de ton stream derrière la surface, "
-      + "pour placer par rapport au décor réel. Reste dans CE navigateur : "
-      + "jamais en base, jamais à l'antenne.";
-    boutonFond.addEventListener("click", function () { fichierFond.click(); });
-    barre.appendChild(boutonFond);
+    const bCapture = boutonSegment(gAide, "Capture de jeu",
+      "Affiche une capture de ton stream derrière la surface, pour placer par "
+      + "rapport au décor réel. Reste dans CE navigateur : jamais en base, "
+      + "jamais à l'antenne.");
+    bCapture.dataset.aide = "capture";
+    bCapture.addEventListener("click", function () {
+      if (!noeuds.fond) { fichierFond.click(); return; }
+      aides.capture = !aides.capture;
+      majReperesAide();
+    });
+    noeuds.aides.push(bCapture);
 
+    // L'opacité et le retrait ne s'affichent QUE quand une capture est posée :
+    // un curseur qui ne pilote rien se lit comme un réglage cassé.
     noeuds.fondLabel = creer("label", "ovl-fond-reglage");
     noeuds.fondLabel.appendChild(creer("span", null, "Fond"));
     noeuds.fondOpacite = document.createElement("input");
@@ -5227,20 +5543,131 @@ window.OverlayAdmin = (function () {
       }
     });
     noeuds.fondOpacite.addEventListener("change", function () {
-      if (noeuds.fond) {
-        rangerFond(noeuds.fond.src, noeuds.fondOpacite.value);
-      }
+      if (noeuds.fond) rangerFond(noeuds.fond.src, noeuds.fondOpacite.value);
     });
     noeuds.fondLabel.appendChild(noeuds.fondOpacite);
     barre.appendChild(noeuds.fondLabel);
 
-    noeuds.fondRetirer = creer("button", "btn btn-sm", "Retirer");
+    noeuds.fondRetirer = creer("button", "ovl-lien", "Retirer");
     noeuds.fondRetirer.title = "Enlève la capture de fond.";
     noeuds.fondRetirer.addEventListener("click", retirerFondAffiche);
     barre.appendChild(noeuds.fondRetirer);
-    majControlesFond(false);
 
+    barre.appendChild(creer("div", "ovl-espace"));
+
+    // La pastille des chevauchements. CLIQUABLE : elle nomme les éléments qui
+    // se recouvrent, et le geste qui suit est toujours le même — aller les
+    // voir. Elle les sélectionne donc, plutôt que de laisser chercher dans une
+    // liste de trente-sept lignes.
+    noeuds.chevauchements = creer("button", "ovl-chevauchements",
+                                  "aucun chevauchement");
+    noeuds.chevauchements.type = "button";
+    noeuds.chevauchements.addEventListener("click", function () {
+      const cles = (derniereAnalyse && derniereAnalyse.cles) || [];
+      if (!cles.length) { notifier("Aucun chevauchement à montrer."); return; }
+      etat.selection = cles.slice();
+      poserPrincipal(cles[0]);
+      rendreSelection();
+      rendreReglages();
+      notifier(cles.length + " élément(s) qui se recouvrent, sélectionnés.");
+    });
+    barre.appendChild(noeuds.chevauchements);
+
+    const tous = creer("button", "ovl-lien", "Tout afficher");
+    tous.title = "Pose un repère nommé à la place de chaque élément visible, "
+      + "dans l'aperçu de CETTE scène seulement. Ils s'effacent au bout de 30 s.";
+    tous.addEventListener("click", function () { testerTous(); });
+    barre.appendChild(tous);
+
+    noeuds.echelle = creer("span", "ovl-echelle", "échelle —");
+    noeuds.echelle.title = "De combien la page 1920 × 1080 est réduite pour "
+      + "tenir dans la surface. Les positions, elles, restent en pourcentage.";
+    barre.appendChild(noeuds.echelle);
+
+    // Les outils de la sélection, repliés derrière un bouton : ils ne servent
+    // qu'une fois plusieurs éléments choisis, et une barre de quinze boutons en
+    // permanence sous le canvas mangeait la hauteur qu'on regarde.
+    const coin = creer("div", "ovl-outils-coin");
+    noeuds.boutonOutils = creer("button", "ovl-lien ovl-lien-cadre", "Outils");
+    noeuds.boutonOutils.title = "Aligner, grouper, répartir, propager vers les "
+      + "autres scènes, réinitialiser.";
+    noeuds.boutonOutils.setAttribute("aria-expanded", "false");
+    noeuds.boutonOutils.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      basculerOutils();
+    });
+    coin.appendChild(noeuds.boutonOutils);
+    noeuds.panneauOutils = barreOutils();
+    coin.appendChild(noeuds.panneauOutils);
+    barre.appendChild(coin);
+
+    majClassesVue();
+    majReperesAide();
     return barre;
+  }
+
+  /** Ouvre ou ferme le panneau d'outils. Il vit DANS le document, en absolu :
+   *  `rendreOutils()` écrit dedans à chaque changement de sélection, et le
+   *  reconstruire à l'ouverture perdrait ses nœuds. */
+  function basculerOutils(force) {
+    if (!noeuds.panneauOutils) return;
+    const ouvert = force === undefined ? !outilsOuverts : !!force;
+    outilsOuverts = ouvert;
+    noeuds.panneauOutils.style.display = ouvert ? "" : "none";
+    if (ouvert) placerOutils();
+    noeuds.boutonOutils.classList.toggle("actif", ouvert);
+    noeuds.boutonOutils.setAttribute("aria-expanded", ouvert ? "true" : "false");
+    // En capture, et posé au tour suivant : sinon le clic qui vient d'ouvrir le
+    // panneau le referme aussitôt.
+    if (ouvert) {
+      setTimeout(function () {
+        document.addEventListener("pointerdown", fermerOutilsDehors, true);
+      }, 0);
+    } else {
+      document.removeEventListener("pointerdown", fermerOutilsDehors, true);
+    }
+  }
+
+  /** De quel côté du bouton le panneau se déploie.
+   *
+   *  Il ne peut pas être ancré une fois pour toutes : la barre du canvas passe
+   *  à la ligne selon la largeur, et le bouton se retrouve tantôt au bord droit,
+   *  tantôt au bord gauche. Ancré à droite, il sortait de l'écran par la gauche
+   *  — quatre cent trente pixels de panneau posés SOUS la barre latérale.
+   */
+  function placerOutils() {
+    const panneau = noeuds.panneauOutils;
+    if (!panneau || !noeuds.travail) return;
+    panneau.style.left = "0";
+    panneau.style.right = "auto";
+    const boite = panneau.getBoundingClientRect();
+    const limite = noeuds.travail.getBoundingClientRect();
+    if (boite.right > limite.right) {
+      panneau.style.left = "auto";
+      panneau.style.right = "0";
+    }
+  }
+
+  function fermerOutilsDehors(evt) {
+    if (noeuds.panneauOutils && noeuds.panneauOutils.contains(evt.target)) return;
+    if (noeuds.boutonOutils && noeuds.boutonOutils.contains(evt.target)) return;
+    basculerOutils(false);
+  }
+
+  /** Le badge posé dans le coin de la surface : ce qu'on regarde, et ce que le
+   *  panneau sait de sa taille. Il remplace la ligne d'état qui courait sous le
+   *  canvas — la même information, mais SUR ce à quoi elle se rapporte. */
+  function rendreBadgeCanvas() {
+    if (!noeuds.badgeScene) return;
+    const scene = sceneCourante();
+    noeuds.badgeScene.textContent = scene ? "scène « " + scene.nom + " »" : "—";
+    rendreCompteMesures();
+  }
+
+  function rendreEchelle(facteur) {
+    if (!noeuds.echelle) return;
+    noeuds.echelle.textContent = facteur
+      ? "échelle " + Math.round(facteur * 100) + " %" : "échelle —";
   }
 
   /** La barre d'outils de la sélection : ce qu'on peut faire à PLUSIEURS
@@ -5253,6 +5680,11 @@ window.OverlayAdmin = (function () {
    */
   function barreOutils() {
     const barre = creer("div", "ovl-outils");
+    // Replié : ces outils ne servent qu'une fois plusieurs éléments choisis, et
+    // quinze boutons en permanence sous le canvas mangeaient la hauteur qu'on
+    // regarde. Rien n'est perdu — le bouton « Outils » les rouvre, et il dit
+    // combien d'éléments sont sélectionnés.
+    barre.style.display = "none";
     noeuds.compteSelection = creer("span", "ovl-outils-compte", "Aucune sélection");
     barre.appendChild(noeuds.compteSelection);
     noeuds.outils = [];
@@ -5361,6 +5793,14 @@ window.OverlayAdmin = (function () {
     return barre;
   }
 
+  /** Le compte de la sélection, porté par le bouton qui ouvre le panneau : sans
+   *  lui, on ne sait pas sur quoi les outils repliés vont tomber. */
+  function rendreBoutonOutils(n) {
+    if (!noeuds.boutonOutils) return;
+    noeuds.boutonOutils.textContent = n > 1 ? "Outils · " + n : "Outils";
+    noeuds.boutonOutils.classList.toggle("charge", n > 1);
+  }
+
   /** L'état de la barre d'outils : le compte, et ce qui est utilisable. */
   function rendreOutils() {
     if (!noeuds.compteSelection) return;
@@ -5372,6 +5812,7 @@ window.OverlayAdmin = (function () {
            + (bloc.bloques.length > 1 ? "s" : "") : "")
       : "Aucune sélection";
     noeuds.compteSelection.classList.toggle("actif", n > 0);
+    rendreBoutonOutils(n);
     (noeuds.outils || []).forEach(function (o) {
       // Sur le nombre de DÉPLAÇABLES : deux éléments dont un verrouillé ne font
       // pas une répartition à trois.
@@ -5605,6 +6046,29 @@ window.OverlayAdmin = (function () {
     // À gauche, tout ce qui touche à la surface : elle occupe désormais la
     // place que prenait la colonne des scènes.
     const travail = creer("div", "ovl-travail");
+    noeuds.travail = travail;
+    travail.appendChild(barreCanvas());
+
+    // La surface et ses deux règles graduées, dans une petite grille. Les
+    // graduations ne sont pas décoratives : tout se règle ici en POURCENTAGE,
+    // et rien à l'écran ne disait où tombait 50 %.
+    const zone = creer("div", "ovl-zone-canvas");
+    zone.appendChild(creer("div", "ovl-regle-coin"));
+    const regleH = creer("div", "ovl-regle ovl-regle-h");
+    const regleV = creer("div", "ovl-regle ovl-regle-v");
+    GRADUATIONS.forEach(function (g) {
+      // La position exacte, portée par une variable CSS : une règle graduée qui
+      // répartit ses chiffres « à peu près » (`space-between`) ment sur le seul
+      // point où on la consulte — savoir où tombe 50 %.
+      [regleH, regleV].forEach(function (regle) {
+        const n = creer("span", null, String(g));
+        n.style.setProperty("--g", g + "%");
+        regle.appendChild(n);
+      });
+    });
+    zone.appendChild(regleH);
+    zone.appendChild(regleV);
+
     noeuds.cadre = creer("div", "ovl-surface");
     // L'aperçu d'abord, le calque par-dessus : c'est l'ordre du DOM qui décide
     // lequel capte le pointeur, et le glisser vit sur le calque.
@@ -5615,6 +6079,16 @@ window.OverlayAdmin = (function () {
     noeuds.apercu.addEventListener("load", apercuCharge);
     noeuds.apercu.addEventListener("error", echecApercu);
     noeuds.cadre.appendChild(noeuds.apercu);
+
+    // La grille d'aimantation et la zone sûre : POSÉES entre l'aperçu et le
+    // calque — au-dessus de la page, sous les rectangles — et transparentes au
+    // pointeur, sinon elles voleraient le glisser.
+    noeuds.grille = creer("div", "ovl-grille-aimant");
+    noeuds.cadre.appendChild(noeuds.grille);
+    noeuds.zoneSure = creer("div", "ovl-zone-sure");
+    noeuds.zoneSure.appendChild(creer("span", "ovl-zone-sure-nom", "zone sûre"));
+    noeuds.cadre.appendChild(noeuds.zoneSure);
+
     noeuds.calque = creer("div", "ovl-calque");
     // Le calque porte le focus clavier, et non les repères : ceux-ci sont
     // reconstruits à chaque rendu, et le focus serait perdu à la première
@@ -5658,14 +6132,42 @@ window.OverlayAdmin = (function () {
     noeuds.coords = creer("div", "ovl-coords");
     noeuds.cadre.appendChild(noeuds.coords);
 
-    travail.appendChild(noeuds.cadre);
-    travail.appendChild(barreApercu());
-    travail.appendChild(barreOutils());
+    // Le badge du coin : ce qu'on regarde et ce que le panneau sait de sa
+    // taille. Sur la surface plutôt que sous elle — l'information se rapporte à
+    // ce cadre-là, pas au panneau.
+    noeuds.badge = creer("div", "ovl-badge-canvas");
+    noeuds.badgePoint = creer("span", "ovl-badge-point");
+    noeuds.badge.appendChild(noeuds.badgePoint);
+    noeuds.badge.appendChild(creer("span", null, CANVAS_W + " × " + CANVAS_H));
+    noeuds.badge.appendChild(creer("span", "ovl-badge-sep", "·"));
+    noeuds.badgeScene = creer("span", null, "—");
+    noeuds.badge.appendChild(noeuds.badgeScene);
+    noeuds.badge.appendChild(creer("span", "ovl-badge-sep", "·"));
+    noeuds.apercuMesures = creer("span", "ovl-apercu-mesures", "aucune taille mesurée");
+    noeuds.badge.appendChild(noeuds.apercuMesures);
+    // Sans lui, une seule coupure réseau laisse le repli en place jusqu'au
+    // prochain changement de scène — et il n'y a pas toujours de seconde scène
+    // vers laquelle aller et revenir. Un bouton explicite plutôt qu'un
+    // rechargement automatique : `rendreSurface()` est rappelée à chaque
+    // frappe, une relance par frappe serait un pilonnage.
+    noeuds.apercuRetry = creer("button", "ovl-lien", "Réessayer");
+    noeuds.apercuRetry.style.display = "none";
+    noeuds.apercuRetry.addEventListener("click", function () {
+      const slug = apercuSlug;
+      apercuSlug = null;
+      chargerApercu(slug);
+    });
+    noeuds.badge.appendChild(noeuds.apercuRetry);
+    noeuds.cadre.appendChild(noeuds.badge);
+
+    zone.appendChild(noeuds.cadre);
+    travail.appendChild(zone);
+
     noeuds.raccourcis = blocRaccourcis();
     travail.appendChild(noeuds.raccourcis);
 
-    const reglages = creer("div", "ovl-reglages");
-    construireReglages(reglages);
+    const reglages = creer("div", "ovl-inspecteur");
+    bandeInspection(reglages);
     travail.appendChild(reglages);
     // Les raccourcis sont écrits : Alt et Maj ne se devinent pas, et personne
     // ne cherche une poignée qu'il ne sait pas là. La ligne dit l'essentiel et
@@ -5732,6 +6234,12 @@ window.OverlayAdmin = (function () {
     // rendu : elle ne dépend d'aucune scène, et la surface existe déjà.
     const fondRange = lireFond();
     if (fondRange) appliquerFond(fondRange.image, fondRange.opacite);
+    // `barreCanvas()` est construite AVANT la surface : ses bascules n'avaient
+    // alors ni cadre ni repères d'aide sur lesquels mordre. On repasse une fois
+    // le cadre monté, sinon la grille est allumée dans la barre et absente à
+    // l'écran.
+    majClassesVue();
+    majReperesAide();
     // Posée tout de suite : la surface a déjà sa largeur, et attendre le
     // premier `load` de l'iframe l'afficherait une frame en taille réelle.
     ajusterApercu();
@@ -5861,6 +6369,10 @@ window.OverlayAdmin = (function () {
     // Le diff avec l'antenne. Exposé pour être TESTÉ, et c'est le seul moyen :
     // ce qu'il OUBLIERAIT de comparer ne se verrait pas en le lisant, mais un
     // soir de live sous la forme d'un réglage parti sans être annoncé.
+    // Le pas de rang. Exposé pour être TESTÉ : sa garde ne se voit pas en le
+    // lisant — c'est `normaliserOrdre` qui DÉFAIT le pas quand il sortirait
+    // l'élément de son groupe, deux appels plus loin.
+    deplacerRang: deplacerRang,
     diffAntenne: diffAntenne,
     diffScene: diffScene,
     decrireElement: decrireElement,

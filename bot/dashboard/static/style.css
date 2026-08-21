@@ -3988,79 +3988,231 @@ body.is-mobile .mobile-back-btn {
   background: rgba(0, 0, 0, 0.72);
 }
 
-/* La bascule « Estomper les repères ». Celui qu'on règle et celui qu'on
-   survole restent nets : sinon on ne saurait plus ce qu'on manipule. */
-.ovl-surface.reperes-estompes .ovl-rect { opacity: 0.12; }
-.ovl-surface.reperes-estompes .ovl-rect:hover,
-.ovl-surface.reperes-estompes .ovl-rect.actif { opacity: 1; }
+/* ── La barre du canvas ──────────────────────────────────────────────────
+   Ce qui décide de CE QU'ON VOIT, et rien d'autre. Les gestes qui touchent au
+   modèle vivent dans la bande d'inspection ou dans le panneau d'outils. */
 
-.ovl-apercu-barre {
+.ovl-canvas-barre {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-}
-.ovl-apercu-etat {
-  flex: 1;
   min-width: 0;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Combien de repères portent une taille LUE dans l'aperçu. Sans ce compte, les
-   pointillés passeraient pour une coquetterie graphique au lieu de dire « je ne
-   sais pas encore ». */
-.ovl-apercu-mesures {
-  flex: none;
-  padding: 2px 10px;
-  font-size: 0.7rem;
-  font-family: var(--font-mono, monospace);
-  color: var(--text-secondary);
-  background: rgba(6, 182, 212, 0.10);
-  border: 1px solid rgba(6, 182, 212, 0.25);
-  border-radius: 12px;
-  white-space: nowrap;
-  cursor: help;
 }
 
-/* Les chevauchements, à côté du compte des mesures : les deux se lisent
-   ensemble — un chevauchement « indéterminé » l'est faute de taille lue. Neutre
-   tant qu'il n'y a rien à signaler, orange quand il y a. */
+.ovl-segment {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.ovl-segment-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 5px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ovl-segment-btn:hover:not(:disabled) { color: var(--text-primary); }
+.ovl-segment-btn.actif {
+  background: rgba(6, 182, 212, 0.14);
+  border-color: rgba(6, 182, 212, 0.4);
+  color: #7fdbe8;
+}
+.ovl-segment-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Un bouton de barre sans cadre : il agit, mais il ne se dispute pas la
+   lecture avec les segments. `ovl-lien-cadre` lui en redonne un quand il
+   ouvre quelque chose (le panneau d'outils, la propagation). */
+.ovl-lien {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ovl-lien:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
+.ovl-lien:disabled { opacity: 0.35; cursor: default; }
+.ovl-lien-cadre { border: 1px solid rgba(255, 255, 255, 0.1); }
+.ovl-lien.actif {
+  border-color: rgba(6, 182, 212, 0.45);
+  background: rgba(6, 182, 212, 0.12);
+  color: #7fdbe8;
+}
+.ovl-lien.charge { color: #7fdbe8; }
+
+.ovl-fond-reglage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ovl-fond-reglage input[type="range"] { width: 90px; accent-color: #06b6d4; }
+
+/* Le compte des tailles LUES. Sans lui, les pointillés passeraient pour une
+   coquetterie graphique au lieu de dire « je ne sais pas encore ». */
+.ovl-apercu-mesures { white-space: nowrap; cursor: help; }
+
+/* Les chevauchements. Neutre tant qu'il n'y a rien à signaler, orange quand il
+   y a — et CLIQUABLE : le geste qui suit est toujours d'aller les voir. */
 .ovl-chevauchements {
   flex: none;
-  padding: 2px 10px;
-  font-size: 0.7rem;
+  padding: 4px 11px;
+  font: inherit;
+  font-size: 0.72rem;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 999px;
   white-space: nowrap;
   max-width: 340px;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: help;
+  cursor: pointer;
 }
+.ovl-chevauchements:hover { color: var(--text-primary); }
 .ovl-chevauchements.alerte {
   color: rgb(251, 146, 60);
   background: rgba(251, 146, 60, 0.10);
   border-color: rgba(251, 146, 60, 0.35);
 }
 
-.ovl-estomper {
+.ovl-echelle {
+  flex: none;
+  padding: 4px 11px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* ── Les règles graduées ─────────────────────────────────────────────────
+   Tout se règle ici en POURCENTAGE, et rien à l'écran ne disait où tombait
+   50 %. Cinq graduations : au-delà, les chiffres se touchent. */
+
+.ovl-zone-canvas {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-rows: 16px minmax(0, 1fr);
+  min-width: 0;
+}
+.ovl-regle-coin { grid-column: 1; grid-row: 1; }
+/* Chaque graduation est POSÉE à son pourcentage, pas répartie « à peu près »
+   par un `space-between` : une règle qui ment sur l'emplacement de 50 % ne sert
+   à rien, et c'est la seule question qu'on lui pose. Les deux extrémités se
+   rangent vers l'intérieur, sinon elles débordent du cadre. */
+.ovl-regle {
+  position: relative;
+  font-size: 0.58rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  user-select: none;
+}
+.ovl-regle span { position: absolute; white-space: nowrap; }
+.ovl-regle-h { grid-column: 2; grid-row: 1; }
+.ovl-regle-h span { bottom: 3px; left: var(--g); transform: translateX(-50%); }
+.ovl-regle-h span:first-child { transform: none; }
+.ovl-regle-h span:last-child { transform: translateX(-100%); }
+.ovl-regle-v { grid-column: 1; grid-row: 2; }
+.ovl-regle-v span { right: 4px; top: var(--g); transform: translateY(-50%); }
+.ovl-regle-v span:first-child { transform: none; }
+.ovl-regle-v span:last-child { transform: translateY(-100%); }
+.ovl-zone-canvas .ovl-surface { grid-column: 2; grid-row: 2; }
+
+/* ── Les repères d'aide, POSÉS sur la surface ────────────────────────────
+   Entre l'aperçu et le calque : au-dessus de la page, sous les rectangles, et
+   transparents au pointeur — sinon ils voleraient le glisser. */
+
+.ovl-grille-aimant,
+.ovl-zone-sure {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+.ovl-grille-aimant {
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 10% 10%;
+}
+.ovl-zone-sure {
+  inset: 5%;
+  border: 1px dashed rgba(88, 166, 255, 0.32);
+  border-radius: 6px;
+}
+.ovl-zone-sure-nom {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(88, 166, 255, 0.55);
+}
+
+/* ── Le badge du coin ────────────────────────────────────────────────────
+   Ce qu'on regarde, et ce que le panneau sait de sa taille. SUR la surface
+   plutôt que sous elle : l'information se rapporte à ce cadre-là. */
+
+.ovl-badge-canvas {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
+  gap: 8px;
+  padding: 5px 11px;
+  font-size: 0.68rem;
+  font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
-  cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  pointer-events: auto;
+  white-space: nowrap;
 }
+.ovl-badge-sep { color: rgba(255, 255, 255, 0.18); }
+/* Le point d'état de l'aperçu : il suit le même fait que les pointillés des
+   repères — sait-on de quoi on parle, ou devine-t-on ? */
+.ovl-badge-point {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(251, 146, 60);
+  flex-shrink: 0;
+}
+.ovl-badge-point.ok { background: #06b6d4; }
+.ovl-badge-canvas .ovl-lien { padding: 2px 8px; font-size: 0.68rem; }
+
+/* La vue « Cadres seuls » : la page est masquée, on ne place plus que des
+   rectangles nommés. `visibility` et non `display` — l'iframe garderait sinon
+   sa taille à zéro et rechargerait tout au retour. */
+.ovl-surface.cadres-seuls .ovl-apercu { visibility: hidden; }
+
+/* La vue « Aperçu seul ». Celui qu'on règle et celui qu'on survole restent
+   nets : sinon on ne saurait plus ce qu'on manipule. */
+.ovl-surface.reperes-estompes .ovl-rect { opacity: 0.12; }
+.ovl-surface.reperes-estompes .ovl-rect:hover,
+.ovl-surface.reperes-estompes .ovl-rect.actif { opacity: 1; }
 
 .ovl-rect {
   position: absolute;
@@ -4344,115 +4496,193 @@ body.is-mobile .mobile-back-btn {
 .ovl-rect.survole .ovl-rect-nom,
 .ovl-rect.actif .ovl-rect-nom { opacity: 1; }
 
-/* ── Les réglages, sous la surface ───────────────────────────────────── */
+/* ── La bande d'inspection ───────────────────────────────────────────────
+   Tout ce qui règle l'élément CHOISI, sur une seule ligne SOUS le canvas. Le
+   gain n'est pas esthétique : les champs sont à côté du repère qu'ils
+   déplacent, au lieu d'une colonne à l'autre bout du panneau. */
 
-.ovl-reglages {
+.ovl-inspecteur {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px 16px;
   flex-wrap: wrap;
-  padding: 10px 12px;
+  padding: 11px 15px;
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.22);
   border-radius: 14px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  min-width: 0;
 }
-.ovl-reglages-nom {
-  font-size: 0.82rem;
-  color: var(--text-primary);
-  min-width: 150px;
+.ovl-insp-identite { min-width: 150px; flex-shrink: 0; }
+.ovl-reglages-nom { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
+/* La clé technique et le rang : la clé est ce qui apparaît dans les logs et
+   dans le modèle, le rang est ce que « Devant / Derrière » déplace. */
+.ovl-insp-cle {
+  font-size: 0.64rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  margin-top: 2px;
 }
-.ovl-champ { display: flex; align-items: center; gap: 6px; }
+.ovl-insp-champ,
+.ovl-insp-groupe { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.ovl-insp-taille { display: flex; align-items: center; gap: 9px; width: 240px; flex-shrink: 0; }
+/* `min-width` explicite : sans lui, le champ voisin — qui porte une largeur
+   venue d'une règle plus générale du dashboard — refusait de rétrécir et
+   laissait le curseur à ZÉRO pixel. Un réglage invisible, pas désactivé. */
+.ovl-insp-taille input[type="range"] { flex: 1 1 auto; min-width: 76px; accent-color: #06b6d4; }
 /* Les réglages propres à un élément (la cadence du rotateur) sont cachés par
-   `hidden` sur les trente-trois autres. Sans cette règle, la déclaration
-   `display: flex` ci-dessus l'emporte sur le `[hidden] { display: none }` du
-   navigateur et le champ reste visible partout. */
-.ovl-champ[hidden] { display: none; }
+   `hidden` sur les trente-six autres. Sans cette règle, le `display: flex`
+   ci-dessus l'emporte sur le `[hidden] { display: none }` du navigateur et le
+   champ reste visible partout. */
+.ovl-insp-champ[hidden] { display: none; }
 .ovl-champ-label {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+  white-space: nowrap;
 }
-.ovl-champ input {
-  width: 76px;
-  padding: 5px 8px;
-  font-size: 0.78rem;
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-}
-.ovl-champ input:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
-.ovl-champ input:disabled { opacity: 0.4; }
 
-/* « Wally reste visible » : une case, aussi lisible que les champs voisins. */
+/* Le champ encadré de ses deux pas. Un seul cadre pour les trois : trois
+   boîtes côte à côte se liraient comme trois réglages distincts. */
+.ovl-stepper {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+.ovl-stepper-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+.ovl-stepper-btn:first-child { border-right: 1px solid rgba(255, 255, 255, 0.08); }
+.ovl-stepper-btn:last-child { border-left: 1px solid rgba(255, 255, 255, 0.08); }
+.ovl-stepper-btn:hover:not(:disabled) { color: var(--text-primary); background: rgba(6, 182, 212, 0.12); }
+.ovl-stepper-btn:disabled { opacity: 0.3; cursor: default; }
+.ovl-stepper input {
+  flex: 0 0 56px;
+  width: 56px;
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 0.76rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+}
+.ovl-stepper input:focus { outline: none; color: #7fdbe8; }
+.ovl-stepper input:disabled { opacity: 0.4; }
+/* Les flèches natives du champ nombre doubleraient les deux boutons, dans un
+   cadre trois fois plus petit — on clique alors sur la mauvaise. */
+.ovl-stepper input::-webkit-outer-spin-button,
+.ovl-stepper input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.ovl-stepper input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+
+.ovl-taille-valeur {
+  /* `flex` et pas seulement `width` : la largeur seule perd contre les règles
+     de champ du dashboard, et le champ mangeait 136 px des 190 du bloc. */
+  flex: 0 0 64px;
+  width: 64px;
+  padding: 4px 6px;
+  text-align: center;
+  font-size: 0.74rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+.ovl-taille-valeur:focus { outline: none; border-color: rgba(6, 182, 212, 0.6); }
+.ovl-taille-valeur:disabled { opacity: 0.4; }
+
 .ovl-bascule {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  white-space: nowrap;
   cursor: pointer;
 }
-.ovl-bascule:hover { background: rgba(255, 255, 255, 0.07); }
 .ovl-bascule input { accent-color: #06b6d4; cursor: pointer; margin: 0; }
-/* Le même signal que les champs voisins quand aucun élément n'est choisi :
-   `:has()` aurait dit mieux, mais ce fichier ne s'en sert nulle part. */
 .ovl-bascule input:disabled { opacity: 0.4; cursor: default; }
 
+/* La grille 3 × 3 des ancrages. Des FLÈCHES et non neuf carrés muets : le
+   réglage le moins compris du panneau n'avait pour tout indice qu'une
+   infobulle en anglais — la clé du modèle, pas une explication. */
 .ovl-ancrages {
   display: grid;
-  grid-template-columns: repeat(3, 18px);
-  grid-auto-rows: 18px;
+  grid-template-columns: repeat(3, 22px);
   gap: 3px;
-  margin-left: auto;
 }
 .ovl-ancrage {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   padding: 0;
 }
-.ovl-ancrage:hover { background: rgba(255, 255, 255, 0.09); }
-.ovl-ancrage.actif { background: #06b6d4; border-color: #06b6d4; }
-/* La grille d'ancrages sous cadenas : changer d'ancrage EST un déplacement
-   (x et y sont recalculés), le verrou la ferme donc au même titre que X et Y.
-   L'ancrage courant reste lisible — on doit pouvoir voir ce qu'on a verrouillé. */
+.ovl-ancrage:hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); color: var(--text-primary); }
+.ovl-ancrage.actif {
+  background: rgba(6, 182, 212, 0.18);
+  border-color: rgba(6, 182, 212, 0.6);
+  color: #7fdbe8;
+}
 .ovl-ancrage:disabled { opacity: 0.4; cursor: not-allowed; }
-.ovl-ancrage:disabled:hover { background: rgba(255, 255, 255, 0.04); }
-.ovl-ancrage.actif:disabled { opacity: 0.55; }
-.ovl-ancrage.actif:disabled:hover { background: #06b6d4; }
 
-/* ── La barre d'outils de la sélection ───────────────────────────────── */
+/* ── Le panneau d'outils de la sélection ─────────────────────────────────
+   Replié derrière le bouton « Outils » de la barre du canvas : quinze boutons
+   en permanence sous le canvas mangeaient la hauteur qu'on regarde. Rien n'est
+   perdu — et le bouton dit combien d'éléments sont sélectionnés. */
 
+.ovl-outils-coin { position: relative; display: flex; align-items: center; }
 .ovl-outils {
+  position: absolute;
+  top: 100%;
+  /* Le côté est choisi À L'OUVERTURE (`placerOutils`) : la barre passe à la
+     ligne selon la largeur, et un ancrage figé sortait de l'écran une fois
+     sur deux. */
+  left: 0;
+  margin-top: 6px;
+  z-index: 35;
+  width: 430px;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  /* Presque opaque, comme les menus : c'est un panneau POSÉ sur le canvas. */
+  background: rgba(22, 27, 34, 0.98);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 .ovl-outils-compte {
+  flex-basis: 100%;
   font-size: 0.72rem;
   color: var(--text-muted);
-  min-width: 132px;
 }
 /* Le compte passe au cyan dès qu'il y a de quoi agir : c'est le seul repère
    qui dit sur QUOI le bouton qu'on s'apprête à cliquer va tomber. */
 .ovl-outils-compte.actif { color: #06b6d4; }
-.ovl-outils-groupe { display: flex; align-items: center; gap: 4px; }
+.ovl-outils-groupe { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .ovl-outils-titre {
   font-size: 0.66rem;
   text-transform: uppercase;
@@ -4474,7 +4704,7 @@ body.is-mobile .mobile-back-btn {
   border-color: rgba(6, 182, 212, 0.4);
 }
 /* Grisé et non caché : un bouton qui apparaît et disparaît au gré de la
-   sélection fait sauter la barre sous le pointeur, et on clique à côté. */
+   sélection fait sauter le panneau sous le pointeur, et on clique à côté. */
 .ovl-outil:disabled { opacity: 0.35; cursor: default; }
 /* La case « avec la visibilité » de la propagation. Dans le groupe et non à
    côté : c'est un modificateur des deux boutons qui la précèdent, pas un
@@ -4505,8 +4735,7 @@ body.is-mobile .mobile-back-btn {
   color: #06b6d4;
 }
 
-/* La liste des raccourcis, dépliée sous la barre d'outils. Un raccourci que
-   personne ne connaît n'existe pas. */
+/* La liste des raccourcis. Un raccourci que personne ne connaît n'existe pas. */
 .ovl-raccourcis {
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.03);
