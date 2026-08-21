@@ -86,6 +86,31 @@ window.OverlayAdmin = (function () {
     "bottom-left", "bottom-center", "bottom-right",
   ];
 
+  // Le même ancrage en français, et sa flèche. Les clés du modèle sont en
+  // anglais et le resteront — elles voyagent jusqu'à la page d'overlay —, mais
+  // « ancrage bottom-left → top-left » dans un journal de modifications ne se
+  // lit pas. La flèche sert la grille 3 × 3 des réglages, qui n'affichait
+  // jusqu'ici que des carrés muets.
+  const LIBELLES_ANCRAGE = {
+    "top-left": ["haut-gauche", "\u2196"],
+    "top-center": ["haut-centre", "\u2191"],
+    "top-right": ["haut-droite", "\u2197"],
+    "middle-left": ["milieu-gauche", "\u2190"],
+    "center": ["centre", "\u00b7"],
+    "middle-right": ["milieu-droite", "\u2192"],
+    "bottom-left": ["bas-gauche", "\u2199"],
+    "bottom-center": ["bas-centre", "\u2193"],
+    "bottom-right": ["bas-droite", "\u2198"],
+  };
+
+  function nomAncrage(cle) {
+    return (LIBELLES_ANCRAGE[cle] || [cle])[0];
+  }
+
+  function flecheAncrage(cle) {
+    return (LIBELLES_ANCRAGE[cle] || [null, "\u00b7"])[1];
+  }
+
   // ── Les bornes et les pas de la manipulation ────────────────────────────
   //
   // Les mêmes bornes que le modèle (`bot/core/overlay_layout.py`). Elles sont
@@ -170,6 +195,11 @@ window.OverlayAdmin = (function () {
     direct: false,
     publie: null,
     precedent: null,
+    // Quand ce qui est à l'antenne y est parti, en ISO local, tel que le
+    // serveur le range (`overlay:layout:maj`). `null` vaut « on ne sait pas » —
+    // jamais publié depuis que la date est suivie, ou base muette — et le pied
+    // de publication le dit ainsi plutôt que d'inventer une heure.
+    majAntenne: null,
   };
 
   const noeuds = {};      // les nœuds du squelette, posés une fois
@@ -1014,7 +1044,7 @@ window.OverlayAdmin = (function () {
    *  l'éditeur devient inutilisable en direct. Un test Python confronte cette
    *  liste à ce que la route ajoute réellement.
    */
-  const HORS_MODELE = ["libelles", "tailles", "echantillons"];
+  const HORS_MODELE = ["libelles", "tailles", "echantillons", "maj"];
 
   /** Le modèle SEUL, sans ce que le GET lui a joint. Modifie l'objet reçu. */
   function retirerHorsModele(objet) {
@@ -1042,6 +1072,9 @@ window.OverlayAdmin = (function () {
           WallyLayout.poserTailles(layout.tailles);
         }
         if (layout.echantillons) etat.echantillons = layout.echantillons;
+        // Quand ce qui est à l'antenne y est parti. Lue AVANT le retrait :
+        // `retirerHorsModele` l'efface avec le reste de ce qui voyage.
+        etat.majAntenne = layout.maj || null;
         // Elles sortent du modèle avant tout le reste : `publier()` renvoie
         // `etat.layout` tel quel au serveur, et le PUT ne les rend pas. Les y
         // laisser les enverrait à l'antenne comme un réglage de scène.
@@ -1139,6 +1172,12 @@ window.OverlayAdmin = (function () {
           return r.json();
         })
         .then(function (layout) {
+          // La date de publication voyage AVEC la réponse sans faire partie du
+          // modèle. Retirée avant toute comparaison : `etat.publie` ne la porte
+          // pas, et l'y laisser rendrait `verifierConcurrence()` toujours
+          // différente — donc la question toujours posée.
+          etat.majAntenne = layout.maj || null;
+          retirerHorsModele(layout);
           // Un envoi qui ne change rien à l'écran ne doit pas consommer le
           // cran : on garderait un « annuler » qui ne fait rien.
           if (avant && avant !== JSON.stringify(layout)) etat.precedent = avant;
@@ -1548,8 +1587,188 @@ window.OverlayAdmin = (function () {
       + "AUSSI à l'antenne avec cette opération.\n\nContinuer ?");
   }
 
+  // ── Ce qui a changé depuis l'antenne ────────────────────────────────────
+  //
+  // Le compteur du brouillon compte des GESTES ; le pied de publication doit
+  // dire ce qui PART. Ce n'est pas la même chose : déplacer un élément puis le
+  // ramener fait deux gestes et zéro changement. Et « 6 modifications en
+  // attente » sans dire lesquelles est précisément ce qu'on ne peut pas
+  // vérifier avant de cliquer, en plein live.
+  //
+  // La liste se calcule donc en COMPARANT le modèle affiché à `etat.publie` —
+  // ce qui est réellement à l'antenne —, jamais en comptant les clics.
+
+  let antenneSrc;              // la chaîne dont `antenneModele` a été tiré
+  let antenneModele = null;
+
+  /** Le modèle à l'antenne, désérialisé UNE FOIS par publication.
+   *
+   *  `JSON.parse` sur trois scènes de trente-quatre éléments à chaque rendu se
+   *  paierait pendant le glisser ; la chaîne, elle, ne change qu'au retour du
+   *  serveur.
+   */
+  function modeleAntenne() {
+    if (antenneSrc === etat.publie) return antenneModele;
+    antenneSrc = etat.publie;
+    antenneModele = null;
+    if (etat.publie) {
+      try {
+        antenneModele = JSON.parse(etat.publie);
+      } catch (e) {
+        // Ne peut arriver que si `etat.publie` n'est pas ce qu'on y a mis. Dit
+        // et pas avalé : sans référence, le pied n'affiche plus aucun détail,
+        // et c'est le genre de vide qu'on met des semaines à expliquer.
+        if (window.console) console.error("Mise en scène — modèle à l'antenne :", e);
+      }
+    }
+    return antenneModele;
+  }
+
+  function unPourcent(v) { return (Math.round(Number(v) * 10) / 10).toFixed(1); }
+  function uneEchelle(v) { return (Math.round(Number(v) * 100) / 100).toFixed(2); }
+  function uneSeconde(v) { return String(Math.round(Number(v) * 10) / 10); }
+
+  /** Ce qui distingue deux versions d'un même élément, en français. Un tableau
+   *  vide vaut « identique ».
+   *
+   *  Les champs sont énumérés à la main plutôt que balayés par `Object.keys` :
+   *  chacun se DIT autrement — un booléen n'a pas de « avant → après » lisible,
+   *  et « solo: false → true » ne veut rien dire pour qui règle un habillage.
+   */
+  function decrireElement(avant, apres) {
+    const d = [];
+    if (avant.x !== apres.x) {
+      d.push("x " + unPourcent(avant.x) + " → " + unPourcent(apres.x) + " %");
+    }
+    if (avant.y !== apres.y) {
+      d.push("y " + unPourcent(avant.y) + " → " + unPourcent(apres.y) + " %");
+    }
+    if (avant.scale !== apres.scale) {
+      d.push("taille " + uneEchelle(avant.scale) + " → " + uneEchelle(apres.scale));
+    }
+    if (avant.anchor !== apres.anchor) {
+      d.push("ancrage " + nomAncrage(avant.anchor) + " → " + nomAncrage(apres.anchor));
+    }
+    if (!avant.hidden !== !apres.hidden) d.push(apres.hidden ? "masqué" : "affiché");
+    if (!avant.locked !== !apres.locked) {
+      d.push(apres.locked ? "verrouillé" : "déverrouillé");
+    }
+    if (!avant.solo !== !apres.solo) {
+      d.push(apres.solo ? "prend la scène seul" : "cohabite avec les autres");
+    }
+    if (gardeWally(avant) !== gardeWally(apres)) {
+      d.push(gardeWally(apres) ? "Wally reste visible" : "Wally s'efface");
+    }
+    // La cadence du rotateur : lue seulement si l'élément la porte. Un modèle
+    // rangé avant l'ajout du champ n'en a pas, et « durée undefined → 9 s »
+    // annoncerait une modification que personne n'a faite.
+    if (apres.duree !== undefined && avant.duree !== undefined
+        && avant.duree !== apres.duree) {
+      d.push("durée " + uneSeconde(avant.duree) + " → " + uneSeconde(apres.duree) + " s");
+    }
+    if (apres.pause !== undefined && avant.pause !== undefined
+        && avant.pause !== apres.pause) {
+      d.push("pause " + uneSeconde(avant.pause) + " → " + uneSeconde(apres.pause) + " s");
+    }
+    return d;
+  }
+
+  /** Ce qui sépare une scène affichée de sa version à l'antenne : une ligne par
+   *  élément touché, plus les changements qui portent sur la scène elle-même.
+   *  `cle` vaut `null` sur ces derniers — c'est ce qui les distingue. */
+  function diffScene(avant, apres) {
+    if (!avant) return [{ cle: null, nom: apres.nom, d: "scène ajoutée" }];
+    const lignes = [];
+    if (avant.nom !== apres.nom) {
+      lignes.push({ cle: null, nom: apres.nom,
+                    d: "renommée « " + avant.nom + " » — l'adresse ne bouge pas" });
+    }
+    const rangAvant = {}, rangApres = {};
+    (avant.ordre || []).forEach(function (c, i) { rangAvant[c] = i; });
+    (apres.ordre || []).forEach(function (c, i) { rangApres[c] = i; });
+    (apres.ordre || []).forEach(function (cle) {
+      const el = (apres.elements || {})[cle];
+      if (!el) return;
+      const vieux = (avant.elements || {})[cle];
+      if (!vieux) {
+        lignes.push({ cle: cle, nom: libelle(cle), d: "ajouté à la scène" });
+        return;
+      }
+      const d = decrireElement(vieux, el);
+      if (rangAvant[cle] !== undefined && rangAvant[cle] !== rangApres[cle]) {
+        d.push("rang " + (rangAvant[cle] + 1) + " → " + (rangApres[cle] + 1));
+      }
+      if (d.length) lignes.push({ cle: cle, nom: libelle(cle), d: d.join(" · ") });
+    });
+    Object.keys(avant.elements || {}).forEach(function (cle) {
+      if (!(apres.elements || {})[cle]) {
+        lignes.push({ cle: cle, nom: libelle(cle), d: "retiré de la scène" });
+      }
+    });
+    // Les groupes se comparent en bloc : leur composition, leur ordre et leurs
+    // noms tiennent en un objet, et détailler « Alice sortie du groupe 2 »
+    // demanderait une seconde grammaire pour un cas qu'on règle rarement.
+    if (JSON.stringify(avant.groupes || []) !== JSON.stringify(apres.groupes || [])) {
+      lignes.push({ cle: null, nom: apres.nom, d: "groupes modifiés" });
+    }
+    return lignes;
+  }
+
+  function nomDeScene(slug) {
+    const scenes = (etat.layout && etat.layout.scenes) || [];
+    for (let i = 0; i < scenes.length; i++) {
+      if (scenes[i].slug === slug) return scenes[i].nom;
+    }
+    return slug;
+  }
+
+  /** Tout ce qui partira à la prochaine publication.
+   *
+   *  `parScene[slug]` sert les onglets — `n` allume la pastille ambre,
+   *  `elements` écrit « 5 modifiés ». `liste` sert le détail du pied.
+   */
+  function diffAntenne() {
+    const resultat = { total: 0, parScene: {}, liste: [] };
+    const antenne = modeleAntenne();
+    if (!antenne || !etat.layout) return resultat;
+    const parSlug = {};
+    (antenne.scenes || []).forEach(function (s) { parSlug[s.slug] = s; });
+    (etat.layout.scenes || []).forEach(function (scene) {
+      const lignes = diffScene(parSlug[scene.slug], scene);
+      let elements = 0;
+      lignes.forEach(function (l) {
+        if (l.cle) elements += 1;
+        resultat.liste.push({ slug: scene.slug, scene: scene.nom, cle: l.cle,
+                              nom: l.nom, d: l.d });
+      });
+      resultat.parScene[scene.slug] = { n: lignes.length, elements: elements };
+      delete parSlug[scene.slug];
+    });
+    // Ce qui n'existe plus n'a plus d'onglet — et sa disparition est justement
+    // ce qu'il faut avoir lu avant de publier.
+    Object.keys(parSlug).forEach(function (slug) {
+      resultat.liste.push({ slug: slug, scene: parSlug[slug].nom, cle: null,
+                            nom: parSlug[slug].nom, d: "scène supprimée" });
+    });
+    if (antenne.defaut !== etat.layout.defaut) {
+      const nom = nomDeScene(etat.layout.defaut);
+      resultat.liste.push({ slug: etat.layout.defaut, scene: nom, cle: null,
+                            nom: nom, d: "devient la scène par défaut" });
+    }
+    resultat.total = resultat.liste.length;
+    return resultat;
+  }
+
   // ── La liste des scènes ─────────────────────────────────────────────────
 
+  /** Les scènes en ONGLETS, en tête du panneau.
+   *
+   *  Elles occupaient une colonne de 280 px à gauche, en face de la surface —
+   *  280 px pris à la seule chose qu'on regarde vraiment, pour trois lignes qui
+   *  ne changent jamais. En onglets, elles disent en plus ce que la colonne ne
+   *  pouvait pas dire : combien d'éléments la scène montre, et combien y
+   *  attendent d'être publiés.
+   */
   function rendreScenes() {
     const liste = noeuds.listeScenes;
     if (!liste || !etat.layout) return;
@@ -1558,30 +1777,45 @@ window.OverlayAdmin = (function () {
     // `mouseleave` ne partira jamais.
     masquerInfobulle();
     liste.innerHTML = "";
+    const diff = diffAntenne();
     (etat.layout.scenes || []).forEach(function (scene) {
       const item = creer("li", "ovl-scene");
       if (scene.slug === etat.slugCourant) item.classList.add("actif");
-      const corps = creer("div", "ovl-scene-corps");
-      corps.appendChild(creer("span", "ovl-scene-nom", scene.nom));
+      // Un <button> et non un <div> : c'est le geste principal de la barre, il
+      // doit se prendre au clavier comme les onglets de la barre latérale.
+      const corps = creer("button", "ovl-scene-corps");
+      corps.type = "button";
+      const haut = creer("div", "ovl-scene-haut");
+      haut.appendChild(creer("span", "ovl-scene-nom", scene.nom));
       if (scene.slug === etat.layout.defaut) {
-        corps.appendChild(creer("span", "ovl-badge", "défaut"));
+        haut.appendChild(creer("span", "ovl-badge", "défaut"));
       }
+      const change = diff.parScene[scene.slug] || { n: 0, elements: 0 };
+      if (change.n) {
+        // La pastille ambre porte la même information que le pied, sur
+        // l'onglet : sans elle, on publie sans savoir qu'une AUTRE scène part
+        // aussi — et `publier()` pousse le modèle entier.
+        const point = creer("span", "ovl-point");
+        point.title = change.n + " modification" + (change.n > 1 ? "s" : "")
+          + " en attente sur cette scène.";
+        haut.appendChild(point);
+      }
+      corps.appendChild(haut);
+      const visibles = (scene.ordre || []).filter(function (c) {
+        const el = (scene.elements || {})[c];
+        return el && !el.hidden;
+      }).length;
+      corps.appendChild(creer("div", "ovl-scene-sous",
+        visibles + " visible" + (visibles > 1 ? "s" : "")
+        + (change.elements
+           ? " · " + change.elements + " modifié" + (change.elements > 1 ? "s" : "")
+           : "")));
+      corps.addEventListener("click", function () { choisirScene(scene.slug); });
       item.appendChild(corps);
-      const adresse = urlScene(scene.slug);
-
-      const copie = creer("button", "ovl-copie");
-      copie.appendChild(iconeCopie());
-      copie.setAttribute("aria-label", "Copier l'adresse de « " + scene.nom + " »");
-      copie.addEventListener("click", function (evt) {
-        evt.stopPropagation();
-        copier(adresse);
-      });
-      poserInfobulle(copie, "Copier " + adresse + " — l'adresse à coller dans "
-        + "une source navigateur OBS.");
-      item.appendChild(copie);
 
       const bouton = creer("button", "ovl-menu-btn", "⋮");
       bouton.title = "Renommer, dupliquer, supprimer…";
+      bouton.setAttribute("aria-label", "Actions sur la scène « " + scene.nom + " »");
       bouton.addEventListener("click", function (evt) {
         evt.stopPropagation();
         if (menuOuvert && menuOuvert.parentNode === item) { fermerMenu(); return; }
@@ -1589,16 +1823,73 @@ window.OverlayAdmin = (function () {
       });
       item.appendChild(bouton);
 
-      // L'adresse ENTIÈRE, pas le seul chemin : c'est elle qu'on colle dans
-      // OBS, et la déduire de tête est exactement ce qu'on reprochait. Sur sa
-      // propre ligne, sous les boutons : la colonne fait 280 px et une adresse
-      // en fait 250, chaque pixel volé au bouton se paie en caractères perdus.
-      const url = creer("span", "ovl-scene-url", adresse);
-      poserInfobulle(url, adresse);
-      item.appendChild(url);
-
-      corps.addEventListener("click", function () { choisirScene(scene.slug); });
       liste.appendChild(item);
+    });
+    rendreSource();
+  }
+
+  /** L'adresse de la scène AFFICHÉE, à droite de la barre d'onglets.
+   *
+   *  Une seule adresse au lieu d'une par ligne : c'est celle de la scène qu'on
+   *  règle qu'on va coller dans OBS, et trois adresses empilées prenaient la
+   *  place sans qu'on lise jamais les deux autres. Elle reste ENTIÈRE — la
+   *  déduire de tête est ce qu'on reprochait au panneau d'avant.
+   */
+  function rendreSource() {
+    if (!noeuds.sourceUrl) return;
+    const scene = sceneCourante();
+    const adresse = scene ? urlScene(scene.slug) : "";
+    noeuds.sourceUrl.textContent = adresse;
+    noeuds.sourceCopie.disabled = !adresse;
+    noeuds.sourceCopie.setAttribute("aria-label", scene
+      ? "Copier l'adresse de « " + scene.nom + " »" : "Aucune scène");
+    poserInfobulle(noeuds.sourceUrl, adresse);
+  }
+
+  /** Une scène neuve, partie de la mise en scène D'ORIGINE.
+   *
+   *  Des défauts du serveur et pas d'une copie de la scène courante : « + Scène »
+   *  doit donner une page propre, et « Dupliquer » existe pour l'autre besoin.
+   *  Les valeurs viennent de `?defauts=1`, jamais d'une table écrite ici.
+   */
+  function nouvelleScene() {
+    if (!etat.layout) return;
+    if (!accordPourPublier()) return;
+    const nom = window.prompt("Nom de la nouvelle scène :", "Nouvelle scène");
+    if (nom === null) return;
+    const propre = nom.trim();
+    if (!propre) { notifier("Un nom vide n'a rien à afficher.", "error"); return; }
+    const slug = slugUnique(slugDepuisNom(propre));
+    chargerDefauts().then(function (defauts) {
+      if (!defauts) {
+        notifier("Valeurs d'origine indisponibles : le serveur n'a pas répondu. "
+          + "Aucune scène créée.", "error");
+        return;
+      }
+      const origine = elementsDefaut(defauts, slug);
+      const structure = defautsStructure(defauts, slug);
+      const elements = {};
+      // Copie PROFONDE : les défauts sont gardés en cache pour toute la visite,
+      // et une référence partagée ferait bouger la livraison au premier réglage.
+      Object.keys(origine).forEach(function (cle) {
+        elements[cle] = Object.assign({}, origine[cle]);
+      });
+      etat.layout.scenes.push({
+        slug: slug,
+        nom: propre,
+        ordre: structure.ordre.slice(),
+        elements: elements,
+        groupes: JSON.parse(JSON.stringify(structure.groupes)),
+      });
+      etat.slugCourant = slug;
+      retenirScene(slug);
+      etat.elementCourant = structure.ordre[0] || null;
+      nettoyerSelection();
+      marquerModifie();
+      rendreTout();
+      // L'adresse annoncée doit EXISTER : elle part dans OBS dans la minute qui
+      // suit. Elle n'est donc dite qu'une fois la scène enregistrée.
+      publier("Scène « " + propre + " » créée · " + urlScene(slug));
     });
   }
 
@@ -4578,17 +4869,109 @@ window.OverlayAdmin = (function () {
 
   // ── La barre de publication ─────────────────────────────────────────────
 
+  /** Le détail est-il déplié ? DANS LE NAVIGATEUR, pas dans le modèle : c'est
+   *  un confort de lecture, pas une décision de mise en scène. Déplié par
+   *  défaut quand quelque chose attend — le seul moment où il a du contenu. */
+  let piedDeplie = true;
+
+  // Au-delà, la grille du pied prendrait la moitié de la hauteur du panneau.
+  // Ce qui est coupé est DIT (« … et 12 autres ») : une liste tronquée en
+  // silence se lit comme une liste complète, et c'est sur celle-là qu'on
+  // décide de publier.
+  const PIED_DETAIL_MAX = 24;
+
+  /** Depuis quand l'antenne diffuse ce qu'elle diffuse. */
+  function antenneDepuis() {
+    const t = etat.majAntenne ? Date.parse(etat.majAntenne) : NaN;
+    if (!isFinite(t)) return "l'antenne diffuse la mise en scène enregistrée";
+    const d = new Date(t);
+    const deux = function (n) { return (n < 10 ? "0" : "") + n; };
+    return "l'antenne diffuse toujours la version de "
+      + deux(d.getHours()) + ":" + deux(d.getMinutes());
+  }
+
   function rendreBarrePublication() {
-    if (!noeuds.compteur) return;
+    if (!noeuds.pied) return;
     const n = etat.brouillon;
-    noeuds.compteur.textContent = n
-      ? n + " modification" + (n > 1 ? "s" : "") + " non publiée" + (n > 1 ? "s" : "")
-      : (etat.direct ? "Publication immédiate" : "Rien en attente");
-    noeuds.compteur.classList.toggle("en-attente", n > 0);
+    const diff = diffAntenne();
+    // Deux comptes, et ils ne disent pas la même chose : `n` compte les GESTES
+    // du brouillon, `diff.total` ce qui PART réellement. Déplacer un élément
+    // puis le ramener fait deux gestes et zéro changement — et c'est le second
+    // chiffre qu'on veut lire avant de cliquer.
+    const connu = !!modeleAntenne();
+    noeuds.pied.classList.toggle("en-attente", n > 0);
+
+    if (n === 0) {
+      noeuds.piedTitre.textContent = etat.direct
+        ? "Publication au fil de l'eau — chaque geste part à l'antenne."
+        : "Tout est à l'antenne.";
+      const depuisQuand = antenneDepuis();
+      noeuds.piedSous.textContent =
+        depuisQuand.charAt(0).toUpperCase() + depuisQuand.slice(1) + ".";
+    } else if (!connu || diff.total) {
+      const compte = connu ? diff.total : n;
+      noeuds.piedTitre.textContent = compte + " modification"
+        + (compte > 1 ? "s" : "") + " en attente — " + antenneDepuis();
+      const scenes = (etat.layout && etat.layout.scenes || []).length;
+      noeuds.piedSous.textContent = "Publier remplace les " + scenes
+        + " scène" + (scenes > 1 ? "s" : "") + " d'un coup. Les spectateurs "
+        + "voient le changement en moins d'une seconde.";
+    } else {
+      // `n > 0` et pourtant rien à envoyer : les gestes se sont annulés. Le
+      // dire, plutôt que d'afficher « 0 modification en attente » à côté d'un
+      // bouton actif — c'est le genre de contradiction qu'on relit trois fois.
+      noeuds.piedTitre.textContent = "Aucun changement net — les "
+        + n + " geste" + (n > 1 ? "s" : "") + " du brouillon se sont annulés.";
+      noeuds.piedSous.textContent = "Publier ne changerait rien à l'antenne. "
+        + "« Revenir à l'antenne » solde le brouillon.";
+    }
+
+    // Le détail ne se déplie que s'il a quelque chose à montrer.
+    const detail = diff.total > 0;
+    noeuds.piedDetail.style.display = detail ? "" : "none";
+    noeuds.piedDetail.textContent = piedDeplie ? "Masquer le détail" : "Voir le détail";
+    noeuds.piedDetail.setAttribute("aria-expanded", piedDeplie ? "true" : "false");
+    rendrePiedDetail(detail && piedDeplie ? diff : null);
+
     noeuds.publier.disabled = n === 0;
     noeuds.abandonner.disabled = n === 0;
-    if (noeuds.annuler) noeuds.annuler.disabled = !etat.precedent;
     majBoutonsHistoire();
+  }
+
+  /** La grille du détail. `diff` à `null` la vide et la replie. */
+  function rendrePiedDetail(diff) {
+    const hote = noeuds.piedListe;
+    if (!hote) return;
+    hote.innerHTML = "";
+    hote.style.display = diff ? "" : "none";
+    if (!diff) return;
+    // Le nom de la scène n'est répété que si le DÉTAIL en touche plusieurs —
+    // pas si le panneau en compte plusieurs : tant que tout ce qui attend vient
+    // du même onglet, le badge ne distingue rien et vole la place à la
+    // description, qui finit en « ancrage milieu-droite → haut-… ».
+    //
+    // Jamais non plus sur une ligne qui porte SUR la scène : « Partie en cours ·
+    // [Partie en cours] · renommée » dit deux fois le même mot.
+    const scenes = {};
+    diff.liste.forEach(function (l) { scenes[l.slug] = true; });
+    const multi = Object.keys(scenes).length > 1;
+    diff.liste.slice(0, PIED_DETAIL_MAX).forEach(function (l) {
+      const ligne = creer("div", "ovl-pied-ligne");
+      // La ligne entière en infobulle : la description est coupée par la
+      // largeur de la colonne, et c'est justement elle qu'on veut lire en
+      // entier avant de publier.
+      ligne.title = l.nom + (multi ? " · " + l.scene : "") + " — " + l.d;
+      ligne.appendChild(creer("span", "ovl-point"));
+      ligne.appendChild(creer("span", "ovl-pied-nom", l.nom));
+      if (multi && l.cle) ligne.appendChild(creer("span", "ovl-pied-scene", l.scene));
+      ligne.appendChild(creer("span", "ovl-pied-quoi", l.d));
+      hote.appendChild(ligne);
+    });
+    const reste = diff.liste.length - PIED_DETAIL_MAX;
+    if (reste > 0) {
+      hote.appendChild(creer("div", "ovl-pied-reste",
+        "… et " + reste + " autre" + (reste > 1 ? "s" : "") + "."));
+    }
   }
 
   // ── Le brouillon retrouvé au chargement ─────────────────────────────────
@@ -4996,6 +5379,216 @@ window.OverlayAdmin = (function () {
     });
   }
 
+  /** La barre d'onglets, en tête du panneau : le titre, les scènes, « + Scène »
+   *  et l'adresse OBS de celle qu'on règle. */
+  function barreScenes() {
+    const barre = creer("div", "ovl-barre-scenes");
+
+    const titre = creer("div", "ovl-barre-titre");
+    titre.appendChild(creer("div", "ovl-sur-titre", "MISE EN SCÈNE"));
+    titre.appendChild(creer("div", "ovl-titre", "Où va chaque élément"));
+    barre.appendChild(titre);
+
+    noeuds.listeScenes = creer("ul", "ovl-scenes");
+    barre.appendChild(noeuds.listeScenes);
+
+    const plus = creer("button", "ovl-scene-plus", "+ Scène");
+    plus.title = "Une scène neuve, aux valeurs d'origine. « Dupliquer » (menu ⋮) "
+      + "part au contraire de la scène affichée.";
+    plus.addEventListener("click", function () { nouvelleScene(); });
+    barre.appendChild(plus);
+
+    barre.appendChild(creer("div", "ovl-espace"));
+
+    // L'adresse à coller dans OBS, celle de la scène AFFICHÉE. Une seule, à
+    // droite : trois adresses empilées prenaient la place d'une colonne sans
+    // qu'on lise jamais les deux autres.
+    const source = creer("div", "ovl-source");
+    source.appendChild(creer("span", "ovl-source-label", "Source OBS"));
+    const boite = creer("div", "ovl-source-boite");
+    noeuds.sourceUrl = creer("span", "ovl-source-url", "");
+    boite.appendChild(noeuds.sourceUrl);
+    noeuds.sourceCopie = creer("button", "ovl-copie");
+    noeuds.sourceCopie.appendChild(iconeCopie());
+    noeuds.sourceCopie.addEventListener("click", function () {
+      if (noeuds.sourceUrl.textContent) copier(noeuds.sourceUrl.textContent);
+    });
+    poserInfobulle(noeuds.sourceCopie,
+      "Copier l'adresse — c'est elle qu'on colle dans une source navigateur OBS.");
+    boite.appendChild(noeuds.sourceCopie);
+    source.appendChild(boite);
+    barre.appendChild(source);
+
+    return barre;
+  }
+
+  /** Cocher « Publier au fil de l'eau », depuis la case OU depuis le menu ⋯.
+   *
+   *  Un seul chemin pour un réglage qui touche l'antenne : deux copies de cette
+   *  garde auraient divergé, et c'est celle qui prévient AVANT d'envoyer.
+   */
+  function basculerDirect(voulu) {
+    // Cocher alors que des modifications attendent les envoie : `publier()`
+    // pousse le MODÈLE ENTIER, la prochaine retouche les emporterait de toute
+    // façon. On le dit avant, plutôt que de le laisser découvrir à l'antenne.
+    if (voulu && etat.brouillon > 0
+        && !window.confirm(
+          etat.brouillon + " modification(s) attendent.\n\nPublier au fil de "
+          + "l'eau les enverra à l'antenne MAINTENANT.\n\nContinuer ?")) {
+      return;
+    }
+    etat.direct = voulu;
+    if (etat.direct && etat.brouillon > 0) publier();
+    rendreBarrePublication();
+  }
+
+  /** Le menu ⋯ du pied : ce qui ne se clique pas tous les jours.
+   *
+   *  Replié et non supprimé. La maquette ne montrait ni l'export, ni le fil de
+   *  l'eau, ni le cran d'annulation — mais un panneau de production ne perd pas
+   *  une capacité parce qu'une maquette ne lui a pas trouvé de place. Ce qui se
+   *  clique à chaque réglage reste à découvert ; le reste tient ici.
+   */
+  function ouvrirMenuPied(hote) {
+    fermerMenu();
+    const menu = creer("div", "ovl-menu ovl-menu-pied");
+
+    const direct = actionMenu(menu, (etat.direct ? "✓ " : "") + "Publier au fil de l'eau",
+      true, function () { basculerDirect(!etat.direct); });
+    direct.title = "Décoché : l'overlay à l'antenne ne bouge pas tant qu'on n'a "
+      + "pas cliqué « Mettre à l'antenne ». Coché : chaque déplacement part au "
+      + "relâchement — rien pendant le geste.";
+
+    const annuler = actionMenu(menu, "Annuler la dernière publication",
+      !!etat.precedent, function () {
+        if (etat.precedent) annulerPublication();
+      });
+    annuler.title = "Republie la mise en scène d'avant la dernière publication. "
+      + "Un seul cran — de quoi ne pas rester coincé en direct.";
+
+    const exporter_ = actionMenu(menu, "Exporter dans un fichier…", true, exporter);
+    exporter_.title = "Enregistre la mise en scène AFFICHÉE (brouillon compris) "
+      + "dans un fichier JSON daté.";
+
+    const importer_ = actionMenu(menu, "Importer un fichier…", true, function () {
+      noeuds.fichierImport.click();
+    });
+    importer_.title = "Remplace la mise en scène par le contenu d'un fichier "
+      + "exporté. Passe par le brouillon — rien ne part à l'antenne sans "
+      + "« Mettre à l'antenne ».";
+
+    actionMenu(menu, "Raccourcis clavier", true, function () { basculerAide(true); });
+
+    hote.parentNode.appendChild(menu);
+    menuOuvert = menu;
+    menuHote = hote;
+    // En phase de capture, et posé au tour suivant : sinon le clic qui vient
+    // d'ouvrir le menu le referme aussitôt.
+    setTimeout(function () {
+      document.addEventListener("pointerdown", fermerAuClicDehors, true);
+    }, 0);
+  }
+
+  /** Le pied de publication : ce qui attend, et ce qui part.
+   *
+   *  Pleine largeur sous les deux colonnes, et non plus une barre serrée sous
+   *  la surface. C'est la seule chose du panneau qui touche l'antenne : elle
+   *  doit se voir sans qu'on la cherche, et pouvoir DIRE ce qui va partir —
+   *  d'où le détail dépliable, qui n'existait nulle part.
+   */
+  function piedPublication() {
+    const pied = creer("div", "ovl-pied");
+
+    const haut = creer("div", "ovl-pied-haut");
+    noeuds.piedPoint = creer("span", "ovl-pied-point");
+    haut.appendChild(noeuds.piedPoint);
+
+    const textes = creer("div", "ovl-pied-textes");
+    noeuds.piedTitre = creer("div", "ovl-pied-titre", "");
+    noeuds.piedSous = creer("div", "ovl-pied-sous", "");
+    textes.appendChild(noeuds.piedTitre);
+    textes.appendChild(noeuds.piedSous);
+    haut.appendChild(textes);
+
+    haut.appendChild(creer("div", "ovl-espace"));
+
+    // Défaire / refaire portent sur les GESTES du brouillon, pas sur l'antenne.
+    // Ils restent donc à distance de « Mettre à l'antenne » — deux « annuler »
+    // côte à côte seraient le meilleur moyen de cliquer sur le mauvais un soir
+    // de live.
+    noeuds.defaire = creer("button", "btn ovl-histoire", "↶");
+    noeuds.defaire.title = "Annuler le dernier geste du brouillon (Ctrl + Z). "
+      + "N'envoie rien : le brouillon seul recule.";
+    noeuds.defaire.setAttribute("aria-label", "Annuler le dernier geste");
+    noeuds.defaire.disabled = true;
+    noeuds.defaire.addEventListener("click", function () {
+      direDefait(annulerHistoire());
+    });
+    haut.appendChild(noeuds.defaire);
+    noeuds.refaire = creer("button", "btn ovl-histoire", "↷");
+    noeuds.refaire.title = "Refaire le geste annulé (Ctrl + Y).";
+    noeuds.refaire.setAttribute("aria-label", "Refaire le geste annulé");
+    noeuds.refaire.disabled = true;
+    noeuds.refaire.addEventListener("click", function () {
+      direRefait(refaireHistoire());
+    });
+    haut.appendChild(noeuds.refaire);
+
+    noeuds.piedDetail = creer("button", "ovl-pied-lien", "");
+    noeuds.piedDetail.addEventListener("click", function () {
+      piedDeplie = !piedDeplie;
+      rendreBarrePublication();
+    });
+    haut.appendChild(noeuds.piedDetail);
+
+    noeuds.abandonner = creer("button", "btn", "Revenir à l'antenne");
+    noeuds.abandonner.title = "Jette le brouillon et recharge ce qui est "
+      + "réellement à l'antenne.";
+    noeuds.abandonner.addEventListener("click", function () { abandonner(); });
+    haut.appendChild(noeuds.abandonner);
+
+    noeuds.publier = creer("button", "btn ovl-publier", "Mettre à l'antenne");
+    noeuds.publier.addEventListener("click", function () { publier(); });
+    haut.appendChild(noeuds.publier);
+
+    // Le ⋯ dans son propre conteneur positionné : le menu se pose en absolu et
+    // s'ouvre VERS LE HAUT — le pied est en bas du panneau, un menu déroulant
+    // vers le bas sortirait de l'écran.
+    const coin = creer("div", "ovl-pied-coin");
+    const plus = creer("button", "ovl-menu-btn", "⋯");
+    plus.title = "Export, import, publication au fil de l'eau, raccourcis…";
+    plus.setAttribute("aria-label", "Autres actions de publication");
+    plus.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      if (menuOuvert && menuOuvert.parentNode === coin) { fermerMenu(); return; }
+      ouvrirMenuPied(plus);
+    });
+    coin.appendChild(plus);
+    haut.appendChild(coin);
+
+    pied.appendChild(haut);
+
+    noeuds.piedListe = creer("div", "ovl-pied-liste");
+    pied.appendChild(noeuds.piedListe);
+
+    // L'input de fichier reste DANS le document, invisible : un `click()` sur
+    // un input détaché n'ouvre le sélecteur nulle part.
+    noeuds.fichierImport = document.createElement("input");
+    noeuds.fichierImport.type = "file";
+    noeuds.fichierImport.accept = "application/json,.json";
+    noeuds.fichierImport.style.display = "none";
+    noeuds.fichierImport.addEventListener("change", function () {
+      importer(noeuds.fichierImport.files && noeuds.fichierImport.files[0]);
+      // Vidé APRÈS : sans ça, réimporter deux fois le même fichier n'émettrait
+      // pas de second `change`, et l'entrée du menu semblerait morte.
+      noeuds.fichierImport.value = "";
+    });
+    pied.appendChild(noeuds.fichierImport);
+
+    noeuds.pied = pied;
+    return pied;
+  }
+
   function construireSquelette(conteneur) {
     conteneur.classList.add("ovl-panneau");
     conteneur.innerHTML = "";
@@ -5005,45 +5598,16 @@ window.OverlayAdmin = (function () {
     Object.keys(reperes).forEach(function (c) { delete reperes[c]; });
     listeSignature = null;
 
-    const entete = creer("div", "ovl-entete");
-    entete.appendChild(creer("div", "card-title", "MISE EN SCÈNE"));
-    entete.appendChild(creer("div", "ovl-entete-sub",
-      "Où va chaque élément, scène par scène. Rien ne part à l'antenne avant "
-      + "« Mettre à jour »."));
-    conteneur.appendChild(entete);
+    conteneur.appendChild(barreScenes());
 
     const corps = creer("div", "ovl-corps");
 
-    // Colonne de gauche : les scènes, puis les éléments.
-    const colonne = creer("div", "ovl-colonne");
-
-    const blocScenes = creer("div", "ovl-bloc ovl-bloc-scenes");
-    const titreScenes = creer("div", "ovl-bloc-titre");
-    titreScenes.appendChild(creer("span", null, "Scènes"));
-    blocScenes.appendChild(titreScenes);
-    noeuds.listeScenes = creer("ul", "ovl-scenes");
-    blocScenes.appendChild(noeuds.listeScenes);
-    colonne.appendChild(blocScenes);
-
-    const blocElements = creer("div", "ovl-bloc ovl-bloc-elements");
-    const titreElements = creer("div", "ovl-bloc-titre");
-    titreElements.appendChild(creer("span", null, "Éléments"));
-    noeuds.compteElements = creer("span", "ovl-bloc-compte", "");
-    titreElements.appendChild(noeuds.compteElements);
-    blocElements.appendChild(titreElements);
-    noeuds.listeElements = creer("ul", "ovl-elements");
-    blocElements.appendChild(noeuds.listeElements);
-    blocElements.appendChild(creer("div", "ovl-aide",
-      "Glisser pour réordonner : ce qui est en haut passe devant."));
-    colonne.appendChild(blocElements);
-
-    corps.appendChild(colonne);
-
-    // À droite : la surface, ses réglages, puis la publication.
-    const droite = creer("div", "ovl-droite");
+    // À gauche, tout ce qui touche à la surface : elle occupe désormais la
+    // place que prenait la colonne des scènes.
+    const travail = creer("div", "ovl-travail");
     noeuds.cadre = creer("div", "ovl-surface");
     // L'aperçu d'abord, le calque par-dessus : c'est l'ordre du DOM qui décide
-    // lequel capte le pointeur, et le glisser (lot suivant) vivra sur le calque.
+    // lequel capte le pointeur, et le glisser vit sur le calque.
     noeuds.apercu = document.createElement("iframe");
     noeuds.apercu.className = "ovl-apercu";
     noeuds.apercu.title = "Aperçu de la scène en cours d'édition";
@@ -5094,28 +5658,43 @@ window.OverlayAdmin = (function () {
     noeuds.coords = creer("div", "ovl-coords");
     noeuds.cadre.appendChild(noeuds.coords);
 
-    droite.appendChild(noeuds.cadre);
-
-    droite.appendChild(barreApercu());
-    droite.appendChild(barreOutils());
+    travail.appendChild(noeuds.cadre);
+    travail.appendChild(barreApercu());
+    travail.appendChild(barreOutils());
     noeuds.raccourcis = blocRaccourcis();
-    droite.appendChild(noeuds.raccourcis);
+    travail.appendChild(noeuds.raccourcis);
 
     const reglages = creer("div", "ovl-reglages");
     construireReglages(reglages);
-    droite.appendChild(reglages);
+    travail.appendChild(reglages);
     // Les raccourcis sont écrits : Alt et Maj ne se devinent pas, et personne
     // ne cherche une poignée qu'il ne sait pas là. La ligne dit l'essentiel et
     // renvoie au « ? » pour le reste — treize raccourcis en une phrase ne se
     // lisent pas.
-    droite.appendChild(creer("div", "ovl-aide",
+    travail.appendChild(creer("div", "ovl-aide",
       "Glisser un repère pour le déplacer · les poignées d'angle changent sa "
       + "taille · Alt suspend l'aimantation · flèches : 0,1 % (Maj : 1 %) · "
       + "Ctrl+clic et glisser sur le fond pour choisir plusieurs éléments · "
       + "« ? » pour tous les raccourcis."));
+    corps.appendChild(travail);
 
-    // La proposition de reprise, au-dessus de la barre : elle ne s'affiche
-    // qu'au chargement, et seulement s'il reste un brouillon.
+    // À droite, la liste des éléments de la scène.
+    const lateral = creer("div", "ovl-lateral");
+    const titreElements = creer("div", "ovl-bloc-titre");
+    titreElements.appendChild(creer("span", null, "Éléments de la scène"));
+    noeuds.compteElements = creer("span", "ovl-bloc-compte", "");
+    titreElements.appendChild(noeuds.compteElements);
+    lateral.appendChild(titreElements);
+    noeuds.listeElements = creer("ul", "ovl-elements");
+    lateral.appendChild(noeuds.listeElements);
+    lateral.appendChild(creer("div", "ovl-aide",
+      "Glisser pour changer le rang : ce qui est en haut passe devant."));
+    corps.appendChild(lateral);
+
+    conteneur.appendChild(corps);
+
+    // La proposition de reprise, au-dessus du pied : elle ne s'affiche qu'au
+    // chargement, et seulement s'il reste un brouillon.
     noeuds.proposition = creer("div", "ovl-brouillon");
     noeuds.proposition.style.display = "none";
     noeuds.propositionTexte = creer("span", "ovl-brouillon-texte", "");
@@ -5127,106 +5706,9 @@ window.OverlayAdmin = (function () {
     noeuds.propositionJeter = creer("button", "btn btn-sm", "Jeter");
     noeuds.propositionJeter.title = "Oublie le brouillon et garde ce qui est à l'antenne.";
     noeuds.proposition.appendChild(noeuds.propositionJeter);
-    droite.appendChild(noeuds.proposition);
+    conteneur.appendChild(noeuds.proposition);
 
-    const publication = creer("div", "ovl-publication");
-    const direct = creer("label", "ovl-direct");
-    const caseDirect = document.createElement("input");
-    caseDirect.type = "checkbox";
-    caseDirect.checked = false;   // le cas dangereux ne s'obtient pas sans rien faire
-    caseDirect.addEventListener("change", function () {
-      // Cocher alors que des modifications attendent les envoie : `publier()`
-      // pousse le MODÈLE ENTIER, la prochaine retouche les emporterait de toute
-      // façon. On le dit avant, plutôt que de le laisser découvrir à l'antenne.
-      if (caseDirect.checked && etat.brouillon > 0
-          && !window.confirm(
-            etat.brouillon + " modification(s) attendent.\n\nPublier au fil de "
-            + "l'eau les enverra à l'antenne MAINTENANT.\n\nContinuer ?")) {
-        caseDirect.checked = false;
-        return;
-      }
-      etat.direct = caseDirect.checked;
-      if (etat.direct && etat.brouillon > 0) publier();
-      rendreBarrePublication();
-    });
-    direct.appendChild(caseDirect);
-    // Nommée « Publier au fil de l'eau » et non « Aperçu en direct » : depuis
-    // que la surface montre la vraie page, « aperçu » désigne CE cadre. Deux
-    // sens pour un mot, dans le même panneau, sur un réglage qui touche
-    // l'antenne — c'est la confusion qu'on ne peut pas se permettre ici.
-    direct.appendChild(creer("span", null, "Publier au fil de l'eau"));
-    direct.title = "Décoché : l'overlay à l'antenne ne bouge pas tant qu'on "
-      + "n'a pas cliqué « Mettre à jour ». Coché : chaque déplacement part au "
-      + "relâchement — rien pendant le geste.";
-    publication.appendChild(direct);
-    // Défaire / refaire, à GAUCHE du compteur : ils portent sur les gestes qui
-    // l'ont fait monter, pas sur ce qui est à l'antenne. « Annuler la
-    // publication », qui lui touche à l'antenne, reste à l'autre bout de la
-    // barre — deux « annuler » côte à côte auraient été le meilleur moyen de
-    // cliquer sur le mauvais un soir de live.
-    noeuds.defaire = creer("button", "btn ovl-histoire", "↶");
-    noeuds.defaire.title = "Annuler le dernier geste du brouillon (Ctrl + Z). "
-      + "N'envoie rien : le brouillon seul recule.";
-    noeuds.defaire.setAttribute("aria-label", "Annuler le dernier geste");
-    noeuds.defaire.disabled = true;
-    noeuds.defaire.addEventListener("click", function () {
-      direDefait(annulerHistoire());
-    });
-    publication.appendChild(noeuds.defaire);
-    noeuds.refaire = creer("button", "btn ovl-histoire", "↷");
-    noeuds.refaire.title = "Refaire le geste annulé (Ctrl + Y).";
-    noeuds.refaire.setAttribute("aria-label", "Refaire le geste annulé");
-    noeuds.refaire.disabled = true;
-    noeuds.refaire.addEventListener("click", function () {
-      direRefait(refaireHistoire());
-    });
-    publication.appendChild(noeuds.refaire);
-    noeuds.compteur = creer("span", "ovl-compteur", "Rien en attente");
-    publication.appendChild(noeuds.compteur);
-    noeuds.publier = creer("button", "btn btn-success", "Mettre à jour");
-    noeuds.publier.addEventListener("click", function () { publier(); });
-    publication.appendChild(noeuds.publier);
-    noeuds.abandonner = creer("button", "btn", "Abandonner");
-    noeuds.abandonner.title = "Jette le brouillon et recharge ce qui est "
-      + "réellement à l'antenne.";
-    noeuds.abandonner.addEventListener("click", function () { abandonner(); });
-    publication.appendChild(noeuds.abandonner);
-    noeuds.annuler = creer("button", "btn", "Annuler la publication");
-    noeuds.annuler.title = "Republie la mise en scène d'avant la dernière "
-      + "publication. Un seul cran — de quoi ne pas rester coincé en direct.";
-    noeuds.annuler.disabled = true;
-    noeuds.annuler.addEventListener("click", function () { annulerPublication(); });
-    publication.appendChild(noeuds.annuler);
-
-    // Le fichier : sauver une mise en scène avant d'en tenter une autre, et la
-    // reprendre. L'input reste dans le document, invisible — un `click()` sur un
-    // input détaché n'ouvre le sélecteur nulle part.
-    const fichier = document.createElement("input");
-    fichier.type = "file";
-    fichier.accept = "application/json,.json";
-    fichier.style.display = "none";
-    fichier.addEventListener("change", function () {
-      importer(fichier.files && fichier.files[0]);
-      // Vidé APRÈS : sans ça, réimporter deux fois le même fichier n'émettrait
-      // pas de second `change`, et le bouton semblerait mort.
-      fichier.value = "";
-    });
-    publication.appendChild(fichier);
-    const exportBtn = creer("button", "btn", "Exporter");
-    exportBtn.title = "Enregistre la mise en scène AFFICHÉE (brouillon compris) "
-      + "dans un fichier JSON daté.";
-    exportBtn.addEventListener("click", exporter);
-    publication.appendChild(exportBtn);
-    const importBtn = creer("button", "btn", "Importer");
-    importBtn.title = "Remplace la mise en scène par le contenu d'un fichier "
-      + "exporté. Passe par le brouillon — rien ne part à l'antenne sans "
-      + "« Mettre à jour ».";
-    importBtn.addEventListener("click", function () { fichier.click(); });
-    publication.appendChild(importBtn);
-    droite.appendChild(publication);
-
-    corps.appendChild(droite);
-    conteneur.appendChild(corps);
+    conteneur.appendChild(piedPublication());
 
     // La taille des rectangles ET la réduction de l'aperçu dépendent de la
     // largeur de la surface : sans ça, replier la barre latérale les laisserait
@@ -5376,6 +5858,14 @@ window.OverlayAdmin = (function () {
     // question de concurrence à chaque publication.
     HORS_MODELE: HORS_MODELE,
     retirerHorsModele: retirerHorsModele,
+    // Le diff avec l'antenne. Exposé pour être TESTÉ, et c'est le seul moyen :
+    // ce qu'il OUBLIERAIT de comparer ne se verrait pas en le lisant, mais un
+    // soir de live sous la forme d'un réglage parti sans être annoncé.
+    diffAntenne: diffAntenne,
+    diffScene: diffScene,
+    decrireElement: decrireElement,
+    nomAncrage: nomAncrage,
+    flecheAncrage: flecheAncrage,
     // Le sens du survol. Exposé pour être TESTÉ : c'est une règle d'un mot
     // (« surface »), et elle ne se voit sur aucune capture d'écran.
     cotesDuSurvol: cotesDuSurvol,

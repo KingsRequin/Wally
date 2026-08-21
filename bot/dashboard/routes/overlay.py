@@ -310,7 +310,7 @@ from bot.core.overlay_layout import (                       # noqa: E402
     layout_par_defaut, scene_par_slug, tailles_media,
 )
 from bot.core.overlay_layout_store import (                 # noqa: E402
-    charger_layout, enregistrer_layout,
+    charger_layout, date_maj, enregistrer_layout,
 )
 
 
@@ -393,13 +393,17 @@ async def get_overlay_layout_admin(request: Request, defauts: bool = False) -> d
     par le même code, et que le panneau sait déjà le lire.
     """
     layout = layout_par_defaut() if defauts else await charger_layout(_db(request))
+    # La date de la dernière mise à l'antenne, jointe au modèle sans en faire
+    # partie (le panneau la retire avant de renvoyer, cf. `HORS_MODELE`). Elle
+    # n'a pas de sens sur les DÉFAUTS : ceux-là n'ont jamais été publiés.
+    maj = None if defauts else await date_maj(_db(request))
     # Les échantillons du ▶ voyagent aussi : le panneau s'en sert pour son BANC
     # DE MESURE, qui monte chaque widget dans l'aperçu — sans rien publier — afin
     # que son cadre soit juste SANS qu'on ait eu à lancer l'élément. Servis d'ici
     # plutôt que recopiés en JavaScript, pour la raison de toujours : deux tables
     # divergent au premier widget ajouté.
     return {**layout, "libelles": LIBELLES, "tailles": _tailles_media(request),
-            "echantillons": _ECHANTILLONS}
+            "echantillons": _ECHANTILLONS, "maj": maj}
 
 
 @admin_router.put("/overlay/layout")
@@ -411,6 +415,9 @@ async def put_overlay_layout(request: Request) -> dict:
     except Exception:
         raise HTTPException(400, "JSON invalide")
     layout = await enregistrer_layout(_db(request), data)
+    # Relue plutôt que fabriquée ici : c'est le store qui écrit la date, et une
+    # seconde source aurait annoncé une publication que l'écriture a pu rater.
+    maj = await date_maj(_db(request))
     feed = getattr(request.app.state.wally, "overlay_feed", None)
     if feed is not None:
         # Un SIGNAL, pas le layout. `OverlayFeed.recent()` rejoue les dix
@@ -422,7 +429,7 @@ async def put_overlay_layout(request: Request) -> dict:
         # `scene: None` — toutes les pages ouvertes se replacent. Chacune ne
         # retient que la scène qui la concerne.
         feed.publish({"type": "layout", "scene": None})
-    return layout
+    return {**layout, "maj": maj}
 
 
 # ── Le bouton « Tester » ─────────────────────────────────────────────────────

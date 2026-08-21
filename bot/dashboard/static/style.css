@@ -3423,36 +3423,184 @@ body.is-mobile .mobile-back-btn {
    du gras, ce qui n'a rien à faire sur nos champs. */
 .ovl-panneau label { min-width: 0; font-weight: 400; }
 
-.ovl-panneau { padding-top: 8px; }
-.ovl-entete { margin-bottom: 12px; }
-.ovl-entete-sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px; }
+.ovl-panneau { padding-top: 8px; display: flex; flex-direction: column; gap: 14px; }
+
+/* ── La barre d'onglets ──────────────────────────────────────────────────
+   Les scènes tenaient une colonne de 280 px en face de la surface — 280 px
+   pris à la seule chose qu'on regarde, pour trois lignes qui ne bougent
+   jamais. En onglets, elles rendent la largeur au placement. */
+
+.ovl-barre-scenes {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-bottom: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ovl-barre-titre { padding-bottom: 14px; flex-shrink: 0; }
+.ovl-sur-titre {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ovl-titre { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-top: 3px; }
+.ovl-espace { flex: 1; min-width: 0; }
+
+.ovl-scenes {
+  list-style: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+/* L'onglet : un carré supérieur arrondi qui MORD la ligne de la barre quand il
+   est actif. Pas de fond sur les autres — un onglet inactif qui se dessine
+   autant que l'actif ne dit plus lequel on regarde. */
+.ovl-scene {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ovl-scene:hover { background: rgba(255, 255, 255, 0.04); }
+.ovl-scene.actif {
+  background: rgba(6, 182, 212, 0.1);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+/* Le liseré qui referme l'onglet actif sur la ligne de la barre. En
+   pseudo-élément et non en `border-bottom-color: transparent` : la bordure du
+   conteneur est posée sur `.ovl-barre-scenes`, pas sur l'onglet. */
+.ovl-scene.actif::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: rgba(6, 182, 212, 0.1);
+}
+.ovl-scene-corps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 9px 6px 12px 15px;
+  cursor: pointer;
+}
+.ovl-scene-corps:focus-visible {
+  outline: 2px solid rgba(6, 182, 212, 0.6);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+.ovl-scene-haut { display: flex; align-items: center; gap: 8px; }
+.ovl-scene-nom {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.ovl-scene.actif .ovl-scene-nom { color: var(--text-primary); }
+.ovl-scene-sous { font-size: 0.66rem; color: var(--text-muted); white-space: nowrap; }
+.ovl-scene.actif .ovl-scene-sous { color: var(--text-secondary); }
+
+/* La pastille ambre : quelque chose attend d'être publié ici. Même couleur
+   dans les onglets et dans le pied — c'est la même information. */
+.ovl-point {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d29e0b;
+  flex-shrink: 0;
+}
+
+.ovl-scene .ovl-menu-btn { align-self: center; margin-right: 6px; }
+
+.ovl-scene-plus {
+  align-self: center;
+  margin-bottom: 10px;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.ovl-scene-plus:hover {
+  border-color: rgba(6, 182, 212, 0.45);
+  border-style: solid;
+  color: var(--text-primary);
+}
+
+/* ── L'adresse OBS de la scène affichée ──────────────────────────────── */
+
+.ovl-source {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 12px;
+  min-width: 0;
+}
+.ovl-source-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ovl-source-boite {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 5px 6px 5px 10px;
+}
+/* Coupée par la GAUCHE : c'est la fin qui distingue deux scènes, jamais le
+   `https://`. */
+.ovl-source-url {
+  direction: rtl;
+  text-align: left;
+  min-width: 0;
+  max-width: 280px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: all;
+}
+
+/* ── La zone de travail ──────────────────────────────────────────────── */
 
 .ovl-corps {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 18px;
   align-items: start;
 }
 @media (max-width: 1100px) {
   .ovl-corps { grid-template-columns: 1fr; }
 }
+.ovl-travail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ovl-lateral { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 
-.ovl-colonne { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-
-.ovl-bloc {
-  /* `backdrop-filter` crée un contexte d'empilement : sans rang explicite, le
-     bloc des éléments — plus bas dans le DOM — peignait PAR-DESSUS le menu ⋮
-     des scènes, quel que soit le `z-index` de celui-ci. Le menu s'ouvrait
-     bien, on ne le voyait qu'à moitié. */
-  position: relative;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  padding: 12px;
-}
 .ovl-bloc-titre {
   display: flex;
   align-items: baseline;
@@ -3462,70 +3610,11 @@ body.is-mobile .mobile-back-btn {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 10px;
 }
-/* Le seul bloc qui déploie un menu par-dessus son voisin. */
-.ovl-bloc-scenes { z-index: 2; }
 .ovl-bloc-compte { font-size: 0.68rem; color: var(--text-muted); }
-.ovl-aide { font-size: 0.68rem; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+.ovl-aide { font-size: 0.68rem; color: var(--text-muted); line-height: 1.4; }
 .ovl-vide { padding: 10px; font-size: 0.78rem; color: var(--text-secondary); list-style: none; }
 
-/* ── La liste des scènes ─────────────────────────────────────────────── */
-
-.ovl-scenes { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.ovl-scene {
-  position: relative;
-  display: flex;
-  align-items: center;
-  /* L'adresse passe à la ligne, sur toute la largeur : c'est le texte le plus
-     long de la colonne, et le partager avec deux boutons le coupait de moitié. */
-  flex-wrap: wrap;
-  row-gap: 2px;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.ovl-scene:hover { background: rgba(255, 255, 255, 0.05); }
-.ovl-scene.actif {
-  border-color: rgba(6, 182, 212, 0.5);
-  background: rgba(6, 182, 212, 0.1);
-}
-.ovl-scene-corps {
-  flex: 1;
-  min-width: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.ovl-scene-nom {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.84rem;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* L'adresse complète, celle qu'on colle dans OBS. Elle peut être longue :
-   coupée par la GAUCHE (`direction: rtl`), pour garder le slug visible — c'est
-   la fin qui distingue deux scènes, jamais le `https://`. */
-.ovl-scene-url {
-  flex-basis: 100%;
-  min-width: 0;
-  direction: rtl;
-  text-align: left;
-  font-size: 0.64rem;
-  font-family: var(--font-mono, monospace);
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: all;
-}
 .ovl-copie {
   display: flex;
   align-items: center;
@@ -3544,8 +3633,9 @@ body.is-mobile .mobile-back-btn {
   border-color: rgba(6, 182, 212, 0.4);
   color: var(--text-primary);
 }
+.ovl-copie:disabled { opacity: 0.4; cursor: default; }
 .ovl-badge {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #06b6d4;
@@ -3787,7 +3877,6 @@ body.is-mobile .mobile-back-btn {
 
 /* ── La surface de placement ─────────────────────────────────────────── */
 
-.ovl-droite { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
 .ovl-surface {
   position: relative;
@@ -4257,7 +4346,7 @@ body.is-mobile .mobile-back-btn {
 
 /* ── Les réglages, sous la surface ───────────────────────────────────── */
 
-.ovl-reglages, .ovl-publication {
+.ovl-reglages {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -4451,25 +4540,120 @@ body.is-mobile .mobile-back-btn {
 }
 .ovl-raccourcis-liste dd { margin: 0; color: var(--text-secondary); }
 
-/* ── La barre de publication ─────────────────────────────────────────── */
+/* ── Le pied de publication ──────────────────────────────────────────────
+   Pleine largeur sous les deux colonnes, et non plus une barre serrée sous la
+   surface. C'est la seule chose du panneau qui touche l'antenne : elle doit se
+   voir sans qu'on la cherche, et pouvoir DIRE ce qui va partir. */
 
-.ovl-direct {
+.ovl-pied {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+/* PAS d'`overflow: hidden` ici, alors qu'il tomberait sous la main pour border
+   les coins du détail : il ROGNE le menu ⋯, qui s'ouvre vers le haut et sort
+   donc du pied. Le menu s'ouvrait bien, on ne le voyait pas — constaté à
+   l'écran. Même famille que la pointe de bulle mangée sur l'overlay. Le rayon
+   se tient tout seul : le détail n'a pas de fond propre, rien ne déborde. */
+/* L'ambre ne s'allume QUE quand quelque chose attend. Un pied ambre en
+   permanence ne signale plus rien. */
+.ovl-pied.en-attente {
+  background: rgba(210, 158, 11, 0.05);
+  border-color: rgba(210, 158, 11, 0.3);
+}
+.ovl-pied-haut {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  /* La case décide de ce qui part à l'antenne : on doit voir qu'elle se clique. */
-  cursor: pointer;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
 }
-.ovl-direct input { cursor: pointer; }
-.ovl-compteur { font-size: 0.75rem; color: var(--text-muted); margin-right: auto; }
-.ovl-compteur.en-attente { color: #06b6d4; }
-.ovl-publication .btn:disabled { opacity: 0.4; cursor: default; }
+.ovl-pied-point {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+}
+.ovl-pied.en-attente .ovl-pied-point { background: #d29e0b; }
+.ovl-pied-textes { min-width: 240px; }
+.ovl-pied-titre { font-size: 0.84rem; font-weight: 600; color: var(--text-primary); }
+.ovl-pied.en-attente .ovl-pied-titre { color: #e3b341; }
+.ovl-pied-sous { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; }
+
+.ovl-pied-lien {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.2);
+  text-underline-offset: 3px;
+  padding: 6px 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ovl-pied-lien:hover { color: var(--text-primary); }
+
+/* Le bouton qui touche l'antenne, et lui seul, porte l'accent PLEIN. Cyan et
+   non vert : l'accent du panneau est le cyan, et le vert « succès » du
+   dashboard désigne une opération réussie, pas une opération à lancer. */
+.ovl-publier {
+  background: #06b6d4;
+  border-color: #06b6d4;
+  color: #04222b;
+  font-weight: 700;
+}
+.ovl-publier:hover:not(:disabled) { background: #22d3ee; border-color: #22d3ee; }
+.ovl-pied .btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Le ⋯ ouvre VERS LE HAUT : le pied est en bas du panneau, un menu déroulant
+   vers le bas sortirait de l'écran. */
+.ovl-pied-coin { position: relative; display: flex; align-items: center; }
+.ovl-menu.ovl-menu-pied { top: auto; bottom: 100%; right: 0; margin-bottom: 6px; }
+
+/* Le détail : une ligne par élément touché, en trois colonnes. C'est ce qui
+   manquait — « 6 modifications en attente » sans dire lesquelles ne se vérifie
+   pas avant de cliquer, en plein live. */
+.ovl-pied-liste {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 16px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 6px 22px;
+}
+.ovl-pied.en-attente .ovl-pied-liste { border-top-color: rgba(210, 158, 11, 0.22); }
+.ovl-pied-ligne { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ovl-pied-ligne .ovl-point { width: 5px; height: 5px; transform: translateY(-2px); }
+.ovl-pied-nom { font-size: 0.75rem; color: var(--text-primary); white-space: nowrap; }
+.ovl-pied-scene {
+  font-size: 0.66rem;
+  color: #06b6d4;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 999px;
+  padding: 0 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ovl-pied-quoi {
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovl-pied-reste { grid-column: 1 / -1; font-size: 0.7rem; color: var(--text-muted); }
+
 /* Défaire / refaire : un seul glyphe, donc un bouton à sa taille. À la largeur
-   d'un bouton de texte, ils tiraient l'œil autant que « Mettre à jour » — alors
-   qu'ils ne touchent qu'au brouillon. La paire reste collée : ce sont deux sens
-   du même geste. */
+   d'un bouton de texte, ils tiraient l'œil autant que « Mettre à l'antenne » —
+   alors qu'ils ne touchent qu'au brouillon. La paire reste collée : ce sont
+   deux sens du même geste. */
 .ovl-histoire {
   padding: 6px 10px;
   font-size: 1rem;
@@ -4486,7 +4670,7 @@ body.is-mobile .mobile-back-btn {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  /* Pas de marge : `.ovl-droite` est une colonne flex avec `gap: 12px`, elle
+  /* Pas de marge : le panneau est une colonne flex avec `gap: 14px`, elle
      s'ajouterait au lieu de la remplacer. */
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.05);
