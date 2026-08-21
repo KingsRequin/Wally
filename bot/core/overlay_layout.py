@@ -54,23 +54,148 @@ SCALE_MIN, SCALE_MAX = 0.2, 2.0
 ROTATEUR_DUREE_MIN, ROTATEUR_DUREE_MAX, ROTATEUR_DUREE_DEFAUT = 1.0, 120.0, 9.0
 ROTATEUR_PAUSE_MIN, ROTATEUR_PAUSE_MAX, ROTATEUR_PAUSE_DEFAUT = 0.0, 120.0, 5.0
 
-# Les réglages qui n'existent que sur CERTAINS éléments : nom → (mini, maxi).
+# ── Les réglages universels ─────────────────────────────────────────────────
 #
-# Pourquoi pas sur tous les éléments, ce qui serait plus simple : `ELEMENTS`
-# compte trente-quatre clés et le layout en garde une copie PAR SCÈNE. Poser
-# `duree`/`pause` partout écrirait 34 × 2 × 3 = 204 valeurs qui ne pilotent
-# rien, et surtout la barre de réglages du panneau afficherait « durée
-# d'affichage » sur un dé ou un sondage — un réglage visible qu'aucun code ne
-# lit est une promesse fausse. Le coût de la justesse est cette table et les
-# quatre lignes de fusion qui la lisent.
+# Les quatre que TOUS les éléments portent, parce qu'ils passent tous par
+# `placer()` (overlay_layout.js), le point d'écriture unique du style d'un
+# élément sur la page. Ici et pas dans `CHAMPS_PROPRES` : un champ que les
+# trente-sept ont n'est propre à personne, et l'y mettre obligerait à le répéter
+# trente-sept fois.
 #
-# C'est la PRÉSENCE de la clé dans le défaut de l'élément (`ELEMENTS`) qui dit
-# qui la porte ; cette table ne dit que ses bornes. Un seul endroit à toucher
-# pour donner la cadence à un autre élément un jour.
-CHAMPS_PROPRES: dict[str, tuple[float, float]] = {
-    "duree": (ROTATEUR_DUREE_MIN, ROTATEUR_DUREE_MAX),
-    "pause": (ROTATEUR_PAUSE_MIN, ROTATEUR_PAUSE_MAX),
+# Le plancher d'opacité est 0,1 et non 0 : à zéro l'élément est invisible mais
+# occupe toujours la scène, efface Wally et passe dans la file — un « masqué »
+# qui ne dit pas son nom, alors que `hidden` existe et coupe vraiment.
+OPACITE_MIN, OPACITE_MAX, OPACITE_DEFAUT = 0.1, 1.0, 1.0
+ROTATION_MIN, ROTATION_MAX, ROTATION_DEFAUT = -45.0, 45.0, 0.0
+MIROIR_DEFAUT = False
+# `largeur_max` : 0 vaut AUTO, c'est-à-dire le `max-width: 92vw` que
+# `[data-element]` porte déjà. Le plancher de 120 px évite une carte réduite à
+# un trait, le plafond est la largeur du canvas de référence.
+LARGEUR_MIN, LARGEUR_MAX, LARGEUR_DEFAUT = 120.0, 1920.0, 0.0
+
+# ── Les réglages de rythme des widgets qui PASSENT ──────────────────────────
+#
+# `duree` = 0 vaut AUTO : le serveur décide, comme avant ce réglage. C'est la
+# valeur LIVRÉE, et c'est elle qui protège le live — livrer 12 s (le repli de
+# `showWidget`) ferait disparaître un sondage de 120 s à la douzième seconde,
+# sur les trois scènes, dès le premier rebuild et sans que personne ait touché
+# à un curseur.
+#
+# Le plafond de 180 s est celui de `showWidget` (overlay.js), et il n'est pas
+# arbitraire : le serveur émet jusqu'à 124 s (sondage de 120 s + 4).
+WIDGET_DUREE_MIN, WIDGET_DUREE_MAX, WIDGET_DUREE_DEFAUT = 2.0, 180.0, 0.0
+DELAI_MIN, DELAI_MAX, DELAI_DEFAUT = 0.0, 10.0, 0.0
+# 0,15 s = `GLITCH_MS` côté page (5 états × 30 ms) : la durée de la rafale
+# d'aujourd'hui. La reproduire ici est ce qui fait que rien ne change.
+ANIM_DUREE_MIN, ANIM_DUREE_MAX, ANIM_DUREE_DEFAUT = 0.1, 3.0, 0.15
+
+# La bulle a son propre chemin (`say`), avec un repli de 3 s côté page.
+BULLE_DUREE_MIN, BULLE_DUREE_MAX, BULLE_DUREE_DEFAUT = 1.0, 60.0, 0.0
+
+# Les quatre éléments qui ont leur PROPRE chemin de rendu et ne passent donc pas
+# par `showWidget` : l'avatar et la bulle vivent en permanence, le rotateur porte
+# sa propre boucle, la galerie écoute son propre flux SSE. Leur donner `delai` ou
+# une animation de carte serait un réglage qu'aucun code ne lit.
+HORS_FILE = frozenset({"avatar", "bubble", "rotator", "image"})
+
+
+# ── Le catalogue d'animations ───────────────────────────────────────────────
+#
+# `animate.min.css` est déjà servi sur l'overlay et déjà utilisé par la galerie
+# (`animation_in`/`animation_out` de `config.yaml`) : on ne charge rien de neuf,
+# on ouvre ce qui était réservé à un seul widget.
+#
+# Écrit ICI et servi au panneau par la route, jamais recopié en JavaScript :
+# deux listes divergent à la première mise à jour de la bibliothèque. Même parti
+# pris que `LIBELLES` et `_ECHANTILLONS`, déjà servis par ce chemin.
+#
+# `glitch` est l'option MAISON et le défaut : c'est la rafale
+# (`WallyGlitch.rafale`) qui encadre aujourd'hui l'entrée et la sortie de toutes
+# les cartes. La garder en tête de menu est ce qui fait que personne ne voit son
+# overlay changer.
+#
+# Entrées et sorties sont deux listes SÉPARÉES et disjointes : `fadeOut` proposé
+# en entrée ferait disparaître la carte au moment où elle apparaît.
+ANIM_DEFAUT = "glitch"
+ANIM_AUCUNE = "aucune"
+
+ANIMATIONS: dict[str, dict[str, tuple[str, ...]]] = {
+    "entree": {
+        "Maison": (ANIM_DEFAUT, ANIM_AUCUNE),
+        "Fondu": ("fadeIn", "fadeInDown", "fadeInDownBig", "fadeInLeft",
+                  "fadeInLeftBig", "fadeInRight", "fadeInRightBig", "fadeInUp",
+                  "fadeInUpBig", "fadeInTopLeft", "fadeInTopRight",
+                  "fadeInBottomLeft", "fadeInBottomRight"),
+        "Glissement": ("slideInDown", "slideInLeft", "slideInRight",
+                       "slideInUp"),
+        "Zoom": ("zoomIn", "zoomInDown", "zoomInLeft", "zoomInRight",
+                 "zoomInUp"),
+        "Rebond": ("bounceIn", "bounceInDown", "bounceInLeft", "bounceInRight",
+                   "bounceInUp"),
+        "Recul": ("backInDown", "backInLeft", "backInRight", "backInUp"),
+        "Rotation": ("rotateIn", "rotateInDownLeft", "rotateInDownRight",
+                     "rotateInUpLeft", "rotateInUpRight"),
+        "Retournement": ("flipInX", "flipInY"),
+        "Vitesse": ("lightSpeedInLeft", "lightSpeedInRight"),
+        "Spéciales": ("rollIn", "jackInTheBox"),
+    },
+    "sortie": {
+        "Maison": (ANIM_DEFAUT, ANIM_AUCUNE),
+        "Fondu": ("fadeOut", "fadeOutDown", "fadeOutDownBig", "fadeOutLeft",
+                  "fadeOutLeftBig", "fadeOutRight", "fadeOutRightBig",
+                  "fadeOutUp", "fadeOutUpBig", "fadeOutTopLeft",
+                  "fadeOutTopRight", "fadeOutBottomLeft", "fadeOutBottomRight"),
+        "Glissement": ("slideOutDown", "slideOutLeft", "slideOutRight",
+                       "slideOutUp"),
+        "Zoom": ("zoomOut", "zoomOutDown", "zoomOutLeft", "zoomOutRight",
+                 "zoomOutUp"),
+        "Rebond": ("bounceOut", "bounceOutDown", "bounceOutLeft",
+                   "bounceOutRight", "bounceOutUp"),
+        "Recul": ("backOutDown", "backOutLeft", "backOutRight", "backOutUp"),
+        "Rotation": ("rotateOut", "rotateOutDownLeft", "rotateOutDownRight",
+                     "rotateOutUpLeft", "rotateOutUpRight"),
+        "Retournement": ("flipOutX", "flipOutY"),
+        "Vitesse": ("lightSpeedOutLeft", "lightSpeedOutRight"),
+        "Spéciales": ("rollOut", "hinge"),
+    },
+    # Les « attention seekers » d'animate.css : ni entrée ni sortie, elles se
+    # rejouent EN BOUCLE pendant que le widget est à l'écran. Sans ce troisième
+    # menu, treize des quatre-vingt-dix-sept animations de la bibliothèque
+    # resteraient inutilisables.
+    "insistance": {
+        "Maison": (ANIM_AUCUNE,),
+        "Pulsation": ("pulse", "heartBeat", "flash"),
+        "Secousse": ("shakeX", "shakeY", "headShake", "wobble", "jello"),
+        "Élan": ("bounce", "swing", "tada", "rubberBand", "flip"),
+    },
 }
+
+
+def _noms(menu: str) -> frozenset[str]:
+    return frozenset(n for famille in ANIMATIONS[menu].values() for n in famille)
+
+
+ANIMS_ENTREE = _noms("entree")
+ANIMS_SORTIE = _noms("sortie")
+ANIMS_INSISTANCE = _noms("insistance")
+
+# Les réglages qu'un élément porte SEUL, et comment ils se valident.
+#
+#   `CHAMPS_PROPRES` : élément → {champ → (mini, maxi, auto)}
+#   `CHAMPS_CHOIX`   : élément → {champ → noms acceptés}
+#
+# Indexées par ÉLÉMENT et non plates, parce que le même mot n'a pas partout la
+# même grandeur : `duree` vaut la durée d'UN MÉDIA sur le rotateur (1–120 s,
+# plafond dicté par son gardien anti-gel) et la durée d'UN PASSAGE à l'écran sur
+# un widget qui passe (2–180 s, ou auto). Une table plate aurait fait dépendre
+# la borne appliquée de l'ordre d'écriture — un défaut invisible jusqu'à un
+# soir de live.
+#
+# Elles sont remplies plus bas, PAR LA MÊME BOUCLE qui pose les défauts sur
+# `ELEMENTS` : c'est ce qui rend impossible le défaut le plus probable ici, un
+# champ posé sur un élément sans validation déclarée, donc rangé tel quel.
+CHAMPS_PROPRES: dict[str, dict[str, tuple[float, float, bool]]] = {}
+CHAMPS_CHOIX: dict[str, dict[str, frozenset[str]]] = {}
 
 # Doit rester égal à la borne de la route `/overlay-{slug}` (`bot/dashboard/app.py`,
 # `_SLUG_SCENE_RE`) : un slug plus long que ça y est refusé et sert la scène par
@@ -80,19 +205,24 @@ SLUG_MAX_LEN = 64
 
 def _el(x: float, y: float, anchor: str, scale: float = 1.0,
         *, solo: bool = True, hidden: bool = False,
-        wally_visible: bool | None = None,
-        propres: dict | None = None) -> dict:
+        wally_visible: bool | None = None) -> dict:
     # `wally_visible` non précisé REPRODUIT le comportement d'avant ce réglage,
     # où `solo` décidait à lui seul de l'effacement de l'avatar : un élément
     # exclusif efface Wally, un élément qui cohabite le laisse. Personne ne voit
     # son overlay changer parce qu'on a ajouté le réglage.
     #
-    # `propres` : les réglages que CET élément est seul à porter (cf.
-    # `CHAMPS_PROPRES`). Absents partout ailleurs.
+    # Les réglages de PORTÉE (durée, animations, cadence du rotateur) ne sont
+    # pas posés ici mais par la boucle de distribution, plus bas : elle écrit
+    # d'un même geste le défaut ET sa règle de validation, ce qui rend
+    # impossible un champ rangé sans être borné.
     return {"x": x, "y": y, "anchor": anchor, "scale": scale,
             "hidden": hidden, "locked": False, "solo": solo,
             "wally_visible": (not solo) if wally_visible is None else wally_visible,
-            **(propres or {})}
+            # Les quatre universels. Tout élément passe par `placer()`, donc
+            # tout élément peut les porter — et leurs valeurs livrées ne
+            # changent rien à ce que l'overlay rend aujourd'hui.
+            "opacite": OPACITE_DEFAUT, "rotation": ROTATION_DEFAUT,
+            "miroir": MIROIR_DEFAUT, "largeur_max": LARGEUR_DEFAUT}
 
 
 # Les clés SONT les `kind` employés par la page — les franciser casserait la
@@ -129,9 +259,9 @@ ELEMENTS: dict[str, dict] = {
     "avatar": _el(97.0, 80.0, "bottom-right", 0.55, solo=False),
     "bubble": _el(95.0, 62.0, "bottom-right", 0.9, solo=False),
     # Les deux ex-sources OBS
-    "rotator": _el(50.0, 45.0, "center", 1.0, solo=False,
-                   propres={"duree": ROTATEUR_DUREE_DEFAUT,
-                            "pause": ROTATEUR_PAUSE_DEFAUT}),
+    # Sa cadence (`duree`, `pause`) lui est posée par la boucle de distribution,
+    # plus bas, comme celle de tous les autres : un seul écrivain.
+    "rotator": _el(50.0, 45.0, "center", 1.0, solo=False),
     "image":   _el(50.0, 50.0, "center", 1.0),
     # Ceux qui s'installent
     "bingo":   _el(3.0, 18.0, "top-left", 0.9, solo=False),
@@ -183,6 +313,71 @@ ELEMENTS: dict[str, dict] = {
     "apex_predator": _el(50.0, 50.0, "center"),
     "apex_servers":  _el(50.0, 50.0, "center"),
 }
+
+
+# ── La distribution des réglages de portée ──────────────────────────────────
+#
+# `ELEMENTS`, `CHAMPS_PROPRES` et `CHAMPS_CHOIX` se remplissent ENSEMBLE, ici.
+# Un seul écrivain pour les trois : un champ ne peut plus exister sans ses
+# bornes, ni des bornes désigner un champ que personne ne porte.
+#
+# Et la liste des porteurs est CALCULÉE (`widgets_qui_passent`), jamais écrite à
+# la main : une liste manuelle aurait laissé le prochain widget ajouté hors de
+# portée du panneau, en silence et pour toujours — c'est le défaut que le
+# commentaire d'`ELEMENTS` décrit déjà pour la liste des clés elle-même.
+
+
+def widgets_qui_passent() -> frozenset[str]:
+    """Les éléments montés par `showWidget` : tout `ELEMENTS` sauf `HORS_FILE`."""
+    return frozenset(ELEMENTS) - HORS_FILE
+
+
+def _poser(cle: str, champ: str, defaut, bornes=None, choix=None) -> None:
+    """Pose un réglage sur un élément ET sa règle de validation, d'un seul geste."""
+    ELEMENTS[cle][champ] = defaut
+    if bornes is not None:
+        CHAMPS_PROPRES.setdefault(cle, {})[champ] = bornes
+    if choix is not None:
+        CHAMPS_CHOIX.setdefault(cle, {})[champ] = choix
+
+
+# `sorted` : l'itération d'un frozenset n'a pas d'ordre stable d'un boot à
+# l'autre, et ces deux tables sont SERVIES en JSON au panneau. Sans lui, deux
+# réponses décrivant le même état seraient octet pour octet différentes.
+for _cle in sorted(widgets_qui_passent()):
+    _poser(_cle, "duree", WIDGET_DUREE_DEFAUT,
+           (WIDGET_DUREE_MIN, WIDGET_DUREE_MAX, True))
+    _poser(_cle, "delai", DELAI_DEFAUT, (DELAI_MIN, DELAI_MAX, False))
+    _poser(_cle, "anim_duree", ANIM_DUREE_DEFAUT,
+           (ANIM_DUREE_MIN, ANIM_DUREE_MAX, False))
+    _poser(_cle, "anim_entree", ANIM_DEFAUT, choix=ANIMS_ENTREE)
+    _poser(_cle, "anim_sortie", ANIM_DEFAUT, choix=ANIMS_SORTIE)
+    _poser(_cle, "anim_insistance", ANIM_AUCUNE, choix=ANIMS_INSISTANCE)
+
+# La bulle : une durée de réplique, rien d'autre. Elle n'a ni file d'attente ni
+# carte — sa sortie est un éclatement écrit dans le CSS, pas une animation
+# choisie.
+_poser("bubble", "duree", BULLE_DUREE_DEFAUT,
+       (BULLE_DUREE_MIN, BULLE_DUREE_MAX, True))
+
+# La galerie : les quatre réglages qui vivaient dans `config.yaml`
+# (`overlay_image`). Elle a son propre flux SSE et son propre minuteur, donc pas
+# de `delai` ni d'insistance — mais bien une durée et deux animations, qu'elle
+# avait déjà. La graine qui recopie les valeurs du fichier vit dans le store.
+_poser("image", "duree", WIDGET_DUREE_DEFAUT,
+       (WIDGET_DUREE_MIN, WIDGET_DUREE_MAX, True))
+_poser("image", "anim_duree", ANIM_DUREE_DEFAUT,
+       (ANIM_DUREE_MIN, ANIM_DUREE_MAX, False))
+_poser("image", "anim_entree", ANIM_DEFAUT, choix=ANIMS_ENTREE)
+_poser("image", "anim_sortie", ANIM_DEFAUT, choix=ANIMS_SORTIE)
+
+# Le rotateur garde sa cadence, avec le sens et les bornes qu'elle a toujours
+# eus. Pas d'« auto » sur sa durée : un rotateur à zéro seconde par média
+# n'affiche rien, et il n'y a personne derrière pour décider à sa place.
+_poser("rotator", "duree", ROTATEUR_DUREE_DEFAUT,
+       (ROTATEUR_DUREE_MIN, ROTATEUR_DUREE_MAX, False))
+_poser("rotator", "pause", ROTATEUR_PAUSE_DEFAUT,
+       (ROTATEUR_PAUSE_MIN, ROTATEUR_PAUSE_MAX, False))
 
 # ── Les groupes d'éléments ──────────────────────────────────────────────────
 #
@@ -407,7 +602,25 @@ def _borner(valeur, mini: float, maxi: float, defaut: float) -> float:
     return max(mini, min(maxi, valeur))
 
 
-def _fusionner_element(brut, defaut: dict) -> dict:
+def _borner_ou_auto(valeur, mini: float, maxi: float, defaut: float) -> float:
+    """Comme `_borner`, mais ZÉRO passe au travers.
+
+    Zéro n'est pas une valeur de la plage : c'est le mot « auto », c'est-à-dire
+    « laisse le serveur décider », qui est le comportement d'avant ce réglage.
+    Le faire remonter au plancher transformerait la valeur LIVRÉE en une durée
+    de deux secondes appliquée à tout l'overlay, sur les trois scènes, dès le
+    premier rebuild — et une largeur maximale de 120 px écraserait chaque carte.
+    """
+    if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+        return defaut
+    if valeur != valeur:            # NaN, avant toute comparaison
+        return defaut
+    if float(valeur) == 0.0:
+        return 0.0
+    return _borner(valeur, mini, maxi, defaut)
+
+
+def _fusionner_element(cle: str, brut, defaut: dict) -> dict:
     if not isinstance(brut, dict):
         return dict(defaut)
     anchor = brut.get("anchor")
@@ -429,13 +642,31 @@ def _fusionner_element(brut, defaut: dict) -> dict:
         "wally_visible": (bool(brut["wally_visible"])
                           if brut.get("wally_visible") is not None
                           else defaut["wally_visible"]),
+        # Les quatre universels : tout élément passe par `placer()`, donc tout
+        # élément les porte. Même rigueur que les autres — et `largeur_max`
+        # garde son zéro, qui rend la main au CSS au lieu d'écraser la carte.
+        "opacite": _borner(brut.get("opacite"), OPACITE_MIN, OPACITE_MAX,
+                           defaut["opacite"]),
+        "rotation": _borner(brut.get("rotation"), ROTATION_MIN, ROTATION_MAX,
+                            defaut["rotation"]),
+        "miroir": (bool(brut["miroir"]) if brut.get("miroir") is not None
+                   else defaut["miroir"]),
+        "largeur_max": _borner_ou_auto(brut.get("largeur_max"), LARGEUR_MIN,
+                                       LARGEUR_MAX, defaut["largeur_max"]),
     }
-    # Les réglages propres à cet élément-là. Même rigueur que les autres champs
-    # numériques : `_borner` ramène dans les bornes, et rend le défaut pour ce
-    # qui n'est pas un nombre — une clé absente comme une clé présente à `null`.
-    for nom, (mini, maxi) in CHAMPS_PROPRES.items():
-        if nom in defaut:
-            fusionne[nom] = _borner(brut.get(nom), mini, maxi, defaut[nom])
+    # Les réglages propres à CET élément-là. La table est indexée par élément :
+    # `duree` ne se borne pas pareil sur le rotateur (durée d'un média, 1–120 s)
+    # et sur un widget qui passe (durée d'un passage, 2–180 s, ou auto).
+    for nom, (mini, maxi, auto) in CHAMPS_PROPRES.get(cle, {}).items():
+        borne = _borner_ou_auto if auto else _borner
+        fusionne[nom] = borne(brut.get(nom), mini, maxi, defaut[nom])
+    # Les réglages à CHOIX : validés par appartenance, pas par bornes. Un nom
+    # inconnu — faute de frappe, animation retirée d'animate.css, sortie
+    # proposée en entrée — reprend le défaut, comme tout le reste ici.
+    for nom, choix in CHAMPS_CHOIX.get(cle, {}).items():
+        valeur = brut.get(nom)
+        fusionne[nom] = (valeur if isinstance(valeur, str) and valeur in choix
+                         else defaut[nom])
     return fusionne
 
 
@@ -541,7 +772,7 @@ def _fusionner_scene(brut: dict) -> dict | None:
     if not isinstance(elements_bruts, dict):
         elements_bruts = {}
     elements = {
-        cle: _fusionner_element(elements_bruts.get(cle), defaut)
+        cle: _fusionner_element(cle, elements_bruts.get(cle), defaut)
         for cle, defaut in ELEMENTS.items()
     }
     ordre_brut = brut.get("ordre")

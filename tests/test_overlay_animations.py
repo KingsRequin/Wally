@@ -86,3 +86,64 @@ def test_aucune_barre_n_anime_sa_largeur():
     css = _css()
     fautives = re.findall(r"transition:[^;]*\bwidth\b[^;]*;", css)
     assert not fautives, f"barres animées en largeur : {fautives}"
+
+
+# ── Le catalogue servi au panneau (conception du 2026-08-21) ────────────────
+#
+# Il ne suffit pas qu'il soit bien formé : chaque nom doit correspondre à une
+# CLASSE RÉELLE d'animate.css. Un nom sans classe donne un choix qui ne fait
+# rien, sans la moindre erreur — la définition d'un réglage qui ment.
+
+_ANIMATE = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static"
+            / "animate.min.css")
+
+
+def test_chaque_animation_annoncee_existe_vraiment_dans_animate_css():
+    from bot.core.overlay_layout import ANIM_AUCUNE, ANIM_DEFAUT, ANIMATIONS
+    css = _ANIMATE.read_text(encoding="utf-8")
+    for menu in ANIMATIONS.values():
+        for noms in menu.values():
+            for nom in noms:
+                if nom in (ANIM_DEFAUT, ANIM_AUCUNE):
+                    continue        # les deux options maison
+                assert f"animate__{nom}" in css, f"classe absente : {nom}"
+
+
+def test_le_catalogue_ne_laisse_aucune_animation_de_cote():
+    """Les quatre-vingt-dix-sept animations d'animate.css sont TOUTES joignables
+    depuis l'un des trois menus. Une oubliée serait invisible à jamais : rien
+    dans le panneau ne dirait qu'elle existe."""
+    import re as _re
+    from bot.core.overlay_layout import (
+        ANIMS_ENTREE, ANIMS_INSISTANCE, ANIMS_SORTIE, ANIM_AUCUNE, ANIM_DEFAUT)
+    css = _ANIMATE.read_text(encoding="utf-8")
+    # Les modificateurs d'animate.css ne sont pas des animations : ils règlent
+    # la durée ou la répétition d'une autre.
+    modificateurs = {"animated", "delay", "repeat", "infinite",
+                     "slow", "slower", "fast", "faster"}
+    dans_le_css = {n for n in _re.findall(r"animate__([a-zA-Z]+)", css)
+                   if n not in modificateurs and not n.startswith("delay")
+                   and not n.startswith("repeat")}
+    offertes = (ANIMS_ENTREE | ANIMS_SORTIE | ANIMS_INSISTANCE) \
+        - {ANIM_DEFAUT, ANIM_AUCUNE}
+    assert dans_le_css - offertes == set(), (
+        "des animations d'animate.css ne sont dans aucun menu")
+
+
+def test_une_sortie_ne_peut_pas_etre_choisie_en_entree():
+    """`fadeOut` en entrée ferait disparaître le widget au moment où il
+    apparaît. Les deux menus ne se recouvrent que sur les options maison."""
+    from bot.core.overlay_layout import (
+        ANIM_AUCUNE, ANIM_DEFAUT, ANIMS_ENTREE, ANIMS_SORTIE)
+    assert ANIMS_ENTREE & ANIMS_SORTIE == {ANIM_DEFAUT, ANIM_AUCUNE}
+
+
+def test_le_glitch_est_le_defaut_des_deux_menus_de_passage():
+    """C'est la rafale d'aujourd'hui. La garder en tête de menu est ce qui fait
+    que personne ne voit son overlay changer."""
+    from bot.core.overlay_layout import ANIMATIONS, ANIM_DEFAUT
+    assert ANIMATIONS["entree"]["Maison"][0] == ANIM_DEFAUT
+    assert ANIMATIONS["sortie"]["Maison"][0] == ANIM_DEFAUT
+    # L'insistance n'a pas de glitch : elle se rejoue en boucle, et la rafale
+    # est un événement ponctuel.
+    assert ANIM_DEFAUT not in ANIMATIONS["insistance"]["Maison"]

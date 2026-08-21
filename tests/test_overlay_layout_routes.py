@@ -174,3 +174,59 @@ def test_put_json_invalide_rend_400():
     client = _client(_State())
     r = client.put("/api/admin/overlay/layout", content=b"{ceci n'est pas du json")
     assert r.status_code == 400
+
+
+# ── Le catalogue et les portées, servis avec le modèle (2026-08-21) ─────────
+
+def test_le_layout_admin_sert_le_catalogue_danimations():
+    """Servi et non recopié en JS : deux listes divergent à la première mise à
+    jour d'animate.css. Même parti pris que `libelles` et `echantillons`, déjà
+    servis par cette route."""
+    r = _client(_State()).get("/api/admin/overlay/layout")
+    assert r.status_code == 200
+    anims = r.json()["animations"]
+    assert set(anims) == {"entree", "sortie", "insistance"}
+    assert "glitch" in anims["entree"]["Maison"]
+    assert "fadeOut" in anims["sortie"]["Fondu"]
+    assert "pulse" in anims["insistance"]["Pulsation"]
+
+
+def test_le_layout_admin_dit_quel_element_porte_quel_champ():
+    """Le panneau ne doit pas DEVINER les portées : « durée d'affichage » sur
+    un avatar est un réglage qu'aucun code ne lit, et un champ affiché sans
+    exister dans le modèle laisse saisir une valeur ramenée en silence."""
+    portees = _client(_State()).get("/api/admin/overlay/layout").json()["portees"]
+    assert "duree" in portees["champs_propres"]["poll"]
+    assert "delai" in portees["champs_propres"]["poll"]
+    assert "duree" not in portees["champs_propres"].get("avatar", {})
+    assert "anim_entree" in portees["champs_choix"]["poll"]
+    assert "avatar" not in portees["champs_choix"]
+    # La `pause` reste l'apanage du rotateur.
+    assert "pause" in portees["champs_propres"]["rotator"]
+    assert "pause" not in portees["champs_propres"]["poll"]
+
+
+def test_les_choix_servis_sont_triés_et_serialisables():
+    """Un `frozenset` ne se sérialise pas en JSON, et l'ordre d'un set n'est pas
+    stable d'un boot à l'autre : deux réponses identiques doivent l'être
+    vraiment, sinon le panneau redessine son menu sans raison."""
+    portees = _client(_State()).get("/api/admin/overlay/layout").json()["portees"]
+    choix = portees["champs_choix"]["poll"]["anim_entree"]
+    assert isinstance(choix, list)
+    assert choix == sorted(choix)
+
+
+def test_le_catalogue_ne_part_pas_a_lantenne_avec_le_modele():
+    """Le panneau renvoie `etat.layout` tel quel au PUT. Si le catalogue y
+    restait, il serait rangé en base comme un réglage de scène — et grossirait
+    le blob à chaque publication."""
+    db = _State()
+    client = _client(db)
+    envoye = layout_par_defaut()
+    envoye["animations"] = {"entree": {}}
+    envoye["portees"] = {"champs_propres": {}}
+    r = client.put("/api/admin/overlay/layout", json=envoye)
+    assert r.status_code == 200
+    range_ = json.loads(db.rows[LAYOUT_KEY])
+    assert "animations" not in range_
+    assert "portees" not in range_

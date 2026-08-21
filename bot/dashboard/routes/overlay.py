@@ -307,6 +307,7 @@ async def overlay_test(request: Request) -> dict:
 from bot.core.overlay_elements import LIBELLES              # noqa: E402
 from bot.core.overlay_feed import payload_image_galerie     # noqa: E402
 from bot.core.overlay_layout import (                       # noqa: E402
+    ANIMATIONS, CHAMPS_CHOIX, CHAMPS_PROPRES,
     layout_par_defaut, scene_par_slug, tailles_media,
 )
 from bot.core.overlay_layout_store import (                 # noqa: E402
@@ -403,7 +404,23 @@ async def get_overlay_layout_admin(request: Request, defauts: bool = False) -> d
     # plutôt que recopiés en JavaScript, pour la raison de toujours : deux tables
     # divergent au premier widget ajouté.
     return {**layout, "libelles": LIBELLES, "tailles": _tailles_media(request),
-            "echantillons": _ECHANTILLONS, "maj": maj}
+            "echantillons": _ECHANTILLONS, "maj": maj,
+            # Le catalogue d'animations et les PORTÉES voyagent eux aussi avec
+            # le modèle, pour la raison de toujours : deux tables divergent au
+            # premier widget ajouté, et le panneau fait déjà cet appel au
+            # chargement. Sans les portées, il devrait DEVINER quel élément
+            # porte quel réglage — et « durée d'affichage » sur un avatar est un
+            # réglage qu'aucun code ne lit.
+            "animations": ANIMATIONS,
+            "portees": {
+                "champs_propres": CHAMPS_PROPRES,
+                # `frozenset` ne se sérialise pas en JSON, et l'ordre d'un set
+                # n'est pas stable d'un boot à l'autre : trié, pour que deux
+                # réponses identiques le soient vraiment.
+                "champs_choix": {cle: {nom: sorted(choix)
+                                       for nom, choix in champs.items()}
+                                 for cle, champs in CHAMPS_CHOIX.items()},
+            }}
 
 
 @admin_router.put("/overlay/layout")

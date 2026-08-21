@@ -54,18 +54,34 @@ def _table_du_panneau() -> dict:
 
 @pytest.mark.skipif(_SANS_NODE, reason="node absent")
 def test_le_panneau_et_le_modele_disent_les_memes_bornes():
+    """Ce que le panneau propose de régler doit exister dans le modèle, avec
+    les mêmes bornes et le même défaut.
+
+    Le sens du test a été précisé le 2026-08-21, quand les réglages propres ont
+    cessé d'être l'apanage du rotateur : ce n'est PAS une égalité des deux
+    tables — le modèle en porte trente-six et le panneau n'en montre qu'une
+    partie —, c'est une INCLUSION. Un champ affiché sans exister dans le modèle
+    laisse saisir une valeur que le serveur ramène en silence : on croit avoir
+    réglé, rien ne bouge, et rien ne le dit. C'est ce trou-là qu'on ferme, et
+    l'inclusion le ferme aussi bien que l'égalité — sans se briser au prochain
+    élément qui gagne un réglage."""
     table = _table_du_panneau()
-    assert set(table) == {"rotator"}, (
-        "un élément gagne des réglages propres côté panneau seulement"
-    )
-    champs = {c[0]: c for c in table["rotator"]}
-    assert set(champs) == set(CHAMPS_PROPRES)
-    for nom, (mini, maxi) in CHAMPS_PROPRES.items():
-        assert champs[nom][2] == mini, f"borne basse de `{nom}` désaccordée"
-        assert champs[nom][3] == maxi, f"borne haute de `{nom}` désaccordée"
-        assert champs[nom][6] == ELEMENTS["rotator"][nom], (
-            f"défaut de `{nom}` désaccordé"
+    for cle, champs_js in table.items():
+        assert cle in CHAMPS_PROPRES, (
+            f"`{cle}` gagne des réglages propres côté panneau seulement"
         )
+        modele = CHAMPS_PROPRES[cle]
+        champs = {c[0]: c for c in champs_js}
+        assert set(champs) <= set(modele), (
+            f"`{cle}` : le panneau propose un champ que le modèle ignore"
+        )
+        for nom, champ in champs.items():
+            mini, maxi, _auto = modele[nom]
+            assert champ[2] == mini, f"borne basse de `{cle}.{nom}` désaccordée"
+            assert champ[3] == maxi, f"borne haute de `{cle}.{nom}` désaccordée"
+            assert champ[6] == ELEMENTS[cle][nom], (
+                f"défaut de `{cle}.{nom}` désaccordé"
+            )
 
 
 @pytest.mark.skipif(_SANS_NODE, reason="node absent")

@@ -1100,7 +1100,8 @@ window.OverlayAdmin = (function () {
    *  l'éditeur devient inutilisable en direct. Un test Python confronte cette
    *  liste à ce que la route ajoute réellement.
    */
-  const HORS_MODELE = ["libelles", "tailles", "echantillons", "maj"];
+  const HORS_MODELE = ["libelles", "tailles", "echantillons", "maj",
+                       "animations", "portees"];
 
   /** Le modèle SEUL, sans ce que le GET lui a joint. Modifie l'objet reçu. */
   function retirerHorsModele(objet) {
@@ -1128,6 +1129,13 @@ window.OverlayAdmin = (function () {
           WallyLayout.poserTailles(layout.tailles);
         }
         if (layout.echantillons) etat.echantillons = layout.echantillons;
+        // Le catalogue d'animations et les portées : qui porte quel réglage, et
+        // avec quelles bornes. Servis plutôt que recopiés ici — une seconde
+        // table aurait divergé du modèle au premier champ ajouté, et le panneau
+        // aurait alors laissé saisir une valeur que le serveur ramène en
+        // silence : on croit avoir réglé, rien ne bouge, et rien ne le dit.
+        if (layout.animations) etat.animations = layout.animations;
+        if (layout.portees) etat.portees = layout.portees;
         // Quand ce qui est à l'antenne y est parti. Lue AVANT le retrait :
         // `retirerHorsModele` l'efface avec le reste de ce qui voyage.
         etat.majAntenne = layout.maj || null;
