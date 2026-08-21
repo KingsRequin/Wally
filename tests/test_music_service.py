@@ -233,10 +233,11 @@ async def test_sans_ACCUSE_l_ordre_est_un_ECHEC_et_non_un_succes():
     """Le cœur de la règle : l'extension peut être éteinte, l'onglet fermé, le
     PC en veille. Répondre « c'est fait » sans preuve, c'est ce que Wally a déjà
     fait pour des capacités qu'il croyait avoir."""
-    from bot.core.music import MusicService
     svc = _service()
-    resultat = await asyncio.wait_for(svc.commander("pause"),
-                                      MusicService.ACCUSE_TIMEOUT_S + 2)
+    # Le délai réel se compte en secondes : on le raccourcit sur CETTE instance
+    # plutôt que d'immobiliser la suite de tests pendant ce temps.
+    svc.ACCUSE_TIMEOUT_S = 0.05
+    resultat = await asyncio.wait_for(svc.commander("pause"), 2)
     assert resultat["ok"] is False
     assert resultat["raison"]
 
@@ -364,3 +365,119 @@ async def test_un_ordre_garde_en_file_finit_quand_meme_par_PERIMER():
     _battre(svc, joue=False)
     h.avance(MusicService.ORDRE_TTL_S + 1)
     assert _battre(svc, joue=True) == []
+
+
+# ── la réponse TENUE (long polling) ─────────────────────────────────────────
+#
+# Chrome ne laisse pas un onglet caché battre toutes les deux secondes. Dès que
+# la page est silencieuse depuis trente secondes et cachée depuis cinq minutes,
+# ses `setInterval` tombent à UN PAR MINUTE (« intensive throttling », Chrome
+# 88). Mesuré en prod le 2026-08-21 : soixante secondes pile entre deux
+# battements, huit fois de suite — et pendant ce temps, « mets lecture » n'a
+# jamais pu partir, l'ordre périmant avant qu'un battement vienne le chercher.
+#
+# Or l'état silencieux est EXACTEMENT celui où `play` a un sens : la commande
+# était donc structurellement impossible. La parade ne peut pas être un délai
+# plus long — c'est la cadence qui doit changer de camp. Le serveur TIENT la
+# réponse jusqu'à ce qu'un ordre arrive ; l'extension repart dès qu'elle l'a
+# reçue, en chaînant sur la promesse `fetch`. Un rappel réseau n'est pas un
+# timer : il échappe au throttling.
+
+
+@pytest.mark.asyncio
+async def test_un_ordre_REVEILLE_le_battement_TENU_sans_attendre_le_delai():
+    """Le cœur du correctif : l'ordre part en une fraction de seconde même si
+    l'onglet est caché depuis une heure."""
+    svc = _service()
+    attente = asyncio.create_task(svc.battement_tenu(
+        attente_s=30, actif=True, joue=False, titre="Snakes", artiste="MIYAVI",
+        url="https://youtube.com/watch?v=abc"))
+    await asyncio.sleep(0)                      # le veilleur se met en place
+
+    asyncio.create_task(svc.commander("play"))
+    ordres = await asyncio.wait_for(attente, 1)   # et NON trente secondes
+    assert [o["action"] for o in ordres] == ["play"]
+
+
+@pytest.mark.asyncio
+async def test_sans_ordre_le_battement_TENU_rend_la_main_au_bout_du_delai():
+    """Sans plafond, la requête resterait ouverte jusqu'à ce qu'un proxy la
+    coupe — et l'extension croirait le bot mort."""
+    svc = _service()
+    ordres = await asyncio.wait_for(svc.battement_tenu(
+        attente_s=0.05, actif=True, joue=True, titre="Numb",
+        artiste="Linkin Park", url="https://youtube.com/watch?v=abc"), 1)
+    assert ordres == []
+
+
+@pytest.mark.asyncio
+async def test_un_ordre_deja_en_file_est_rendu_SANS_attendre():
+    svc = _service()
+    asyncio.create_task(svc.commander("pause"))
+    await asyncio.sleep(0)
+    ordres = await asyncio.wait_for(svc.battement_tenu(
+        attente_s=30, actif=True, joue=True, titre="Numb",
+        artiste="Linkin Park", url="https://youtube.com/watch?v=abc"), 1)
+    assert [o["action"] for o in ordres] == ["pause"]
+
+
+@pytest.mark.asyncio
+async def test_un_onglet_en_PAUSE_n_est_pas_reveille_par_ce_qu_il_ne_prendra_pas():
+    """« Suivante » ne part pas vers un onglet à l'arrêt (il reste en file pour
+    celui qui joue). Le réveiller quand même le ferait repartir aussitôt pour
+    rien, et les deux tourneraient en boucle serrée jusqu'à la péremption."""
+    svc = _service()
+    attente = asyncio.create_task(svc.battement_tenu(
+        attente_s=0.2, actif=True, joue=False, titre="Snakes", artiste="MIYAVI",
+        url="https://youtube.com/watch?v=abc"))
+    await asyncio.sleep(0)
+
+    asyncio.create_task(svc.commander("next"))
+    assert await asyncio.wait_for(attente, 2) == []
+
+
+@pytest.mark.asyncio
+async def test_l_extension_ETEINTE_ne_tient_aucune_reponse():
+    """Partage coupé : rien à attendre, et surtout pas trente secondes."""
+    svc = _service()
+    ordres = await asyncio.wait_for(svc.battement_tenu(
+        attente_s=30, actif=False, joue=False, titre="", artiste="",
+        url=""), 1)
+    assert ordres == []
+
+
+@pytest.mark.asyncio
+async def test_le_delai_d_attente_est_BORNE_par_le_service():
+    """La valeur vient du navigateur d'un tiers : elle se borne ici, pas là-bas."""
+    from bot.core.music import MusicService
+    svc = _service()
+    assert svc.borner_attente(9999) == MusicService.ATTENTE_MAX_S
+    assert svc.borner_attente(-5) == 0.0
+    assert svc.borner_attente("bavure") == 0.0
+    assert svc.borner_attente(None) == 0.0
+    # `float("nan")` traverse le `try` sans lever, et toute comparaison avec lui
+    # est fausse : un `min`/`max` le laisserait passer tel quel, et
+    # `wait_for(..., nan)` rendrait la main aussitôt à chaque battement.
+    assert svc.borner_attente(float("nan")) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_un_ordre_ne_SURVIT_PAS_a_celui_qui_l_attendait():
+    """Le défaut vu en prod le 2026-08-21 : « next » annoncé raté à 10:29:05,
+    puis EXÉCUTÉ à 10:29:10 — le morceau a changé cinq secondes après que Wally
+    a dit que ça n'avait pas marché. Un ordre que plus personne n'attend ne doit
+    plus pouvoir partir : sa durée de vie est celle de l'attente."""
+    from bot.core.music import MusicService
+    assert MusicService.ORDRE_TTL_S <= MusicService.ACCUSE_TIMEOUT_S
+
+
+@pytest.mark.asyncio
+async def test_un_partage_ETEINT_ne_se_voit_servir_AUCUN_ordre():
+    """Un ordre n'est remis qu'une fois : le donner à une extension qui vient de
+    dire qu'elle n'exécutera rien le perdrait pour tout le monde. Il attend en
+    file celui qui pourra le prendre."""
+    svc = _service()
+    asyncio.create_task(svc.commander("play"))
+    await asyncio.sleep(0)
+    assert _battre(svc, actif=False) == []
+    assert [o["action"] for o in _battre(svc, joue=False)] == ["play"]

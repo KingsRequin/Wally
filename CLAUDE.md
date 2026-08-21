@@ -557,9 +557,18 @@ porte les **ordres en attente**. Pas de SSE ici — `EventSource` ne porte pas d
 `Authorization`, ce qui aurait imposé des tickets à usage unique, une route de flux, une politique
 CORS et sa reconnexion.
 
+**La cadence appartient au SERVEUR** (`battement_tenu`, long polling) : la réponse est tenue
+jusqu'à ce qu'un ordre arrive, et l'extension repart en chaînant sur la promesse `fetch`. Chrome
+ramène les `setInterval` d'un onglet caché ET silencieux à **un par minute** (« intensive
+throttling ») ; un onglet qui joue de l'audio en est exempté. Le piège se refermait sur lui-même :
+seule la commande qui s'adresse à un lecteur ARRÊTÉ tombait dedans — `play` n'a jamais pu partir.
+Corollaire : **aucun `setTimeout` sur le chemin normal** de l'extension, ils valent une minute.
+
 Pièges payés : un content script ne voit PAS `mediaSession` (→ `world: MAIN`) · Chrome n'injecte
 rien dans les onglets DÉJÀ ouverts · une extension hors Web Store ne se met jamais à jour seule
-(d'où l'annonce de version) · un filtre de destinataire appartient au SERVEUR, pas au client.
+(d'où l'annonce de version) · un filtre de destinataire appartient au SERVEUR, pas au client ·
+un ordre ne doit pas SURVIVRE à celui qui l'attend (TTL = timeout d'accusé, sinon le lecteur
+exécute ce que Wally vient de déclarer raté).
 
 ---
 

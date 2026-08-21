@@ -140,6 +140,35 @@
     });
   }
 
+  /* Ce qui bouge sans qu'on l'ait demandé : le morceau suivant, une mise en
+   * pause, une vidéo qui en remplace une autre.
+   *
+   * `content.js` en a besoin TOUT DE SUITE : sa boucle ne repasse plus toutes
+   * les deux secondes — c'est le bot qui tient désormais la réponse, parce que
+   * Chrome ralentit les timers d'un onglet caché — et un titre annoncé vingt
+   * secondes en retard se verrait dans le chat.
+   *
+   * En CAPTURE depuis le document, et non sur la balise `<video>` : les
+   * événements média ne remontent pas d'eux-mêmes, et YouTube remplace son
+   * lecteur au fil des navigations — un écouteur posé sur l'élément serait
+   * perdu au premier morceau suivant.
+   */
+  let dernierSignal = null;
+  const signalerChangement = () => {
+    // YouTube émet ces événements en rafale — une publicité qui démarre, une
+    // vignette survolée qui se met à jouer toute seule. On ne réveille le
+    // battement que si ce qu'on RAPPORTE change vraiment, sinon on lui ferait
+    // marteler le bot pendant qu'Azraël fait défiler sa page d'accueil.
+    const etat = lire();
+    const empreinte = etat
+      ? JSON.stringify([etat.titre, etat.artiste, etat.joue]) : "";
+    if (empreinte === dernierSignal) return;
+    dernierSignal = empreinte;
+    window.postMessage({ marque: MARQUE, pour: "content", type: "change" }, "*");
+  };
+  ["play", "pause", "loadedmetadata", "emptied"].forEach(
+    (evenement) => document.addEventListener(evenement, signalerChangement, true));
+
   // ── Le fil avec `content.js` ─────────────────────────────────────────────
   // `event.source !== window` écarte les messages venus d'une iframe (YouTube
   // en a beaucoup, publicités comprises).

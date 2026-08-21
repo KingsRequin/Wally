@@ -9,17 +9,38 @@
  * unique (`EventSource` ne porte pas d'en-tête), une route de flux et sa
  * reconnexion, pour gagner une seconde sur une action que Wally met déjà plus
  * longtemps à décider.
+ *
+ * La cadence, elle, n'est plus ici : c'est le BOT qui tient la réponse jusqu'à
+ * ce qu'un ordre arrive. Chrome ramène les `setInterval` d'un onglet caché et
+ * silencieux à UN PAR MINUTE (« intensive throttling », Chrome 88) — mesuré en
+ * prod le 2026-08-21, soixante secondes pile entre deux battements. Le piège
+ * était refermé sur lui-même : un onglet qui JOUE est exempté du throttling,
+ * donc seule la commande qui s'adresse à un lecteur ARRÊTÉ tombait dans le
+ * trou, et « mets lecture » ne pouvait par construction jamais partir. On
+ * enchaîne donc sur la promesse `fetch` au lieu d'un timer : un rappel réseau
+ * n'est ralenti par rien.
  */
 (() => {
   "use strict";
 
   const MARQUE = "wally-musique";
-  const PERIODE_MS = 2000;
-  // Le bot considère l'extension muette au-delà de 45 s : on bat bien plus
-  // souvent, pour qu'un hoquet réseau ne le fasse pas conclure au silence.
+  // Le repli, et lui seul : bot injoignable, partage éteint, réponse rendue si
+  // vite qu'elle ne peut pas avoir tenu. Ce `setTimeout`-là sera ralenti en
+  // arrière-plan, et c'est très bien — on ne veut pas marteler un bot absent.
+  const REPLI_MS = 2000;
+  // Ce qu'on demande au bot de tenir. Deux secondes quand ça joue : l'onglet
+  // n'est alors pas ralenti, et on garde la réactivité d'avant sur les
+  // changements de morceau. Vingt quand c'est à l'arrêt — l'état ne bouge plus,
+  // mais c'est précisément là qu'un « lecture » peut arriver.
+  const ATTENTE_JOUE_S = 2;
+  const ATTENTE_ARRET_S = 20;
+  // Le bot considère l'extension muette au-delà de 45 s : les deux valeurs
+  // ci-dessus restent dessous, réponse tenue comprise.
 
   let reglages = { url: "", jeton: "", actif: false };
   let dernierEtat = null;
+  const attentesEtat = [];         // les `lireEtat()` en cours, s'il y en a
+  let horsTourEnVol = false;       // une requête lancée sans attendre son tour
   const accusesEnAttente = [];
   // Ce que la fenêtre de réglages viendra demander : cet onglet-ci parle-t-il ?
   // Un onglet YouTube ouvert AVANT l'installation n'a pas ce script et se tait
@@ -31,6 +52,8 @@
   // bot sert : une extension chargée depuis un dossier ne se met jamais à jour
   // seule, et rien ne le disait.
   const MA_VERSION = chrome.runtime.getManifest().version;
+
+  const patienter = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ── Réglages, posés par la fenêtre de l'extension ────────────────────────
 
@@ -57,15 +80,56 @@
     const msg = event.data;
     if (!msg || msg.marque !== MARQUE || msg.pour !== "content") return;
 
-    if (msg.type === "etat") { dernierEtat = msg.etat; return; }
+    if (msg.type === "etat") {
+      dernierEtat = msg.etat;
+      // Toutes, et non la dernière : elles veulent le même état, et celle qu'on
+      // laisserait tomber ne serait plus rendue que par son filet — un
+      // `setTimeout`, donc jusqu'à une MINUTE en arrière-plan, la boucle
+      // bloquée pendant ce temps.
+      attentesEtat.splice(0, attentesEtat.length).forEach((rendre) => rendre(msg.etat));
+      return;
+    }
     if (msg.type === "accuse") {
       accusesEnAttente.push({ id: msg.id, ok: !!msg.ok,
                               titre: msg.titre || "", raison: msg.raison || "" });
+      // L'accusé ne doit pas attendre le tour suivant : le bot le guette pour
+      // répondre dans le chat, et une réponse tenue vingt secondes ferait dire
+      // « ça n'a pas marché » sur un geste déjà fait. C'est exactement ce qui
+      // s'est produit le 2026-08-21 à 10:29:05 — « next » annoncé raté, morceau
+      // changé cinq secondes plus tard.
+      horsTour();
+      return;
+    }
+    if (msg.type === "change") {
+      // Le lecteur a bougé de lui-même (morceau suivant, mise en pause) : ce
+      // qu'on a envoyé au bot est périmé, on le rafraîchit sans attendre.
+      horsTour();
     }
   });
 
   const demanderAuPont = (charge) =>
     window.postMessage({ marque: MARQUE, pour: "pont", ...charge }, "*");
+
+  /* Ce que le lecteur dit de lui-même, MAINTENANT.
+   *
+   * Attendu et non supposé : la boucle ne repasse plus toutes les deux
+   * secondes, et se contenter de la réponse du tour précédent enverrait au bot
+   * un titre vieux de vingt secondes.
+   */
+  function lireEtat() {
+    return new Promise((resoudre) => {
+      attentesEtat.push(resoudre);
+      demanderAuPont({ type: "lire" });
+      // Filet, jamais le chemin normal : le pont répond en une tâche. S'il
+      // n'est pas là du tout (script du monde MAIN non injecté), rien ne doit
+      // bloquer la boucle pour toujours. Ce délai-là sera ralenti en
+      // arrière-plan, et c'est sans conséquence — il ne sert qu'en panne.
+      setTimeout(() => {
+        const rang = attentesEtat.indexOf(resoudre);
+        if (rang >= 0) { attentesEtat.splice(rang, 1); resoudre(dernierEtat); }
+      }, 500);
+    });
+  }
 
   // ── Le battement ─────────────────────────────────────────────────────────
 
@@ -79,9 +143,8 @@
 
   /* La pastille sur l'icône, posée par `fond.js` — seul à pouvoir le faire.
    *
-   * Envoyée seulement quand l'état CHANGE : le battement passe toutes les deux
-   * secondes, et trois onglets YouTube ouverts en feraient quatre-vingt-dix
-   * messages par minute pour une pastille qui ne bouge pas.
+   * Envoyée seulement quand l'état CHANGE : trois onglets YouTube ouverts en
+   * feraient sinon un flot de messages pour une pastille qui ne bouge pas.
    */
   function signalerMiseAJour(servie) {
     const lib = window.WallyMusiqueLib;
@@ -101,24 +164,43 @@
     } catch (e) { /* extension en cours de rechargement */ }
   }
 
-  async function battre() {
-    demanderAuPont({ type: "lire" });          // l'état arrivera par message
+  /* Un tour de battement. Rend ce que la boucle doit en conclure :
+   *   · `temporiser` — rien n'est parti, ou le bot n'a pas répondu ;
+   *   · `ordres`     — on a reçu du travail, donc on repart tout de suite.
+   *
+   * `attente_s` à zéro pour les tours hors rang : ils ne servent qu'à porter un
+   * accusé ou un état frais, et laisser DEUX requêtes ouvertes en même temps
+   * n'aurait aucun intérêt.
+   */
+  async function battre(attenteS) {
+    const etat = await lireEtat();
     if (!reglages.actif || !reglages.url || !reglages.jeton) {
       rapport.erreur = reglages.actif ? "adresse ou jeton manquant"
                                       : "partage éteint";
-      return;
+      return { temporiser: true };
     }
 
     // Sur une page sans lecteur, on bat quand même : le bot doit savoir que
     // l'extension est VIVANTE, sinon il conclut au silence et se tait.
-    const etat = dernierEtat || {};
+    const lu = etat || {};
+    const joue = !!lu.joue;
+    // Les accusés quittent la file AVANT l'envoi, et y reviennent si l'envoi
+    // échoue : perdus, ils feraient dire « ça n'a pas marché » sur un geste
+    // fait — le défaut même que cet accusé existe pour éviter.
+    const partants = accusesEnAttente.splice(0, accusesEnAttente.length);
     const corps = {
       actif: true,
-      joue: !!etat.joue,
-      titre: etat.titre || "",
-      artiste: etat.artiste || "",
-      url: etat.url || location.href,
-      accuses: accusesEnAttente.splice(0, accusesEnAttente.length),
+      joue: joue,
+      titre: lu.titre || "",
+      artiste: lu.artiste || "",
+      url: lu.url || location.href,
+      accuses: partants,
+      // Combien de temps le bot peut tenir sa réponse. Absent, il répond tout
+      // de suite : c'est ce que fait une version d'avant ce correctif, et le
+      // champ est justement ce qui les distingue.
+      attente: attenteS === undefined
+        ? (joue ? ATTENTE_JOUE_S : ATTENTE_ARRET_S)
+        : attenteS,
     };
 
     let reponse;
@@ -130,27 +212,66 @@
         body: JSON.stringify(corps),
       });
     } catch (e) {
-      // Le bot redémarre, le réseau tousse : on réessaiera dans 2 s. Mais on
-      // le NOTE — c'est ce que la fenêtre montrera au lieu d'un silence.
+      // Le bot redémarre, le réseau tousse : on réessaiera. Mais on le NOTE —
+      // c'est ce que la fenêtre montrera au lieu d'un silence.
+      accusesEnAttente.unshift(...partants);
       rapport.erreur = "bot injoignable";
-      return;
+      return { temporiser: true };
     }
     if (!reponse.ok) {
+      accusesEnAttente.unshift(...partants);
       rapport.erreur = "le bot a répondu " + reponse.status;
-      return;
+      return { temporiser: true };
     }
     rapport.dernierOk = Date.now();
     rapport.erreur = "";
 
     let data;
-    try { data = await reponse.json(); } catch (e) { return; }
+    try { data = await reponse.json(); } catch (e) { return { temporiser: true }; }
     signalerMiseAJour(data.version || "");
     // Quel onglet obéit se décide côté BOT, à partir du `joue` envoyé
     // ci-dessus : un ordre reçu ici a déjà quitté la file, l'ignorer le
     // perdrait pour tout le monde. Ici, on exécute.
-    (data.ordres || []).forEach((ordre) => demanderAuPont({ type: "ordre", ordre }));
+    const ordres = data.ordres || [];
+    ordres.forEach((ordre) => demanderAuPont({ type: "ordre", ordre }));
+    return { ordres: ordres.length > 0 };
   }
 
-  setInterval(battre, PERIODE_MS);
-  battre();
+  /* Un tour lancé sans attendre son rang, pour porter un accusé ou un état qui
+   * vient de changer. Un seul à la fois : c'est une politesse, pas une file. */
+  function horsTour() {
+    if (horsTourEnVol) return;
+    horsTourEnVol = true;
+    battre(0).catch(() => ({ temporiser: true })).then((tour) => {
+      horsTourEnVol = false;
+      // Un accusé arrivé pendant ce tour-là n'attend pas le suivant non plus —
+      // mais seulement si CELUI-CI est passé. Sinon un bot injoignable et un
+      // accusé qui revient dans la file se relanceraient l'un l'autre aussi
+      // vite que la machine le permet, et sans aucun timer pour freiner :
+      // c'est la boucle qui porte le repli, pas ce chemin-là.
+      if (!tour.temporiser && accusesEnAttente.length) horsTour();
+    });
+  }
+
+  /* La boucle. Aucun timer sur le chemin normal — c'est tout l'objet du
+   * correctif : la réponse du bot EST la temporisation. */
+  async function boucler() {
+    for (;;) {
+      const debut = Date.now();
+      let tour;
+      try {
+        tour = await battre();
+      } catch (e) {
+        tour = { temporiser: true };
+      }
+      // Le repli couvre aussi le bot qui répondrait sans tenir (version
+      // ancienne, proxy qui coupe) : sans lui, la boucle tournerait à vide et à
+      // plein régime sur la machine d'Azraël.
+      if (tour.temporiser || (!tour.ordres && Date.now() - debut < 200)) {
+        await patienter(REPLI_MS);
+      }
+    }
+  }
+
+  boucler();
 })();

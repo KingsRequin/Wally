@@ -174,3 +174,51 @@ def test_la_version_est_LUE_dans_le_manifest_pas_recopiee():
     assert "manifest.json" in source
 
 
+
+
+# ── la réponse tenue (long polling) ─────────────────────────────────────────
+#
+# Chrome ramène les timers d'un onglet caché et silencieux à UN PAR MINUTE.
+# Mesuré en prod le 2026-08-21 ; c'est ce qui rendait « mets lecture »
+# impossible à livrer. La cadence appartient donc au serveur : il tient la
+# réponse jusqu'à ce qu'un ordre arrive. Le délai vient du navigateur d'un
+# tiers, il se borne ici.
+
+
+class _Espion:
+    """Un service qui n'écoute que ce qu'on lui passe."""
+
+    def __init__(self) -> None:
+        self.vu: list[dict] = []
+
+    async def battement_tenu(self, **champs):
+        self.vu.append(champs)
+        return []
+
+
+def test_le_delai_demande_par_l_extension_est_BORNE(client):
+    espion = _Espion()
+    client.app.state.wally.music = espion
+    client.post("/api/music/beat", json={**_BEAT, "attente": 9999},
+                headers=_AUTH)
+    from bot.core.music import MusicService
+    assert espion.vu[0]["attente_s"] == MusicService.ATTENTE_MAX_S
+
+
+def test_une_EXTENSION_D_AVANT_ce_correctif_garde_la_reponse_immediate(client):
+    """Elle n'envoie pas le champ et bat sur son propre timer : lui tenir la
+    réponse empilerait ses requêtes au lieu de l'aider."""
+    espion = _Espion()
+    client.app.state.wally.music = espion
+    client.post("/api/music/beat", json=_BEAT, headers=_AUTH)
+    assert espion.vu[0]["attente_s"] == 0.0
+
+
+def test_un_delai_TORDU_ne_fait_pas_tomber_la_route(client):
+    espion = _Espion()
+    client.app.state.wally.music = espion
+    for bavure in ("bientôt", None, [], {"a": 1}, "NaN"):
+        r = client.post("/api/music/beat", json={**_BEAT, "attente": bavure},
+                        headers=_AUTH)
+        assert r.status_code == 200
+    assert all(v["attente_s"] == 0.0 for v in espion.vu)

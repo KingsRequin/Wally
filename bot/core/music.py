@@ -1,8 +1,13 @@
 """Ce que Wally sait de la musique d'Azraël, et ce qu'il peut en faire.
 
 Azraël écoute sur YouTube dans un onglet de son navigateur. Une extension
-Chrome, installée chez lui, envoie ici un **battement** régulier — ce qui passe —
-et repart avec les **ordres en attente**. Un seul canal, dans les deux sens.
+Chrome, installée chez lui, envoie ici un **battement** — ce qui passe — et
+repart avec les **ordres en attente**. Un seul canal, dans les deux sens.
+
+La cadence appartient à CE côté-ci : la réponse est tenue jusqu'à ce qu'un ordre
+arrive (`battement_tenu`). Chrome ramène les timers d'un onglet caché et
+silencieux à un tour par minute, et c'est exactement l'état d'un lecteur en
+pause — celui à qui l'on dit « lecture ».
 
 Pourquoi pas un flux SSE, qui aurait été le motif maison (`OverlayFeed`) : il
 aurait fallu des tickets à usage unique (`EventSource` ne porte pas d'en-tête
@@ -88,20 +93,46 @@ def vignette(url: str) -> str:
     return f"https://i.ytimg.com/vi/{brut}/mqdefault.jpg"
 
 
+class _Veilleur:
+    """Un battement dont la réponse est tenue, et l'onglet qui l'attend.
+
+    `joue` est ce qui décide si un ordre le concerne : « suivante » ne part pas
+    vers un lecteur à l'arrêt, et le réveiller pour rien le ferait rappeler
+    aussitôt — les deux tourneraient en boucle serrée.
+    """
+
+    __slots__ = ("joue", "reveil")
+
+    def __init__(self, joue: bool) -> None:
+        self.joue = joue
+        self.reveil = asyncio.Event()
+
+
 class MusicService:
     """L'état du lecteur d'Azraël, et la file d'ordres qui l'attend."""
 
     # Au-delà, on ne prétend plus savoir ce qui passe : c'est ce qui passait.
-    # Large devant la période du battement (~2 s) pour tolérer un hoquet réseau
-    # sans déclarer l'extension morte.
+    # Large devant le plafond d'attente ci-dessous, pour tolérer un hoquet
+    # réseau sans déclarer l'extension morte.
     PERIME_S = 45
-    # Un ordre non pris passé ce délai est jeté. La musique est du temps réel :
-    # « suivante » exécuté cinq minutes plus tard surprendrait tout le monde en
-    # plein autre morceau.
-    ORDRE_TTL_S = 10
-    # Ce qu'on attend l'accusé avant de dire qu'on n'a pas pu. Arbitré avec
-    # l'owner : deux secondes de silence sont déjà longues en direct.
-    ACCUSE_TIMEOUT_S = 2.0
+    # Le plus longtemps qu'on TIENT une réponse de battement avant de rendre la
+    # main les mains vides. Sous la minute que les proxies coupent, et sous
+    # `PERIME_S` — sinon l'extension serait déclarée muette entre deux
+    # battements alors qu'elle parle.
+    ATTENTE_MAX_S = 25.0
+    # Ce qu'on attend l'accusé avant de dire qu'on n'a pas pu. Deux secondes à
+    # l'origine, sur l'hypothèse d'un battement toutes les deux secondes ; la
+    # boucle en demande DEUX (un pour prendre l'ordre, un pour rendre l'accusé)
+    # et « suivante » constate le changement pendant 2,5 s. Le compte n'a jamais
+    # tenu : le 2026-08-21 à 10:29:05, un « next » réussi a été annoncé raté,
+    # puis exécuté cinq secondes plus tard sous les yeux du chat.
+    ACCUSE_TIMEOUT_S = 6.0
+    # Un ordre non pris passé ce délai est jeté — et c'est le MÊME délai que
+    # ci-dessus, à dessein : un ordre dont plus personne n'attend le résultat ne
+    # doit pas pouvoir partir. Il valait 10 s pour un accusé attendu 2 s, d'où
+    # la fenêtre de huit secondes pendant laquelle le lecteur exécutait ce que
+    # Wally venait de déclarer raté.
+    ORDRE_TTL_S = ACCUSE_TIMEOUT_S
     # Un modo qui spamme « suivante » ne doit ni remplir la mémoire ni faire
     # défiler trente morceaux au retour de l'extension.
     MAX_ORDRES = 5
@@ -119,6 +150,10 @@ class MusicService:
         self._file: deque[dict] = deque(maxlen=self.MAX_ORDRES)
         # Les ordres partis, en attente de leur accusé.
         self._attentes: dict[str, asyncio.Future] = {}
+        # Les battements TENUS : une entrée par requête d'extension en cours
+        # d'attente, avec l'état de lecture de SON onglet — c'est lui qui dit
+        # si un ordre donné la concerne (cf. `_reveiller`).
+        self._veilleurs: list[_Veilleur] = []
 
     def ecouter_les_morceaux(self, rappel: Callable[[dict], None] | None) -> None:
         """Branche (ou débranche) le rappel des changements de morceau.
@@ -147,7 +182,10 @@ class MusicService:
                 logger.info("Musique : partage coupé côté extension")
             self._etat = None
             self._vu_a = 0.0
-            return self._servir()
+            # Et surtout AUCUN ordre : les servir à une extension qui vient de
+            # dire qu'elle n'exécutera rien les perdrait pour de bon — ils ne
+            # sont remis qu'une fois. Ils attendent en file celui qui pourra.
+            return []
 
         nouveau = {
             "titre": str(titre or "")[:_MAX_TEXTE],
@@ -228,6 +266,79 @@ class MusicService:
         self._file.extend(gardes)
         return sortis
 
+    async def battement_tenu(self, *, attente_s: float, actif: bool, joue: bool,
+                             titre: str, artiste: str, url: str,
+                             accuses: list[dict] | None = None) -> list[dict]:
+        """Un battement dont la réponse est TENUE jusqu'à ce qu'un ordre arrive.
+
+        Le battement ordinaire répond tout de suite : c'était le timer de
+        l'extension qui donnait la cadence. Chrome ne le permet pas — dans un
+        onglet caché et silencieux, il tombe à un tour par MINUTE (« intensive
+        throttling », Chrome 88). Mesuré en prod le 2026-08-21 : soixante
+        secondes pile entre deux battements, et « mets lecture » impossible à
+        livrer, l'ordre périmant avant qu'un battement vienne le chercher. Le
+        piège était refermé sur lui-même : un onglet qui JOUE est exempté du
+        throttling, donc seule la commande qui s'adresse à un lecteur ARRÊTÉ
+        tombait dans le trou.
+
+        La cadence change donc de camp : elle est ici. L'extension repart dès
+        qu'elle a sa réponse, en chaînant sur la promesse `fetch` — un rappel
+        réseau n'est pas un timer, rien ne le ralentit.
+
+        `attente_s` vient du navigateur d'un tiers : le bornage est chez
+        l'appelant (`borner_attente`), pas chez lui.
+        """
+        ordres = self.battement(actif=actif, joue=joue, titre=titre,
+                                artiste=artiste, url=url, accuses=accuses)
+        # Rien à tenir : des ordres à rendre, un partage éteint (l'extension ne
+        # reviendra pas les chercher), ou un client d'avant ce correctif qui
+        # bat encore sur son propre timer.
+        if ordres or not actif or attente_s <= 0:
+            return ordres
+
+        # Aucun `await` entre le service ci-dessus et la mise en veille : c'est
+        # ce qui garantit qu'un ordre déposé entre les deux ne peut pas se
+        # glisser sans réveiller personne.
+        veilleur = _Veilleur(bool(joue))
+        self._veilleurs.append(veilleur)
+        try:
+            await asyncio.wait_for(veilleur.reveil.wait(), attente_s)
+        except asyncio.TimeoutError:
+            return []
+        finally:
+            self._veilleurs.remove(veilleur)
+        # Peut rendre une liste vide : un autre onglet a pu prendre l'ordre
+        # entre le réveil et ici. L'extension repartira aussitôt attendre.
+        return self._servir(joue=joue)
+
+    @classmethod
+    def borner_attente(cls, valeur) -> float:
+        """Le délai demandé par l'extension, ramené à ce qu'on accepte.
+
+        Zéro pour tout ce qui n'est pas un nombre lisible : c'est le
+        comportement d'avant le long polling, donc ce qu'une version ancienne de
+        l'extension — qui n'envoie pas ce champ — doit continuer d'obtenir.
+        """
+        try:
+            demande = float(valeur)
+        except (TypeError, ValueError):
+            return 0.0
+        if demande != demande:      # NaN : `float("nan")` passe le try
+            return 0.0
+        return max(0.0, min(demande, cls.ATTENTE_MAX_S))
+
+    def _reveiller(self, action: str) -> None:
+        """Rend la main aux battements tenus que cet ordre concerne.
+
+        Pas à tous : un ordre qui ne part pas vers un onglet à l'arrêt (tout ce
+        qui n'est pas `play`/`play_query`, cf. `_servir`) ne doit pas le
+        réveiller — il repartirait les mains vides et rappellerait aussitôt, les
+        deux tournant en boucle serrée jusqu'à la péremption de l'ordre.
+        """
+        for veilleur in self._veilleurs:
+            if veilleur.joue or action in _REVEILLENT:
+                veilleur.reveil.set()
+
     def _accuser(self, accuse: dict) -> None:
         if not isinstance(accuse, dict):
             return
@@ -287,6 +398,7 @@ class MusicService:
                                           "raison": "trop d'ordres en attente"})
         self._file.append({"id": ordre_id, "action": action, "query": query,
                            "ne_a": self._maintenant()})
+        self._reveiller(action)
 
         try:
             return await asyncio.wait_for(attente, self.ACCUSE_TIMEOUT_S)

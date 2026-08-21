@@ -2,8 +2,9 @@
 """La porte de l'extension qui suit la musique d'Azraël.
 
 Une seule route, appelée depuis le NAVIGATEUR D'UN TIERS à travers internet :
-l'extension bat toutes les deux secondes, dit ce qui passe, et repart avec les
-ordres en attente.
+l'extension dit ce qui passe, et repart avec les ordres en attente. La réponse
+lui est TENUE jusqu'à ce qu'un ordre arrive — c'est ce serveur qui donne la
+cadence, le navigateur ne pouvant pas la tenir dans un onglet caché.
 
 Elle porte son propre jeton plutôt que celui du dashboard : confier le Bearer
 admin à une extension installée sur une autre machine reviendrait à lui donner
@@ -22,6 +23,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from loguru import logger
+
+from bot.core.music import MusicService
 
 router = APIRouter()
 public_router = APIRouter()
@@ -47,8 +50,8 @@ def _version_servie() -> str:
 
     Retenue une fois pour la vie du process, et c'est exact : le dossier de
     l'extension est COPIÉ dans l'image (`Dockerfile`), pas monté — il ne peut
-    pas changer sans redémarrage. Sans ce cache, chaque battement (toutes les
-    deux secondes, par onglet) relirait le fichier.
+    pas changer sans redémarrage. Sans ce cache, chaque battement — plusieurs
+    par seconde quand le lecteur tourne, par onglet — relirait le fichier.
     """
     try:
         manifeste = json.loads((_EXTENSION_DIR / "manifest.json")
@@ -90,6 +93,13 @@ async def beat(request: Request) -> dict:
     un navigateur qu'on ne contrôle pas, et un 500 répétable y serait une panne
     visible en plein live. Les champs absents ou tordus retombent sur des
     valeurs neutres — c'est le service qui borne et range.
+
+    La réponse est TENUE le temps demandé par l'extension (`attente`, en
+    secondes) si rien n'attend d'elle : Chrome ramène les timers d'un onglet
+    caché et silencieux à un tour par minute, et c'est exactement l'état d'un
+    lecteur en pause — celui à qui l'on dit « lecture ». La cadence appartient
+    donc à ce serveur. Champ absent (extension d'avant ce correctif) : réponse
+    immédiate, comme avant.
     """
     _verifier_jeton(request)
     try:
@@ -104,7 +114,8 @@ async def beat(request: Request) -> dict:
         accuses = []
 
     try:
-        ordres = _service(request).battement(
+        ordres = await _service(request).battement_tenu(
+            attente_s=MusicService.borner_attente(data.get("attente")),
             actif=bool(data.get("actif")),
             joue=bool(data.get("joue")),
             titre=str(data.get("titre") or ""),
@@ -113,7 +124,7 @@ async def beat(request: Request) -> dict:
             accuses=[a for a in accuses[:_MAX_ACCUSES] if isinstance(a, dict)],
         )
     except Exception as exc:  # noqa: BLE001 — l'extension ne doit jamais voir un 500
-        logger.error("Musique : battement en erreur : {e}", e=exc)
+        logger.error("Musique : battement en erreur : {e!r}", e=exc)
         return {"ordres": [], "version": _version_servie()}
     # La version voyage avec le battement : c'est le seul canal que l'extension
     # a déjà, et une extension chargée depuis un dossier ne se met jamais à jour
