@@ -230,3 +230,19 @@ def test_le_catalogue_ne_part_pas_a_lantenne_avec_le_modele():
     range_ = json.loads(db.rows[LAYOUT_KEY])
     assert "animations" not in range_
     assert "portees" not in range_
+
+
+def test_le_layout_admin_sert_aussi_les_quatre_champs_universels():
+    """Sans eux, le panneau devrait DEVINER que ces quatre-là existent sur les
+    trente-sept, et redire leurs bornes en JavaScript. Deux tables divergent au
+    premier ajustement — et le panneau laisserait alors saisir une valeur que le
+    serveur ramène en silence : on croit avoir réglé, rien ne bouge."""
+    portees = _client(_State()).get("/api/admin/overlay/layout").json()["portees"]
+    u = portees["universels"]
+    assert set(u) == {"opacite", "rotation", "largeur_max", "miroir"}
+    # `miroir` est un booléen : ni bornes ni choix, d'où l'entrée nulle.
+    assert u["miroir"] is None
+    mini, maxi, auto = u["largeur_max"]
+    assert (mini, maxi) == (120.0, 1920.0)
+    assert auto is True, "zéro doit valoir « auto » et rendre la main au CSS"
+    assert u["opacite"][2] is False

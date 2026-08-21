@@ -307,7 +307,7 @@ async def overlay_test(request: Request) -> dict:
 from bot.core.overlay_elements import LIBELLES              # noqa: E402
 from bot.core.overlay_feed import payload_image_galerie     # noqa: E402
 from bot.core.overlay_layout import (                       # noqa: E402
-    ANIMATIONS, CHAMPS_CHOIX, CHAMPS_PROPRES,
+    ANIMATIONS, CHAMPS_CHOIX, CHAMPS_PROPRES, CHAMPS_UNIVERSELS,
     layout_par_defaut, scene_par_slug, tailles_media,
 )
 from bot.core.overlay_layout_store import (                 # noqa: E402
@@ -413,6 +413,10 @@ async def get_overlay_layout_admin(request: Request, defauts: bool = False) -> d
             # réglage qu'aucun code ne lit.
             "animations": ANIMATIONS,
             "portees": {
+                # Les quatre que TOUS les éléments portent. Servis à part des
+                # champs propres : le panneau les montre toujours, là où les
+                # autres n'apparaissent que sur leur porteur.
+                "universels": CHAMPS_UNIVERSELS,
                 "champs_propres": CHAMPS_PROPRES,
                 # `frozenset` ne se sérialise pas en JSON, et l'ordre d'un set
                 # n'est pas stable d'un boot à l'autre : trié, pour que deux

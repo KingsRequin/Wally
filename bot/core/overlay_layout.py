@@ -73,6 +73,22 @@ MIROIR_DEFAUT = False
 # un trait, le plafond est la largeur du canvas de référence.
 LARGEUR_MIN, LARGEUR_MAX, LARGEUR_DEFAUT = 120.0, 1920.0, 0.0
 
+# Les quatre, rassemblés : `champ → (mini, maxi, auto)`, ou `None` pour un
+# booléen, qui n'a ni bornes ni choix.
+#
+# Une table plutôt que quatre lignes en dur, pour la raison qui gouverne tout ce
+# fichier : elle a UN seul lecteur de plus que la fusion — la route qui la sert
+# au panneau. Sans elle, le panneau devrait deviner que ces quatre-là existent
+# sur les trente-sept, et redire leurs bornes en JavaScript ; deux tables
+# divergent au premier ajustement, et le panneau laisserait alors saisir une
+# valeur que le serveur ramène en silence.
+CHAMPS_UNIVERSELS: dict[str, tuple[float, float, bool] | None] = {
+    "opacite": (OPACITE_MIN, OPACITE_MAX, False),
+    "rotation": (ROTATION_MIN, ROTATION_MAX, False),
+    "largeur_max": (LARGEUR_MIN, LARGEUR_MAX, True),
+    "miroir": None,
+}
+
 # ── Les réglages de rythme des widgets qui PASSENT ──────────────────────────
 #
 # `duree` = 0 vaut AUTO : le serveur décide, comme avant ce réglage. C'est la
@@ -642,18 +658,20 @@ def _fusionner_element(cle: str, brut, defaut: dict) -> dict:
         "wally_visible": (bool(brut["wally_visible"])
                           if brut.get("wally_visible") is not None
                           else defaut["wally_visible"]),
-        # Les quatre universels : tout élément passe par `placer()`, donc tout
-        # élément les porte. Même rigueur que les autres — et `largeur_max`
-        # garde son zéro, qui rend la main au CSS au lieu d'écraser la carte.
-        "opacite": _borner(brut.get("opacite"), OPACITE_MIN, OPACITE_MAX,
-                           defaut["opacite"]),
-        "rotation": _borner(brut.get("rotation"), ROTATION_MIN, ROTATION_MAX,
-                            defaut["rotation"]),
-        "miroir": (bool(brut["miroir"]) if brut.get("miroir") is not None
-                   else defaut["miroir"]),
-        "largeur_max": _borner_ou_auto(brut.get("largeur_max"), LARGEUR_MIN,
-                                       LARGEUR_MAX, defaut["largeur_max"]),
     }
+    # Les quatre universels : tout élément passe par `placer()`, donc tout
+    # élément les porte. Lus dans `CHAMPS_UNIVERSELS`, qui est aussi ce que la
+    # route sert au panneau — une seule autorité sur ce qui existe et sur ses
+    # bornes. `largeur_max` garde son zéro, qui rend la main au CSS au lieu
+    # d'écraser la carte ; `miroir` est un booléen, d'où l'entrée à `None`.
+    for nom, bornes in CHAMPS_UNIVERSELS.items():
+        if bornes is None:
+            fusionne[nom] = (bool(brut[nom]) if brut.get(nom) is not None
+                             else defaut[nom])
+            continue
+        mini, maxi, auto = bornes
+        borne = _borner_ou_auto if auto else _borner
+        fusionne[nom] = borne(brut.get(nom), mini, maxi, defaut[nom])
     # Les réglages propres à CET élément-là. La table est indexée par élément :
     # `duree` ne se borne pas pareil sur le rotateur (durée d'un média, 1–120 s)
     # et sur un widget qui passe (durée d'un passage, 2–180 s, ou auto).

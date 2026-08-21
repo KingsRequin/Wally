@@ -228,7 +228,11 @@ def test_la_cadence_absente_du_modele_n_invente_pas_de_modification():
       const b2 = copie(affiche);
       b2.scenes[0].elements.avatar.duree = 12;
       const d2 = diff(a2, b2);
-      if (d2.total !== 1 || d2.liste[0].d.indexOf("durée 9 → 12 s") < 0) {
+      // « 9 s → 12 s » et non « 9 → 12 s » : l'unité est posée sur CHAQUE
+      // valeur depuis que zéro peut valoir « auto ». Une unité en fin de phrase
+      // donnerait « durée 9 s → auto », où le « s » final ne porterait que sur
+      // l'une des deux. Changé le 2026-08-21, avec le passage sur table.
+      if (d2.total !== 1 || d2.liste[0].d.indexOf("durée 9 s → 12 s") < 0) {
         throw new Error(JSON.stringify(d2.liste));
       }
       console.log("ok");

@@ -123,23 +123,68 @@ window.OverlayAdmin = (function () {
   const POS_MIN = 0, POS_MAX = 100;
   const ECHELLE_MIN = 0.2, ECHELLE_MAX = 2.0;
 
-  // Les réglages qu'UN SEUL élément porte : clé de l'élément → champs, chacun
-  // `[clé, libellé, mini, maxi, pas, infobulle, défaut]`. Miroir de
-  // `CHAMPS_PROPRES` et des constantes `ROTATEUR_*` (bot/core/overlay_layout.py),
-  // qui restent l'autorité — le serveur borne à l'enregistrement, on évite
-  // juste de laisser saisir l'impossible.
+  // Ce que le SERVEUR ne peut pas dire : comment un réglage se NOMME et se
+  // manipule à l'écran. Les bornes, les choix, les défauts et surtout les
+  // PORTÉES — qui porte quoi — viennent du GET (`portees`, `animations`), et
+  // restent l'unique autorité. Une seconde table de bornes en JavaScript
+  // divergeait au premier ajustement : le panneau laissait alors saisir une
+  // valeur que le serveur ramène en silence, on croyait avoir réglé, rien ne
+  // bougeait, et rien ne le disait.
   //
-  // Ils ne sont montrés QUE quand leur élément est le principal de la
-  // sélection : la barre en compte déjà cinq, et « durée d'affichage » sur un
-  // dé ne veut rien dire.
-  const CHAMPS_PROPRES = {
-    rotator: [
-      ["duree", "Durée (s)", 1, 120, 0.5,
-       "Combien de temps chaque meme reste affiché. Une vidéo joue jusqu'au bout.", 9],
-      ["pause", "Pause (s)", 0, 120, 0.5,
-       "Combien de temps la zone reste vide entre deux memes. 0 les enchaîne.", 5],
-    ],
+  // `nature` : "nombre" par défaut · "booleen" · "choix" (avec `menu`, le
+  // catalogue d'animations dont il tire ses options).
+  // `auto` : le libellé du zéro, quand zéro ne veut pas dire zéro. Sans lui, le
+  // streamer lit « durée : 0 » et comprend « ne s'affiche pas ».
+  const CHAMPS = {
+    opacite: { label: "Opacité", pas: 0.05,
+      aide: "La transparence de l'élément. 1 = parfaitement opaque." },
+    rotation: { label: "Inclinaison", pas: 1, unite: "°",
+      aide: "L'élément s'incline autour de son centre : il ne se déplace pas." },
+    miroir: { label: "Miroir", nature: "booleen",
+      aide: "Retourne l'élément de gauche à droite." },
+    largeur_max: { label: "Largeur max", pas: 10, unite: " px", auto: "Auto",
+      aide: "En pixels du canvas 1920, à l'échelle de l'élément. Auto = la "
+          + "largeur de son contenu, plafonnée à 92 % de l'écran." },
+    duree: { label: "Durée", pas: 0.5, unite: " s", auto: "Auto",
+      aide: "Combien de temps l'élément reste à l'écran. Auto = c'est Wally "
+          + "qui décide, comme avant. Une partie en cours n'est jamais coupée." },
+    pause: { label: "Pause", pas: 0.5, unite: " s",
+      aide: "Combien de temps la zone reste vide entre deux memes. 0 les "
+          + "enchaîne." },
+    delai: { label: "Délai", pas: 0.5, unite: " s",
+      aide: "Combien de temps on attend avant de le faire apparaître." },
+    anim_duree: { label: "Durée d'anim.", pas: 0.05, unite: " s",
+      aide: "La durée de l'entrée et de la sortie. La carte suivante attend la "
+          + "fin de la sortie pour entrer." },
+    anim_entree: { label: "Entrée", nature: "choix", menu: "entree",
+      aide: "Comment l'élément apparaît." },
+    anim_sortie: { label: "Sortie", nature: "choix", menu: "sortie",
+      aide: "Comment l'élément s'en va." },
+    anim_insistance: { label: "Insistance", nature: "choix", menu: "insistance",
+      aide: "Un effet rejoué en boucle pendant tout l'affichage." },
   };
+
+  // Les champs que TOUT élément porte par construction, hors du système de
+  // portées : ils vivent dans `_el()` et non dans les tables de validation.
+  const PLACEMENT = ["x", "y", "scale", "anchor"];
+
+  /** Les réglages que CET élément porte, et comment chacun se valide.
+   *
+   *  Rend `{ champ: {mini, maxi, auto} | {choix: [...]} | null }`. Les quatre
+   *  universels y sont toujours ; les autres seulement si l'élément les porte.
+   *  Tout vient du serveur : le panneau ne devine rien.
+   */
+  function portesDe(cle) {
+    const p = etat.portees || {};
+    const out = Object.assign({}, p.universels || {});
+    Object.keys((p.champs_propres || {})[cle] || {}).forEach(function (nom) {
+      out[nom] = p.champs_propres[cle][nom];
+    });
+    Object.keys((p.champs_choix || {})[cle] || {}).forEach(function (nom) {
+      out[nom] = { choix: p.champs_choix[cle][nom] };
+    });
+    return out;
+  }
   // Une flèche vaut 0,1 % — environ deux pixels sur 1920. Avec Maj, 1 %.
   const PAS_FIN = 0.1, PAS_GROS = 1;
   // Le pas de la grille d'aimantation, en pourcentage, et sa portée en PIXELS
@@ -170,6 +215,10 @@ window.OverlayAdmin = (function () {
   const etat = {
     layout: null,
     libelles: {},   // clé → {nom, description}, servi par le GET du layout
+    // Qui porte quel réglage, avec quelles bornes, et le catalogue des
+    // animations. Servis par le même GET, jamais recopiés ici.
+    portees: {},
+    animations: {},
     // La mise en scène D'ORIGINE, servie par le même GET (`?defauts=1`) et mise
     // en cache pour la visite. JAMAIS écrite ici : `ELEMENTS` bouge à chaque
     // widget ajouté, et une seconde table dans le navigateur aurait divergé de
@@ -1699,6 +1748,29 @@ window.OverlayAdmin = (function () {
    *  chacun se DIT autrement — un booléen n'a pas de « avant → après » lisible,
    *  et « solo: false → true » ne veut rien dire pour qui règle un habillage.
    */
+  // Ce qui se dit « libellé avant → après ». Les champs qui se disent AUTREMENT
+  // — masqué, verrouillé, solo, Wally visible, ancrage, miroir — restent écrits
+  // à la main juste au-dessus : « solo: false → true » ne veut rien dire pour
+  // qui règle un habillage.
+  //
+  // `auto` s'écrit « auto » et non « 0 » : le zéro y signifie « c'est Wally qui
+  // décide », et l'annoncer comme un chiffre ferait lire « durée : 0 », donc
+  // « ne s'affiche plus ».
+  const DITS = [
+    ["opacite", "opacité", uneEchelle],
+    ["rotation", "inclinaison", function (v) { return uneSeconde(v) + "°"; }],
+    ["largeur_max", "largeur max", function (v) {
+      return Number(v) > 0 ? Math.round(Number(v)) + " px" : "auto"; }],
+    ["duree", "durée", function (v) {
+      return Number(v) > 0 ? uneSeconde(v) + " s" : "auto"; }],
+    ["pause", "pause", function (v) { return uneSeconde(v) + " s"; }],
+    ["delai", "délai", function (v) { return uneSeconde(v) + " s"; }],
+    ["anim_duree", "durée d'anim.", function (v) { return uneSeconde(v) + " s"; }],
+    ["anim_entree", "entrée", function (v) { return nomAnimation(v); }],
+    ["anim_sortie", "sortie", function (v) { return nomAnimation(v); }],
+    ["anim_insistance", "insistance", function (v) { return nomAnimation(v); }],
+  ];
+
   function decrireElement(avant, apres) {
     const d = [];
     if (avant.x !== apres.x) {
@@ -1723,17 +1795,22 @@ window.OverlayAdmin = (function () {
     if (gardeWally(avant) !== gardeWally(apres)) {
       d.push(gardeWally(apres) ? "Wally reste visible" : "Wally s'efface");
     }
-    // La cadence du rotateur : lue seulement si l'élément la porte. Un modèle
-    // rangé avant l'ajout du champ n'en a pas, et « durée undefined → 9 s »
-    // annoncerait une modification que personne n'a faite.
-    if (apres.duree !== undefined && avant.duree !== undefined
-        && avant.duree !== apres.duree) {
-      d.push("durée " + uneSeconde(avant.duree) + " → " + uneSeconde(apres.duree) + " s");
+    if (!avant.miroir !== !apres.miroir) {
+      d.push(apres.miroir ? "en miroir" : "sens normal");
     }
-    if (apres.pause !== undefined && avant.pause !== undefined
-        && avant.pause !== apres.pause) {
-      d.push("pause " + uneSeconde(avant.pause) + " → " + uneSeconde(apres.pause) + " s");
-    }
+    // Les onze qui se disent tous de la même façon : « libellé avant → après ».
+    // En table et non en `if` empilés — ils étaient deux, ils sont onze, et la
+    // liste grandira encore.
+    //
+    // La règle qui compte est CONSERVÉE : un champ absent DES DEUX CÔTÉS ne
+    // produit aucune ligne. Un modèle rangé avant l'ajout d'un champ ne le
+    // porte pas, et « durée undefined → 9 s » annoncerait une modification que
+    // personne n'a faite.
+    DITS.forEach(function (dit) {
+      const a = avant[dit[0]], b = apres[dit[0]];
+      if (a === undefined || b === undefined || a === b) return;
+      d.push(dit[1] + " " + dit[2](a) + " → " + dit[2](b));
+    });
     return d;
   }
 
@@ -2347,6 +2424,199 @@ window.OverlayAdmin = (function () {
     }
   }
 
+  // ── Le sélecteur d'animation ────────────────────────────────────────────
+  //
+  // Quatre-vingt-dix-sept animations réparties en dix familles : ni un
+  // `<select>` natif — on n'y montre ni recherche ni aperçu — ni une liste à
+  // plat, où « celle qui glisse depuis la droite » se cherche à l'œil.
+  //
+  // Le catalogue vient du serveur (`etat.animations`), jamais recopié ici :
+  // deux listes divergent à la première mise à jour d'animate.css.
+
+  // Ce que la clé technique ne dit pas en français. Le RESTE se DÉRIVE
+  // (famille + direction) plutôt que de s'écrire : quatre-vingt-dix-sept
+  // traductions à la main auraient divergé du catalogue au premier ajout, et
+  // c'est exactement ce que ce chantier passe son temps à éviter.
+  const NOMS_ANIM = {
+    glitch: "Glitch (maison)", aucune: "Aucune",
+    jackInTheBox: "Boîte à surprise", hinge: "Gond qui lâche",
+    rollIn: "Roulé", rollOut: "Roulé",
+    bounce: "Sautillement", flash: "Flash", pulse: "Pulsation",
+    rubberBand: "Élastique", shakeX: "Secousse horizontale",
+    shakeY: "Secousse verticale", headShake: "Non de la tête",
+    swing: "Balancement", tada: "Ta-daa", wobble: "Vacillement",
+    jello: "Gelée", heartBeat: "Battement de cœur", flip: "Retournement",
+  };
+
+  // Les suffixes de direction, du plus long au plus court : « DownBig » doit
+  // être reconnu avant « Down », sinon on annonce « vers le bas » pour un
+  // mouvement ample.
+  const DIRECTIONS_ANIM = [
+    ["DownBig", "vers le bas, ample"], ["UpBig", "vers le haut, ample"],
+    ["LeftBig", "vers la gauche, ample"], ["RightBig", "vers la droite, ample"],
+    ["TopLeft", "coin haut-gauche"], ["TopRight", "coin haut-droit"],
+    ["BottomLeft", "coin bas-gauche"], ["BottomRight", "coin bas-droit"],
+    ["DownLeft", "bas-gauche"], ["DownRight", "bas-droit"],
+    ["UpLeft", "haut-gauche"], ["UpRight", "haut-droit"],
+    ["Down", "vers le bas"], ["Up", "vers le haut"],
+    ["Left", "vers la gauche"], ["Right", "vers la droite"],
+    ["X", "axe horizontal"], ["Y", "axe vertical"],
+  ];
+
+  /** La famille d'une animation, telle que le serveur l'a rangée. */
+  function familleAnimation(nom) {
+    const cat = etat.animations || {};
+    for (const menu of Object.keys(cat)) {
+      for (const famille of Object.keys(cat[menu])) {
+        if ((cat[menu][famille] || []).indexOf(nom) >= 0) return famille;
+      }
+    }
+    return "";
+  }
+
+  /** Le nom lisible d'une animation. « fadeInUpBig » ne dit rien à qui règle
+   *  un habillage ; « Fondu · vers le haut, ample » se comprend. */
+  function nomAnimation(nom) {
+    if (!nom) return "—";
+    if (NOMS_ANIM[nom]) return NOMS_ANIM[nom];
+    const famille = familleAnimation(nom);
+    for (const [suffixe, dit] of DIRECTIONS_ANIM) {
+      if (nom.endsWith(suffixe)) {
+        return (famille || nom) + " · " + dit;
+      }
+    }
+    return famille || nom;
+  }
+
+  /** Ouvre le catalogue sous un bouton de champ.
+   *
+   *  Monté sur `<body>` en `position: fixed`, comme les autres menus de ce
+   *  panneau : l'inspecteur est en `overflow` et rognerait une liste qui monte.
+   *  Le côté et le sens se choisissent à l'OUVERTURE — la barre passe à la
+   *  ligne selon la largeur, et un ancrage figé se trompe une fois sur deux.
+   */
+  function ouvrirSelecteurAnim(hote, menu, courante, onChoix) {
+    if (menuOuvert && menuOuvert.dataset.anim === menu
+        && menuHote === hote) { fermerMenu(); return; }
+    fermerMenu();
+    const catalogue = (etat.animations || {})[menu];
+    if (!catalogue) {
+      notifier("Catalogue d'animations indisponible — rechargez le panneau.");
+      return;
+    }
+    // `ovl-menu-flottant` est indispensable : sans elle, `.ovl-menu` reste en
+    // `position: absolute; top: 100%; right: 6px` et le `left`/`top` en pixels
+    // qu'on calcule plus bas ne vise plus rien.
+    const boite = creer("div", "ovl-menu ovl-menu-flottant ovl-menu-anim");
+    boite.dataset.anim = menu;
+
+    const recherche = document.createElement("input");
+    recherche.type = "search";
+    recherche.className = "ovl-anim-recherche";
+    recherche.placeholder = "Chercher une animation…";
+    recherche.setAttribute("aria-label", "Chercher une animation");
+    // Échap referme sans choisir, et rend le focus au bouton : sans ça, on
+    // sort du menu au clavier sans savoir où l'on est revenu.
+    recherche.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      fermerMenu();
+      hote.focus();
+    });
+    boite.appendChild(recherche);
+
+    const liste = creer("div", "ovl-anim-liste");
+    boite.appendChild(liste);
+
+    // La vignette d'aperçu : elle rejoue l'animation choisie au survol. Un nom
+    // ne dit pas ce que fait « backInUp », et l'essayer en publiant sur
+    // l'antenne n'est pas une option en plein live.
+    const apercu = creer("div", "ovl-anim-apercu");
+    const pastille = creer("div", "ovl-anim-pastille", "Aa");
+    apercu.appendChild(pastille);
+    boite.appendChild(apercu);
+
+    let nettoyage = null;
+    function jouer(nom) {
+      // On retire AVANT de reposer : une classe déjà présente ne relance pas
+      // l'animation, et survoler deux fois la même entrée ne montrerait rien.
+      clearTimeout(nettoyage);
+      pastille.className = "ovl-anim-pastille";
+      if (!nom || nom === "aucune" || nom === "glitch") return;
+      // Le navigateur doit voir le retrait avant l'ajout.
+      void pastille.offsetWidth;
+      pastille.classList.add("animate__animated", "animate__" + nom);
+      // Un MINUTEUR et non `animationend` : une vignette relancée pendant son
+      // animation déclenche `animationcancel`, et si `animate.min.css` n'était
+      // pas servi l'événement n'arriverait jamais. Piège déjà payé sur la page.
+      nettoyage = setTimeout(function () {
+        pastille.className = "ovl-anim-pastille";
+      }, 1400);
+    }
+
+    const entrees = [];
+    Object.keys(catalogue).forEach(function (famille) {
+      const titre = creer("div", "ovl-anim-famille", famille);
+      liste.appendChild(titre);
+      const groupe = { titre: titre, boutons: [] };
+      (catalogue[famille] || []).forEach(function (nom) {
+        const b = creer("button", "ovl-anim-item", nomAnimation(nom));
+        b.type = "button";
+        // La clé technique en second, en petit : c'est elle qui apparaît dans
+        // le modèle et dans un log, et on la cherche parfois par ce nom-là.
+        b.appendChild(creer("span", "ovl-anim-cle", nom));
+        if (nom === courante) b.classList.add("actif");
+        b.addEventListener("mouseenter", function () { jouer(nom); });
+        b.addEventListener("focus", function () { jouer(nom); });
+        b.addEventListener("click", function () {
+          fermerMenu();
+          onChoix(nom);
+        });
+        groupe.boutons.push({ noeud: b, nom: nom,
+                              texte: (nomAnimation(nom) + " " + nom + " "
+                                      + famille).toLowerCase() });
+        liste.appendChild(b);
+      });
+      entrees.push(groupe);
+    });
+
+    // La recherche porte sur le nom FRANÇAIS, sur la clé technique ET sur la
+    // famille : on connaît l'un ou l'autre selon qu'on cherche « fondu »,
+    // « fadeInUp » ou « glissement ». Même parti pris que le filtre de la liste
+    // des éléments.
+    recherche.addEventListener("input", function () {
+      const q = recherche.value.trim().toLowerCase();
+      entrees.forEach(function (groupe) {
+        let vus = 0;
+        groupe.boutons.forEach(function (item) {
+          const vu = !q || item.texte.indexOf(q) >= 0;
+          item.noeud.hidden = !vu;
+          if (vu) vus += 1;
+        });
+        // Un en-tête de famille sans membre visible n'a plus rien à annoncer.
+        groupe.titre.hidden = vus === 0;
+      });
+    });
+
+    document.body.appendChild(boite);
+    menuOuvert = boite;
+    menuHote = hote;
+    const r = hote.getBoundingClientRect();
+    const m = boite.getBoundingClientRect();
+    const gauche = Math.max(8, Math.min(r.left, window.innerWidth - m.width - 8));
+    let haut = r.bottom + 4;
+    if (haut + m.height > window.innerHeight - 8) {
+      haut = Math.max(8, r.top - m.height - 4);
+    }
+    boite.style.left = gauche + "px";
+    boite.style.top = haut + "px";
+    recherche.focus();
+    setTimeout(function () {
+      document.addEventListener("pointerdown", fermerAuClicDehors, true);
+      document.addEventListener("scroll", fermerMenu, true);
+    }, 0);
+  }
+
   /** Le menu du « + » : les éléments masqués de la scène, un clic les remontre.
    *
    *  Posé sur `<body>` en `position: fixed`, comme le menu des groupes : la
@@ -2858,13 +3128,39 @@ window.OverlayAdmin = (function () {
     const hauteur = t[1] * e;
     const ax = borner(element.x, POS_MIN, POS_MAX, 50) / 100 * W;
     const ay = borner(element.y, POS_MIN, POS_MAX, 50) / 100 * H;
-    const gauche = a.h === "right" ? ax - largeur
+    let gauche = a.h === "right" ? ax - largeur
       : (a.tx === "-50%" ? ax - largeur / 2 : ax);
-    const haut = a.v === "bottom" ? ay - hauteur
+    let haut = a.v === "bottom" ? ay - hauteur
       : (a.ty === "-50%" ? ay - hauteur / 2 : ay);
+    let large = largeur, haute = hauteur;
+
+    // L'INCLINAISON élargit ce que l'élément occupe : un rectangle tourné
+    // déborde de son propre cadre. Sans ce calcul, le détecteur de
+    // chevauchement laisserait passer deux éléments inclinés qui se recouvrent
+    // vraiment, l'alignement viserait un bord qui n'existe plus, et les
+    // poignées passeraient au travers de l'élément qu'elles entourent.
+    //
+    // La rotation est CENTRÉE (`styleDepuisElement` l'encadre d'un aller-retour
+    // de recentrage) : le point d'ancrage `ax`/`ay` ne bouge donc pas — c'est
+    // ce qui laisse tout le glisser intact —, et la boîte englobante grandit
+    // autour du CENTRE du rectangle d'origine.
+    //
+    // Le redimensionnement n'est pas faussé pour autant : il raisonne en
+    // RAPPORT de bras (poignée − ancre), et le facteur d'englobement, constant
+    // à angle fixe, s'y annule.
+    const rot = Number(element.rotation) || 0;
+    if (rot) {
+      const rad = Math.abs(rot) * Math.PI / 180;
+      const c = Math.abs(Math.cos(rad)), s = Math.abs(Math.sin(rad));
+      large = largeur * c + hauteur * s;
+      haute = largeur * s + hauteur * c;
+      gauche += (largeur - large) / 2;
+      haut += (hauteur - haute) / 2;
+    }
+
     return {
-      ax: ax, ay: ay, echelle: e, largeur: largeur, hauteur: hauteur,
-      gauche: gauche, haut: haut, droite: gauche + largeur, bas: haut + hauteur,
+      ax: ax, ay: ay, echelle: e, largeur: large, hauteur: haute,
+      gauche: gauche, haut: haut, droite: gauche + large, bas: haut + haute,
     };
   }
 
@@ -4535,7 +4831,19 @@ window.OverlayAdmin = (function () {
   // règles d'affichage, pas un placement), l'ORDRE et les GROUPES (une scène de
   // fin n'a pas le découpage d'une scène de jeu). Le libellé du bouton dit ce
   // qui part, la confirmation le redit.
-  const CHAMPS_PROPAGES = ["x", "y", "anchor", "scale"];
+  //
+  // Les quatre réglages visuels ajoutés le 2026-08-21 rejoignent la liste : ils
+  // sont de la même famille que `scale` — COMMENT l'élément est rendu, et non
+  // QUAND. Une inclinaison ou une opacité choisies pour un habillage valent
+  // pour les trois, comme une taille.
+  //
+  // Les six réglages de RYTHME (`duree`, `delai`, les trois `anim_*`,
+  // `anim_insistance`) restent dehors, du même côté que `solo` et
+  // `wally_visible` : ce sont des règles d'affichage. Une scène de fin peut
+  // vouloir des passages plus longs qu'une scène de jeu, c'est même tout
+  // l'intérêt de les avoir par scène.
+  const CHAMPS_PROPAGES = ["x", "y", "anchor", "scale",
+                           "opacite", "rotation", "miroir", "largeur_max"];
 
   /** Les scènes autres que celle qu'on édite. */
   function autresScenes() {
@@ -4986,6 +5294,7 @@ window.OverlayAdmin = (function () {
       // entrer par ici (un navigateur qui garde le focus, un script). La garde
       // est au POINT D'ÉCRITURE.
       if (!element || element.locked) return;
+      if (!portePar(element, def[0])) return;
       const borne = borner(valeur, def[2], def[3], element[def[0]]);
       if (borne === element[def[0]]) return;
       element[def[0]] = borne;
@@ -5037,6 +5346,87 @@ window.OverlayAdmin = (function () {
       bloc.appendChild(boite);
       hote.appendChild(bloc);
       return { bloc: bloc, input: input, pas: [moins, plus] };
+    }
+
+    /** Cet élément porte-t-il ce réglage ?
+     *
+     *  La garde qui remplace l'ancien `proprietaire`, et qui vaut désormais
+     *  pour TOUS les champs de scène. Les blocs cachés au rendu restent dans le
+     *  document : un navigateur qui garde le focus, ou un script, poserait
+     *  sinon une `duree` sur un avatar qui n'en a pas. Le modèle la jetterait à
+     *  l'enregistrement — mais le panneau aurait compté une modification, et le
+     *  pied aurait annoncé un changement qui n'a jamais eu lieu.
+     *
+     *  `x`, `y`, `scale` et les autres champs de placement ne sont pas dans les
+     *  portées : ils sont sur tous les éléments par construction.
+     */
+    function portePar(element, nom) {
+      if (PLACEMENT.indexOf(nom) >= 0) return true;
+      return portesDe(etat.elementCourant)[nom] !== undefined;
+    }
+
+    /** Écrit une valeur NON numérique (booléen, nom d'animation).
+     *
+     *  Passe par la même porte que `ecrire()` et hérite donc de sa garde : le
+     *  `disabled` posé au rendu ne protège de rien si la valeur peut encore
+     *  entrer par un autre chemin, et le verrou se tient au POINT D'ÉCRITURE.
+     */
+    function ecrireBrut(nom, valeur) {
+      const element = elementCourant();
+      if (!element || element.locked) return;
+      if (!portePar(element, nom)) return;
+      if (element[nom] === valeur) return;
+      element[nom] = valeur;
+      // Même granularité d'annulation que les champs numériques : le champ ET
+      // l'élément nomment la source, pour que passer au voisin reste un geste
+      // séparé.
+      marquerModifie("champ:" + nom + ":" + (etat.elementCourant || ""));
+      rendreSurface();
+    }
+
+    /** Une case à cocher. */
+    function champBooleen(nom, presentation) {
+      const bloc = creer("div", "ovl-insp-champ");
+      bloc.title = presentation.aide || "";
+      bloc.appendChild(creer("span", "ovl-champ-label", presentation.label));
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "ovl-insp-case";
+      input.setAttribute("aria-label", presentation.label);
+      input.addEventListener("change", function () {
+        ecrireBrut(nom, input.checked);
+        rendreReglages();
+      });
+      bloc.appendChild(input);
+      hote.appendChild(bloc);
+      return { bloc: bloc, input: input, pas: [] };
+    }
+
+    /** Un choix parmi un catalogue : un bouton qui ouvre le sélecteur.
+     *
+     *  Pas un `<select>` : quatre-vingt-dix-sept options réparties en dix
+     *  familles ne se parcourent pas dans une liste déroulante native, et on ne
+     *  peut y montrer ni recherche ni aperçu.
+     */
+    function champChoix(nom, presentation) {
+      const bloc = creer("div", "ovl-insp-champ");
+      bloc.title = presentation.aide || "";
+      bloc.appendChild(creer("span", "ovl-champ-label", presentation.label));
+      const input = creer("button", "ovl-insp-choix");
+      input.type = "button";
+      input.setAttribute("aria-haspopup", "listbox");
+      input.addEventListener("click", function () {
+        const element = elementCourant();
+        if (!element || element.locked) return;
+        ouvrirSelecteurAnim(input, presentation.menu, element[nom],
+                            function (choisi) {
+                              ecrireBrut(nom, choisi);
+                              rendreReglages();
+                            });
+      });
+      bloc.appendChild(input);
+      hote.appendChild(bloc);
+      return { bloc: bloc, input: input, pas: [] };
     }
 
     noeuds.champs = {};
@@ -5091,16 +5481,34 @@ window.OverlayAdmin = (function () {
     noeuds.champs.scale = saisieTaille;
     hote.appendChild(blocTaille);
 
-    // Les réglages propres à un élément, à la suite des champs communs. Cachés
-    // tant que leur élément n'est pas le principal de la sélection.
+    // Les réglages de la scène, à la suite des champs communs. UN bloc par
+    // champ connu, construit une fois — et non un bloc par (élément, champ),
+    // qui en aurait fait plus de deux cents pour n'en montrer que dix.
+    //
+    // Ce qui décide de leur visibilité et de leurs bornes est la PORTÉE servie
+    // par le serveur, relue à chaque rendu : `duree` ne se borne pas pareil sur
+    // le rotateur (1–120 s) et sur un widget qui passe (2–180 s), et le même
+    // bloc sert les deux.
     noeuds.champsPropres = [];
-    Object.keys(CHAMPS_PROPRES).forEach(function (cle) {
-      CHAMPS_PROPRES[cle].forEach(function (def) {
-        const champ = champNumerique(def, cle);
-        noeuds.champsPropres.push({ proprietaire: cle, def: def,
-                                    bloc: champ.bloc, input: champ.input,
-                                    pas: champ.pas });
-      });
+    Object.keys(CHAMPS).forEach(function (nom) {
+      const pres = CHAMPS[nom];
+      let champ, def = null;
+      if (pres.nature === "booleen") {
+        champ = champBooleen(nom, pres);
+      } else if (pres.nature === "choix") {
+        champ = champChoix(nom, pres);
+      } else {
+        // Les bornes posées ici sont provisoires : `rendreReglages` les remplace
+        // par celles de l'élément courant, en MUTANT ce tableau — et non en le
+        // remplaçant. Les gestionnaires de `champNumerique` capturent CETTE
+        // référence dans leur closure : lui en substituer une autre laisserait
+        // la saisie bornée sur les valeurs de construction, et une inclinaison
+        // de 12° serait rangée à 1. Vu à l'écran, invisible en test.
+        def = [nom, pres.label, 0, 1, pres.pas || 1, pres.aide || ""];
+        champ = champNumerique(def, null);
+      }
+      noeuds.champsPropres.push({ nom: nom, pres: pres, def: def, bloc: champ.bloc,
+                                  input: champ.input, pas: champ.pas });
     });
 
     // L'ancrage, avec ses flèches. Neuf carrés muets ne disaient pas ce qu'ils
@@ -5171,9 +5579,12 @@ window.OverlayAdmin = (function () {
     // avec les outils : trente-sept éléments × trois scènes se règlent une fois,
     // pas trois. Le libellé DIT combien de scènes vont être touchées.
     noeuds.copierScenes = creer("button", "ovl-lien ovl-lien-cadre", "Copier vers les autres scènes");
-    noeuds.copierScenes.title = "Copie la position, l'ancrage et l'échelle de la "
-      + "sélection vers TOUTES les autres scènes. Une confirmation dit combien "
-      + "d'éléments et dans quelles scènes avant d'écrire quoi que ce soit.";
+    noeuds.copierScenes.title = "Copie le placement et l'aspect de la sélection "
+      + "— position, ancrage, taille, opacité, inclinaison, miroir, largeur "
+      + "max — vers TOUTES les autres scènes. Les durées et les animations ne "
+      + "partent PAS : elles sont propres à chaque scène. Une confirmation dit "
+      + "combien d'éléments et dans quelles scènes avant d'écrire quoi que ce "
+      + "soit.";
     noeuds.copierScenes.addEventListener("click", function () {
       propager(selection(), "la sélection");
     });
@@ -5241,21 +5652,51 @@ window.OverlayAdmin = (function () {
         noeuds.tailleCurseur.value = String(element.scale);
       }
     }
+    // Les réglages de la scène. La PORTÉE servie par le serveur décide de ce
+    // qui se montre : « durée d'affichage » sur un avatar, qui vit en
+    // permanence, serait un réglage qu'aucun code ne lit.
+    const portes = element ? portesDe(etat.elementCourant) : {};
     (noeuds.champsPropres || []).forEach(function (champ) {
-      // Le champ n'existe que pour SON élément : sur les trente-six autres,
-      // il n'y a rien à régler et rien à montrer.
-      const sien = !!element && etat.elementCourant === champ.proprietaire;
-      champ.bloc.hidden = !sien;
-      champ.input.disabled = !sien || fige;
-      champ.input.title = titre;
-      (champ.pas || []).forEach(function (b) { b.disabled = !sien || fige; });
-      if (!sien) { champ.input.value = ""; return; }
+      const regle = portes[champ.nom];
+      const porte = !!element && regle !== undefined;
+      champ.bloc.hidden = !porte;
+      champ.input.disabled = !porte || fige;
+      champ.input.title = titre || (champ.pres.aide || "");
+      (champ.pas || []).forEach(function (b) { b.disabled = !porte || fige; });
+      if (!porte) return;
+      const valeur = element[champ.nom];
+
+      if (champ.pres.nature === "booleen") {
+        champ.input.checked = !!valeur;
+        return;
+      }
+      if (champ.pres.nature === "choix") {
+        // Le bouton porte le nom FRANÇAIS de l'animation : « fadeInUpBig » ne
+        // dit rien à qui règle un habillage. Le modèle, lui, garde la clé.
+        champ.input.textContent = nomAnimation(valeur);
+        return;
+      }
+
+      // Les bornes viennent de l'élément COURANT, pas d'une table figée à la
+      // construction : le même bloc sert le rotateur (durée d'un média,
+      // 1–120 s) et un widget qui passe (durée d'un passage, 2–180 s).
+      const mini = regle[0], maxi = regle[1], auto = !!regle[2];
+      champ.input.min = String(auto ? 0 : mini);
+      champ.input.max = String(maxi);
+      // Les bornes du chemin d'ÉCRITURE suivent celles de l'élément courant.
+      // On MUTE le tableau, on ne le remplace pas : les gestionnaires de
+      // `champNumerique` en ont capturé la référence, et une autre les
+      // laisserait borner sur les valeurs de construction.
+      if (champ.def) {
+        champ.def[2] = auto ? 0 : mini;
+        champ.def[3] = maxi;
+      }
       if (document.activeElement === champ.input) return;
-      // Un modèle rangé avant l'ajout du champ ne le porte pas : on montre
-      // alors le défaut, qui est ce que l'overlay applique dans ce cas.
-      const valeur = borner(element[champ.def[0]], champ.def[2], champ.def[3],
-                            champ.def[6]);
-      champ.input.value = String(Math.round(valeur * 100) / 100);
+      // Zéro ne veut pas dire zéro sur un champ « auto » : le montrer tel quel
+      // ferait lire « durée : 0 », donc « ne s'affiche pas ».
+      champ.input.value = (auto && !(Number(valeur) > 0))
+        ? "" : String(Math.round(Number(valeur) * 100) / 100);
+      champ.input.placeholder = champ.pres.auto || "";
     });
     if (noeuds.wallyVisible) {
       noeuds.wallyVisible.disabled = !element;
@@ -6590,7 +7031,14 @@ window.OverlayAdmin = (function () {
     // Python : deux tables qui décrivent les mêmes bornes dérivent au premier
     // ajustement, et le panneau laisserait alors saisir ce que le serveur
     // ramène en silence.
-    CHAMPS_PROPRES: CHAMPS_PROPRES,
+    // La table de PRÉSENTATION des réglages (libellés, pas, natures). Les
+    // bornes, les choix et les portées ne sont plus ici : elles viennent du
+    // serveur. Exposée pour qu'un test vérifie qu'aucun champ affiché n'est
+    // inconnu du modèle — un réglage qu'on montre sans qu'il existe laisse
+    // saisir une valeur que le serveur ramène en silence.
+    CHAMPS: CHAMPS,
+    portesDe: portesDe,
+    nomAnimation: nomAnimation,
     // Le rangement du brouillon, exposé pour la même raison : il ne touche que
     // `localStorage`, et c'est lui qui décide si un travail non publié survit à
     // un F5 — ou s'il repart à l'antenne tout seul, ce qu'on ne veut jamais.

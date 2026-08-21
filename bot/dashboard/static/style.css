@@ -5043,3 +5043,126 @@ body.is-mobile .mobile-back-btn {
   transition: opacity 0.12s ease;
 }
 .ovl-infobulle.visible { opacity: 1; }
+
+/* ── Le sélecteur d'animation ─────────────────────────────────────────────
+   Quatre-vingt-dix-sept animations en dix familles : une liste déroulante
+   native n'y montrerait ni recherche ni aperçu, et une liste à plat ferait
+   chercher « celle qui glisse depuis la droite » à l'œil.
+
+   La largeur est bornée comme les autres menus flottants : posé sur `<body>`,
+   un menu « au plus juste » se mesure sur la FENÊTRE et non sur la colonne. */
+.ovl-menu.ovl-menu-anim {
+  max-width: 300px;
+  width: 300px;
+  gap: 6px;
+}
+.ovl-anim-recherche {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 6px 9px;
+}
+.ovl-anim-recherche:focus { outline: 1px solid #06b6d4; border-color: #06b6d4; }
+/* La liste défile, le champ de recherche et l'aperçu restent en place : sans
+   hauteur bornée, dix familles font un menu plus haut que l'écran, et le
+   recalage vertical le colle alors au bord sans qu'on voie ni l'un ni l'autre. */
+.ovl-anim-liste {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ovl-anim-famille {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 7px 4px 3px;
+  position: sticky;
+  top: 0;
+  background: rgba(22, 27, 34, 0.98);
+}
+.ovl-anim-famille[hidden] { display: none; }
+.ovl-anim-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.ovl-anim-item[hidden] { display: none; }
+.ovl-anim-item:hover,
+.ovl-anim-item:focus-visible { background: rgba(6, 182, 212, 0.12); outline: none; }
+.ovl-anim-item.actif { background: rgba(6, 182, 212, 0.18); }
+/* La clé technique : c'est elle qui apparaît dans le modèle et dans un log, et
+   on la cherche parfois par ce nom-là. En retrait, elle n'encombre pas. */
+.ovl-anim-cle {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+/* L'aperçu : un nom ne dit pas ce que fait « backInUp », et l'essayer en
+   publiant sur l'antenne n'est pas une option en plein live. */
+.ovl-anim-apercu {
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  /* PAS d'`overflow: hidden` : une animation ample (`fadeInLeftBig`, `hinge`)
+     sort du cadre, et la rogner la rendrait illisible — c'est justement ce
+     qu'on veut voir avant de choisir. */
+}
+.ovl-anim-pastille {
+  --animate-duration: 0.9s;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(6, 182, 212, 0.18);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+/* Les deux natures de champ que l'inspecteur ne savait pas rendre. */
+.ovl-insp-case { accent-color: #06b6d4; width: 15px; height: 15px; cursor: pointer; }
+.ovl-insp-choix {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 6px 9px;
+  cursor: pointer;
+  /* Le nom peut être long (« Fondu · vers le haut, ample ») : il se coupe au
+     lieu de pousser la bande d'inspection sur deux lignes. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovl-insp-choix:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.ovl-insp-choix:disabled { color: var(--text-muted); cursor: default; }
