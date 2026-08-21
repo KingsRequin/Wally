@@ -5,6 +5,7 @@ import json
 
 from loguru import logger
 
+from bot.core.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.web_search import WEB_SEARCH_TOOL
 from bot.discord.voice.brain import generate_search_filler
 
@@ -142,6 +143,12 @@ async def build_voice_tools(bot) -> list[dict]:
         tools.append(WEB_SEARCH_TOOL)
     from bot.discord.handlers import _NOTE_TOOLS
     tools.extend(_NOTE_TOOLS)
+    # La musique d'Azraël, en LECTURE : « c'est quoi ce son ? » se pose autant à
+    # voix haute qu'à l'écrit, et le §10 veut la réponse ouverte à tout le monde.
+    # Le pilotage, lui, reste au chat Twitch — un salon vocal ne porte aucun
+    # badge de modérateur, et `pilotable=False` l'ORIENTE plutôt que de refuser.
+    if getattr(bot, "music", None) is not None:
+        tools.append(MUSIC_TOOL)
     action_service = getattr(bot, "action_service", None)
     if action_service is not None:
         tools.extend(action_service.get_tool_definitions())
@@ -260,6 +267,14 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             if not query:
                 return json.dumps({"status": "error", "message": "Requête vide."})
             return await _search_aloud(bot, service, query)
+
+        if name == "music_control":
+            args = {}
+            try:
+                args = json.loads(arguments or "{}")
+            except Exception:  # noqa: BLE001 — un JSON tordu vaut une demande vide
+                pass
+            return await run_music_tool(bot, args, roles=None, pilotable=False)
 
         if name == "save_persistent_note":
             a = json.loads(arguments or "{}")

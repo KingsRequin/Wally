@@ -101,8 +101,11 @@
       if (action === "play_query") {
         const cible = versUrl(ordre.query);
         if (!cible) return { ok: false, raison: "recherche vide" };
-        location.assign(cible);
-        return { ok: true, titre: "" };   // la page s'en va : le titre suivra
+        // On ne navigue PAS ici : la page partirait avant que l'accusé ait pu
+        // être livré — document déchargé, script tué, et le bot conclurait « le
+        // lecteur n'a pas répondu » sur une recherche pourtant lancée. C'est
+        // `content.js` qui ira, une fois l'accusé parti.
+        return { ok: true, titre: "", aller: cible };
       }
     } catch (e) {
       return { ok: false, raison: String((e && e.message) || e).slice(0, 120) };

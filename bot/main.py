@@ -209,6 +209,14 @@ async def main() -> None:
 
     discord_bot = WallyDiscord(config, db, emotion, memory, primary_llm, secondary_llm, image_client, prompts, language, persona)
     discord_bot.journal = journal
+    # La MÊME instance que côté Twitch : la route de l'extension la nourrit, les
+    # deux adaptateurs la lisent. Ici pour la LECTURE seule — « c'est quoi la
+    # musique ? », que le §10 veut ouverte à tout le monde ; le pilotage exige un
+    # badge de modérateur qu'un salon Discord ne porte pas, et `pilotable=False`
+    # le dit à l'exécution. Sans cette ligne, `handlers.py` ne proposait tout
+    # simplement JAMAIS l'outil sur Discord, alors que `CAPABILITIES.md` promet
+    # de savoir répondre à qui demande.
+    discord_bot.music = music_service
     discord_bot.fact_extractor = fact_extractor
     discord_bot.web_search = web_search
     discord_bot.scrape = scrape

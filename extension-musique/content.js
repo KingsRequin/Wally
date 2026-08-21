@@ -37,7 +37,34 @@
   // Le bot considère l'extension muette au-delà de 45 s : les deux valeurs
   // ci-dessus restent dessous, réponse tenue comprise.
 
+  /* Qui parle. Azraël peut avoir trois pages YouTube ouvertes, et le bot ne
+   * savait pas les distinguer : la dernière qui battait écrasait les autres, si
+   * bien qu'un onglet posé sur la page d'accueil effaçait le morceau en cours.
+   *
+   * Dans `sessionStorage` et non en variable : il est propre à l'ONGLET et
+   * survit aux navigations. Un identifiant tiré à chaque chargement changerait à
+   * chaque vidéo ouverte, et le bot croirait à un nouvel onglet — l'ancien,
+   * encore marqué « en lecture », resterait quarante-cinq secondes à raconter un
+   * morceau parti.
+   */
+  const MON_ONGLET = (() => {
+    const CLE = "wally-musique-onglet";
+    try {
+      let id = sessionStorage.getItem(CLE);
+      if (!id) {
+        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem(CLE, id);
+      }
+      return id;
+    } catch (e) {
+      // Stockage refusé (mode restreint) : un identifiant par chargement vaut
+      // mieux que pas d'identifiant du tout.
+      return Math.random().toString(36).slice(2);
+    }
+  })();
+
   let reglages = { url: "", jeton: "", actif: false };
+  let allerApres = "";             // l'url où partir une fois l'accusé livré
   let dernierEtat = null;
   const attentesEtat = [];         // les `lireEtat()` en cours, s'il y en a
   let horsTourEnVol = false;       // une requête lancée sans attendre son tour
@@ -46,7 +73,7 @@
   // Un onglet YouTube ouvert AVANT l'installation n'a pas ce script et se tait
   // pour toujours — sans ce rapport, rien ne le disait, et l'essai du bouton
   // « Enregistrer » réussissait quand même (il part de l'extension, pas d'ici).
-  const rapport = { dernierOk: 0, erreur: "", majVersion: "" };
+  const rapport = { dernierOk: 0, erreur: "", majVersion: "", enVol: false };
 
   // La version installée, telle que Chrome la connaît. Comparée à celle que le
   // bot sert : une extension chargée depuis un dossier ne se met jamais à jour
@@ -92,6 +119,11 @@
     if (msg.type === "accuse") {
       accusesEnAttente.push({ id: msg.id, ok: !!msg.ok,
                               titre: msg.titre || "", raison: msg.raison || "" });
+      // « Lance-moi tel titre » : le pont a validé l'adresse mais n'y est pas
+      // allé. S'il l'avait fait, la page serait partie avec le script avant que
+      // l'accusé ait pu être livré, et le bot aurait annoncé un échec sur une
+      // recherche pourtant lancée. On y va après l'envoi, plus bas.
+      if (msg.aller) allerApres = String(msg.aller);
       // L'accusé ne doit pas attendre le tour suivant : le bot le guette pour
       // répondre dans le chat, et une réponse tenue vingt secondes ferait dire
       // « ça n'a pas marché » sur un geste déjà fait. C'est exactement ce qui
@@ -137,7 +169,7 @@
     if (!msg || msg.marque !== MARQUE || msg.type !== "diagnostic") return;
     repondre({ dernierOk: rapport.dernierOk, erreur: rapport.erreur,
                actif: reglages.actif, maVersion: MA_VERSION,
-               majVersion: rapport.majVersion,
+               majVersion: rapport.majVersion, enVol: rapport.enVol,
                titre: (dernierEtat && dernierEtat.titre) || "" });
   });
 
@@ -195,6 +227,8 @@
       artiste: lu.artiste || "",
       url: lu.url || location.href,
       accuses: partants,
+      // Quel onglet parle : sans lui, celui d'à côté efface le morceau en cours.
+      onglet: MON_ONGLET,
       // Combien de temps le bot peut tenir sa réponse. Absent, il répond tout
       // de suite : c'est ce que fait une version d'avant ce correctif, et le
       // champ est justement ce qui les distingue.
@@ -204,12 +238,19 @@
     };
 
     let reponse;
+    rapport.enVol = true;
     try {
       reponse = await fetch(reglages.url + "/api/music/beat", {
         method: "POST",
         headers: { "Content-Type": "application/json",
                    "Authorization": "Bearer " + reglages.jeton },
         body: JSON.stringify(corps),
+        // `keepalive` sur les seuls tours qui portent un accusé sans rien
+        // attendre : ce sont eux qui peuvent croiser une navigation (« lance-moi
+        // tel titre »), et le navigateur les mène alors à terme même si le
+        // document s'en va. Jamais sur un tour tenu : une requête `keepalive`
+        // n'est pas faite pour rester ouverte vingt secondes.
+        keepalive: corps.attente === 0 && partants.length > 0,
       });
     } catch (e) {
       // Le bot redémarre, le réseau tousse : on réessaiera. Mais on le NOTE —
@@ -217,6 +258,8 @@
       accusesEnAttente.unshift(...partants);
       rapport.erreur = "bot injoignable";
       return { temporiser: true };
+    } finally {
+      rapport.enVol = false;
     }
     if (!reponse.ok) {
       accusesEnAttente.unshift(...partants);
@@ -225,6 +268,13 @@
     }
     rapport.dernierOk = Date.now();
     rapport.erreur = "";
+    // L'accusé est parti : la page peut maintenant s'en aller.
+    if (allerApres) {
+      const cible = allerApres;
+      allerApres = "";
+      location.assign(cible);
+      return { temporiser: true };
+    }
 
     let data;
     try { data = await reponse.json(); } catch (e) { return { temporiser: true }; }
@@ -256,6 +306,7 @@
   /* La boucle. Aucun timer sur le chemin normal — c'est tout l'objet du
    * correctif : la réponse du bot EST la temporisation. */
   async function boucler() {
+    let echecs = 0;
     for (;;) {
       const debut = Date.now();
       let tour;
@@ -264,6 +315,13 @@
       } catch (e) {
         tour = { temporiser: true };
       }
+      echecs = tour.temporiser ? echecs + 1 : 0;
+      // Le tout premier échec d'une série repart SANS attendre : le bot vient
+      // peut-être de redémarrer (une quinzaine de secondes), et le repli
+      // ci-dessous passe par un `setTimeout` que Chrome étire à la minute dans
+      // un onglet caché. Une minute de silence de plus après chaque rebuild,
+      // pour rien.
+      if (echecs === 1) continue;
       // Le repli couvre aussi le bot qui répondrait sans tenir (version
       // ancienne, proxy qui coupe) : sans lui, la boucle tournerait à vide et à
       // plein régime sur la machine d'Azraël.

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bot.intelligence.prompts import PromptBuilder
     from bot.core.language import LanguageDetector
     from bot.intelligence.persona import PersonaService
+    from bot.core.music import MusicService
 
 from bot.discord.guild_sync import parse_guild_ids  # noqa: E402  (re-exporté pour compat)
 
@@ -84,6 +85,11 @@ class WallyDiscord(commands.Bot):
         self.journal = None  # set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         self.vision = None  # VisionService — set by main.py after construction
+        # MusicService — la MÊME instance que côté Twitch, posée par main.py.
+        # Déclarée ici pour que « pas branché » reste un état lisible : c'est la
+        # garde `getattr(bot, "music", None)` de handlers.py qui décide d'offrir
+        # l'outil, et elle s'est tue pendant des semaines faute de ce câblage.
+        self.music: "MusicService | None" = None  # set by main.py after construction
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
         self.dashboard_state = None  # type: ignore[assignment]

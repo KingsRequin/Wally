@@ -222,3 +222,23 @@ def test_un_delai_TORDU_ne_fait_pas_tomber_la_route(client):
                         headers=_AUTH)
         assert r.status_code == 200
     assert all(v["attente_s"] == 0.0 for v in espion.vu)
+
+
+def test_l_onglet_qui_parle_est_TRANSMIS_au_service(client):
+    """Azraël peut avoir trois pages YouTube ouvertes : sans cette clé, celle
+    qui n'a pas de lecteur efface le morceau des autres."""
+    espion = _Espion()
+    client.app.state.wally.music = espion
+    client.post("/api/music/beat", json={**_BEAT, "onglet": "abc-123"},
+                headers=_AUTH)
+    assert espion.vu[0]["onglet"] == "abc-123"
+
+
+def test_un_onglet_TORDU_ne_fait_pas_tomber_la_route(client):
+    espion = _Espion()
+    client.app.state.wally.music = espion
+    for bavure in (None, 42, [], {"a": 1}):
+        r = client.post("/api/music/beat", json={**_BEAT, "onglet": bavure},
+                        headers=_AUTH)
+        assert r.status_code == 200
+    assert all(isinstance(v["onglet"], str) for v in espion.vu)

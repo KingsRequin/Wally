@@ -122,6 +122,9 @@ async def beat(request: Request) -> dict:
             artiste=str(data.get("artiste") or ""),
             url=str(data.get("url") or ""),
             accuses=[a for a in accuses[:_MAX_ACCUSES] if isinstance(a, dict)],
+            # Quel onglet parle. Absent d'une extension ancienne : tout arrive
+            # alors sous une seule clé, soit le comportement d'un onglet unique.
+            onglet=str(data.get("onglet") or ""),
         )
     except Exception as exc:  # noqa: BLE001 — l'extension ne doit jamais voir un 500
         logger.error("Musique : battement en erreur : {e!r}", e=exc)

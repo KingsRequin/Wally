@@ -48,9 +48,9 @@ def _service(horloge=None):
 
 def _battre(svc, *, actif=True, joue=True, titre="Ma chanson",
             artiste="Un artiste", url="https://youtube.com/watch?v=abc",
-            accuses=None):
+            accuses=None, onglet=""):
     return svc.battement(actif=actif, joue=joue, titre=titre, artiste=artiste,
-                         url=url, accuses=accuses or [])
+                         url=url, accuses=accuses or [], onglet=onglet)
 
 
 # ── Ce qui passe ────────────────────────────────────────────────────────────
@@ -481,3 +481,110 @@ async def test_un_partage_ETEINT_ne_se_voit_servir_AUCUN_ordre():
     await asyncio.sleep(0)
     assert _battre(svc, actif=False) == []
     assert [o["action"] for o in _battre(svc, joue=False)] == ["play"]
+
+
+# ── plusieurs onglets YouTube ───────────────────────────────────────────────
+#
+# Azraël peut en avoir trois ouverts : celui qui joue, et deux autres où il
+# cherche quelque chose. L'état était GLOBAL — le dernier qui battait écrasait
+# les autres, et une page d'accueil sans lecteur effaçait donc le morceau en
+# cours toutes les deux secondes. Wally répondait « je ne sais pas ce qui
+# passe » à côté d'une musique qui tournait.
+
+
+def test_un_onglet_SANS_LECTEUR_n_efface_pas_le_morceau_qui_joue():
+    svc = _service()
+    _battre(svc, onglet="a", titre="Numb", artiste="Linkin Park", joue=True)
+    _battre(svc, onglet="b", titre="", artiste="", joue=False,
+            url="https://youtube.com/results?search_query=chat")
+    assert svc.etat()["titre"] == "Numb"
+
+
+def test_l_onglet_qui_JOUE_l_emporte_sur_celui_qui_est_en_pause():
+    """Deux vidéos ouvertes, une seule tourne : c'est celle-là qu'on écoute."""
+    svc = _service()
+    _battre(svc, onglet="a", titre="Numb", artiste="Linkin Park", joue=True)
+    _battre(svc, onglet="b", titre="Snakes", artiste="MIYAVI", joue=False)
+    assert svc.etat()["titre"] == "Numb"
+
+
+def test_a_egalite_c_est_le_plus_RECEMMENT_vu_qui_compte():
+    h = _Horloge()
+    svc = _service(h)
+    _battre(svc, onglet="a", titre="Numb", artiste="Linkin Park", joue=False)
+    h.avance(1)
+    _battre(svc, onglet="b", titre="Snakes", artiste="MIYAVI", joue=False)
+    assert svc.etat()["titre"] == "Snakes"
+
+
+def test_l_onglet_qui_JOUE_finit_par_PERIMER_comme_les_autres():
+    """Azraël a fermé l'onglet sans rien dire : au bout d'un moment, ce n'est
+    plus « ce qui passe », c'est ce qui passait."""
+    from bot.core.music import MusicService
+    h = _Horloge()
+    svc = _service(h)
+    _battre(svc, onglet="a", titre="Numb", artiste="Linkin Park", joue=True)
+    h.avance(MusicService.PERIME_S + 1)
+    _battre(svc, onglet="b", titre="Snakes", artiste="MIYAVI", joue=False)
+    assert svc.etat()["titre"] == "Snakes"
+
+
+def test_un_onglet_FERME_ne_reste_pas_en_memoire_pour_toujours():
+    from bot.core.music import MusicService
+    h = _Horloge()
+    svc = _service(h)
+    for n in range(20):
+        _battre(svc, onglet=f"onglet-{n}", titre=f"Morceau {n}")
+        h.avance(MusicService.PERIME_S + 1)
+    _battre(svc, onglet="dernier", titre="Le bon")
+    assert len(svc._onglets) <= 2
+
+
+def test_le_MEME_morceau_sur_DEUX_onglets_ne_s_annonce_pas_deux_fois():
+    """Sinon l'écran clignoterait à chaque battement de l'un puis de l'autre."""
+    from bot.core.music import MusicService
+    vus = []
+    svc = MusicService(horloge=_Horloge(), on_morceau=vus.append)
+    _battre(svc, onglet="a", titre="Numb", artiste="Linkin Park", joue=True)
+    _battre(svc, onglet="b", titre="Numb", artiste="Linkin Park", joue=True)
+    assert len(vus) == 1
+
+
+@pytest.mark.asyncio
+async def test_un_onglet_SANS_LECTEUR_ne_prend_pas_le_play():
+    """Azraël a mis sa vidéo en pause et cherche autre chose dans un second
+    onglet. « Lecture » servi à celui-là rendrait « aucune vidéo sur cette
+    page » — un échec annoncé dans le chat alors que le lecteur était juste à
+    côté, prêt à repartir."""
+    svc = _service()
+    asyncio.create_task(svc.commander("play"))
+    await asyncio.sleep(0)
+
+    assert _battre(svc, onglet="b", titre="", joue=False) == []
+    assert [o["action"] for o in
+            _battre(svc, onglet="a", titre="Numb", joue=False)] == ["play"]
+
+
+@pytest.mark.asyncio
+async def test_lancer_un_TITRE_part_meme_vers_une_page_sans_lecteur():
+    """Celui-là ne réveille pas un lecteur : il NAVIGUE. Exiger une vidéo
+    ouverte rendrait « mets du Linkin Park » impossible depuis une page
+    d'accueil, qui est pourtant l'endroit le plus banal où être."""
+    svc = _service()
+    asyncio.create_task(svc.commander("play_query", query="Linkin Park"))
+    await asyncio.sleep(0)
+    assert [o["action"] for o in
+            _battre(svc, onglet="b", titre="", joue=False)] == ["play_query"]
+
+
+@pytest.mark.asyncio
+async def test_un_onglet_sans_lecteur_n_est_pas_REVEILLE_par_un_play():
+    """Réveillé pour rien, il repartirait les mains vides et rappellerait
+    aussitôt : les deux tourneraient en boucle serrée jusqu'à la péremption."""
+    svc = _service()
+    attente = asyncio.create_task(svc.battement_tenu(
+        attente_s=0.2, actif=True, joue=False, titre="", artiste="",
+        url="https://youtube.com/", onglet="b"))
+    await asyncio.sleep(0)
+    asyncio.create_task(svc.commander("play"))
+    assert await asyncio.wait_for(attente, 2) == []

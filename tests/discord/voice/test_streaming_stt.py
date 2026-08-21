@@ -87,7 +87,14 @@ async def server():
     await srv.stop()
 
 
-async def _wait_until(cond, timeout=2.0, interval=0.02):
+# Dix secondes et non deux : ces tests montent un vrai serveur WebSocket et
+# attendent des messages qui traversent la boucle réseau. Deux secondes tenaient
+# à vide, mais pas quand la suite complète tourne à côté — le test des partiels
+# rougissait alors sans qu'aucune régression n'existe, et un test qui ment de
+# temps en temps masque les vraies pannes. Aucune attente ici ne s'appuie sur
+# l'EXPIRATION pour prouver une absence : elles sortent toutes dès que leur
+# condition est vraie, donc allonger le plafond ne ralentit rien.
+async def _wait_until(cond, timeout=10.0, interval=0.02):
     loop = asyncio.get_running_loop()
     end = loop.time() + timeout
     while loop.time() < end:

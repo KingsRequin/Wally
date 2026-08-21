@@ -76,9 +76,16 @@
           if (!rep.actif) {
             zone.textContent = "Partage éteint : rien ne part de cet onglet.";
           } else if (rep.dernierOk) {
+            // Le bot TIENT désormais sa réponse jusqu'à ce qu'un ordre arrive :
+            // vingt secondes sans réponse est le fonctionnement NORMAL quand la
+            // musique est à l'arrêt. Afficher ce compteur seul se lirait comme
+            // une panne — c'est le seul indicateur qu'Azraël a.
             const secondes = Math.round((Date.now() - rep.dernierOk) / 1000);
-            zone.textContent = "✓ Cet onglet parle à Wally (dernier envoi il y a "
-              + secondes + " s)" + (rep.titre ? " — " + rep.titre : "") + ".";
+            const ou = rep.enVol
+              ? "connexion ouverte, en attente"
+              : "dernier envoi il y a " + secondes + " s";
+            zone.textContent = "✓ Cet onglet parle à Wally (" + ou + ")"
+              + (rep.titre ? " — " + rep.titre : "") + ".";
           } else {
             zone.textContent = "⚠️ Cet onglet essaie mais n'y arrive pas : "
               + (rep.erreur || "aucun envoi encore abouti") + ".";

@@ -36,8 +36,29 @@ from loguru import logger
 ACTIONS = frozenset({"play", "pause", "next", "prev", "play_query"})
 
 # Celles qui s'adressent à un lecteur À L'ARRÊT : elles peuvent donc partir vers
-# un onglet qui ne joue pas, contrairement aux autres (cf. `_servir`).
+# un onglet qui ne joue pas, contrairement aux autres (cf. `_peut_partir`).
 _REVEILLENT = frozenset({"play", "play_query"})
+
+
+def _peut_partir(action: str, *, joue: bool, avec_lecteur: bool) -> bool:
+    """Cet ordre a-t-il un sens pour l'onglet qui vient de battre ?
+
+    Trois cas, et chacun vient d'un échec qu'on préfère éviter au chat :
+
+    · `play_query` NAVIGUE. N'importe quelle page YouTube fait l'affaire —
+      exiger une vidéo ouverte rendrait « mets du Linkin Park » impossible
+      depuis une page d'accueil, qui est l'endroit le plus banal où être.
+    · `play` réveille un lecteur : il en faut un. Servi à l'onglet où Azraël
+      cherche autre chose, il rendrait « aucune vidéo sur cette page » — un
+      échec annoncé dans le chat alors que la vidéo était juste à côté.
+    · le reste (`pause`, `next`, `prev`) s'adresse à ce qui TOURNE. « Suivante »
+      ne veut rien dire pour un onglet qui dort.
+    """
+    if action == "play_query":
+        return True
+    if action in _REVEILLENT:
+        return avec_lecteur
+    return joue
 
 # Le titre et l'artiste viennent d'une page web — entrée non fiable — et
 # finissent dans le chat Twitch et sur l'overlay.
@@ -101,10 +122,11 @@ class _Veilleur:
     aussitôt — les deux tourneraient en boucle serrée.
     """
 
-    __slots__ = ("joue", "reveil")
+    __slots__ = ("joue", "avec_lecteur", "reveil")
 
-    def __init__(self, joue: bool) -> None:
+    def __init__(self, joue: bool, avec_lecteur: bool) -> None:
         self.joue = joue
+        self.avec_lecteur = avec_lecteur
         self.reveil = asyncio.Event()
 
 
@@ -145,8 +167,11 @@ class MusicService:
         # le réseau, et c'est ce qui le garde testable sur des dictionnaires
         # nus. `main.py` y branche l'overlay.
         self._on_morceau = on_morceau
-        self._etat: dict | None = None
-        self._vu_a: float = 0.0
+        # Un onglet, un état. Azraël peut en avoir trois ouverts, et un seul
+        # état global faisait écraser le morceau en cours par la page d'accueil
+        # de l'onglet d'à côté : Wally répondait « je ne sais pas ce qui passe »
+        # à côté d'une musique qui tournait.
+        self._onglets: dict[str, dict] = {}
         self._file: deque[dict] = deque(maxlen=self.MAX_ORDRES)
         # Les ordres partis, en attente de leur accusé.
         self._attentes: dict[str, asyncio.Future] = {}
@@ -168,8 +193,14 @@ class MusicService:
     # ── côté extension ──────────────────────────────────────────────────────
 
     def battement(self, *, actif: bool, joue: bool, titre: str, artiste: str,
-                  url: str, accuses: list[dict] | None = None) -> list[dict]:
-        """Range l'état, referme les accusés, et rend les ordres en attente."""
+                  url: str, accuses: list[dict] | None = None,
+                  onglet: str = "") -> list[dict]:
+        """Range l'état de CET onglet, referme les accusés, rend les ordres.
+
+        `onglet` distingue les pages ouvertes chez Azraël. Vide par défaut :
+        une extension d'avant ce champ écrit alors sous une seule clé, ce qui
+        est exactement le comportement d'un onglet unique.
+        """
         for accuse in accuses or []:
             self._accuser(accuse)
 
@@ -177,11 +208,11 @@ class MusicService:
             # L'extension voit TOUT ce qu'Azraël ouvre sur YouTube. Éteinte,
             # elle ne laisse rien ici : la confidentialité se joue à
             # l'écriture, pas à la lecture — un consommateur branché plus tard
-            # trouverait sinon le titre d'une vidéo privée.
-            if self._etat is not None:
+            # trouverait sinon le titre d'une vidéo privée. Tous les onglets, et
+            # pas seulement celui-ci : l'interrupteur est celui du navigateur.
+            if self._onglets:
                 logger.info("Musique : partage coupé côté extension")
-            self._etat = None
-            self._vu_a = 0.0
+            self._onglets.clear()
             # Et surtout AUCUN ordre : les servir à une extension qui vient de
             # dire qu'elle n'exécutera rien les perdrait pour de bon — ils ne
             # sont remis qu'une fois. Ils attendent en file celui qui pourra.
@@ -193,13 +224,25 @@ class MusicService:
             "url": str(url or "")[:500],
             "joue": bool(joue),
         }
-        self._signaler(nouveau)
-        self._etat = nouveau
-        self._vu_a = self._maintenant()
-        return self._servir(joue=bool(joue))
+        cle = str(onglet or "")[:64]
+        precedent = self._onglets.get(cle)
+        expose_avant = self.etat()
 
-    def _signaler(self, nouveau: dict) -> None:
-        """Ce qui CHANGE, et rien d'autre : les logs, puis l'écran.
+        maintenant = self._maintenant()
+        # Les onglets fermés ne battent plus : sans ce ménage, ils resteraient
+        # ici pour la vie du process. Le nôtre est réécrit juste après, il ne
+        # risque rien.
+        self._onglets = {c: infos for c, infos in self._onglets.items()
+                         if maintenant - infos["vu_a"] <= self.PERIME_S}
+        self._onglets[cle] = {"etat": nouveau, "vu_a": maintenant}
+
+        self._journaliser(precedent, nouveau)
+        self._annoncer(expose_avant)
+        return self._servir(joue=bool(joue),
+                            avec_lecteur=bool(nouveau["titre"]))
+
+    def _journaliser(self, precedent: dict | None, nouveau: dict) -> None:
+        """Ce que CET onglet vient de changer, et rien d'autre.
 
         Un battement toutes les deux secondes ne peut pas entrer dans les logs.
         Mais sans aucune trace, rien ne dit si l'extension parle : la question
@@ -208,11 +251,12 @@ class MusicService:
         transitions qui informent : le contact pris (ou repris après un
         silence), et le morceau qui change.
 
-        Le rappel suit la même règle, et c'est ce qui le rend supportable à
-        l'écran : trente battements par minute, une seule annonce par morceau.
+        Suit l'onglet et non l'état exposé : c'est bien de CETTE page qu'on veut
+        savoir si elle parle, y compris quand elle n'a aucun lecteur.
         """
-        muet = self._etat is None or self._maintenant() - self._vu_a > self.PERIME_S
-        avant = self._etat or {}
+        muet = (precedent is None
+                or self._maintenant() - precedent["vu_a"] > self.PERIME_S)
+        avant = (precedent or {}).get("etat") or {}
         change = muet or (avant.get("titre"), avant.get("artiste")) != (
             nouveau["titre"], nouveau["artiste"])
         if not change:
@@ -223,18 +267,30 @@ class MusicService:
                     q="l'extension parle" if muet else "morceau",
                     m=morceau or "aucun lecteur sur cette page")
 
+    def _annoncer(self, avant: dict | None) -> None:
+        """L'écran, et seulement quand ce qu'on EXPOSE change.
+
+        Sur l'état exposé et non sur l'onglet : deux pages ouvertes sur le même
+        morceau feraient sinon clignoter le widget à chaque battement de l'une
+        puis de l'autre.
+        """
+        apres = self.etat()
         # Une page sans lecteur n'est pas un morceau, et une vidéo à l'arrêt n'a
         # rien à faire à l'écran DE SON PROPRE CHEF : mettre en pause n'est pas
         # un geste à annoncer. Demandée dans le chat, elle s'affiche quand même
         # — c'est l'autre chemin, et il garde ses propres règles.
-        if not self._on_morceau or not nouveau["titre"] or not nouveau["joue"]:
+        if not self._on_morceau or not apres or not apres["joue"]:
+            return
+        if avant and (avant.get("titre"), avant.get("artiste")) == (
+                apres["titre"], apres["artiste"]):
             return
         try:
-            self._on_morceau(dict(nouveau))
+            self._on_morceau(dict(apres))
         except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
             logger.warning("Musique : annonce à l'écran impossible : {e}", e=exc)
 
-    def _servir(self, *, joue: bool = True) -> list[dict]:
+    def _servir(self, *, joue: bool = True,
+                avec_lecteur: bool = True) -> list[dict]:
         """Les ordres encore valables, retirés de la file.
 
         Retirés, donc remis UNE fois : deux onglets qui battent ne doivent pas
@@ -258,7 +314,8 @@ class MusicService:
                 self._resoudre(ordre["id"], {"ok": False,
                                              "raison": "ordre périmé, le lecteur n'a pas répondu à temps"})
                 continue
-            if not joue and ordre["action"] not in _REVEILLENT:
+            if not _peut_partir(ordre["action"], joue=joue,
+                                avec_lecteur=avec_lecteur):
                 gardes.append(ordre)
                 continue
             sortis.append({"id": ordre["id"], "action": ordre["action"],
@@ -268,7 +325,8 @@ class MusicService:
 
     async def battement_tenu(self, *, attente_s: float, actif: bool, joue: bool,
                              titre: str, artiste: str, url: str,
-                             accuses: list[dict] | None = None) -> list[dict]:
+                             accuses: list[dict] | None = None,
+                             onglet: str = "") -> list[dict]:
         """Un battement dont la réponse est TENUE jusqu'à ce qu'un ordre arrive.
 
         Le battement ordinaire répond tout de suite : c'était le timer de
@@ -289,7 +347,8 @@ class MusicService:
         l'appelant (`borner_attente`), pas chez lui.
         """
         ordres = self.battement(actif=actif, joue=joue, titre=titre,
-                                artiste=artiste, url=url, accuses=accuses)
+                                artiste=artiste, url=url, accuses=accuses,
+                                onglet=onglet)
         # Rien à tenir : des ordres à rendre, un partage éteint (l'extension ne
         # reviendra pas les chercher), ou un client d'avant ce correctif qui
         # bat encore sur son propre timer.
@@ -299,7 +358,8 @@ class MusicService:
         # Aucun `await` entre le service ci-dessus et la mise en veille : c'est
         # ce qui garantit qu'un ordre déposé entre les deux ne peut pas se
         # glisser sans réveiller personne.
-        veilleur = _Veilleur(bool(joue))
+        avec_lecteur = bool(str(titre or "").strip())
+        veilleur = _Veilleur(bool(joue), avec_lecteur)
         self._veilleurs.append(veilleur)
         try:
             await asyncio.wait_for(veilleur.reveil.wait(), attente_s)
@@ -309,7 +369,7 @@ class MusicService:
             self._veilleurs.remove(veilleur)
         # Peut rendre une liste vide : un autre onglet a pu prendre l'ordre
         # entre le réveil et ici. L'extension repartira aussitôt attendre.
-        return self._servir(joue=joue)
+        return self._servir(joue=joue, avec_lecteur=avec_lecteur)
 
     @classmethod
     def borner_attente(cls, valeur) -> float:
@@ -336,7 +396,8 @@ class MusicService:
         deux tournant en boucle serrée jusqu'à la péremption de l'ordre.
         """
         for veilleur in self._veilleurs:
-            if veilleur.joue or action in _REVEILLENT:
+            if _peut_partir(action, joue=veilleur.joue,
+                            avec_lecteur=veilleur.avec_lecteur):
                 veilleur.reveil.set()
 
     def _accuser(self, accuse: dict) -> None:
@@ -360,18 +421,25 @@ class MusicService:
 
         `None` et non un dictionnaire vide : « je ne sais pas » et « rien ne
         joue » sont deux réponses opposées pour qui demande.
+
+        Entre plusieurs onglets, celui qui JOUE l'emporte, et à égalité le plus
+        récemment vu. Une page sans lecteur — accueil, recherche, liste de
+        lecture — ne concourt pas : l'extension y bat pour se dire vivante, pas
+        pour raconter un morceau. C'est ce qui empêche l'onglet d'à côté
+        d'effacer la musique en cours.
+
+        Sans effet de bord : elle est appelée à chaque battement et à chaque
+        question du chat. Le ménage des onglets fermés se fait en écriture.
         """
-        if self._etat is None:
+        maintenant = self._maintenant()
+        candidats = [infos for infos in self._onglets.values()
+                     if maintenant - infos["vu_a"] <= self.PERIME_S
+                     and infos["etat"]["titre"]]
+        if not candidats:
             return None
-        if self._maintenant() - self._vu_a > self.PERIME_S:
-            return None
-        if not self._etat.get("titre"):
-            # L'extension bat aussi sur une page SANS lecteur — accueil,
-            # recherche, liste de lecture — pour se dire vivante. Un état sans
-            # titre ne dit donc rien de ce qui passe : c'est « je ne sais pas »,
-            # pas « en pause sur «  » ».
-            return None
-        return dict(self._etat)
+        candidats.sort(key=lambda infos: (bool(infos["etat"]["joue"]),
+                                          infos["vu_a"]))
+        return dict(candidats[-1]["etat"])
 
     async def commander(self, action: str, query: str = "") -> dict:
         """Pose un ordre et ATTEND son accusé. Ne ment jamais sur le résultat.

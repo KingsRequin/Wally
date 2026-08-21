@@ -37,14 +37,24 @@ pytestmark = pytest.mark.skipif(_SANS_NODE, reason="node absent")
 _PRELUDE = """
 global.window = global;
 const vraiSetTimeout = global.setTimeout;
-global.setTimeout = (fn, ms) => vraiSetTimeout(fn, (ms || 0) >= 1000 ? 5 : ms);
+let RACCOURCIR_REPLI = true;    // les replis se comptent en secondes
+global.setTimeout = (fn, ms) => vraiSetTimeout(
+  fn, (ms || 0) >= 1000 && RACCOURCIR_REPLI ? 5 : ms);
 
 const ecouteurs = [];
 window.addEventListener = (type, fn) => { if (type === "message") ecouteurs.push(fn); };
 window.postMessage = (msg) => queueMicrotask(
   () => ecouteurs.slice().forEach((fn) => fn({ source: window, data: msg })));
-global.location = { href: "https://www.youtube.com/watch?v=abc" };
+global.location = {
+  href: "https://www.youtube.com/watch?v=abc",
+  assign: (u) => { JOURNAL.navigations.push({ u, a: Date.now() }); },
+};
 global.document = { addEventListener: () => {} };
+const RANGEMENT = new Map();
+global.sessionStorage = {
+  getItem: (c) => (RANGEMENT.has(c) ? RANGEMENT.get(c) : null),
+  setItem: (c, v) => RANGEMENT.set(c, String(v)),
+};
 
 global.chrome = {
   storage: {
@@ -60,11 +70,12 @@ global.chrome = {
 };
 
 // Ce que le faux pont répondra, et ce qu'il aura reçu.
-const JOURNAL = { envois: [], ordres: [] };
+const JOURNAL = { envois: [], ordres: [], navigations: [] };
 let ETAT = { titre: "Snakes", artiste: "MIYAVI", url: location.href, joue: false };
 let PROCHAINS_ORDRES = [];
 let ACCUSER = false;
 let ACCUSE_RETARD_MS = 0;       // le pont constate avant de répondre
+let ALLER = "";                 // l'url que le pont demande d'ouvrir ensuite
 let TENUE_MS_PAR_S = 20;        // ce que le faux bot tient, par seconde demandée
 let CROISER = 0;                // nombre de « change » émis PENDANT un « lire »
 let ECHOUER = false;
@@ -89,7 +100,7 @@ window.addEventListener("message", (ev) => {
         JOURNAL.accuseEmisA = Date.now();
         window.postMessage({ marque: "wally-musique", pour: "content",
                              type: "accuse", id: m.ordre.id, ok: true,
-                             titre: "La suivante" }, "*");
+                             titre: "La suivante", aller: ALLER }, "*");
       }, ACCUSE_RETARD_MS);
     }
   }
@@ -276,3 +287,82 @@ def test_deux_lectures_d_etat_qui_se_CROISENT_se_repondent_toutes_les_deux():
     # Si sa lecture d'état se fait écraser, elle attend son filet de 500 ms à
     # chaque tour et n'en fait plus que deux.
     assert vu["boucle"] >= 5
+
+
+def test_chaque_battement_dit_DE_QUEL_ONGLET_il_vient():
+    """Sans cette clé, la page d'accueil de l'onglet d'à côté efface le morceau
+    en cours : le bot n'avait qu'un seul état pour toutes les pages ouvertes."""
+    vu = _node("""
+      TENUE_MS_PAR_S = 1;        // des battements rapprochés, pour en compter
+      souffler(40).then(() => {
+        const ids = [...new Set(JOURNAL.envois.map((e) => e.onglet))];
+        console.log(JSON.stringify({ ids, envois: JOURNAL.envois.length,
+                                     vide: ids.filter((i) => !i).length }));
+        process.exit(0);
+      });
+    """)
+    assert vu["envois"] >= 3, "trop peu de battements pour conclure"
+    # Un seul identifiant, non vide, pour tous les battements de cet onglet.
+    assert len(vu["ids"]) == 1 and vu["vide"] == 0
+
+
+def test_l_identifiant_d_onglet_SURVIT_a_un_rechargement():
+    """Il est rangé dans le stockage de session, pas tiré au chargement : sinon
+    chaque vidéo ouverte passerait pour un nouvel onglet, et l'ancien resterait
+    quarante-cinq secondes à raconter un morceau parti."""
+    vu = _node("""
+      souffler(4).then(() => {
+        const premier = JOURNAL.envois[0].onglet;
+        // On rejoue le script comme le ferait un rechargement de la page.
+        delete require.cache[require.resolve(%s)];
+        require(%s);
+        return souffler(6).then(() => {
+          console.log(JSON.stringify({
+            premier, dernier: JOURNAL.envois[JOURNAL.envois.length - 1].onglet }));
+          process.exit(0);
+        });
+      });
+    """ % (json.dumps(str(_EXT / "content.js")), json.dumps(str(_EXT / "content.js"))))
+    assert vu["premier"] == vu["dernier"]
+
+
+def test_lancer_un_titre_NAVIGUE_APRES_avoir_livre_son_accuse():
+    """La page partait avant : document déchargé, script tué, accusé perdu — et
+    Wally annonçait « ça n'a pas marché » sur une recherche pourtant lancée."""
+    vu = _node("""
+      ACCUSER = true;
+      ALLER = "https://www.youtube.com/results?search_query=linkin+park";
+      PROCHAINS_ORDRES = [{ id: "abc123", action: "play_query",
+                            query: "linkin park" }];
+      souffler(60).then(() => {
+        const porteur = JOURNAL.envois.find((e) => e.accuses.length);
+        console.log(JSON.stringify({
+          accuse: porteur ? porteur.accuses[0].id : "",
+          envoyeA: porteur ? porteur.a : -1,
+          navigations: JOURNAL.navigations.map((n) => n.u),
+          navigueA: JOURNAL.navigations.length ? JOURNAL.navigations[0].a : -1,
+        }));
+        process.exit(0);
+      });
+    """)
+    assert vu["accuse"] == "abc123", "l'accusé n'est jamais parti"
+    assert vu["navigations"] == [
+        "https://www.youtube.com/results?search_query=linkin+park"]
+    assert vu["navigueA"] >= vu["envoyeA"], "la page est partie avant l'accusé"
+
+
+def test_apres_une_coupure_du_bot_le_premier_REESSAI_est_immediat():
+    """Le repli passe par un `setTimeout`, que Chrome étire à la minute dans un
+    onglet caché : sans ce premier essai à chaud, chaque rebuild du bot coûterait
+    une minute de silence de plus."""
+    vu = _node("""
+      ECHOUER = true;
+      RACCOURCIR_REPLI = false;  // le repli garde ses deux vraies secondes
+      souffler(20).then(() => {
+        console.log(JSON.stringify({ envois: JOURNAL.envois.length }));
+        process.exit(0);
+      });
+    """)
+    # Deux tours en cent millisecondes, alors que le repli vaut deux secondes :
+    # le second ne peut venir que du réessai à chaud.
+    assert vu["envois"] >= 2
