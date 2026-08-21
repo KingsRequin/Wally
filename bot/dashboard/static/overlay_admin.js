@@ -5307,7 +5307,7 @@ window.OverlayAdmin = (function () {
 
     /** Un champ numérique encadré de deux pas. `proprietaire` : la clé de
      *  l'élément qui SEUL porte ce réglage, ou `null` pour un champ commun. */
-    function champNumerique(def, proprietaire) {
+    function champNumerique(def, proprietaire, ou) {
       const bloc = creer("div", "ovl-insp-champ");
       if (def[5]) bloc.title = def[5];
       bloc.appendChild(creer("span", "ovl-champ-label", def[1]));
@@ -5344,7 +5344,7 @@ window.OverlayAdmin = (function () {
       boite.appendChild(input);
       boite.appendChild(plus);
       bloc.appendChild(boite);
-      hote.appendChild(bloc);
+      (ou || hote).appendChild(bloc);
       return { bloc: bloc, input: input, pas: [moins, plus] };
     }
 
@@ -5385,7 +5385,7 @@ window.OverlayAdmin = (function () {
     }
 
     /** Une case à cocher. */
-    function champBooleen(nom, presentation) {
+    function champBooleen(nom, presentation, ou) {
       const bloc = creer("div", "ovl-insp-champ");
       bloc.title = presentation.aide || "";
       bloc.appendChild(creer("span", "ovl-champ-label", presentation.label));
@@ -5398,7 +5398,7 @@ window.OverlayAdmin = (function () {
         rendreReglages();
       });
       bloc.appendChild(input);
-      hote.appendChild(bloc);
+      (ou || hote).appendChild(bloc);
       return { bloc: bloc, input: input, pas: [] };
     }
 
@@ -5408,7 +5408,7 @@ window.OverlayAdmin = (function () {
      *  familles ne se parcourent pas dans une liste déroulante native, et on ne
      *  peut y montrer ni recherche ni aperçu.
      */
-    function champChoix(nom, presentation) {
+    function champChoix(nom, presentation, ou) {
       const bloc = creer("div", "ovl-insp-champ");
       bloc.title = presentation.aide || "";
       bloc.appendChild(creer("span", "ovl-champ-label", presentation.label));
@@ -5425,7 +5425,7 @@ window.OverlayAdmin = (function () {
                             });
       });
       bloc.appendChild(input);
-      hote.appendChild(bloc);
+      (ou || hote).appendChild(bloc);
       return { bloc: bloc, input: input, pas: [] };
     }
 
@@ -5481,22 +5481,38 @@ window.OverlayAdmin = (function () {
     noeuds.champs.scale = saisieTaille;
     hote.appendChild(blocTaille);
 
-    // Les réglages de la scène, à la suite des champs communs. UN bloc par
-    // champ connu, construit une fois — et non un bloc par (élément, champ),
-    // qui en aurait fait plus de deux cents pour n'en montrer que dix.
+    // ── Les réglages de la scène, REPLIÉS ────────────────────────────────
     //
-    // Ce qui décide de leur visibilité et de leurs bornes est la PORTÉE servie
-    // par le serveur, relue à chaque rendu : `duree` ne se borne pas pareil sur
-    // le rotateur (1–120 s) et sur un widget qui passe (2–180 s), et le même
-    // bloc sert les deux.
+    // Onze champs de plus dans la bande, c'était sept lignes et deux cent
+    // trente pixels : la surface tombait de 65 % à 48 % d'échelle. Le panneau
+    // avait déjà payé exactement ça — « quinze boutons en permanence sous le
+    // canvas mangeaient la hauteur qu'on regarde » — et la réponse avait été la
+    // même : replier derrière un bouton.
+    //
+    // Ce qui RESTE à découvert est ce qu'on règle EN REGARDANT la surface :
+    // position, taille, ancrage, rang. Ce qui part dans le volet est ce qu'on
+    // pose une fois — l'aspect et le rythme —, et dont l'effet ne se juge pas
+    // au pixel près sur un rectangle.
+    //
+    // UN bloc par champ connu, construit une fois — et non un bloc par
+    // (élément, champ), qui en aurait fait plus de deux cents pour n'en montrer
+    // que dix. Ce qui décide de leur visibilité et de leurs bornes est la
+    // PORTÉE servie par le serveur, relue à chaque rendu : `duree` ne se borne
+    // pas pareil sur le rotateur (1–120 s) et sur un widget qui passe (2–180 s),
+    // et le même bloc sert les deux.
+    noeuds.voletReglages = creer("div", "ovl-insp-volet");
+    noeuds.voletReglages.hidden = true;
+    noeuds.voletReglages.setAttribute("role", "group");
+    noeuds.voletReglages.setAttribute("aria-label", "Aspect et rythme");
     noeuds.champsPropres = [];
     Object.keys(CHAMPS).forEach(function (nom) {
       const pres = CHAMPS[nom];
       let champ, def = null;
+      const ou = noeuds.voletReglages;
       if (pres.nature === "booleen") {
-        champ = champBooleen(nom, pres);
+        champ = champBooleen(nom, pres, ou);
       } else if (pres.nature === "choix") {
-        champ = champChoix(nom, pres);
+        champ = champChoix(nom, pres, ou);
       } else {
         // Les bornes posées ici sont provisoires : `rendreReglages` les remplace
         // par celles de l'élément courant, en MUTANT ce tableau — et non en le
@@ -5505,11 +5521,26 @@ window.OverlayAdmin = (function () {
         // la saisie bornée sur les valeurs de construction, et une inclinaison
         // de 12° serait rangée à 1. Vu à l'écran, invisible en test.
         def = [nom, pres.label, 0, 1, pres.pas || 1, pres.aide || ""];
-        champ = champNumerique(def, null);
+        champ = champNumerique(def, null, ou);
       }
       noeuds.champsPropres.push({ nom: nom, pres: pres, def: def, bloc: champ.bloc,
                                   input: champ.input, pas: champ.pas });
     });
+
+    // Le bouton qui ouvre le volet, et le volet lui-même — posé DANS la bande,
+    // qui est en `position: relative` : il remonte au-dessus d'elle plutôt que
+    // de la faire grandir.
+    noeuds.boutonReglages = creer("button", "ovl-insp-plus", "Aspect & rythme");
+    noeuds.boutonReglages.type = "button";
+    noeuds.boutonReglages.setAttribute("aria-expanded", "false");
+    noeuds.boutonReglages.title = "Opacité, inclinaison, miroir, largeur max, "
+      + "durée d'affichage, délai et animations. Repliés : on les pose une fois, "
+      + "et leur effet ne se juge pas sur un rectangle.";
+    noeuds.boutonReglages.addEventListener("click", function () {
+      basculerVolet();
+    });
+    hote.appendChild(noeuds.boutonReglages);
+    hote.appendChild(noeuds.voletReglages);
 
     // L'ancrage, avec ses flèches. Neuf carrés muets ne disaient pas ce qu'ils
     // faisaient, et leur seul indice était une infobulle en anglais
@@ -5606,6 +5637,58 @@ window.OverlayAdmin = (function () {
       return element.solo === false;
     }
     return !!element.wally_visible;
+  }
+
+  /** Ouvre ou ferme le volet des réglages d'aspect et de rythme.
+   *
+   *  Même mécanique que le panneau d'outils : le CÔTÉ se choisit à l'OUVERTURE,
+   *  parce que la bande passe à la ligne selon la largeur de la fenêtre et
+   *  qu'un ancrage figé sort de l'écran une fois sur deux — piège déjà payé ici.
+   *  L'écouteur de fermeture est posé au tour SUIVANT, sinon le clic qui vient
+   *  d'ouvrir referme aussitôt.
+   */
+  function basculerVolet(force) {
+    const volet = noeuds.voletReglages;
+    const bouton = noeuds.boutonReglages;
+    if (!volet || !bouton) return;
+    const ouvert = force === undefined ? volet.hidden : !!force;
+    volet.hidden = !ouvert;
+    bouton.classList.toggle("actif", ouvert);
+    bouton.setAttribute("aria-expanded", ouvert ? "true" : "false");
+    if (ouvert) {
+      placerVolet();
+      setTimeout(function () {
+        document.addEventListener("pointerdown", fermerVoletDehors, true);
+      }, 0);
+    } else {
+      document.removeEventListener("pointerdown", fermerVoletDehors, true);
+    }
+  }
+
+  function placerVolet() {
+    const volet = noeuds.voletReglages;
+    const bouton = noeuds.boutonReglages;
+    if (!volet || !bouton || !noeuds.travail) return;
+    volet.style.left = "auto";
+    volet.style.right = "auto";
+    // Aligné sur le bouton, puis rabattu s'il sort du cadre de travail.
+    const b = bouton.getBoundingClientRect();
+    const cadre = noeuds.travail.getBoundingClientRect();
+    volet.style.left = Math.max(0, b.left - cadre.left) + "px";
+    const v = volet.getBoundingClientRect();
+    if (v.right > cadre.right - 4) {
+      volet.style.left = "auto";
+      volet.style.right = "0";
+    }
+  }
+
+  function fermerVoletDehors(evt) {
+    if (noeuds.voletReglages && noeuds.voletReglages.contains(evt.target)) return;
+    if (noeuds.boutonReglages && noeuds.boutonReglages.contains(evt.target)) return;
+    // Le sélecteur d'animation est monté sur `<body>`, hors du volet : sans
+    // cette garde, choisir une animation refermerait le volet sous les doigts.
+    if (menuOuvert && menuOuvert.contains(evt.target)) return;
+    basculerVolet(false);
   }
 
   function rendreReglages() {

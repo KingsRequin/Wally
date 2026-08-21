@@ -275,3 +275,56 @@ def test_le_repere_auto_nest_pose_que_la_ou_zero_veut_dire_auto():
     bloc = _JS[_JS.index("champ.input.placeholder"):]
     ligne = bloc[:bloc.index("\n")]
     assert "auto ?" in ligne, "le repère « Auto » doit dépendre de la portée"
+
+
+# ── Le volet des réglages (2026-08-21, après retour de l'owner) ─────────────
+
+def test_les_reglages_daspect_et_de_rythme_sont_replies():
+    """Onze champs de plus dans la bande, c'était sept lignes et 233 px : la
+    surface tombait de 65 % à 48 % d'échelle. Le panneau avait déjà payé
+    exactement ça — « quinze boutons en permanence sous le canvas mangeaient la
+    hauteur qu'on regarde » — et la réponse avait été la même."""
+    assert "ovl-insp-volet" in _JS
+    assert "function basculerVolet" in _JS
+    # Les onze champs sont construits DANS le volet, pas dans la bande.
+    bloc = _JS[_JS.index("Object.keys(CHAMPS).forEach"):]
+    fin = bloc.index("noeuds.boutonReglages")
+    assert "noeuds.voletReglages" in bloc[:fin]
+    # Et les TROIS fabriques savent recevoir un hôte. Contrôlées une par une :
+    # une seule qui écrit `hote` en dur laisse ses champs dans la bande, et le
+    # défaut ne se voit qu'à l'écran — c'est arrivé sur `champChoix`, dont les
+    # trois menus d'animation sont restés à découvert.
+    for nom in ("champNumerique", "champBooleen", "champChoix"):
+        d = _JS.index("function " + nom + "(")
+        corps = _JS[d:_JS.index("\n    }\n", d)]
+        assert "(ou || hote).appendChild(bloc);" in corps, (
+            f"`{nom}` écrit son bloc en dur dans la bande")
+
+
+def test_le_placement_reste_a_decouvert():
+    """Ce qu'on règle EN REGARDANT la surface ne doit pas demander un clic de
+    plus : position, taille, ancrage et rang restent dans la bande."""
+    # Le critère n'est pas l'ORDRE dans le fichier — l'ancrage est construit
+    # après le volet — mais l'HÔTE auquel chaque bloc est rattaché.
+    for bloc in ("blocTaille", "blocAncrage", "blocRang"):
+        assert f"hote.appendChild({bloc})" in _JS, (
+            f"`{bloc}` doit rester à découvert dans la bande")
+    # X et Y : construits sans hôte explicite, donc dans la bande.
+    assert "champNumerique(def, null)" in _JS
+
+
+def test_le_volet_choisit_son_cote_a_louverture():
+    """La bande passe à la ligne selon la largeur : un ancrage figé sort de
+    l'écran une fois sur deux. Piège déjà payé sur ce panneau."""
+    bloc = _JS[_JS.index("function placerVolet"):]
+    fin = bloc.index("\n  }\n")
+    assert "getBoundingClientRect" in bloc[:fin]
+
+
+def test_choisir_une_animation_ne_referme_pas_le_volet():
+    """Le sélecteur est monté sur `<body>`, donc HORS du volet : sans garde, le
+    `pointerdown` qui choisit une animation refermerait le volet sous les
+    doigts, et il faudrait le rouvrir pour régler la sortie."""
+    bloc = _JS[_JS.index("function fermerVoletDehors"):]
+    fin = bloc.index("\n  }\n")
+    assert "menuOuvert" in bloc[:fin]
