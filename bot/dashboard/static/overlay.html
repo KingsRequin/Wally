@@ -165,8 +165,21 @@
          posée sur `#widgets` — sans elle ici, la pièce s'aplatit. */
       perspective: 600px;
     }
-    /* Tous dans LA cellule : c'est ce qui les superpose. */
-    [data-element] > * { grid-area: pile; }
+    /* Tous dans LA cellule : c'est ce qui les superpose.
+
+       `min-width: 0` est ce qui rend la LARGEUR MAXIMALE réglable réelle. Un
+       item de grille vaut `min-width: auto` par défaut, c'est-à-dire « jamais
+       plus étroit que mon contenu » : le conteneur se réduisait bien au plafond
+       posé, mais la carte gardait sa largeur et DÉBORDAIT — mesuré au
+       navigateur, 167 px de conteneur pour 250 px de carte. Le placement se
+       calculant sur la boîte du conteneur (`translate(-50%)`), le widget se
+       retrouvait en plus décalé. Un réglage qui ne réduit rien et déplace
+       l'élément est pire que pas de réglage.
+
+       Sans plafond, cette règle ne change rien : vérifié à l'écran sur
+       l'avatar, la bulle, le rotateur et une carte de texte — quatre boîtes
+       identiques au pixel près, avant et après. */
+    [data-element] > * { grid-area: pile; min-width: 0; }
 
     /* Repli avant que le modèle ne réponde : la page n'est jamais un tas
        d'éléments empilés dans le coin. Volontairement GROSSIER — trois zones,

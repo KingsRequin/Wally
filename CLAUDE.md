@@ -517,11 +517,51 @@ Ne transporter que du commentaire destiné au public
 
 - **Mise en scène** : `overlay_layout.py` décrit/valide/fusionne (sans réseau ni base) ;
   `overlay_layout_store.py` range. Le ▶ du panneau PUBLIE sur le bus.
+- **Dix réglages PAR WIDGET et PAR SCÈNE**, en plus du placement
+  (`docs/superpowers/specs/2026-08-21-overlay-parametres-widgets-design.md`) :
+
+  | Portée | Éléments | Champs |
+  |---|---|---|
+  | Universelle | les 37 | `opacite` · `rotation` · `miroir` · `largeur_max` |
+  | Widgets qui PASSENT | les 33 de `BUILDERS ∪ APEX_BUILDERS` | `duree` · `delai` · `anim_entree` · `anim_sortie` · `anim_insistance` · `anim_duree` |
+  | Cas propres | `rotator` (`duree`/`pause`) · `bubble` (`duree`) · `image` (durée + 2 animations) | |
+
+  Les portées sont **calculées** (`widgets_qui_passent()`), jamais listées : une
+  liste à la main laisserait le prochain widget hors de portée du panneau, en
+  silence. `ELEMENTS`, `CHAMPS_PROPRES` et `CHAMPS_CHOIX` ont **un seul
+  écrivain** — la boucle de distribution. Les bornes, les choix et le catalogue
+  des 97 animations sont **servis** au panneau par le GET, jamais recopiés en JS.
+
+  ⚠️ **`duree = 0` vaut « auto : le serveur décide », et c'est la valeur
+  livrée.** Livrer le repli de `showWidget` (12 s) ferait disparaître un sondage
+  de 120 s à la douzième seconde, sur les trois scènes, dès le rebuild. Idem
+  `largeur_max = 0`, qui rend la main au `max-width: 92vw` du CSS.
+
+  ⚠️ Trois widgets gardent leur mécanique de sortie : `sticky` (pendu, sondage
+  ouvert), `clip` en lecture vidéo, et `virus_popup` — qui publie **deux**
+  durées, `seconds` (le plan de fenêtres) et `duration` (la carte), la seconde
+  valant la première plus l'écran bleu. N'en remplacer qu'une fait partir la
+  carte avant la fin de son plan : l'écran bleu n'est jamais vu.
+
+  ⚠️ La **rotation** se compose dans le `transform` du CONTENEUR, encadrée d'un
+  aller-retour de recentrage dont le sens suit le coin d'ancrage. Une règle CSS
+  visant l'enfant ne marche PAS : `body.widget-on #bubble` (1,1,1) bat
+  `[data-element] > *` (0,1,0), et elle serait écrasée sur les deux éléments les
+  plus visibles. `min-width: 0` sur ces mêmes enfants est ce qui rend
+  `largeur_max` réel — sinon le conteneur rétrécit et la carte déborde.
 - **Style** : bulles BD encre/papier — le design glassmorphism du dashboard ne s'applique PAS ici
   (un verre blanc à 4 % est invisible en live). Un accent par INTENTION, pas par widget.
 - **Pièges d'animation** payés une fois : `overflow: hidden` mange les pseudo-éléments (la pointe
   de bulle) · `translateY(%)` vise l'ÉLÉMENT, pas le conteneur · retirer un nœud coupe ses
-  animations · dans `overlay.html`, `position: fixed` ne vise JAMAIS le viewport.
+  animations · dans `overlay.html`, `position: fixed` ne vise JAMAIS le viewport ·
+  nettoyer une classe `animate__` par MINUTEUR et jamais sur `animationend` (une
+  animation relancée déclenche `animationcancel`, et sans la feuille servie
+  l'événement n'arrive jamais) · deux `animation` sur un même nœud se
+  REMPLACENT, d'où l'insistance posée sur le contenu et non sur la carte.
+- **Piège du panneau** : un gestionnaire capture la RÉFÉRENCE de son tableau de
+  bornes. La remplacer au rendu ne change rien — il faut la muter. Vu à
+  l'écran : une inclinaison saisie à 12° était rangée à 1°, et le pied
+  l'annonçait sans broncher.
 - **Sons** (`sons.py`) : Web Audio, jamais `new Audio()`. Deux `charger()` croisés décodent deux
   fois.
 - **Memes** (`memes.py`) : dossier relu à chaque tirage (l'owner y dépose des fichiers en direct).

@@ -1,5 +1,46 @@
 # Paramètres par widget dans l'éditeur d'overlay — plan d'implémentation
 
+> ## ✅ EXÉCUTÉ — 2026-08-21, les cinq phases, vérifiées en production
+>
+> `7034179b` modèle · `fbe18ee2` rendu visuel · `cbb85caa` rendu comportemental ·
+> `6064c602` panneau · `cfe7a200` migration `image` · `e666e914` la promesse
+> restée sur la carte.
+>
+> **Ce que le plan avait faux, et que l'exécution a corrigé** — c'est la partie
+> qui vaut d'être relue :
+>
+> 1. **La règle CSS de la phase 2 était impossible.** `[data-element] > *`
+>    (0,1,0) est battu par `body.widget-on #bubble` (1,1,1) : la rotation aurait
+>    été écrasée sur la bulle et l'avatar, et seulement sur eux. Remplacée par
+>    une composition dans le `transform` du conteneur, encadrée d'un aller-retour
+>    de recentrage dont le SENS suit le coin d'ancrage. §D5 du design corrigé.
+> 2. **`virus_popup` publie DEUX durées.** Le plan n'en voyait qu'une. `seconds`
+>    pilote le plan de fenêtres, `duration` la sortie de la carte, la seconde
+>    valant la première plus l'écran bleu. N'en remplacer qu'une aurait fait
+>    partir la carte avant la fin de son propre plan — l'écran bleu jamais vu.
+> 3. **`largeur_max` ne réduisait rien.** Le plan supposait qu'un `max-width` sur
+>    le conteneur suffisait. Un item de grille vaut `min-width: auto` : le
+>    conteneur passait à 167 px, la carte restait à 250 et débordait — et le
+>    placement se calculant sur la boîte du conteneur, le widget se décalait en
+>    prime. `min-width: 0` sur les items le corrige. **Trouvé par le trajet de
+>    bout en bout, pas par les tests.**
+> 4. **Les bornes de saisie étaient figées à la construction.** Les gestionnaires
+>    de `champNumerique` capturent la RÉFÉRENCE du tableau `def` ; la remplacer
+>    au rendu ne change rien. Une inclinaison saisie à 12° était rangée à 1°.
+> 5. **`animate.min.css` n'était pas servie au dashboard**, seulement à
+>    l'overlay : la vignette d'aperçu serait restée immobile.
+> 6. **`CHAMPS_UNIVERSELS` n'était pas prévu.** Le panneau devait deviner que les
+>    quatre réglages communs existent ; ils sont désormais servis comme le reste.
+>
+> **Ce que le plan avait juste et qui a tenu :** la valeur livrée à « auto »
+> (sans elle, un sondage de 120 s mourait à la 12ᵉ seconde dès le rebuild), les
+> portées calculées plutôt que listées, la table indexée par élément, le drapeau
+> de graine, et les trois exceptions de durée.
+>
+> Les cases ci-dessous ne sont pas cochées : le plan est conservé tel qu'il a été
+> écrit, avec ce bilan en tête. Un plan réécrit après coup ne dit plus où il
+> s'était trompé.
+
 > **Pour un exécutant :** les étapes sont en cases à cocher (`- [ ]`). Une tâche
 > = un cycle test → implémentation → vérification → commit. On ne passe pas à la
 > phase suivante sans le feu vert de l'owner.

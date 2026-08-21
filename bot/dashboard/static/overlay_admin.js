@@ -5696,7 +5696,10 @@ window.OverlayAdmin = (function () {
       // ferait lire « durée : 0 », donc « ne s'affiche pas ».
       champ.input.value = (auto && !(Number(valeur) > 0))
         ? "" : String(Math.round(Number(valeur) * 100) / 100);
-      champ.input.placeholder = champ.pres.auto || "";
+      // Le repère « Auto » n'a de sens que là où zéro en a un. Posé partout, il
+      // promettrait un mode automatique au rotateur, qui n'en a pas : sa durée
+      // se borne au plancher, elle ne se délègue à personne.
+      champ.input.placeholder = auto ? (champ.pres.auto || "") : "";
     });
     if (noeuds.wallyVisible) {
       noeuds.wallyVisible.disabled = !element;

@@ -265,3 +265,13 @@ def test_les_bornes_de_saisie_suivent_lelement_courant():
     assert "champ.def[2]" in corps and "champ.def[3]" in corps
     assert "champ.def = [" not in corps, (
         "remplacer le tableau casse la closure des gestionnaires")
+
+
+def test_le_repere_auto_nest_pose_que_la_ou_zero_veut_dire_auto():
+    """Le rotateur n'a pas de mode automatique : sa durée se borne au plancher,
+    elle ne se délègue à personne. Un `placeholder` « Auto » posé partout lui
+    promettrait un comportement qui n'existe pas — visible dès qu'on vide le
+    champ pour resaisir."""
+    bloc = _JS[_JS.index("champ.input.placeholder"):]
+    ligne = bloc[:bloc.index("\n")]
+    assert "auto ?" in ligne, "le repère « Auto » doit dépendre de la portée"

@@ -118,3 +118,18 @@ def test_une_largeur_max_a_zero_rend_la_main_au_css():
     """Zéro vaut AUTO : le `max-width: 92vw` du conteneur reprend. Poser
     « 0px » écraserait la carte à rien."""
     assert _style(_el(largeur_max=0.0))["maxWidth"] == ""
+
+
+def test_les_cartes_acceptent_de_retrecir_sous_un_plafond():
+    """`largeur_max` ne peut RIEN réduire sans `min-width: 0` sur les items de
+    grille : ils valent `min-width: auto` par défaut — « jamais plus étroit que
+    mon contenu ». Mesuré au navigateur avant correction : le conteneur passait
+    bien à 167 px, la carte restait à 250 et débordait. Et comme le placement se
+    calcule sur la boîte du CONTENEUR (`translate(-50%)`), le widget se
+    retrouvait décalé par-dessus le marché.
+
+    Un réglage qui ne réduit rien ET déplace l'élément est pire que pas de
+    réglage — c'est le trou que ce test ferme."""
+    html = (_STATIC / "overlay.html").read_text(encoding="utf-8")
+    regle = html[html.index("[data-element] > * {"):]
+    assert "min-width: 0" in regle[:120]
