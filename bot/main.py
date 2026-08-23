@@ -408,7 +408,7 @@ async def main() -> None:
         def _on_stream_transition(old: dict, new: dict) -> None:
             # AVANT le garde ci-dessous : la fin du live le touche même sans
             # salon « chambre » configuré. C'est la leçon déjà tirée pour
-            # `_on_stream_voice`, qui a dû être séparé pour la même raison.
+            # `PresenceDeStream`, qui a dû être séparée pour la même raison.
             if bool(old.get("live")) and not bool(new.get("live")):
                 emotion.world_event("stream_ended", platform="twitch")
 
@@ -431,58 +431,6 @@ async def main() -> None:
         # Référence forte : l'annonce d'un clip attend que Twitch l'ait préparé,
         # une tâche détachée serait ramassée par le GC entre-temps.
         _clip_tasks: set[asyncio.Task] = set()
-
-        def _on_stream_voice(old: dict, new: dict) -> None:
-            """Auto-join du salon vocal du stream, en écoute seule.
-
-            Séparé de `_on_stream_transition` : celui-ci ne fait rien sans salon
-            « chambre » configuré, et l'écoute n'a pas à en dépendre.
-            """
-            vs = getattr(discord_bot, "voice_service", None)
-            if vs is None:
-                return
-            went_live = bool(new.get("live")) and not bool(old.get("live"))
-            ended = bool(old.get("live")) and not bool(new.get("live"))
-
-            async def _go() -> None:
-                try:
-                    if went_live:
-                        from bot.discord.voice.channel_memory import resolve_voice_channel
-
-                        # Le salon est VÉRIFIÉ présent : celui retenu la veille
-                        # peut avoir été supprimé (salon vocal éphémère), auquel
-                        # cas on retombe sur celui de la config.
-                        channel = await resolve_voice_channel(
-                            discord_bot, db, config.bot.stream_voice_channel_id
-                        )
-                        # Le vocal de CE salon part désormais dans le live : il
-                        # cesse d'être privé, on peut le remettre au prompt.
-                        # Ouvert avant le retour anticipé ci-dessous — Wally est
-                        # souvent déjà dans le salon quand le live démarre.
-                        voice_transcript.open_broadcast(channel.id if channel else None)
-                        if vs.is_connected:
-                            return          # déjà en vocal : on ne le déplace pas
-                        if channel is None:
-                            logger.warning("voice: aucun salon de stream joignable")
-                            return
-                        await vs.join(channel, listen_only=True, only_if_free=True)
-                    elif ended:
-                        # Le live s'arrête : le vocal redevient privé, et ce qui
-                        # y a été dit sort du contexte écrit.
-                        voice_transcript.close_broadcast()
-                        if vs.is_connected and vs.listen_only:
-                            # Seulement s'il est là POUR le stream : une conversation
-                            # vocale en cours ne doit pas être coupée.
-                            await vs.leave()
-                except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("voice: auto-join/leave du stream a échoué: {e!r}", e=e)
-
-            if went_live or ended:
-                # Référence forte : une tâche détachée peut être ramassée par le
-                # GC avant la fin du join.
-                t = asyncio.create_task(_go())
-                _stream_voice_tasks.add(t)
-                t.add_done_callback(_stream_voice_tasks.discard)
 
         async def _clip_watch() -> None:
             """Signale les clips créés pendant le live.
@@ -533,58 +481,13 @@ async def main() -> None:
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
                     logger.warning("veille des clips en erreur: {e!r}", e=e)
 
-        async def _stream_voice_watch() -> None:
-            """Ramène Wally en vocal tant qu'un live tourne sans lui.
-
-            La transition live↔offline ne se produit qu'UNE fois : après un
-            redémarrage — ou un crash — en plein stream, plus rien ne déclenche
-            son arrivée. Ce veilleur compare l'état réel du live à l'état réel de
-            la connexion, il ne suppose aucun événement. Il couvre donc aussi la
-            déconnexion réseau et le kick.
-            """
-            while True:
-                await asyncio.sleep(30)
-                try:
-                    vs = getattr(discord_bot, "voice_service", None)
-                    if vs is None:
-                        continue
-                    live = bool((stream_watcher.status or {}).get("live"))
-                    if not live:
-                        # Fin du live : il retrouve le droit de revenir au suivant.
-                        vs.listen_optout = False
-                        # Filet de la transition « fin de live » : elle ne se
-                        # produit qu'une fois, et un flux qui la rate laisserait
-                        # la captation ouverte sur un vocal redevenu privé.
-                        voice_transcript.close_broadcast()
-                        continue
-                    from bot.discord.voice.channel_memory import resolve_voice_channel
-
-                    # Résolu AVANT le test de connexion : après un redémarrage en
-                    # plein stream, aucune transition n'a eu lieu, donc personne
-                    # n'a ouvert la captation — et Wally est peut-être déjà dans
-                    # le salon, auquel cas les deux tests suivants sortent d'ici.
-                    # La résolution VÉRIFIE que le salon existe encore : un salon
-                    # éphémère retenu la veille laissait ce veilleur passer son
-                    # tour en silence, tout le live durant.
-                    channel = await resolve_voice_channel(
-                        discord_bot, db, config.bot.stream_voice_channel_id
-                    )
-                    voice_transcript.open_broadcast(channel.id if channel else None)
-                    if vs.is_connected or vs.listen_optout:
-                        continue
-                    if channel is None:
-                        continue        # rien de joignable : déjà signalé par la résolution
-                    logger.info("voice: live en cours sans Wally → retour en écoute")
-                    await vs.join(channel, listen_only=True, only_if_free=True)
-                except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("voice: veilleur de stream en erreur: {e!r}", e=e)
-
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
         # Twitch, restitué au prompt comme contexte d'ambiance. Aucun réveil
         # cognitif, aucune prise de parole — Wally voit, il ne commente pas.
         from bot.core.stream_feed import StreamFeed
         from bot.core.voice_transcript import VoiceTranscriptFeed
+        from bot.discord.voice.stream_presence import PresenceDeStream
 
         _streamer_name = os.getenv("TWITCH_BROADCASTER_LOGIN", "") or "Azrael_TTV"
         stream_feed = StreamFeed(streamer_name=_streamer_name)
@@ -593,7 +496,7 @@ async def main() -> None:
 
         # Conversation vocale : ce que Wally entend dans le salon vocal, remis au
         # prompt de ses réponses ÉCRITES. La captation ne s'ouvre que pendant le
-        # live et sur le salon d'où l'on streame (`_on_stream_voice` plus bas) —
+        # live et sur le salon d'où l'on streame (`PresenceDeStream` plus bas) —
         # hors de là, un vocal reste privé.
         voice_transcript = VoiceTranscriptFeed()
         voice_transcript.activate()
@@ -610,15 +513,28 @@ async def main() -> None:
 
         voice_transcript.set_presence_source(_voice_present)
 
+        # Qui rejoint le vocal du live, et QUAND la captation s'ouvre. Sorti de
+        # `main()` le 2026-08-23 : c'étaient deux closures de plus dans une
+        # fonction de mille lignes, donc du comportement qu'aucun test ne
+        # pouvait atteindre — alors que c'est lui qui décide si un vocal privé
+        # peut ressortir à l'écrit. Voir `tests/test_stream_presence.py`.
+        presence_stream = PresenceDeStream(
+            discord_bot=discord_bot, db=db, config=config,
+            voice_transcript=voice_transcript,
+        )
+
         stream_watcher = StreamWatcher(
             twitch_api,
             streamer_name=_streamer_name,
             on_transition=lambda old, new: (
-                _on_stream_transition(old, new), _on_stream_voice(old, new)
+                _on_stream_transition(old, new), presence_stream.on_transition(old, new)
             ),
             on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
             on_event=stream_feed.record,
         )
+        # Après coup : le watcher se construit en prenant la présence en
+        # paramètre, l'un des deux doit bien naître en premier.
+        presence_stream.brancher_watcher(stream_watcher)
         stream_watcher.activate()
 
         # Suivi passif du compte Apex du streamer. Voie SANS retour vers
@@ -869,7 +785,7 @@ async def main() -> None:
             logger.error("Récompenses d'humeur non armées : {e!r}", e=exc)
 
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
-        _watch_task = asyncio.create_task(_stream_voice_watch())
+        _watch_task = asyncio.create_task(presence_stream.veiller())
         _stream_voice_tasks.add(_watch_task)
         _watch_task.add_done_callback(_stream_voice_tasks.discard)
         _clip_task = asyncio.create_task(_clip_watch())
