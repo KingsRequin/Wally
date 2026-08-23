@@ -25,7 +25,11 @@ function connectSSE() {
       const data = JSON.parse(e.data);
       Object.assign(emotions, data);
       notifyEmotions();
-    } catch (_) {}
+    } catch (err) {
+      // Muet, les cinq jauges se figent sur leur dernière valeur et le site a
+      // l'air vivant alors qu'il ne reçoit plus rien.
+      console.warn('flux émotions : message ignoré', err, e.data);
+    }
   };
   // `es.close()` AVANT de relancer : le navigateur reconnecte déjà seul une
   // EventSource en erreur. Sans fermeture, chaque incident laissait l'ancienne
@@ -38,7 +42,10 @@ connectSSE();
 // ── Cognitive SSE (live brain feed) ──
 export function connectCognitiveSSE(onEvent) {
   const es = new EventSource('/api/public/sse/cognitive');
-  es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (_) {} };
+  es.onmessage = (e) => {
+    try { onEvent(JSON.parse(e.data)); }
+    catch (err) { console.warn('flux cognitif : message ignoré', err, e.data); }
+  };
   return es; // caller closes on unmount
 }
 

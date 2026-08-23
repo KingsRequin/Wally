@@ -1341,7 +1341,11 @@ async function startLogSSE() {
         return;
       }
       appendLog(data);
-    } catch {}
+    } catch (err) {
+      // Une ligne illisible ne doit pas tuer le flux — mais elle doit se voir :
+      // muet, c'est le panneau Logs qui se vide sans que personne sache pourquoi.
+      console.warn('flux logs : message ignoré', err, e.data);
+    }
   };
 }
 
@@ -1468,7 +1472,9 @@ async function startVoiceSSE() {
         delete _voiceLive[key]; _renderVoiceLive();
       }
       _pushVoice(e); renderVoiceList();
-    } catch {}
+    } catch (err) {
+      console.warn('flux vocal : message ignoré', err, ev.data);
+    }
   };
 }
 
@@ -2856,7 +2862,10 @@ async function pollOverlayStatus() {
       const data = await r.json();
       updateOverlaySwitch(data.visible);
     }
-  } catch {}
+  } catch {
+    // Sondage périodique : le tour suivant réessaie dans 30 s. Journaliser
+    // chaque échec noierait la console dès que le bot redémarre.
+  }
 }
 
 // ── Visitors ────────────────────────────────────────────────────────────────
@@ -3909,7 +3918,9 @@ async function refreshOverlayForceLive() {
   try {
     const r = await apiFetch('/api/admin/overlay/force-live');
     if (r && r.ok) _renderForceLive(await r.json());
-  } catch {}
+  } catch {
+    // Même raison qu'aux autres sondages : minuteur de 30 s, il repassera.
+  }
 }
 
 async function toggleOverlayForceLive() {
@@ -3970,7 +3981,9 @@ async function pollOverlayStatusForSysteme() {
       if (sw) { if (data.visible) sw.classList.add('on'); else sw.classList.remove('on'); }
       if (lbl) lbl.textContent = data.visible ? 'Visible' : 'Masqué';
     }
-  } catch {}
+  } catch {
+    // Sondage périodique : le tour suivant réessaie.
+  }
 }
 
 async function toggleOverlayImage() {
@@ -4784,7 +4797,9 @@ async function pollOverlayStatusForTab() {
       const data = await r.json();
       updateOverlaySwitchTab(data.visible);
     }
-  } catch {}
+  } catch {
+    // Sondage périodique : le tour suivant réessaie.
+  }
 }
 
 
@@ -5008,9 +5023,16 @@ async function startActionSSE() {
         if (_actionsSubTab === 'tasks') loadActionTasks();
         if (_actionsSubTab === 'completed') loadCompletedTasks();
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn('flux actions : message ignoré', err, e.data);
+    }
   };
-  actionSSE.onerror = function() {};
+  actionSSE.onerror = function () {
+    // La reconnexion est celle d'`EventSource`, automatique. On le dit quand
+    // même : un flux qui tombe pour de bon laisse la liste des tâches figée
+    // sur un état ancien, sans que rien ne l'indique à l'écran.
+    console.warn('flux actions : coupé, EventSource va retenter');
+  };
 }
 
 function stopActionSSE() {

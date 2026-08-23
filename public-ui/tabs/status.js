@@ -210,7 +210,11 @@ async function fetchHistory() {
     _historyData = (data.history || []).filter((s) => s.snapshot_at);
     const canvas = document.getElementById('status-emo-history-canvas');
     if (canvas && _historyData.length >= 2) drawHistoryChart(canvas, _historyData);
-  } catch (_) {}
+  } catch (err) {
+    // La courbe reste absente — c'est le repli voulu, mais il ne doit pas être
+    // indiscernable d'un « pas encore assez de points ».
+    console.warn('historique des émotions indisponible', err);
+  }
 }
 
 function _goalSection(title, items, emptyMsg) {
@@ -241,7 +245,12 @@ function _goalSection(title, items, emptyMsg) {
 
 async function openGoalModal() {
   let data = { goals: [], preoccupation: null, desires: [] };
-  try { data = await (await fetch('/api/public/cognitive/goal')).json(); } catch (_) {}
+  try { data = await (await fetch('/api/public/cognitive/goal')).json(); }
+  catch (err) {
+    // Repli explicite déjà posé juste au-dessus : la fenêtre s'ouvre vide
+    // plutôt que de ne pas s'ouvrir du tout.
+    console.warn('objectifs indisponibles', err);
+  }
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,4,26,0.92);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -403,7 +412,10 @@ async function seedFeed() {
     _historyBefore = (data.next_before !== undefined) ? data.next_before : null;
     const listEl = document.getElementById('cog-feed-list');
     if (listEl) renderFeed(listEl);
-  } catch (_) {}
+  } catch (err) {
+    // Le fil restera vide jusqu'au premier événement SSE.
+    console.warn('historique du fil cognitif indisponible', err);
+  }
 }
 
 async function loadMoreHistory(listEl) {
@@ -423,7 +435,9 @@ async function loadMoreHistory(listEl) {
     } else {
       _historyBefore = null;
     }
-  } catch (_) {} finally { _loadingMore = false; }
+  } catch (err) {
+    console.warn('page suivante du fil indisponible', err);
+  } finally { _loadingMore = false; }
 }
 
 function onFeedScroll(ev) {

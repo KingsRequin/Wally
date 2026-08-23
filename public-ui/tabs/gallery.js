@@ -111,9 +111,13 @@ async function openGalleryModal(imageId) {
   try {
     const res = await authedFetch(`/api/public/gallery/${imageId}`);
     if (res.ok) data = await res.json();
-  } catch (_) {}
+  } catch (err) {
+    console.warn('détail de l\'image indisponible', err);
+  }
 
-  if (!data) return;
+  // `data` nul laisse la lightbox OUVERTE et VIDE : on la referme plutôt que
+  // de planter le visiteur devant un cadre noir sans explication.
+  if (!data) { overlay.classList.remove('open'); return; }
 
   imgEl.alt = data.title || data.prompt || '';
   metaEl.textContent = '';
@@ -174,7 +178,11 @@ async function openGalleryModal(imageId) {
       } else if (r.status === 401) {
         showVoteToast('Session expirée — reconnecte-toi dans le Chat');
       }
-    } catch (_) {}
+    } catch (err) {
+      // Le visiteur vient de CLIQUER : sans retour, il croit avoir voté.
+      showVoteToast('Vote impossible — réessaie dans un instant');
+      console.warn('vote refusé', err);
+    }
   });
 
   voteRow.appendChild(voteBtn);
@@ -269,7 +277,10 @@ function buildGalleryItem(img, delay) {
       } else if (r.status === 401) {
         showVoteToast('Session expirée — reconnecte-toi dans le Chat');
       }
-    } catch (_) {}
+    } catch (err) {
+      showVoteToast('Vote impossible — réessaie dans un instant');
+      console.warn('vote refusé', err);
+    }
   });
   votesRow.appendChild(voteBtn);
 

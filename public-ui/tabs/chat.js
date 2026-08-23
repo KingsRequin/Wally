@@ -203,7 +203,11 @@ function connectWs(msgList, token) {
         msgList.appendChild(el);
         msgList.scrollTop = msgList.scrollHeight;
       }
-    } catch (_) {}
+    } catch (err) {
+      // Un message illisible ne doit pas tuer la conversation — mais muet,
+      // c'est une réponse de Wally qui disparaît sans laisser de trace.
+      console.warn('chat : message ignoré', err, e.data);
+    }
   };
 
   _ws.onclose = () => {

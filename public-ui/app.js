@@ -25,7 +25,11 @@ function connectSSE() {
       const data = JSON.parse(e.data);
       Object.assign(emotions, data);
       notifyEmotions();
-    } catch (_) {}
+    } catch (err) {
+      // Muet, les cinq jauges se figent sur leur dernière valeur et le site a
+      // l'air vivant alors qu'il ne reçoit plus rien.
+      console.warn('flux émotions : message ignoré', err, e.data);
+    }
   };
   es.onerror = () => setTimeout(connectSSE, 5000);
 }
@@ -34,7 +38,10 @@ connectSSE();
 // ── Cognitive SSE (live brain feed) ──
 export function connectCognitiveSSE(onEvent) {
   const es = new EventSource('/api/public/sse/cognitive');
-  es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (_) {} };
+  es.onmessage = (e) => {
+    try { onEvent(JSON.parse(e.data)); }
+    catch (err) { console.warn('flux cognitif : message ignoré', err, e.data); }
+  };
   return es; // caller closes on unmount
 }
 
@@ -196,7 +203,11 @@ async function loadOwnerId() {
   try {
     const r = await fetch('/api/public/status');
     if (r.ok) { const d = await r.json(); OWNER_DISCORD_ID = String(d.owner_discord_id || ''); }
-  } catch (_) {}
+  } catch (err) {
+    // Repli explicite : sans id d'owner, `renderAuth()` juste en dessous
+    // n'affichera pas le bouton ADMIN. Le site reste utilisable.
+    console.warn('id de l\'owner indisponible', err);
+  }
   renderAuth();
 }
 
