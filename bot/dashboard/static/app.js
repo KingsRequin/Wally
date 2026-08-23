@@ -3096,6 +3096,24 @@ function renderParametresTab() {
   switchParametresSubTab(_parametresSubTab);
 }
 
+// Une ligne de formulaire du panneau Paramètres : le libellé et son champ.
+//
+// Elle était recopiée à l'identique dans trois des quatre rendus de sous-onglet
+// — et PAS dans le quatrième. `_renderParametresVoice` l'appelait quand même,
+// depuis sa propre portée : `ReferenceError` à la première ligne construite,
+// après le `panel.innerHTML = ''`. Résultat en prod : Paramètres → Vocal
+// s'ouvrait sur un panneau VIDE, sans un mot dans la console de l'utilisateur.
+// Une seule définition, au niveau du module, retire la question.
+function makeFormRow(labelText, inputEl) {
+  const row = document.createElement('div');
+  row.className = 'form-row';
+  const lbl = document.createElement('label');
+  lbl.textContent = labelText;
+  row.appendChild(lbl);
+  row.appendChild(inputEl);
+  return row;
+}
+
 function switchParametresSubTab(subtab) {
   _parametresSubTab = subtab;
   const el = document.getElementById('tab-admin-parametres');
@@ -3464,15 +3482,6 @@ async function _renderParametresImages(panel) {
   title.textContent = 'Génération d\'images';
   section.appendChild(title);
 
-  function makeFormRow(labelText, inputEl) {
-    const row = document.createElement('div');
-    row.className = 'form-row';
-    const lbl = document.createElement('label');
-    lbl.textContent = labelText;
-    row.appendChild(lbl);
-    row.appendChild(inputEl);
-    return row;
-  }
 
   function makeSelect(id, options, selected) {
     const sel = document.createElement('select');
@@ -4022,12 +4031,6 @@ async function loadOverlayConfigInPanel(container) {
   oiTitle.textContent = 'Configuration — Overlay Images';
   oiSection.appendChild(oiTitle);
 
-  function makeFormRow(labelText, inputEl) {
-    const row = document.createElement('div'); row.className = 'form-row';
-    const lbl = document.createElement('label'); lbl.textContent = labelText;
-    row.appendChild(lbl); row.appendChild(inputEl);
-    return row;
-  }
 
   function makeSelect(id, options, selected) {
     const sel = document.createElement('select'); sel.id = id; sel.className = 'neo-select';
@@ -4804,15 +4807,6 @@ async function loadOverlayConfig() {
   igTitle.textContent = 'Génération d\'images';
   igSection.appendChild(igTitle);
 
-  function makeFormRow(labelText, inputEl) {
-    const row = document.createElement('div');
-    row.className = 'form-row';
-    const lbl = document.createElement('label');
-    lbl.textContent = labelText;
-    row.appendChild(lbl);
-    row.appendChild(inputEl);
-    return row;
-  }
 
   function makeSelect(id, options, selected) {
     const sel = document.createElement('select');

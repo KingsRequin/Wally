@@ -4910,10 +4910,6 @@ window.OverlayAdmin = (function () {
     if (!source || !etat.layout) return;
     const autres = autresScenes();
     if (!autres.length) {
-    // Les chevauchements aussi : découvrir au relâchement qu'on vient de poser
-    // le bingo sur les stats fait refaire le placement. Le calcul ne porte que
-    // sur ce qui cohabite — six éléments par défaut, pas trente-quatre.
-    direChevauchements(analyserChevauchements(sceneCourante(), r.width, r.height));
       notifier("Il n'y a qu'une scène : il n'y a nulle part où propager.", "error");
       return;
     }
