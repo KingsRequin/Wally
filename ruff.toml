@@ -1,0 +1,26 @@
+# Configuration ruff — voir `scripts/lint_ruff.py` pour la façon dont elle est
+# appliquée (une porte dure, un cliquet).
+#
+# Ce fichier ne sélectionne PAS de règles de style. Le projet a le sien, et la
+# consigne « épouser le style existant » prime : imposer `I001` ou `UP037`
+# produirait 350 lignes de diff qui ne corrigent aucun défaut et noieraient les
+# revues. On ne garde que ce qui attrape des BUGS.
+
+line-length = 100
+target-version = "py312"          # l'image est `python:3.12-slim`
+
+exclude = [
+    "bot/dashboard/static",       # front, couvert par `scripts/lint_js.py`
+    "public-ui",
+]
+
+[lint]
+# Rien par défaut : les deux ensembles sont pilotés depuis `lint_ruff.py`, qui
+# les passe en `--select`. Les lister ici aussi ferait deux écrivains pour une
+# seule vérité, et le jour où l'un des deux bouge l'autre mentirait en silence.
+select = []
+
+[lint.per-file-ignores]
+# Les tests attrapent volontairement des exceptions nues pour vérifier qu'un
+# chemin d'erreur ne remonte pas.
+"tests/**" = ["B904"]
