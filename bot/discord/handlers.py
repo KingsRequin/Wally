@@ -1670,7 +1670,7 @@ async def _rss_ancre_connaissance(bot) -> str:
     try:
         ts = await lecteur()
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
-        logger.warning("rss_knowledge: ancre indisponible: {}", e)
+        logger.warning("rss_knowledge: ancre indisponible: {!r}", e)
         return ""
     if not ts:
         return ""
@@ -1714,7 +1714,7 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
             text, limit=3, max_age_seconds=cfg.knowledge_max_age_days * 86400
         )
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
-        logger.warning("rss_knowledge: recherche échouée: {}", e)
+        logger.warning("rss_knowledge: recherche échouée: {!r}", e)
         return None
     if not articles:
         return None
@@ -2507,7 +2507,7 @@ async def _respond(
             if rss_block:
                 mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
-            logger.warning("rss_knowledge: injection ignorée: {}", e)
+            logger.warning("rss_knowledge: injection ignorée: {!r}", e)
         # Question d'actu + recall RSS positif → Wally a déjà l'info. On coupe les
         # outils de lookup (offre ET exécution) : DeepSeek hallucine parfois un
         # appel web_search même non offert, donc filtrer la liste ne suffit pas.

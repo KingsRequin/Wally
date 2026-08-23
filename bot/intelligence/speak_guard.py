@@ -40,7 +40,7 @@ class SpeakGuard:
                 self._system, [{"role": "user", "content": user_msg}]
             )
         except Exception as e:  # noqa: BLE001 — jamais bloquer/crasher la boucle
-            logger.warning("SpeakGuard: appel LLM échoué → envoi ({})", e)
+            logger.warning("SpeakGuard: appel LLM échoué → envoi ({!r})", e)
             return True, ""
 
         raw = (reply or "").strip()

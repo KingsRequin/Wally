@@ -53,7 +53,7 @@ def _peremption_desir(texte: str) -> datetime | None:
 
         return _compute_expiry(None, texte, datetime.utcnow())
     except Exception as e:  # noqa: BLE001 — jamais bloquant
-        logger.warning("péremption de désir non calculée: {}", e)
+        logger.warning("péremption de désir non calculée: {!r}", e)
         return None
 
 
@@ -343,7 +343,7 @@ class ActionDispatcher:
             else:
                 logger.warning("SPEAK: canal {} introuvable", channel_id)
         except Exception as e:
-            logger.error("SPEAK failed: {}", e)
+            logger.error("SPEAK failed: {!r}", e)
 
     async def _passes_guard(self, message: str, context: str = "", kind: str = "SPEAK") -> bool:
         """Filtre anti-message-inutile. True si on peut envoyer (ou pas de guard).
@@ -355,7 +355,7 @@ class ActionDispatcher:
         try:
             ok, reason = await self._speak_guard.worth_sending(message, context=context)
         except Exception as e:  # noqa: BLE001 — jamais bloquer la boucle
-            logger.warning("SpeakGuard: erreur inattendue → envoi ({})", e)
+            logger.warning("SpeakGuard: erreur inattendue → envoi ({!r})", e)
             return True
         if ok:
             return True
@@ -414,7 +414,7 @@ class ActionDispatcher:
             memory.append_prelude(channel_id, self._self_name(), message)
             memory.append_message(channel_id, self._self_name(), message, platform="discord")
         except Exception as e:  # noqa: BLE001 — ne jamais faire crasher la boucle cognitive
-            logger.warning("Enregistrement contexte message spontané échoué: {}", e)
+            logger.warning("Enregistrement contexte message spontané échoué: {!r}", e)
 
     async def _react(self, channel_id: str, message_id: str, emoji: str) -> None:
         """Réagit en emoji à un message récent. Geste léger et humain.
@@ -436,7 +436,7 @@ class ActionDispatcher:
             try:
                 message = await channel.fetch_message(int(message_id))
             except Exception as e:
-                logger.warning("react: message {} introuvable: {}", message_id, e)
+                logger.warning("react: message {} introuvable: {!r}", message_id, e)
                 return
             # Idempotence : si Wally a DÉJÀ une réaction sur ce message, il ne
             # réagit pas une seconde fois. Source de vérité = Discord lui-même
@@ -460,7 +460,7 @@ class ActionDispatcher:
                     "detail": f"a réagi {emoji}",
                 })
         except Exception as e:
-            logger.warning("react failed: {}", e)
+            logger.warning("react failed: {!r}", e)
 
     async def _dm(self, user_id: str, message: str) -> None:
         """Envoie un DM Discord — réservé au créateur (owner) uniquement.
@@ -516,7 +516,7 @@ class ActionDispatcher:
             try:
                 user = await self._bot.fetch_user(int(user_id))
             except Exception as e:
-                logger.warning("dm: utilisateur {} introuvable: {}", user_id, e)
+                logger.warning("dm: utilisateur {} introuvable: {!r}", user_id, e)
                 return
             from bot.discord.message_split import send_chunked
 
@@ -536,7 +536,7 @@ class ActionDispatcher:
             if self._feed:
                 self._feed.publish({"type": "DM", "target": "créateur", "message": message[:300], "full": message[:2000]})
         except Exception as e:
-            logger.warning("DM failed: {}", e)
+            logger.warning("DM failed: {!r}", e)
 
     @staticmethod
     def _coerce_goal_id(act_name: str, raw) -> int | None:
@@ -955,4 +955,4 @@ class ActionDispatcher:
             if self._feed:
                 self._feed.publish({"type": "EVOLVE", "detail": section})
         except Exception as e:
-            logger.warning("EVOLVE {}: {}", section, e)
+            logger.warning("EVOLVE {}: {!r}", section, e)

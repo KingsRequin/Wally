@@ -840,7 +840,7 @@ async def restart_container(request: Request) -> dict:
     try:
         await bridge.docker_restart(service_name)
     except Exception as e:  # noqa: BLE001 — le résultat réel doit remonter à l'appelant
-        logger.error("Container restart failed: {}", e)
+        logger.error("Container restart failed: {!r}", e)
         raise HTTPException(status_code=503, detail=f"Échec du déclenchement du redémarrage : {e}")
 
     logger.info("Container restart dispatched via host bridge")

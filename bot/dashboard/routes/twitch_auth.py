@@ -183,7 +183,7 @@ async def twitch_auth_callback(request: Request):
                 "code": code, "grant_type": "authorization_code", "redirect_uri": redirect_uri,
             }, timeout=15)
     except Exception as exc:
-        logger.error("Twitch token exchange network error: {}", exc)
+        logger.error("Twitch token exchange network error: {!r}", exc)
         return _err("Erreur reseau lors de l'echange du code.")
 
     if resp.status_code != 200:
@@ -207,7 +207,7 @@ async def twitch_auth_callback(request: Request):
                 username = users[0].get("display_name","")
                 user_id  = users[0].get("id","")
     except Exception as exc:
-        logger.warning("Could not fetch Twitch username after OAuth: {}", exc)
+        logger.warning("Could not fetch Twitch username after OAuth: {!r}", exc)
 
     # .env path
     _ep = os.getenv("ENV_PATH","")
@@ -267,7 +267,7 @@ async def restart_twitch_container(request: Request) -> dict:
     try:
         await bridge.docker_restart(service_name)
     except Exception as e:  # noqa: BLE001 — le résultat réel doit remonter à l'appelant
-        logger.error("Twitch restart failed: {}", e)
+        logger.error("Twitch restart failed: {!r}", e)
         raise HTTPException(status_code=503, detail=f"Échec du déclenchement du redémarrage : {e}")
 
     logger.info("Twitch restart dispatched via host bridge")

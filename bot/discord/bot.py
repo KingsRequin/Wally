@@ -214,7 +214,7 @@ class WallyDiscord(commands.Bot):
             try:
                 self.social_rhythm.backfill_from_logs("logs/conversations")
             except Exception as e:  # noqa: BLE001 — le backfill ne doit jamais bloquer le boot
-                logger.warning("SocialRhythm: backfill ignoré: {}", e)
+                logger.warning("SocialRhythm: backfill ignoré: {!r}", e)
 
             async def _latest_journal_content() -> str | None:
                 # Dernier journal quotidien archivé → amorce de vagabondage (#A4).
@@ -222,7 +222,7 @@ class WallyDiscord(commands.Bot):
                     entries = await self.db.get_journal_entries(limit=1)
                     return entries[0]["content"] if entries else None
                 except Exception as e:  # noqa: BLE001 — jamais bloquant pour la cognition
-                    logger.warning("journal_provider: lecture échouée: {}", e)
+                    logger.warning("journal_provider: lecture échouée: {!r}", e)
                     return None
 
             # RSS comme stimulus idle : peek du prochain article non montré, marqué
@@ -236,7 +236,7 @@ class WallyDiscord(commands.Bot):
                     try:
                         return await self.db.rss_peek_stimulus(max_age_seconds=_rss_max_age)
                     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la cognition
-                        logger.warning("rss_provider: peek échoué: {}", e)
+                        logger.warning("rss_provider: peek échoué: {!r}", e)
                         return None
 
                 async def _rss_consume(article: dict) -> None:  # noqa: F811
@@ -531,7 +531,7 @@ class WallyDiscord(commands.Bot):
         except discord.Forbidden:
             logger.warning("Discord slash commands sync skipped — bot not yet in guild (invite it first)")
         except Exception as e:
-            logger.warning("Discord slash commands sync failed: {}", e)
+            logger.warning("Discord slash commands sync failed: {!r}", e)
 
     async def on_ready(self) -> None:
         self._start_time = time.time()
@@ -625,7 +625,7 @@ class WallyDiscord(commands.Bot):
             try:
                 await self.social_rhythm.persist(self._social_rhythm_db_path)
             except Exception as e:  # noqa: BLE001
-                logger.warning("SocialRhythm.persist au close a échoué: {}", e)
+                logger.warning("SocialRhythm.persist au close a échoué: {!r}", e)
         await super().close()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:

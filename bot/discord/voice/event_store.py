@@ -31,7 +31,7 @@ class VoiceEventStore:
                 )
                 await db.commit()
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("VoiceEventStore.append: {}", e)
+            logger.warning("VoiceEventStore.append: {!r}", e)
 
     async def recent(self, limit: int = 50, before_id: int | None = None) -> list[dict]:
         sql = "SELECT id, ts, payload FROM voice_events"
@@ -47,7 +47,7 @@ class VoiceEventStore:
                 cur = await db.execute(sql, params)
                 rows = await cur.fetchall()
         except Exception as e:  # noqa: BLE001
-            logger.warning("VoiceEventStore.recent: {}", e)
+            logger.warning("VoiceEventStore.recent: {!r}", e)
             return []
         out = []
         for r in rows:

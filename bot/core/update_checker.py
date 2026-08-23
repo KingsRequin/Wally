@@ -64,7 +64,7 @@ class UpdateChecker:
             elif remote:
                 self._update_available = False
         except Exception as exc:
-            logger.warning("UpdateChecker: check failed: {}", exc)
+            logger.warning("UpdateChecker: check failed: {!r}", exc)
 
     async def _running_digest(self) -> str | None:
         """Retourne le digest manifest de l'image courante (RepoDigests via docker inspect)."""
@@ -82,7 +82,7 @@ class UpdateChecker:
                 return None
             return raw.split("@", 1)[1]  # sha256:abc123...
         except Exception as exc:
-            logger.warning("UpdateChecker: docker inspect failed: {}", exc)
+            logger.warning("UpdateChecker: docker inspect failed: {!r}", exc)
             return None
 
     async def _remote_digest(self) -> str | None:
@@ -111,5 +111,5 @@ class UpdateChecker:
                 if r.status_code == 200:
                     return r.headers.get("Docker-Content-Digest")
         except Exception as exc:
-            logger.warning("UpdateChecker: GHCR request failed: {}", exc)
+            logger.warning("UpdateChecker: GHCR request failed: {!r}", exc)
         return None

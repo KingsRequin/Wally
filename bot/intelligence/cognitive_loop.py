@@ -206,7 +206,7 @@ class CognitiveLoop:
             try:
                 self._social_rhythm.record_incoming(_now_paris())
             except Exception as e:  # noqa: BLE001
-                logger.warning("SocialRhythm.record_incoming: {}", e)
+                logger.warning("SocialRhythm.record_incoming: {!r}", e)
         # Un DM ou un message qui mentionne Wally le VISE directement → cadence
         # vive. La perception passive d'un canal (relevant=False) ne réveille pas
         # la cognition rapide : elle reste perçue (recent_interactions) mais le
@@ -223,7 +223,7 @@ class CognitiveLoop:
                 try:
                     self._wake_digest.note_engagement()
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("WakeDigest.note_engagement: {}", e)
+                    logger.warning("WakeDigest.note_engagement: {!r}", e)
         # Quelqu'un a parlé dans ce canal → ses messages spontanés y ont reçu
         # une suite : c'est une RÉPONSE → issue d'engagement positive, puis on
         # remet le compteur « sans réponse » à zéro.
@@ -233,13 +233,13 @@ class CognitiveLoop:
                 try:
                     self._social_rhythm.record_spontaneous_outcome(True, _now_paris())
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("SocialRhythm outcome(+): {}", e)
+                    logger.warning("SocialRhythm outcome(+): {!r}", e)
             # Feedback émotionnel positif (#A6) : on lui a répondu → un peu de joie.
             if self._emotion is not None:
                 try:
                     self._emotion.apply_delta("joy", SOCIAL_FEEDBACK_JOY)
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("apply_delta(joy) social feedback: {}", e)
+                    logger.warning("apply_delta(joy) social feedback: {!r}", e)
             st["unanswered"] = 0
             # Nouvel épisode d'engagement : la pénalité d'abandon pourra se reposer.
             st["penalized"] = False
@@ -337,7 +337,7 @@ class CognitiveLoop:
             try:
                 self._emotion.world_event("ignored")
             except Exception as e:  # noqa: BLE001 — jamais bloquant
-                logger.warning("world_event(ignored) social feedback: {}", e)
+                logger.warning("world_event(ignored) social feedback: {!r}", e)
 
     def notify_reply(self, channel_id, content: str | None = None,
                      author: str | None = None) -> None:
@@ -451,7 +451,7 @@ class CognitiveLoop:
                 await self._facts.set_status(fid, FactStatus.ARCHIVED)
                 logger.info("CognitiveLoop : focus ressassé expiré (#{})", fid)
         except Exception as e:
-            logger.warning("_expire_focus a échoué : {}", e)
+            logger.warning("_expire_focus a échoué : {!r}", e)
 
     async def _maybe_web_search(self, context, result):
         """Si la pensée demande une recherche web et que les gardes passent :
@@ -489,7 +489,7 @@ class CognitiveLoop:
                 )
                 return result
         except Exception as e:  # noqa: BLE001
-            logger.warning("is_quota_exceeded: {}", e)
+            logger.warning("is_quota_exceeded: {!r}", e)
             return result
         # Armer le cooldown AVANT l'appel : même un échec compte, pour ne pas
         # marteler Tavily en boucle sur une erreur répétée.
@@ -497,7 +497,7 @@ class CognitiveLoop:
         try:
             finding = await self._web_search.search(query, platform="discord")
         except Exception as e:  # noqa: BLE001
-            logger.warning("web_search cognitif a échoué: {}", e)
+            logger.warning("web_search cognitif a échoué: {!r}", e)
             return result
         if self._feed:
             self._feed.publish({
@@ -509,7 +509,7 @@ class CognitiveLoop:
         try:
             seconde = await self._reasoning.reason(context)
         except Exception as e:  # noqa: BLE001
-            logger.warning("web_search 2e passe échouée, pensée initiale conservée: {}", e)
+            logger.warning("web_search 2e passe échouée, pensée initiale conservée: {!r}", e)
             return result
 
         # La 1re passe — celle qui a DÉCIDÉ de chercher — a déjà écrit sa pensée
@@ -523,7 +523,7 @@ class CognitiveLoop:
             try:
                 await self._facts.set_status(result.thought_fact_id, FactStatus.ARCHIVED)
             except Exception as e:  # noqa: BLE001 — jamais bloquant
-                logger.warning("Archivage de la pensée de 1re passe échoué : {}", e)
+                logger.warning("Archivage de la pensée de 1re passe échoué : {!r}", e)
         return seconde
 
     async def _consume_wake_digest(self) -> str | None:
@@ -534,7 +534,7 @@ class CognitiveLoop:
         try:
             digest = await self._wake_digest.consume()
         except Exception as e:  # noqa: BLE001
-            logger.warning("WakeDigest.consume: {}", e)
+            logger.warning("WakeDigest.consume: {!r}", e)
             return None
         if digest:
             self._log_cog("wake_digest", digest=digest[:1000])
@@ -562,7 +562,7 @@ class CognitiveLoop:
                 try:
                     due = await self._facts.get_due_facts(datetime.utcnow())
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("get_due_facts: {}", e)
+                    logger.warning("get_due_facts: {!r}", e)
                     due = []
                 if due:
                     fact = due[0]
@@ -574,7 +574,7 @@ class CognitiveLoop:
                         try:
                             await self._facts.clear_schedule(fid)
                         except Exception as e:  # noqa: BLE001
-                            logger.warning("clear_schedule: {}", e)
+                            logger.warning("clear_schedule: {!r}", e)
             # Réveil : un digest de ce qui s'est dit pendant le sommeil, s'il y a
             # eu sommeil. Généré ici (et pas dans notify_activity) parce que c'est
             # un appel LLM : le tick est le seul endroit qui peut se le permettre.
@@ -622,7 +622,7 @@ class CognitiveLoop:
                         self._recent_thoughts,
                     )
                 except Exception as e:
-                    logger.warning("ThoughtProgressJudge a échoué, fallback lexical : {}", e)
+                    logger.warning("ThoughtProgressJudge a échoué, fallback lexical : {!r}", e)
                     verdict = None
 
             if verdict == "RESSASSE":
@@ -631,7 +631,7 @@ class CognitiveLoop:
                     try:
                         await self._facts.set_status(result.thought_fact_id, FactStatus.ARCHIVED)
                     except Exception as e:
-                        logger.warning("Archivage pensée ressassée échoué : {}", e)
+                        logger.warning("Archivage pensée ressassée échoué : {!r}", e)
                 self._focus_rumination_count += 1
                 self._rumination_window.append(True)
                 self._log_cog(
@@ -908,7 +908,7 @@ class CognitiveLoop:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.error("CognitiveLoop tick error: {}", e)
+            logger.error("CognitiveLoop tick error: {!r}", e)
 
     async def _run(self) -> None:
         logger.info("CognitiveLoop démarrée")
@@ -918,7 +918,7 @@ class CognitiveLoop:
             try:
                 await self._wake_digest.bootstrap()
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le boot
-                logger.warning("WakeDigest.bootstrap: {}", e)
+                logger.warning("WakeDigest.bootstrap: {!r}", e)
         while self._running:
             # Un `[SLEEP]` demandé au tick précédent l'emporte, une seule fois.
             # Il passe par ce sommeil-ci, qui est interruptible : Wally reste

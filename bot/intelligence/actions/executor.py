@@ -57,7 +57,7 @@ class ActionExecutor:
             try:
                 await self.deliver(str(result), target["platform"], target["channel_id"])
             except Exception as e:
-                logger.error("Failed to deliver result for task {}: {}", task["id"], e)
+                logger.error("Failed to deliver result for task {}: {!r}", task["id"], e)
 
         return str(result) if result else "OK"
 

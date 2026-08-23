@@ -27,7 +27,7 @@ class HostBridgeClient:
                 r = await c.get("http://bridge/health")
                 return r.status_code == 200
         except Exception as e:
-            logger.warning("HostBridge health failed: {}", e)
+            logger.warning("HostBridge health failed: {!r}", e)
             return False
 
     async def git_apply(self, diff: str) -> None:

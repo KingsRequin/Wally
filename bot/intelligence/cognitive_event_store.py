@@ -30,7 +30,7 @@ class CognitiveEventStore:
                 )
                 await db.commit()
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("CognitiveEventStore.append: {}", e)
+            logger.warning("CognitiveEventStore.append: {!r}", e)
 
     async def recent(self, limit: int = 50, before_id: int | None = None) -> list[dict]:
         sql = "SELECT id, ts, payload FROM cognitive_events"
@@ -46,7 +46,7 @@ class CognitiveEventStore:
                 cur = await db.execute(sql, params)
                 rows = await cur.fetchall()
         except Exception as e:  # noqa: BLE001
-            logger.warning("CognitiveEventStore.recent: {}", e)
+            logger.warning("CognitiveEventStore.recent: {!r}", e)
             return []
         out = []
         for r in rows:

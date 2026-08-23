@@ -198,7 +198,7 @@ class PresenceService:
             rows.sort(key=lambda r: r[0])
             return [line for _, line in rows[:limit]]
         except Exception as e:  # noqa: BLE001 — perception jamais bloquante
-            logger.warning("PresenceService.roster: {}", e)
+            logger.warning("PresenceService.roster: {!r}", e)
             return []
 
     def mention_directory(self, limit: int = 60) -> list[str]:
@@ -227,7 +227,7 @@ class PresenceService:
                     break
             return lines
         except Exception as e:  # noqa: BLE001 — perception jamais bloquante
-            logger.warning("PresenceService.mention_directory: {}", e)
+            logger.warning("PresenceService.mention_directory: {!r}", e)
             return []
 
     def voice_channels(self) -> list[str]:
@@ -259,5 +259,5 @@ class PresenceService:
                 lines.append(f"« {channel.name} » : {who}")
             return lines
         except Exception as e:  # noqa: BLE001 — perception jamais bloquante
-            logger.warning("PresenceService.voice_channels: {}", e)
+            logger.warning("PresenceService.voice_channels: {!r}", e)
             return []

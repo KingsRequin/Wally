@@ -139,7 +139,7 @@ class SocialRhythm:
                     }
             logger.info("SocialRhythm: {} créneaux chargés", len(self._bins))
         except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
-            logger.warning("SocialRhythm.load a échoué: {}", e)
+            logger.warning("SocialRhythm.load a échoué: {!r}", e)
 
     async def persist(self, db_path: str) -> None:
         try:
@@ -156,7 +156,7 @@ class SocialRhythm:
                     )
                 await db.commit()
         except Exception as e:  # noqa: BLE001
-            logger.warning("SocialRhythm.persist a échoué: {}", e)
+            logger.warning("SocialRhythm.persist a échoué: {!r}", e)
 
     def backfill_from_logs(self, logs_dir: str) -> int:
         """Pré-chauffe `ambient` en rejouant les 'message_in' horodatés des logs
@@ -194,7 +194,7 @@ class SocialRhythm:
                                     datetime.fromtimestamp(ts, tz=timezone.utc)
                                 )
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("SocialRhythm backfill: {} illisible: {}", fname, e)
+                    logger.warning("SocialRhythm backfill: {} illisible: {!r}", fname, e)
         events.sort()
         for when in events:
             self.record_incoming(when)

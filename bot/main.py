@@ -73,13 +73,13 @@ async def _run_discord(
         except OSError as e:
             if attempt >= max_attempts:
                 logger.error(
-                    "Discord: login impossible après {} tentatives ({}) — abandon",
+                    "Discord: login impossible après {} tentatives ({!r}) — abandon",
                     attempt, e,
                 )
                 raise
             delay = min(base_delay * 2 ** (attempt - 1), 30.0)
             logger.warning(
-                "Discord: échec réseau au login (tentative {}/{}): {} — "
+                "Discord: échec réseau au login (tentative {}/{}): {!r} — "
                 "nouvel essai dans {:.0f}s",
                 attempt, max_attempts, e, delay,
             )
@@ -867,7 +867,7 @@ async def main() -> None:
                 logger.warning("Rappel : génération en repli, on envoie le texte demandé")
                 reply = raw_msg
         except Exception as e:
-            logger.warning("Reminder LLM generation failed, using raw message: {}", e)
+            logger.warning("Reminder LLM generation failed, using raw message: {!r}", e)
             reply = raw_msg
 
         if platform == "discord" and creator_id:

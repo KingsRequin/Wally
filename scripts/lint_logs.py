@@ -19,9 +19,20 @@ et 117 sur `get_stream` de Twitch. Le site Apex a été corrigé à la main apr�
 coup ; les autres attendaient encore.
 
 Ce que le script détecte, en AST et pas au grep : un appel `logger.<niveau>` dont
-la chaîne de format contient `{nom}` alors que `nom=` reçoit la variable liée par
-un `except ... as`. Le grep seul confondrait avec un `{e}` qui désigne un
-élément, un événement ou une entrée.
+un champ de format reçoit la variable liée par un `except ... as`, sans `!r`. Le
+grep seul confondrait avec un `{e}` qui désigne un élément, un événement ou une
+entrée.
+
+⚠️ Les DEUX formes comptent, et l'oubli de la seconde a coûté un faux zéro :
+
+    logger.warning("... {e}", e=exc)        # nommée   — 429 sites
+    logger.warning("... {}", exc)           # positionnelle — 98 sites
+
+Le premier passage ne regardait que la forme nommée. Le cliquet est resté à ZÉRO
+une journée pendant que 98 sites en portaient encore : un garde-fou qui ne
+couvre qu'une moitié du problème annonce « rien à signaler » sans mentir
+techniquement. C'est la raison d'être de `_placeholders()` et de
+`_spans_placeholders()` — comprendre les champs plutôt que chercher un motif.
 
 Usage :
     python3 scripts/lint_logs.py             # vérifie (sortie 1 si dépassement)
@@ -37,6 +48,7 @@ import json
 import pathlib
 import re
 import sys
+from string import Formatter
 
 _RACINE = pathlib.Path(__file__).resolve().parent.parent
 _SOURCE = _RACINE / "bot"
@@ -45,8 +57,55 @@ _REFERENCE = _RACINE / "scripts" / "silences_cliquet.json"
 _NIVEAUX = {"debug", "info", "success", "warning", "error", "critical", "exception", "log"}
 
 
+def _placeholders(fmt: str) -> list[tuple[str | None, str | None, str | None]]:
+    """Les champs de la chaîne, dans l'ordre : (nom, conversion, spec).
+
+    `nom` vaut `""` pour un `{}` auto-numéroté, `"0"` pour un `{0}`, `"e"` pour
+    un `{e}`. Les littéraux `{{` et `}}` n'en sont pas et ne comptent pas.
+    """
+    return [(nom, conv, spec) for _, nom, spec, conv in Formatter().parse(fmt)
+            if nom is not None]
+
+
+def _spans_placeholders(segment: str) -> list[tuple[int, int]]:
+    """Les bornes (début, fin) de chaque champ DANS LE TEXTE SOURCE.
+
+    On scanne à la main plutôt qu'au regex : il faut sauter les `{{`/`}}`
+    échappés, et le segment peut enjamber plusieurs littéraux concaténés
+    implicitement — auquel cas le texte entre eux ne porte que des guillemets
+    et des blancs, jamais d'accolade.
+    """
+    spans, i, n = [], 0, len(segment)
+    while i < n:
+        c = segment[i]
+        if c == "{":
+            if i + 1 < n and segment[i + 1] == "{":
+                i += 2
+                continue
+            fin = segment.find("}", i)
+            if fin == -1:
+                break
+            spans.append((i, fin + 1))
+            i = fin + 1
+            continue
+        if c == "}" and i + 1 < n and segment[i + 1] == "}":
+            i += 2
+            continue
+        i += 1
+    return spans
+
+
 class _Chasseur(ast.NodeVisitor):
-    """Repère les `logger.X("... {e} ...", e=<exception>)`.
+    """Repère les exceptions journalisées sans `!r`, nommées OU positionnelles.
+
+    Les deux formes existent dans ce dépôt et souffrent du même mal :
+
+        logger.warning("... {e}", e=exc)        # nommée
+        logger.warning("... {}", exc)           # positionnelle
+
+    La seconde a été oubliée au premier passage : le cliquet est resté à ZÉRO
+    pendant que 98 sites en portaient encore. Un garde-fou qui ne regarde qu'une
+    des deux formes annonce « rien à signaler » sans mentir techniquement.
 
     `_exc` est une PILE et non un simple nom : des `except` imbriqués lient des
     variables différentes, et n'en garder qu'une raterait celles du bloc
@@ -55,7 +114,8 @@ class _Chasseur(ast.NodeVisitor):
 
     def __init__(self) -> None:
         self._exc: list[str] = []
-        self.trouves: list[tuple[ast.Constant, str, int, str]] = []
+        # (nœud de la chaîne, rang du champ à corriger, ligne, niveau, étiquette)
+        self.trouves: list[tuple[ast.Constant, int, int, str, str]] = []
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name:
@@ -70,13 +130,31 @@ class _Chasseur(ast.NodeVisitor):
                 and isinstance(fn.value, ast.Name) and fn.value.id == "logger"
                 and node.args and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)):
-            fmt_node = node.args[0]
-            for kw in node.keywords:
-                if (kw.arg and isinstance(kw.value, ast.Name)
-                        and kw.value.id in self._exc
-                        and re.search(r"\{%s\}" % re.escape(kw.arg), fmt_node.value)):
-                    self.trouves.append((fmt_node, kw.arg, node.lineno, fn.attr))
+            self._examiner(node, node.args[0], fn.attr)
         self.generic_visit(node)
+
+    def _examiner(self, appel: ast.Call, fmt_node: ast.Constant, niveau: str) -> None:
+        champs = _placeholders(fmt_node.value)
+        positionnels = appel.args[1:]
+        auto = 0
+        for rang, (nom, conv, spec) in enumerate(champs):
+            # Déjà converti (`{e!r}`), ou porteur d'une spec (`{:.0f}`) : on
+            # n'y touche pas. Coller `!r` devant une spec numérique ferait
+            # planter le formatage sur un objet qui n'est pas un nombre.
+            if conv is not None or spec:
+                if nom == "":
+                    auto += 1
+                continue
+            if nom == "":                      # `{}` : le n-ième positionnel
+                cible = positionnels[auto] if auto < len(positionnels) else None
+                auto += 1
+            elif nom.isdigit():                # `{0}` : explicitement le n-ième
+                i = int(nom)
+                cible = positionnels[i] if i < len(positionnels) else None
+            else:                              # `{e}` : le mot-clé du même nom
+                cible = next((k.value for k in appel.keywords if k.arg == nom), None)
+            if isinstance(cible, ast.Name) and cible.id in self._exc:
+                self.trouves.append((fmt_node, rang, appel.lineno, niveau, nom or "{}"))
 
 
 def _analyser(fichier: pathlib.Path):
@@ -95,8 +173,8 @@ def recenser() -> list[str]:
     out: list[str] = []
     for f in sorted(_SOURCE.rglob("*.py")):
         _, trouves = _analyser(f)
-        for _, nom, ligne, niveau in trouves:
-            out.append(f"{f.relative_to(_RACINE)}:{ligne}  logger.{niveau}  {{{nom}}}")
+        for _, _, ligne, niveau, etiquette in trouves:
+            out.append(f"{f.relative_to(_RACINE)}:{ligne}  logger.{niveau}  {{{etiquette}}}")
     return out
 
 
@@ -125,20 +203,36 @@ def corriger() -> int:
         def index(l: int, c: int) -> int:
             return debuts[l - 1] + c
 
+        # Une chaîne peut porter PLUSIEURS champs à corriger (« {} illisible :
+        # {} ») : on les regroupe par chaîne, et on traite les rangs du plus
+        # grand au plus petit à l'intérieur.
+        par_chaine: dict[tuple[int, int], set[int]] = {}
+        for n, rang, _, _, _ in trouves:
+            cle = (index(n.lineno, n.col_offset), index(n.end_lineno, n.end_col_offset))
+            par_chaine.setdefault(cle, set()).add(rang)
+
         # De la FIN vers le DÉBUT : réécrire par l'avant décalerait toutes les
         # positions suivantes, et le remplacement d'après tomberait à côté.
-        edits = sorted(
-            {(index(n.lineno, n.col_offset),
-              index(n.end_lineno, n.end_col_offset), nom) for n, nom, _, _ in trouves},
-            reverse=True,
-        )
         neuf, n_fichier = source, 0
-        for deb, fin, nom in edits:
+        for (deb, fin), rangs in sorted(par_chaine.items(), reverse=True):
             segment = neuf[deb:fin]
-            remplace, k = re.subn(r"\{%s\}" % re.escape(nom), "{%s!r}" % nom, segment)
-            if k:
-                neuf = neuf[:deb] + remplace + neuf[fin:]
-                n_fichier += k
+            spans = _spans_placeholders(segment)
+            for rang in sorted(rangs, reverse=True):
+                if rang >= len(spans):
+                    # Le rang vient de la chaîne JOINTE, les spans du texte
+                    # source : un désaccord veut dire qu'on ne comprend pas ce
+                    # segment. On s'abstient plutôt que de viser au hasard.
+                    print(f"⚠️  {f}: champ {rang} introuvable dans le source, ignoré",
+                          file=sys.stderr)
+                    continue
+                d, ff = spans[rang]
+                champ = segment[d:ff]
+                if "!" in champ or ":" in champ:
+                    continue                    # déjà converti, ou porteur d'une spec
+                segment = segment[:d] + champ[:-1] + "!r}" + segment[ff:]
+                n_fichier += 1
+            if segment != neuf[deb:fin]:
+                neuf = neuf[:deb] + segment + neuf[fin:]
 
         if not n_fichier:
             continue

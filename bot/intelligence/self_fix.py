@@ -140,7 +140,7 @@ class SelfFix:
                     "full": goal,
                 })
             except Exception as e:  # noqa: BLE001 — le feed ne doit jamais casser le flux
-                logger.warning("self-fix feed.publish échoué: {}", e)
+                logger.warning("self-fix feed.publish échoué: {!r}", e)
         if self._registry is None or upgrade_id is None:
             return
         try:
@@ -173,7 +173,7 @@ class SelfFix:
             demande = await self._registry.get(upgrade_id)
             goal = (demande.proposal if demande else "") or ""
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("self-fix: lecture de la demande #{} échouée: {}", upgrade_id, e)
+            logger.warning("self-fix: lecture de la demande #{} échouée: {!r}", upgrade_id, e)
         goal = (goal or self._active_goal or "").strip()
         if not goal:
             return
@@ -201,7 +201,7 @@ class SelfFix:
                 evt["full"] = full
             feed.publish(evt)
         except Exception as e:  # noqa: BLE001 — le feed ne doit jamais casser le flux
-            logger.debug("self-fix CODEFIX publish échoué: {}", e)
+            logger.debug("self-fix CODEFIX publish échoué: {!r}", e)
 
     def _maybe_publish_progress(self, pct: int) -> None:
         """Publie un jalon de progression au franchissement d'un palier (25/50/75 %)."""
@@ -406,7 +406,7 @@ class SelfFix:
                 f"{push.get('branch', 'main')}"
             )
         except Exception as e:  # noqa: BLE001 — le push ne bloque jamais le déploiement
-            logger.warning("self-fix: git push échoué (déploiement local poursuivi): {}", e)
+            logger.warning("self-fix: git push échoué (déploiement local poursuivi): {!r}", e)
             self._publish_feed("push public échoué — déploiement local seul")
         await self._bridge.docker_rebuild(self._service())
         prefix = (

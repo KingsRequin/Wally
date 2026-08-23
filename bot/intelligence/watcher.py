@@ -48,7 +48,7 @@ class ServerWatcher:
         try:
             await self._refresh(now)
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour la cognition
-            logger.warning("ServerWatcher: refresh échoué: {}", e)
+            logger.warning("ServerWatcher: refresh échoué: {!r}", e)
 
     async def _refresh(self, now: float) -> None:
         messages = await self._db.get_messages_since(now - _WINDOW_S)

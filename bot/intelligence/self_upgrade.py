@@ -62,7 +62,7 @@ class SelfUpgrade:
                     await self._bridge.docker_restart(self._service())
                     self._checker.update_available = False
                 except Exception as e:
-                    logger.error("SelfUpgrade docker_restart failed: {}", e)
+                    logger.error("SelfUpgrade docker_restart failed: {!r}", e)
                     await dm.send(f"❌ Erreur restart: {e}")
             else:
                 self._checker.update_available = False
@@ -76,7 +76,7 @@ class SelfUpgrade:
             )
             self._checker.update_available = False
         except Exception as e:
-            logger.error("SelfUpgrade._propose failed: {}", e)
+            logger.error("SelfUpgrade._propose failed: {!r}", e)
 
     async def _await_reaction(self, msg, timeout: float) -> str:
         owner_id = self._owner_id()

@@ -204,7 +204,7 @@ class MemoryIngest:
                 system, [{"role": "user", "content": user_msg}]
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ingest: extraction LLM échouée: {}", exc)
+            logger.warning("ingest: extraction LLM échouée: {!r}", exc)
             return []
         if not isinstance(raw, str):
             return []
@@ -333,7 +333,7 @@ class MemoryIngest:
                 self._arbiter_system, [{"role": "user", "content": user_msg}]
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ingest: arbitre LLM échoué → 'new': {}", exc)
+            logger.warning("ingest: arbitre LLM échoué → 'new': {!r}", exc)
             return _Verdict("new")
         if not isinstance(raw, str):
             return _Verdict("new")
@@ -406,7 +406,7 @@ def _parse_extract_response(raw: str) -> list[_Candidate]:
     try:
         data = json.loads(match.group())
     except json.JSONDecodeError as exc:
-        logger.debug("ingest: JSON extraction invalide: {}", exc)
+        logger.debug("ingest: JSON extraction invalide: {!r}", exc)
         return []
     if not isinstance(data, dict):
         return []

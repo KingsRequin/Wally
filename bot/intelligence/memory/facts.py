@@ -538,7 +538,7 @@ class SQLiteFactStore:
                 )
                 rows = await cursor.fetchall()
             except Exception as exc:  # FTS5 syntax error sur entrée exotique
-                logger.warning("search_fts MATCH failed for {!r}: {}", match, exc)
+                logger.warning("search_fts MATCH failed for {!r}: {!r}", match, exc)
                 return []
         return [(self._row_to_fact(r), float(r["rank"])) for r in rows]
 
@@ -579,7 +579,7 @@ class SQLiteFactStore:
                 cursor = await db.execute(sql, params)
                 rows = await cursor.fetchall()
             except Exception as exc:  # FTS5 syntax error sur entrée exotique
-                logger.warning("search_related MATCH failed for {!r}: {}", match, exc)
+                logger.warning("search_related MATCH failed for {!r}: {!r}", match, exc)
                 return []
         return [self._row_to_fact(r) for r in rows]
 

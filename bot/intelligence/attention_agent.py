@@ -260,7 +260,7 @@ class AttentionAgent:
                 )
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: facts participant indisponibles ({}): {}", key, e)
+                logger.warning("AttentionAgent: facts participant indisponibles ({}): {!r}", key, e)
                 continue
             if user_facts:
                 # Lien nom → <@id> directement accolé à la personne : quand Wally
@@ -322,7 +322,7 @@ class AttentionAgent:
                 member_presence = self._presence_provider() or []
             except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: présence indisponible: {}", e)
+                logger.warning("AttentionAgent: présence indisponible: {!r}", e)
 
         # Annuaire des mentions (pseudo → <@id>) pour que le SPEAK spontané ping.
         mention_directory: list[str] = []
@@ -331,7 +331,7 @@ class AttentionAgent:
                 mention_directory = self._mention_provider() or []
             except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: annuaire mentions indisponible: {}", e)
+                logger.warning("AttentionAgent: annuaire mentions indisponible: {!r}", e)
 
         # Salons vocaux occupés (qui est en vocal, avec <@id>) : Wally sait qui
         # l'entoure ou qui il pourrait rejoindre avant même d'entrer en vocal.
@@ -341,7 +341,7 @@ class AttentionAgent:
                 voice_presence = self._voice_presence_provider() or []
             except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: présence vocale indisponible: {}", e)
+                logger.warning("AttentionAgent: présence vocale indisponible: {!r}", e)
 
         from bot.core.system_info import read_host_metrics, fetch_weather_france
         import asyncio as _asyncio
@@ -359,7 +359,7 @@ class AttentionAgent:
             stream_feed = current_stream_feed_block()
         except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
             from loguru import logger
-            logger.warning("AttentionAgent: flux du stream indisponible: {}", e)
+            logger.warning("AttentionAgent: flux du stream indisponible: {!r}", e)
 
         # Duel Apex en cours — même patron que le flux ci-dessus : sans ce
         # bloc côté cognition, Wally restait aveugle à un duel qu'il vient
@@ -372,7 +372,7 @@ class AttentionAgent:
             duel_block = bloc_duel_en_cours(current_duel()) or None
         except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
             from loguru import logger
-            logger.warning("AttentionAgent: duel Apex indisponible: {}", e)
+            logger.warning("AttentionAgent: duel Apex indisponible: {!r}", e)
 
         # Ce qui se dit en vocal. La cognition le percevait déjà, mêlé au flux
         # du stream : le sortir de là ne doit pas l'en priver. Passif comme le
@@ -384,7 +384,7 @@ class AttentionAgent:
                 stream_feed = f"{stream_feed}\n{voice_block}" if stream_feed else voice_block
         except Exception as e:  # noqa: BLE001 — l'absence du bloc ne casse pas le tick
             from loguru import logger
-            logger.warning("AttentionAgent: conversation vocale indisponible: {}", e)
+            logger.warning("AttentionAgent: conversation vocale indisponible: {!r}", e)
 
         # Demandes d'amélioration déjà émises (Phase 6) — best-effort.
         # TOUT l'historique, sans fenêtre : les 6 dernières laissaient 8 capacités
@@ -398,7 +398,7 @@ class AttentionAgent:
                 # historique de demandes du prompt sans laisser de trace — et c'est
                 # ce bloc qui l'empêche de redemander ce qu'il possède déjà.
                 from loguru import logger
-                logger.warning("AttentionAgent: historique des demandes illisible: {}", e)
+                logger.warning("AttentionAgent: historique des demandes illisible: {!r}", e)
                 upgrade_requests = []
 
         # Conscience du rythme social appris (SocialRhythm) — best-effort.
@@ -412,7 +412,7 @@ class AttentionAgent:
                 social_receptivity = self._social_rhythm.describe(_now)
             except Exception as e:  # noqa: BLE001 — jamais bloquant
                 from loguru import logger
-                logger.warning("AttentionAgent: réceptivité indisponible: {}", e)
+                logger.warning("AttentionAgent: réceptivité indisponible: {!r}", e)
 
         return AttentionContext(
             emotion_state=emotion_state,
@@ -498,7 +498,7 @@ class AttentionAgent:
                 )
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: search_related indisponible: {}", e)
+                logger.warning("AttentionAgent: search_related indisponible: {!r}", e)
                 related = []
             if related:
                 return (
@@ -538,7 +538,7 @@ class AttentionAgent:
                 journal = await self._journal_provider()
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: journal indisponible: {}", e)
+                logger.warning("AttentionAgent: journal indisponible: {!r}", e)
                 journal = None
             if journal:
                 snippet = journal.strip()[:200]
@@ -566,7 +566,7 @@ class AttentionAgent:
                 rss_article = await self._rss_provider()
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: rss_provider indisponible: {}", e)
+                logger.warning("AttentionAgent: rss_provider indisponible: {!r}", e)
                 rss_article = None
             title = (rss_article or {}).get("title", "")
             if rss_article and title and not _seed_overlaps_focus(title, preoccupation):
@@ -592,7 +592,7 @@ class AttentionAgent:
                 digest = self._server_watch.current()
             except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                 from loguru import logger
-                logger.warning("AttentionAgent: veilleur indisponible: {}", e)
+                logger.warning("AttentionAgent: veilleur indisponible: {!r}", e)
                 digest = ""
             if digest and not _seed_overlaps_focus(digest, preoccupation):
                 rich_seeds.append(f"Ce qui bruisse sur le serveur en ce moment : {digest}")
@@ -618,6 +618,6 @@ class AttentionAgent:
                     await self._rss_consume(rss_article)
                 except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
                     from loguru import logger
-                    logger.warning("AttentionAgent: rss_consume échoué: {}", e)
+                    logger.warning("AttentionAgent: rss_consume échoué: {!r}", e)
             return chosen, rss_article
         return chosen, None

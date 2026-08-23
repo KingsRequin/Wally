@@ -241,7 +241,7 @@ def search_logs(
                         content=content,
                     ))
         except OSError as e:
-            logger.warning("HistorySearch: {} illisible: {}", path, e)
+            logger.warning("HistorySearch: {} illisible: {!r}", path, e)
 
     total = len(hits)
     hits.sort(key=lambda h: h.ts)
@@ -307,7 +307,7 @@ class HistorySearchService:
                 after=after_date, before=before_date, limit=limit,
             )
         except Exception as e:  # noqa: BLE001 — un outil ne fait jamais tomber la réponse
-            logger.warning("HistorySearch: recherche « {} » échouée: {}", query, e)
+            logger.warning("HistorySearch: recherche « {} » échouée: {!r}", query, e)
             return "La recherche dans l'historique a échoué."
 
         filters = self._describe_filters(author, channel, after, before)

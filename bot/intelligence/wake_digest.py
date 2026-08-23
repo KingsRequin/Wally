@@ -171,7 +171,7 @@ def read_messages(logs_root: str | Path, since: float, until: float) -> list[dic
                         "content": content,
                     })
         except OSError as e:
-            logger.warning("WakeDigest: {} illisible: {}", path, e)
+            logger.warning("WakeDigest: {} illisible: {!r}", path, e)
     messages.sort(key=lambda m: m["ts"])
     return messages
 
@@ -230,7 +230,7 @@ def last_engagement_ts(logs_root: str | Path) -> float | None:
                     ):
                         best_out = float(ts)
         except OSError as e:
-            logger.warning("WakeDigest: {} illisible: {}", path, e)
+            logger.warning("WakeDigest: {} illisible: {!r}", path, e)
     return best_out if best_out is not None else best_any
 
 
@@ -331,7 +331,7 @@ class WakeDigest:
         try:
             ts = await asyncio.to_thread(last_engagement_ts, self._logs_root)
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour le démarrage
-            logger.warning("WakeDigest: lecture des logs au boot échouée: {}", e)
+            logger.warning("WakeDigest: lecture des logs au boot échouée: {!r}", e)
             ts = None
         self._last_awake_ts = ts if ts is not None else now
         if ts is not None and now - ts >= self._min_sleep:
@@ -379,7 +379,7 @@ class WakeDigest:
         try:
             return await self._generate(since, now)
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour le tick
-            logger.warning("WakeDigest: génération échouée: {}", e)
+            logger.warning("WakeDigest: génération échouée: {!r}", e)
             return None
 
     async def _generate(self, since: float, until: float) -> str | None:
@@ -442,7 +442,7 @@ class WakeDigest:
             trust = await self._db.get_trust_scores_batch(pairs)
             love = await self._db.get_love_scores_batch(pairs)
         except Exception as e:  # noqa: BLE001 — l'affinité n'est qu'un poids
-            logger.warning("WakeDigest: scores d'affinité indisponibles: {}", e)
+            logger.warning("WakeDigest: scores d'affinité indisponibles: {!r}", e)
             return set()
         return {
             uid for uid in author_ids
@@ -468,7 +468,7 @@ class WakeDigest:
             if focus:
                 texts.append(focus.content)
         except Exception as e:  # noqa: BLE001 — l'intérêt n'est qu'un poids
-            logger.warning("WakeDigest: intérêts indisponibles: {}", e)
+            logger.warning("WakeDigest: intérêts indisponibles: {!r}", e)
             return set()
         tokens: set[str] = set()
         for text in texts:
@@ -518,4 +518,4 @@ class WakeDigest:
                 last_seen_at=now,
             ))
         except Exception as e:  # noqa: BLE001 — le digest vaut même non archivé
-            logger.warning("WakeDigest: archivage du digest échoué: {}", e)
+            logger.warning("WakeDigest: archivage du digest échoué: {!r}", e)

@@ -123,7 +123,7 @@ class EmoteDescriber:
                 [emote.url], caption=caption, purpose="emote_description"
             )
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("EmoteDescriber: analyse de :{}: échouée: {}", emote.name, e)
+            logger.warning("EmoteDescriber: analyse de :{}: échouée: {!r}", emote.name, e)
             return None
         if not usage:
             return None
@@ -199,5 +199,5 @@ async def run_emote_description(bot, guild=None) -> int:
         )
         return await describer.describe_new(emotes)
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour le boot
-        logger.warning("EmoteDescriber: run a échoué: {}", e)
+        logger.warning("EmoteDescriber: run a échoué: {!r}", e)
         return 0

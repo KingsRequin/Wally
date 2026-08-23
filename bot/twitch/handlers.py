@@ -1061,7 +1061,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             if rss_block := await _rss_knowledge_context(bot, content or ""):
                 mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
-            logger.warning("rss_knowledge (twitch): injection ignorée: {}", e)
+            logger.warning("rss_knowledge (twitch): injection ignorée: {!r}", e)
 
         # Trust/love go in separate relationship_context (outside token budget)
         love = await bot.db.get_love_score(platform, user_id, bot.config.bot.love_decay_lambda)

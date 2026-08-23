@@ -534,7 +534,7 @@ class ReasoningAgent:
                 if overlay_actif():
                     lines.append(self._widgets_overlay)
             except Exception as e:  # noqa: BLE001 — jamais bloquant
-                logger.debug("catalogue overlay non injecté: {}", e)
+                logger.debug("catalogue overlay non injecté: {!r}", e)
         # CE QUI TOURNE DÉJÀ. Le catalogue ci-dessus dit ce qu'il PEUT afficher ;
         # sans cet état, rien ne dit ce qui est DÉJÀ à l'écran, et la boucle
         # rouvrait indéfiniment ce qu'elle venait d'ouvrir. Vécu le 2026-08-10 :
@@ -554,7 +554,7 @@ class ReasoningAgent:
             if etat := current_overlay_state_block():
                 lines.append(etat)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.debug("état overlay non injecté: {}", e)
+            logger.debug("état overlay non injecté: {!r}", e)
         # ET CE QU'IL VIENT DE FAIRE, tous canaux confondus. L'état ci-dessus ne
         # couvre que l'overlay et que ce qui y TOURNE encore : la boucle
         # cognitive restait aveugle à ses propres réponses publiées ailleurs, à
@@ -566,5 +566,5 @@ class ReasoningAgent:
             if actes := current_self_trace_block():
                 lines.append(actes)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.debug("trace de ses actes non injectée: {}", e)
+            logger.debug("trace de ses actes non injectée: {!r}", e)
         return "\n".join(lines)
