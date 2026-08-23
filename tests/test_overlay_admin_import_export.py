@@ -132,7 +132,18 @@ def test_un_fichier_exporte_puis_reimporte_rend_le_meme_modele():
     # On réimporte le fichier : on retrouve l'état exporté, au champ près.
     revenu = client.put("/api/admin/overlay/layout",
                         content=json.dumps(exporte).encode()).json()
-    assert revenu == exporte
+
+    # `maj` est ÉCARTÉ de la comparaison, et c'est le fond du sujet : c'est la
+    # date de PUBLICATION, elle vit hors du modèle et doit changer à chaque
+    # envoi. Comparer les dictionnaires entiers exigeait donc que les trois PUT
+    # tombent dans la même seconde (`isoformat(timespec="seconds")`) — vrai
+    # 999 fois sur 1000, faux dès que la machine est chargée. Un test instable
+    # finit par être relancé sans être lu, et masque le vrai défaut du jour.
+    sans_maj = lambda d: {k: v for k, v in d.items() if k != "maj"}   # noqa: E731
+    assert sans_maj(revenu) == sans_maj(exporte)
+    # Et l'inverse se vérifie AUSSI, sinon on aurait juste retiré un champ
+    # gênant : réimporter est une publication, la date doit avancer.
+    assert revenu["maj"] >= exporte["maj"]
 
 
 def test_le_serveur_borne_et_complete_ce_quun_fichier_bricole_apporte():
