@@ -16,6 +16,7 @@ Et quand le résultat n'est pas mesurable (compteurs figés, Mixtape), on ANNULE
 Twitch rembourse tout le monde. Résoudre au hasard punirait des gens qui avaient
 raison.
 """
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -269,11 +270,27 @@ def test_les_roles_viennent_des_BADGES_du_message():
     assert "_resolve_twitch_roles" in bloc and "badges" in bloc
 
 
-def test_la_fin_de_partie_solde_le_pari_ET_affiche_le_bilan():
+async def test_la_fin_de_partie_solde_le_pari_ET_affiche_le_bilan():
     """Le même bilan sert aux deux (§12 et §13). Si le §13 n'était pas branché,
-    un pari ouvert resterait ouvert pour toujours — avec les points dedans."""
-    from pathlib import Path
+    un pari ouvert resterait ouvert pour toujours — avec les points dedans.
 
-    source = (Path(__file__).resolve().parents[1] / "bot" / "main.py").read_text(encoding="utf-8")
-    assert "_solder_pari_sur_partie" in source
-    assert "_afficher_bilan_partie(discord_bot, bilan)" in source
+    On EXÉCUTE les deux fonctions : la version qui cherchait leur nom dans le
+    source de `main.py` restait verte alors que `_solder_pari_sur_partie` levait
+    un `NameError` (`_stream_voice_tasks` est une locale de `main()`), donc
+    aucun pari n'aurait jamais été soldé en vrai.
+    """
+    from bot.main import _afficher_bilan_partie, _solder_pari_sur_partie
+
+    bilan = {"partie": 4, "total": 12, "parties": 3, "rp": 5400}
+
+    discord_bot = MagicMock()
+    _afficher_bilan_partie(discord_bot, bilan)
+    discord_bot.overlay_narrator.show_apex_kills.assert_called_once_with(
+        partie=4, total=12, parties=3, rp=5400)
+
+    twitch_bot = MagicMock()
+    twitch_bot.prediction_kills.en_cours = {"id": "pred-1"}
+    twitch_bot.prediction_kills.sur_bilan = AsyncMock(return_value=True)
+    _solder_pari_sur_partie(twitch_bot, bilan)
+    await asyncio.sleep(0)
+    twitch_bot.prediction_kills.sur_bilan.assert_awaited_once_with(twitch_bot, bilan)

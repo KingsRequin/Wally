@@ -99,6 +99,11 @@ async def _run_discord(
 # avant que le `finally` de la boucle principale ne soit atteignable.
 _AU_DEMARRAGE: dict = {}
 
+# Tâches de fond lancées par les fonctions de MODULE (hors `main()`). Le set de
+# `main()` est une variable locale : y toucher depuis ici lève un `NameError`.
+# Sans référence forte, asyncio ramasse la tâche en plein vol.
+_TACHES_MODULE: set[asyncio.Task] = set()
+
 
 def _afficher_bilan_partie(discord_bot, bilan: dict) -> None:
     """Pousse le bilan d'une partie Apex sur l'overlay, si un écran écoute.
@@ -126,8 +131,8 @@ def _solder_pari_sur_partie(twitch_bot, bilan: dict) -> None:
     if suivi is None or suivi.en_cours is None:
         return
     tache = asyncio.create_task(suivi.sur_bilan(twitch_bot, bilan))
-    _stream_voice_tasks.add(tache)
-    tache.add_done_callback(_stream_voice_tasks.discard)
+    _TACHES_MODULE.add(tache)
+    tache.add_done_callback(_TACHES_MODULE.discard)
 
 
 async def main() -> None:
