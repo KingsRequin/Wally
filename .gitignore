@@ -47,3 +47,6 @@ data/
 
 # Cache du vérificateur de types (cf. scripts/lint_types.py)
 .mypy_cache/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
