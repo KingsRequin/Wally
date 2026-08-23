@@ -10,7 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from loguru import logger
 
-from bot.core.llm.base import FALLBACK_RESPONSE
+from bot.intelligence.actions.handlers import enregistrer_actions
 from bot.core.music import MusicService
 
 load_dotenv()
@@ -207,7 +207,6 @@ async def main() -> None:
     # Twitch le lit — deux instances auraient divergé au premier battement.
     music_service    = MusicService()
 
-    from bot.intelligence.actions import ActionDefinition
 
     # ── Discord adapter ───────────────────────────────────────────────────────
     from bot.discord.bot import WallyDiscord
@@ -828,145 +827,16 @@ async def main() -> None:
     # Late injection of bots into executor (twitch_bot may be None)
     action_executor.set_bots(discord_bot, twitch_bot)
 
-    # Register built-in actions
-    async def _reminder_handler(payload: dict, target: dict) -> str:
-        raw_msg = payload.get("message", "Rappel!")
-        creator_id = target.get("creator_id")
-        platform = target.get("platform", "")
-
-        # Build a full system prompt so the LLM speaks in Wally's voice + current mood
-        try:
-            system_prompt = prompts.build_system_prompt(
-                emotion_state=emotion.get_state(),
-                situation={"platform": platform, "datetime": True},
-                persona_block=persona.build_prompt_block(),
-                emotion_directives=persona.emotion_directives,
-                weekday_directives=persona.weekday_directives,
-                composite_directives=persona.composite_directives,
-            )
-            user_content = (
-                f"[INSTRUCTION SYSTÈME — NE PAS CITER]\n"
-                f"Tu dois envoyer un rappel à un utilisateur. "
-                f"Voici le contenu du rappel : \"{raw_msg}\"\n"
-                f"Formule ce rappel avec ta personnalité, ton humeur actuelle, "
-                f"et ton style habituel. Sois bref (1-2 phrases max). "
-                f"Ne mets PAS de mention (@), elle sera ajoutée automatiquement."
-            )
-            reply = await secondary_llm.complete(
-                system_prompt,
-                [{"role": "user", "content": user_content}],
-                purpose="reminder",
-                user_id=creator_id,
-            )
-            reply = reply.strip()
-            # `complete()` ne lève pas : il rend FALLBACK_RESPONSE. Sans ce
-            # test, l'utilisateur recevait « Je rencontre un problème
-            # technique » à la place de son rappel — et la tâche `once`, elle,
-            # était consommée : le rappel ne repartait jamais.
-            if not reply or reply == FALLBACK_RESPONSE:
-                logger.warning("Rappel : génération en repli, on envoie le texte demandé")
-                reply = raw_msg
-        except Exception as e:
-            logger.warning("Reminder LLM generation failed, using raw message: {!r}", e)
-            reply = raw_msg
-
-        if platform == "discord" and creator_id:
-            return f"<@{creator_id}> {reply}"
-        return reply
-
-    await action_registry.register("reminder", ActionDefinition(
-        name="reminder",
-        description="Envoyer un message de rappel",
-        parameters={"type": "object", "properties": {"message": {"type": "string"}}},
-        handler=_reminder_handler,
-    ))
-    await action_registry.register("reminder_recurring", ActionDefinition(
-        name="reminder_recurring",
-        description="Envoyer un message de rappel récurrent",
-        parameters={"type": "object", "properties": {"message": {"type": "string"}}},
-        handler=_reminder_handler,
-    ))
-
-    async def _join_twitch_channel_handler(payload: dict, target: dict) -> str:
-        channel = payload.get("channel", "").lower().strip()
-        if not channel:
-            return "Nom de chaîne manquant."
-        if twitch_bot is None:
-            return "Twitch non disponible."
-        result = await twitch_bot.add_guest_channel(channel)
-        if result == "already_added":
-            return f"Je suis déjà dans la chaîne {channel}."
-        if result is None:
-            return f"Impossible de rejoindre {channel} — chaîne introuvable ou API indisponible."
-        return f"J'ai rejoint la chaîne {channel}."
-
-    await action_registry.register("join_twitch_channel", ActionDefinition(
-        name="join_twitch_channel",
-        description="Rejoindre une chaîne Twitch en tant qu'invité",
-        parameters={"type": "object", "properties": {"channel": {"type": "string"}}, "required": ["channel"]},
-        handler=_join_twitch_channel_handler,
-    ))
-
-    async def _send_message_to_channel_handler(payload: dict, target: dict) -> str:
-        message = payload.get("message", "").strip()
-        channel = payload.get("channel", "").strip()
-        platform = payload.get("platform", target.get("platform", "discord")).lower()
-        if not message:
-            return "Message vide."
-        if not channel:
-            return "Salon cible non spécifié."
-        if platform == "discord":
-            channel_id = None
-            if channel.isdigit():
-                channel_id = channel
-            else:
-                # Recherche BORNÉE au serveur d'où vient la tâche. Elle balayait
-                # `discord_bot.guilds` en entier : la permission était validée
-                # sur le serveur d'origine, puis le message pouvait partir dans
-                # n'importe quel salon de n'importe quel autre serveur portant
-                # le même nom. Combiné à l'envoi sans `allowed_mentions`, cela
-                # permettait un ping de masse cross-serveur.
-                ch_name = channel.lstrip("#").lower()
-                guildes = discord_bot.guilds
-                origine = target.get("channel_id")
-                if origine:
-                    try:
-                        salon_origine = discord_bot.get_channel(int(origine))
-                    except (TypeError, ValueError):
-                        salon_origine = None
-                    guilde_origine = getattr(salon_origine, "guild", None)
-                    if guilde_origine is not None:
-                        guildes = [guilde_origine]
-                for guild in guildes:
-                    for text_channel in guild.text_channels:
-                        if text_channel.name.lower() == ch_name:
-                            channel_id = str(text_channel.id)
-                            break
-                    if channel_id:
-                        break
-            if not channel_id:
-                return f"Salon Discord '{channel}' introuvable."
-            await action_executor.deliver(message, "discord", channel_id)
-        elif platform == "twitch":
-            await action_executor.deliver(message, "twitch", channel.lower())
-        else:
-            return f"Plateforme '{platform}' non reconnue."
-        return f"Message envoyé dans {channel}."
-
-    await action_registry.register("send_message_to_channel", ActionDefinition(
-        name="send_message_to_channel",
-        description="Envoyer un message dans un salon Discord ou une chaîne Twitch spécifique",
-        parameters={
-            "type": "object",
-            "properties": {
-                "message": {"type": "string"},
-                "channel": {"type": "string", "description": "Nom du salon (#général) ou ID numérique Discord, ou nom de la chaîne Twitch"},
-                "platform": {"type": "string", "enum": ["discord", "twitch"]},
-            },
-            "required": ["message", "channel"],
-        },
-        handler=_send_message_to_channel_handler,
-    ))
+    # Les quatre actions intégrées, déclarées ET liées par le module qui les
+    # implémente : le câblage y est testé (`tests/test_action_handlers.py`),
+    # alors qu'ici il ne l'était pas — c'est exactement la famille de défaut du
+    # `NameError` de ce matin.
+    await enregistrer_actions(
+        action_registry,
+        prompts=prompts, emotion=emotion, persona=persona,
+        secondary_llm=secondary_llm, twitch_bot=twitch_bot,
+        discord_bot=discord_bot, action_executor=action_executor,
+    )
 
     journal.start(scheduler=shared_scheduler)
     rss_feed.start(shared_scheduler)

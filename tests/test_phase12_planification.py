@@ -90,13 +90,14 @@ async def test_reprendre_une_tache_remet_le_compteur_d_echecs_a_zero():
 
 
 # ────────────────────────────── M34 ──────────────────────────────
-def test_l_envoi_par_nom_de_salon_est_borne_au_serveur_d_origine():
-    from pathlib import Path
-
-    src = Path("bot/main.py").read_text(encoding="utf-8")
-    i = src.index("async def _send_message_to_channel_handler")
-    corps = src[i:i + 3000]
-    assert "guildes = [guilde_origine]" in corps
-    assert "for guild in guildes:" in corps
-    # Plus de balayage inconditionnel de tous les serveurs.
-    assert "for guild in discord_bot.guilds:" not in corps
+#
+# Le bornage au serveur d'origine se teste maintenant en ENVOYANT le message et
+# en regardant où il part : `tests/test_action_handlers.py`, en particulier
+# `test_le_message_part_dans_le_salon_du_SERVEUR_D_ORIGINE` et sa contre-épreuve.
+#
+# Ce qui était ici cherchait `"guildes = [guilde_origine]"` dans le source de
+# `main.py`. Ça couvrait une correction de SÉCURITÉ par la présence d'une chaîne
+# de caractères : vert devant n'importe quelle logique contenant ces mots, et
+# muet sur ce que le code fait. Le handler a depuis quitté `main.py`
+# (`bot/intelligence/actions/handlers.py`), ce qui aurait de toute façon rendu
+# l'assertion fausse pour la mauvaise raison.
