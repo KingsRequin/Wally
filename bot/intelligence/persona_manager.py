@@ -102,7 +102,7 @@ class PersonaManager:
         try:
             filepath.with_suffix(filepath.suffix + ".bak").write_text(current, encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 — l'évolution ne doit pas échouer pour ça
-            logger.warning("Sauvegarde de {s} impossible : {e}", s=section, e=exc)
+            logger.warning("Sauvegarde de {s} impossible : {e!r}", s=section, e=exc)
 
         change_ratio = abs(after_len - before_len) / max(before_len, 1)
         if pct + change_ratio > guardrails["max_change_percent"]:

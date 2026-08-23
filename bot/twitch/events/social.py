@@ -68,7 +68,7 @@ def _feed(bot: "WallyTwitch", description: str, *, kind: str = "") -> None:
     try:
         feed.record(description, kind=kind)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
+        logger.warning("StreamFeed: enregistrement échoué : {e!r}", e=exc)
 
 
 def _goal(bot: "WallyTwitch", kind: str, amount: int = 1) -> None:
@@ -83,7 +83,7 @@ def _goal(bot: "WallyTwitch", kind: str, amount: int = 1) -> None:
     try:
         narrator.record_goal_event(kind, amount)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("Objectif d'overlay non mis à jour : {e}", e=exc)
+        logger.warning("Objectif d'overlay non mis à jour : {e!r}", e=exc)
 
 
 def _celebrate_raid(bot: "WallyTwitch", raider: str, viewers: int) -> None:
@@ -95,7 +95,7 @@ def _celebrate_raid(bot: "WallyTwitch", raider: str, viewers: int) -> None:
     try:
         narrator.celebrate_raid(raider, viewers)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Raid non célébré à l'écran : {e}", e=exc)
+        logger.warning("Raid non célébré à l'écran : {e!r}", e=exc)
 
 
 def _bits_joy(amount: int) -> float:
@@ -139,7 +139,7 @@ async def _generate_and_send(
             reply = reply[:477] + "..."
         await bot.twitch_api.send_message(text=reply)
     except Exception as e:
-        logger.error("Twitch event send error: {e}", e=e)
+        logger.error("Twitch event send error: {e!r}", e=e)
 
 
 def register_events(bot: "WallyTwitch") -> None:

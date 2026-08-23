@@ -96,7 +96,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
         try:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
-            logger.warning("Failed initial emotion snapshot: {e}", e=exc)
+            logger.warning("Failed initial emotion snapshot: {e!r}", e=exc)
 
         # SSE logs sink setup
         from bot.dashboard.routes.sse import setup_log_sink
@@ -336,7 +336,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     try:
         _maybe_seed_public_ui()
     except Exception as exc:
-        logger.warning("Failed to seed public-ui: {e}", e=exc)
+        logger.warning("Failed to seed public-ui: {e!r}", e=exc)
 
     # Public UI — SPAStaticFiles en dernier (catch-all SPA)
     # Enregistré après tous les routers API pour ne pas intercepter /api/*, /admin, etc.
@@ -357,7 +357,7 @@ async def _snapshot_task(state: "AppState") -> None:
         try:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
-            logger.warning("Failed periodic emotion snapshot: {e}", e=exc)
+            logger.warning("Failed periodic emotion snapshot: {e!r}", e=exc)
 
 
 
@@ -371,4 +371,4 @@ async def _chat_cleanup_task(state: "AppState") -> None:
             await state.db.cleanup_expired_refresh_tokens()
             logger.info("Chat cleanup: old messages and expired tokens removed")
         except Exception as exc:
-            logger.warning("Chat cleanup failed: {e}", e=exc)
+            logger.warning("Chat cleanup failed: {e!r}", e=exc)

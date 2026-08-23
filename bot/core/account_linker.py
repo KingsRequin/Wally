@@ -120,7 +120,7 @@ async def analyze_all(db: "Database", threshold: float = 0.75) -> int:
                         s=s,
                     )
     except Exception as e:
-        logger.error("analyze_all error: {e}", e=e)
+        logger.error("analyze_all error: {e!r}", e=e)
     return proposals_count
 
 
@@ -190,4 +190,4 @@ async def analyze_new_user(
                         s=s,
                     )
     except Exception as e:
-        logger.error("analyze_new_user error: {e}", e=e)
+        logger.error("analyze_new_user error: {e!r}", e=e)

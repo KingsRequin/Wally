@@ -72,7 +72,7 @@ class TestCog(commands.Cog):
                 f"Journal de test envoyé dans {channel.mention}.", ephemeral=True
             )
         except Exception as e:
-            logger.error("Error in test journal: {e}", e=e)
+            logger.error("Error in test journal: {e!r}", e=e)
             await interaction.followup.send(
                 "Erreur lors de la génération du journal de test.", ephemeral=True
             )

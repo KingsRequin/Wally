@@ -72,7 +72,7 @@ class VisionService:
                 max_tokens=self._max_tokens,
             )
         except Exception as e:  # défensif : ne jamais casser le pipeline de réponse
-            logger.warning("VisionService.analyze a échoué : {e}", e=e)
+            logger.warning("VisionService.analyze a échoué : {e!r}", e=e)
             return None
 
         text = (result or "").strip()

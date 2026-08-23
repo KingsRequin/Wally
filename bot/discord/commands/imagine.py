@@ -193,7 +193,7 @@ class ImagineCog(commands.Cog):
                     origin=_channel_origin(interaction.channel),
                 )
             except Exception as e:
-                logger.warning("Failed to add image memory: {e}", e=e)
+                logger.warning("Failed to add image memory: {e!r}", e=e)
 
             # Build final embed with generated image
             from datetime import datetime
@@ -215,7 +215,7 @@ class ImagineCog(commands.Cog):
         except ValueError as e:
             await interaction.followup.send(f"❌ {e}")
         except Exception as e:
-            logger.error("Error in /wally imagine: {e}", e=e)
+            logger.error("Error in /wally imagine: {e!r}", e=e)
             await interaction.followup.send("❌ Une erreur s'est produite lors de la génération.")
 
     @commands.Cog.listener()

@@ -167,7 +167,7 @@ async def _search_aloud(bot, service, query: str) -> str:
                 break
             await service.speak(bruit)
     except Exception as e:  # noqa: BLE001
-        logger.warning("_search_aloud filler a échoué: {e}", e=e)
+        logger.warning("_search_aloud filler a échoué: {e!r}", e=e)
     return await search_task
 
 

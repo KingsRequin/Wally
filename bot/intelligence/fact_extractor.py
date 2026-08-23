@@ -477,7 +477,7 @@ class FactExtractor:
                 await self._extract_facts(to_flush, platform, channel_id, origin=origin)
             except Exception as exc:
                 logger.warning(
-                    "FactExtractor._extract_facts failed for {ch}: {e}",
+                    "FactExtractor._extract_facts failed for {ch}: {e!r}",
                     ch=channel_id,
                     e=exc,
                 )
@@ -489,7 +489,7 @@ class FactExtractor:
                     await self._db.delete_session_messages_before(channel_id, cutoff_ts)
                 except Exception as exc:
                     logger.warning(
-                        "FactExtractor DB cleanup failed for {ch}: {e}",
+                        "FactExtractor DB cleanup failed for {ch}: {e!r}",
                         ch=channel_id,
                         e=exc,
                     )
@@ -556,7 +556,7 @@ class FactExtractor:
                 return True
             except Exception as exc:
                 logger.warning(
-                    "reconcile_candidate failed for {p}:{u}, falling back to add: {e}",
+                    "reconcile_candidate failed for {p}:{u}, falling back to add: {e!r}",
                     p=platform, u=raw_id, e=exc,
                 )
 
@@ -569,7 +569,7 @@ class FactExtractor:
             return True
         except Exception as exc:
             logger.warning(
-                "memory.add fallback failed for {p}:{u}: {e}",
+                "memory.add fallback failed for {p}:{u}: {e!r}",
                 p=platform, u=raw_id, e=exc,
             )
             return False
@@ -599,7 +599,7 @@ class FactExtractor:
                 )
             except Exception as exc:  # noqa: BLE001 — le rappel est un bonus
                 logger.warning(
-                    "FactExtractor: rappel des faits connus échoué pour {u}: {e}",
+                    "FactExtractor: rappel des faits connus échoué pour {u}: {e!r}",
                     u=uid, e=exc,
                 )
                 continue
@@ -872,7 +872,7 @@ class FactExtractor:
                 )
             except Exception as exc:
                 logger.warning(
-                    "Alias processing failed for {nick}: {e}",
+                    "Alias processing failed for {nick}: {e!r}",
                     nick=nickname,
                     e=exc,
                 )
@@ -923,7 +923,7 @@ class FactExtractor:
             )
         except Exception as exc:
             logger.warning(
-                "Orphan fact reconciliation failed for {nick}: {e}",
+                "Orphan fact reconciliation failed for {nick}: {e!r}",
                 nick=nickname,
                 e=exc,
             )
@@ -1004,4 +1004,4 @@ class FactExtractor:
                     if count >= _FLUSH_THRESHOLD:
                         self._fire(self._do_flush(channel_id, partial=count >= _SAFETY_CAP))
         except Exception as exc:
-            logger.warning("FactExtractor.restore_buffers failed: {e}", e=exc)
+            logger.warning("FactExtractor.restore_buffers failed: {e!r}", e=exc)

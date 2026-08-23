@@ -65,7 +65,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
     try:
         rendu = await bot.twitch_api.refund_redemption(reward_id, redemption_id)
     except Exception as exc:  # noqa: BLE001 — on annonce quand même
-        logger.error("Spam de virus : remboursement en erreur : {e}", e=exc)
+        logger.error("Spam de virus : remboursement en erreur : {e!r}", e=exc)
     mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
     if rendu:
         texte = f"{mention}{motif} — tes points t'ont été rendus."
@@ -76,7 +76,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
     try:
         await bot.twitch_api.send_message(text=texte)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
-        logger.error("Spam de virus : refus non annoncé dans le chat : {e}", e=exc)
+        logger.error("Spam de virus : refus non annoncé dans le chat : {e!r}", e=exc)
 
 
 def _feed(bot, description: str) -> None:
@@ -86,7 +86,7 @@ def _feed(bot, description: str) -> None:
     try:
         feed.record(description, kind="virus_popup_redemption")
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("StreamFeed : attaque de virus non consignée : {e}", e=exc)
+        logger.warning("StreamFeed : attaque de virus non consignée : {e!r}", e=exc)
 
 
 async def lancer_spam_virus(bot: "WallyTwitch", *, acheteur: str, reward_id: str,
@@ -111,6 +111,6 @@ async def lancer_spam_virus(bot: "WallyTwitch", *, acheteur: str, reward_id: str
         logger.info("Spam de virus lancé par {u}", u=acheteur)
         _feed(bot, f"{acheteur} a déclenché une attaque de virus (points de chaîne)")
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
-        logger.error("Spam de virus en erreur : {e}", e=exc)
+        logger.error("Spam de virus en erreur : {e!r}", e=exc)
         await _rendre(bot, acheteur, reward_id, redemption_id,
                       "le spam n'a pas pu être lancé (pépin technique)")

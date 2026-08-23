@@ -39,7 +39,7 @@ class PersonaService:
                 logger.warning("Persona file missing: {f}", f=filename)
                 self._blocks[filename] = ""
             except Exception as exc:
-                logger.warning("Persona file read error {f}: {e}", f=filename, e=exc)
+                logger.warning("Persona file read error {f}: {e!r}", f=filename, e=exc)
                 self._blocks[filename] = ""
 
         # Self-model : la partie narrative stable est chargée à part ; les capacités
@@ -53,7 +53,7 @@ class PersonaService:
             logger.warning("Persona file missing: {f}", f=self._CAPS_FILE)
             self._caps_static = ""
         except Exception as exc:
-            logger.warning("Persona file read error {f}: {e}", f=self._CAPS_FILE, e=exc)
+            logger.warning("Persona file read error {f}: {e!r}", f=self._CAPS_FILE, e=exc)
             self._caps_static = ""
 
         self._emotion_directives = self._parse_emotions()
@@ -111,7 +111,7 @@ class PersonaService:
             logger.warning("Persona file missing: {f}", f=filename)
             return {}
         except Exception as exc:
-            logger.warning("{f} read error: {e}", f=filename, e=exc)
+            logger.warning("{f} read error: {e!r}", f=filename, e=exc)
             return {}
 
         directives: dict[str, str] = {}

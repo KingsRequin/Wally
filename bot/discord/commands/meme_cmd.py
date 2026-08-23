@@ -327,7 +327,7 @@ class VueRangement(discord.ui.View):
         try:
             await self.message.edit(view=self)
         except Exception as e:  # noqa: BLE001 — l'aperçu a pu être supprimé entre-temps
-            logger.debug("Aperçu de meme non grisé à l'expiration : {e}", e=e)
+            logger.debug("Aperçu de meme non grisé à l'expiration : {e!r}", e=e)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.auteur_id:

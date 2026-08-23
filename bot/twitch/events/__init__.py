@@ -86,7 +86,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             _patch_socket_tracking()
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "EventSub: correctif de suivi des sockets inapplicable ({e}) — "
+                "EventSub: correctif de suivi des sockets inapplicable ({e!r}) — "
                 "les dernières souscriptions risquent d'échouer en 429", e=exc,
             )
 
@@ -182,7 +182,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                 # Ce n'est pas une anomalie tant que le retry différé n'a pas
                 # abandonné — d'où le niveau INFO ici, WARNING seulement à la fin.
                 logger.info(
-                    "EventSub subscription deferred [{sub}]: {e}", sub=name, e=exc
+                    "EventSub subscription deferred [{sub}]: {e!r}", sub=name, e=exc
                 )
                 failed.append((name, make_sub))
 
@@ -196,7 +196,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
                     logger.info("EventSub subscribed: chat guest {name}", name=guest_name)
                 except Exception as exc:
                     logger.warning(
-                        "EventSub guest chat failed [{name}]: {e}", name=guest_name, e=exc
+                        "EventSub guest chat failed [{name}]: {e!r}", name=guest_name, e=exc
                     )
             else:
                 logger.warning(
@@ -217,7 +217,7 @@ async def start_eventsub_client(bot: "WallyTwitch") -> None:
             bot._eventsub_retry_task = task  # référence forte : sinon le GC l'annule
 
     except Exception as exc:
-        logger.error("EventSub client setup failed: {e}", e=exc)
+        logger.error("EventSub client setup failed: {e!r}", e=exc)
 
 
 _ES_SUBSCRIPTIONS_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
@@ -402,7 +402,7 @@ async def close_eventsub_client(bot: "WallyTwitch") -> int:
                 await sock.close()
                 closed += 1
         except Exception as exc:  # noqa: BLE001 — arrêt, on ne bloque jamais
-            logger.debug("EventSub: fermeture d'un socket échouée: {e}", e=exc)
+            logger.debug("EventSub: fermeture d'un socket échouée: {e!r}", e=exc)
     if closed:
         logger.info("EventSub: {n} connexion(s) WebSocket fermée(s)", n=closed)
     return closed
@@ -443,7 +443,7 @@ async def purge_stale_subscriptions(client_id: str, token: str) -> int:
                 if r.status_code in (200, 204):
                     removed += 1
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.info("EventSub: nettoyage des souscriptions mortes échoué: {e}", e=exc)
+        logger.info("EventSub: nettoyage des souscriptions mortes échoué: {e!r}", e=exc)
     if removed:
         logger.info(
             "EventSub: {n} souscription(s) morte(s) supprimée(s) — places libérées",
@@ -479,7 +479,7 @@ async def count_active_subscriptions(client_id: str, token: str) -> int | None:
                 and (s.get("transport") or {}).get("method") == "websocket"
             )
     except Exception as exc:  # noqa: BLE001 — une panne de sonde n'est pas un diagnostic
-        logger.debug("EventSub: état des souscriptions indisponible: {e}", e=exc)
+        logger.debug("EventSub: état des souscriptions indisponible: {e!r}", e=exc)
         return None
 
 
@@ -513,7 +513,7 @@ async def _retry_failed_subscriptions(failed: list[tuple[str, object]]) -> None:
                 # invisible en prod, impossible de distinguer « la tâche n'a pas
                 # démarré » de « la reprise a échoué ».
                 logger.info(
-                    "EventSub retry {n}/{total} failed [{sub}]: {e}",
+                    "EventSub retry {n}/{total} failed [{sub}]: {e!r}",
                     n=attempt, total=len(_RETRY_DELAYS), sub=name, e=exc,
                 )
                 still_failing.append((name, make_sub))

@@ -83,7 +83,7 @@ async def _validate_token(token: str, client_id: str) -> dict | None:
         _status_cache[cache_key] = {"info": info, "cached_at": now}
         return info
     except Exception as exc:
-        logger.warning("Twitch token validation error: {e}", e=exc)
+        logger.warning("Twitch token validation error: {e!r}", e=exc)
         return None
 
 

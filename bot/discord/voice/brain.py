@@ -37,7 +37,7 @@ async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
             beloved=bot.persona.is_beloved("discord", speaker_user_id),
         )
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice emotion.process_message a échoué: {e}", e=e)
+        logger.warning("voice emotion.process_message a échoué: {e!r}", e=e)
         return
     if deltas and deltas.get("user_facts"):
         origin = (f"Vocal {channel_name}").strip()
@@ -46,7 +46,7 @@ async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
                 await bot.memory.add("discord", speaker_user_id, fact,
                                      username=speaker_label, origin=origin)
             except Exception as e:  # noqa: BLE001
-                logger.warning("voice memory.add (user_fact) a échoué: {e}", e=e)
+                logger.warning("voice memory.add (user_fact) a échoué: {e!r}", e=e)
 
 _WORD_RE = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
 
@@ -262,7 +262,7 @@ async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | 
         reply = await bot.llm.complete(system_prompt, messages, purpose="discord_voice_greeting")
         return reply or ""
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice greeting a échoué: {e}", e=e)
+        logger.warning("voice greeting a échoué: {e!r}", e=e)
         return ""
 
 
@@ -305,7 +305,7 @@ async def generate_search_filler(bot, query: str) -> dict:
             return dict(_FILLER_FALLBACK)
         return {"amorce": amorce, "bruits": bruits}
     except Exception as e:  # noqa: BLE001
-        logger.warning("generate_search_filler a échoué: {e}", e=e)
+        logger.warning("generate_search_filler a échoué: {e!r}", e=e)
         return dict(_FILLER_FALLBACK)
 
 
@@ -330,7 +330,7 @@ async def generate_voice_reply(
             platform="discord", user_id=speaker_user_id, query=transcript, limit=3
         )
     except Exception as e:
-        logger.warning("voice memory.search a échoué: {e}", e=e)
+        logger.warning("voice memory.search a échoué: {e!r}", e=e)
         memory_context = ""
 
     # Recall RSS knowledge (patch notes Apex) : le vocal en était privé alors que
@@ -342,7 +342,7 @@ async def generate_voice_reply(
         if rss_block := await _rss_knowledge_context(bot, transcript or ""):
             memory_context = f"{memory_context}\n\n{rss_block}" if memory_context else rss_block
     except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
-        logger.warning("rss_knowledge (vocal): injection ignorée: {e}", e=e)
+        logger.warning("rss_knowledge (vocal): injection ignorée: {e!r}", e=e)
 
     system_prompt = _voice_system(
         bot, speaker_label=speaker_label, memory_context=memory_context or "",
@@ -388,7 +388,7 @@ def _remember_line(service, *, role: str, speaker: str, text: str) -> None:
     try:
         feed.record(getattr(service, "channel_id", None), speaker, text)
     except Exception as e:  # noqa: BLE001 — un tampon de contexte ne casse pas le vocal
-        logger.warning("VoiceTranscript: réplique non consignée: {e}", e=e)
+        logger.warning("VoiceTranscript: réplique non consignée: {e!r}", e=e)
 
 
 async def _consigner_reponse(service, text: str) -> None:
@@ -426,7 +426,7 @@ def _voice_publish(bot, service, type_: str, persist: bool = True, **fields) -> 
     try:
         feed.publish(event, persist=persist)
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice_feed.publish a échoué: {e}", e=e)
+        logger.warning("voice_feed.publish a échoué: {e!r}", e=e)
 
 
 async def handle_transcript(
@@ -454,7 +454,7 @@ async def handle_transcript(
                 user_key=f"discord:{speaker_user_id}" if speaker_user_id else None,
             )
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice notify_activity a échoué: {e}", e=e)
+        logger.warning("voice notify_activity a échoué: {e!r}", e=e)
 
     # Mémoire de groupe : extraction passive de faits durables (comme à l'écrit).
     try:
@@ -464,7 +464,7 @@ async def handle_transcript(
             content=transcript, origin=f"Vocal {service.channel_name}".strip(),
         )
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice fact_extractor.record_message a échoué: {e}", e=e)
+        logger.warning("voice fact_extractor.record_message a échoué: {e!r}", e=e)
 
     # 2. Décider de répondre (une seule réponse à la fois, file d'attente anti-drop).
     await _maybe_respond(bot, service, speaker_user_id, speaker_label, transcript)
@@ -607,7 +607,7 @@ async def _respond_once_inner(
     try:
         await service.play_cue()
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice play_cue a échoué: {e}", e=e)
+        logger.warning("voice play_cue a échoué: {e!r}", e=e)
 
     try:
         present_label = ", ".join(service.members_names())
@@ -635,7 +635,7 @@ async def _respond_once_inner(
             activity_label=activity_label,
         )
     except Exception as e:  # noqa: BLE001
-        logger.error("voice generate_voice_reply a échoué: {e}", e=e)
+        logger.error("voice generate_voice_reply a échoué: {e!r}", e=e)
         return
 
     if not text:
@@ -654,7 +654,7 @@ async def _respond_once_inner(
         if getattr(bot, "cognitive_loop", None) is not None:
             bot.cognitive_loop.notify_reply(service.channel_id, content=text)
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice notify_reply a échoué: {e}", e=e)
+        logger.warning("voice notify_reply a échoué: {e!r}", e=e)
 
     # Émotions + affinité, en tâche de fond (n'ajoute pas de latence à la parole).
     try:
@@ -670,4 +670,4 @@ async def _respond_once_inner(
         _TACHES_FOND.add(tache)
         tache.add_done_callback(_TACHES_FOND.discard)
     except Exception as e:  # noqa: BLE001
-        logger.warning("voice post-emotion a échoué: {e}", e=e)
+        logger.warning("voice post-emotion a échoué: {e!r}", e=e)

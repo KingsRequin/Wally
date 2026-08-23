@@ -104,7 +104,7 @@ class EtatPersistant:
         except (ValueError, TypeError) as exc:
             # Une écriture interrompue laisse du JSON tronqué. On le DIT : un
             # état perdu en silence se découvre des semaines plus tard.
-            logger.warning("{c} : JSON illisible, état ignoré ({e})", c=self._cle, e=exc)
+            logger.warning("{c} : JSON illisible, état ignoré ({e!r})", c=self._cle, e=exc)
             return {}
         if not isinstance(enveloppe, dict) or not self._meme_session(enveloppe):
             return {}

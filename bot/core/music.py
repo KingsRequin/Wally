@@ -287,7 +287,7 @@ class MusicService:
         try:
             self._on_morceau(dict(apres))
         except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
-            logger.warning("Musique : annonce à l'écran impossible : {e}", e=exc)
+            logger.warning("Musique : annonce à l'écran impossible : {e!r}", e=exc)
 
     def _servir(self, *, joue: bool = True,
                 avec_lecteur: bool = True) -> list[dict]:

@@ -45,7 +45,7 @@ class MemoryConsolidator:
         try:
             rows = await self._db.get_today_messages()
         except Exception as e:  # noqa: BLE001 — non-fatal
-            logger.warning("Consolidation : lecture daily_log échouée : {e}", e=e)
+            logger.warning("Consolidation : lecture daily_log échouée : {e!r}", e=e)
             return
 
         if not rows:
@@ -76,7 +76,7 @@ class MemoryConsolidator:
                     )
             except Exception as e:  # noqa: BLE001 — un canal ne doit pas casser les autres
                 logger.warning(
-                    "Consolidation canal {c} échouée : {e}", c=channel_id, e=e
+                    "Consolidation canal {c} échouée : {e!r}", c=channel_id, e=e
                 )
 
         logger.info(
@@ -96,6 +96,6 @@ class MemoryConsolidator:
                 purpose="memory_consolidation",
             )
         except Exception as e:  # noqa: BLE001 — non-fatal
-            logger.warning("Consolidation : résumé LLM échoué : {e}", e=e)
+            logger.warning("Consolidation : résumé LLM échoué : {e!r}", e=e)
             return None
         return (result.get("summary") or "").strip() or None

@@ -37,4 +37,4 @@ def register(bot: "WallyDiscord") -> None:
 
             bot.cognitive_loop.notify_typing(channel.id, _author_label(user))
         except Exception as e:  # noqa: BLE001 — perception, jamais bloquant
-            logger.warning("on_typing a échoué: {e}", e=e)
+            logger.warning("on_typing a échoué: {e!r}", e=e)

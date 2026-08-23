@@ -260,7 +260,7 @@ class WallyTwitch(commands.Bot):
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    logger.warning("Twitch IRC connection failed, retrying in 10s: {e}", e=exc)
+                    logger.warning("Twitch IRC connection failed, retrying in 10s: {e!r}", e=exc)
                     await asyncio.sleep(10)
         except asyncio.CancelledError:
             pass
@@ -293,7 +293,7 @@ class WallyTwitch(commands.Bot):
                     "IRC: joined {n} guest channel(s)", n=len(self.config.twitch.guest_channels)
                 )
             except Exception as exc:
-                logger.warning("IRC: failed to join guest channels: {e}", e=exc)
+                logger.warning("IRC: failed to join guest channels: {e!r}", e=exc)
         # Les visites laissées ouvertes par le process précédent. Reprises ici et
         # pas au `__init__` : c'est le premier moment où la config des chaînes
         # invitées est celle qui vaut, et où la base est ouverte.
@@ -334,7 +334,7 @@ class WallyTwitch(commands.Bot):
         try:
             await self.token_manager.startup_validate()
         except Exception as exc:
-            logger.warning("Twitch token validation cycle failed: {e}", e=exc)
+            logger.warning("Twitch token validation cycle failed: {e!r}", e=exc)
             return
 
         token_changed = (
@@ -367,7 +367,7 @@ class WallyTwitch(commands.Bot):
                     setattr(cible, attribut, nouveau)
                     propage = True
                 except Exception as exc:  # noqa: BLE001 — API interne de twitchio
-                    logger.warning("Twitch: token IRC non propagé ({a}): {e}", a=attribut, e=exc)
+                    logger.warning("Twitch: token IRC non propagé ({a}): {e!r}", a=attribut, e=exc)
             if propage:
                 logger.info("Twitch: token IRC mis à jour après rotation")
 
@@ -375,7 +375,7 @@ class WallyTwitch(commands.Bot):
         try:
             await self._restart_eventsub()
         except Exception as exc:
-            logger.warning("EventSub restart after token refresh failed: {e}", e=exc)
+            logger.warning("EventSub restart after token refresh failed: {e!r}", e=exc)
 
     async def _resolve_missing_usernames(self) -> None:
         """Migration one-shot : nettoie et résout les entrées memory_users Twitch.
@@ -416,7 +416,7 @@ class WallyTwitch(commands.Bot):
                 t=len(missing_ids),
             )
         except Exception as exc:
-            logger.warning("_resolve_missing_usernames failed: {e}", e=exc)
+            logger.warning("_resolve_missing_usernames failed: {e!r}", e=exc)
 
     async def _poll_guest_streams(self) -> None:
         """Vérifie toutes les 60s le statut live des chaînes invitées.
@@ -433,7 +433,7 @@ class WallyTwitch(commands.Bot):
                 try:
                     statuses = await self.twitch_api.get_streams_status(ids)
                 except Exception as exc:
-                    logger.warning("Guest stream poll failed: {e}", e=exc)
+                    logger.warning("Guest stream poll failed: {e!r}", e=exc)
                     continue
                 # Inverser le dict pour lookup broadcaster_id → name
                 id_to_name = {v: k for k, v in self._channel_ids.items()}
@@ -472,7 +472,7 @@ class WallyTwitch(commands.Bot):
         try:
             await self.join_channels([name])
         except Exception as exc:
-            logger.warning("IRC: impossible de rejoindre {name}: {e}", name=name, e=exc)
+            logger.warning("IRC: impossible de rejoindre {name}: {e!r}", name=name, e=exc)
         logger.info("Wally rejoint la chaîne invitée {name} (id={bid})", name=name, bid=broadcaster_id)
         # Démarrer le tracking de la visite
         if self.db is not None:
@@ -505,7 +505,7 @@ class WallyTwitch(commands.Bot):
         try:
             await self.part_channels([name])
         except Exception as exc:
-            logger.warning("IRC: impossible de quitter {name}: {e}", name=name, e=exc)
+            logger.warning("IRC: impossible de quitter {name}: {e!r}", name=name, e=exc)
         await self._restart_eventsub()
         logger.info("Wally a quitté la chaîne invitée {name}", name=name)
 
@@ -552,7 +552,7 @@ class WallyTwitch(commands.Bot):
                 purpose="twitch_visit_summary",
             )
         except Exception as exc:
-            logger.warning("_finalize_visit: LLM failed for {ch}: {e}", ch=channel, e=exc)
+            logger.warning("_finalize_visit: LLM failed for {ch}: {e!r}", ch=channel, e=exc)
 
         if self.db is not None:
             try:
@@ -562,7 +562,7 @@ class WallyTwitch(commands.Bot):
                     ch=channel, d=int(left_at - joined_at) // 60, n=msg_count,
                 )
             except Exception as exc:
-                logger.warning("_finalize_visit: DB write failed: {e}", e=exc)
+                logger.warning("_finalize_visit: DB write failed: {e!r}", e=exc)
 
     def _eventsub_watched_tokens(self) -> list[tuple[str, str]]:
         """Les jeux de souscriptions à surveiller — un par token utilisé.
@@ -722,7 +722,7 @@ class WallyTwitch(commands.Bot):
                 try:
                     await self._check_eventsub_alive()
                 except Exception as exc:  # noqa: BLE001 — la surveillance ne tombe jamais
-                    logger.warning("EventSub: surveillance en échec: {e}", e=exc)
+                    logger.warning("EventSub: surveillance en échec: {e!r}", e=exc)
         except asyncio.CancelledError:
             pass
 
@@ -791,13 +791,13 @@ class WallyTwitch(commands.Bot):
                     if sock._sock and not sock._sock.closed:
                         await sock._sock.close()
                 except Exception as e:
-                    logger.warning("Error closing EventSub socket during restart: {e}", e=e)
+                    logger.warning("Error closing EventSub socket during restart: {e!r}", e=e)
             # Vidé : un appelant retardataire ne doit pas pouvoir réutiliser un
             # socket mort en croyant y trouver une place libre.
             try:
                 client._sockets.clear()
             except Exception as e:  # noqa: BLE001
-                logger.debug("EventSub: _sockets non vidable: {e}", e=e)
+                logger.debug("EventSub: _sockets non vidable: {e!r}", e=e)
             self._eventsub_client = None
 
         await start_eventsub_client(self)

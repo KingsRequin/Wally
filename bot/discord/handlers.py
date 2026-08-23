@@ -276,7 +276,7 @@ async def run_predict_tool(bot, args: dict) -> str:
             + ("" if shown else " Rien à l'écran (pas de live).")
         )})
     except Exception as exc:  # noqa: BLE001 — un pari ne casse pas la réponse
-        logger.warning("Prédiction a échoué : {e}", e=exc)
+        logger.warning("Prédiction a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'opération a échoué."})
 
 
@@ -355,7 +355,7 @@ async def run_quote_tool(bot, args: dict) -> str:
             + (" et affichée." if shown else ", pas affichée : pas de live.")
         )})
     except Exception as exc:  # noqa: BLE001 — une citation ne casse pas la réponse
-        logger.warning("Citation a échoué : {e}", e=exc)
+        logger.warning("Citation a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'opération a échoué."})
 
 
@@ -412,7 +412,7 @@ async def run_tally_tool(bot, name: str, args: dict) -> str:
             )
             return json.dumps({"status": "ok", "message": listing})
     except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas la réponse
-        logger.warning("Compteur '{n}' a échoué : {e}", n=name, e=exc)
+        logger.warning("Compteur '{n}' a échoué : {e!r}", n=name, e=exc)
         return json.dumps({"status": "error", "message": "L'opération a échoué."})
     return json.dumps({"status": "unknown_tool"})
 
@@ -551,7 +551,7 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
             sollicite=True, **extra
         )
     except Exception as exc:  # noqa: BLE001 — un widget raté ne casse pas la réponse
-        logger.warning("show_overlay a échoué : {e}", e=exc)
+        logger.warning("show_overlay a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'affichage a échoué."})
     if shown:
         return json.dumps({"status": "ok", "message": _overlay_outcome(shown)})
@@ -593,7 +593,7 @@ def run_planning_tool(bot, args: dict, *, overlay: bool = True) -> str:
                 "planning", str(args.get("comment") or "")
             ) is not None
         except Exception as exc:  # noqa: BLE001 — l'affichage rate, le lien reste
-            logger.warning("show_planning : l'affichage a échoué : {e}", e=exc)
+            logger.warning("show_planning : l'affichage a échoué : {e!r}", e=exc)
     return json.dumps({
         "status": "ok",
         "url": planning_url(),
@@ -630,7 +630,7 @@ async def run_last_clip_tool(bot, args: dict) -> str:
             most_viewed=(mode == "plus_vu"),
         )
     except Exception as exc:  # noqa: BLE001 — un clip raté ne casse pas la réponse
-        logger.warning("show_clip a échoué : {e}", e=exc)
+        logger.warning("show_clip a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "La lecture a échoué."})
     if shown:
         # « joué » ou « affiché » : Wally ne doit pas annoncer une vidéo quand
@@ -674,7 +674,7 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             period=str(args.get("period") or "live").strip() or "live",
         )
     except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse pas la réponse
-        logger.warning("show_apex a échoué : {e}", e=exc)
+        logger.warning("show_apex a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'affichage a échoué."})
     if shown:
         return json.dumps({"status": "ok", "message": (
@@ -745,7 +745,7 @@ def run_overlay_cancel_tool(bot, args: dict) -> str:
     try:
         result = narrator.cancel(target)
     except Exception as exc:  # noqa: BLE001 — une annulation ratée ne casse pas la réponse
-        logger.warning("cancel_overlay a échoué : {e}", e=exc)
+        logger.warning("cancel_overlay a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'annulation a échoué."})
 
     if result.get("unknown"):
@@ -1027,7 +1027,7 @@ async def _reaction_roster(bot: "WallyDiscord", message: "discord.Message") -> s
             async for user in reaction.users(limit=MAX_REACTORS_PER_EMOJI):
                 names.append(self_name if user.id == self_id else _author_label(user))
         except Exception as e:  # noqa: BLE001 — une réaction illisible n'annule pas les autres
-            logger.debug("Réacteurs illisibles pour {emoji} : {e}", emoji=emoji, e=e)
+            logger.debug("Réacteurs illisibles pour {emoji} : {e!r}", emoji=emoji, e=e)
         count = getattr(reaction, "count", 0) or 0
         if names:
             hidden = count - len(names)
@@ -1078,12 +1078,12 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
         try:
             channel = await bot.fetch_channel(payload.channel_id)
         except Exception as e:
-            logger.debug("Réaction ignorée (fetch_channel échoué) : {e}", e=e)
+            logger.debug("Réaction ignorée (fetch_channel échoué) : {e!r}", e=e)
             return
     try:
         message = await channel.fetch_message(payload.message_id)
     except Exception as e:
-        logger.debug("Réaction ignorée (fetch_message échoué) : {e}", e=e)
+        logger.debug("Réaction ignorée (fetch_message échoué) : {e!r}", e=e)
         return
 
     on_own_message = message.author.id == bot.user.id
@@ -1129,7 +1129,7 @@ async def _reactions_context(bot: "WallyDiscord", payload: discord.RawReactionAc
                 relevant=on_own_message,
             )
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("cognitive_loop.notify_event (réaction) a échoué: {e}", e=e)
+            logger.warning("cognitive_loop.notify_event (réaction) a échoué: {e!r}", e=e)
 
 
 async def _member_join_context(bot: "WallyDiscord", member) -> None:
@@ -1160,7 +1160,7 @@ async def _member_join_context(bot: "WallyDiscord", member) -> None:
             relevant=False,
         )
     except Exception as e:  # noqa: BLE001 — jamais bloquant
-        logger.warning("cognitive_loop.notify_event (arrivée membre) a échoué: {e}", e=e)
+        logger.warning("cognitive_loop.notify_event (arrivée membre) a échoué: {e!r}", e=e)
 
 
 _MOT_RE = re.compile(r"\w+", re.UNICODE)
@@ -1455,7 +1455,7 @@ async def _mirror_pass(
         return corrected
 
     except Exception as exc:
-        logger.warning("Mirror pass failed: {e}", e=exc)
+        logger.warning("Mirror pass failed: {e!r}", e=exc)
         return draft
 
 
@@ -1487,7 +1487,7 @@ async def _fetch_discord_history(
             out.append({"author": _author_label(m.author), "content": content})
         return out
     except Exception as e:
-        logger.warning("channel.history() fallback failed: {e}", e=e)
+        logger.warning("channel.history() fallback failed: {e!r}", e=e)
         return []
 
 
@@ -1577,7 +1577,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
         )
         await message.channel.send(warning)
     except Exception as e:
-        logger.error("Spam warning LLM failed: {e}", e=e)
+        logger.error("Spam warning LLM failed: {e!r}", e=e)
         await message.channel.send(f"{username}, calme-toi un peu. 😤")
 
     # Mute user
@@ -1594,7 +1594,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
             origin=_channel_origin(message.channel),
         )
     except Exception as e:
-        logger.warning("Failed to store spam memory: {e}", e=e)
+        logger.warning("Failed to store spam memory: {e!r}", e=e)
 
     # Reset tracker for this user/channel
     dq.clear()
@@ -1763,7 +1763,7 @@ async def _canonical_uid(bot, platform: str, user_id: str) -> str:
     try:
         return memory._user_id(platform, user_id)
     except Exception as e:  # noqa: BLE001 — le gate ne doit jamais bloquer un message
-        logger.warning("Gate : résolution de l'uid échouée pour {u} : {e}", u=user_id, e=e)
+        logger.warning("Gate : résolution de l'uid échouée pour {u} : {e!r}", u=user_id, e=e)
         return f"{platform}:{user_id}"
 
 
@@ -1793,7 +1793,7 @@ async def _apex_account_context(bot, platform: str, user_id: str) -> str:
             if canonique != f"{platform}:{user_id}":
                 compte = await db.apex_account_for_person(canonique)
     except Exception as e:  # noqa: BLE001 — un bloc optionnel ne casse pas une réponse
-        logger.warning("Apex : compte de la personne illisible : {e}", e=e)
+        logger.warning("Apex : compte de la personne illisible : {e!r}", e=e)
         return ""
     if compte is None or not compte["apex_name"]:
         return ""
@@ -2062,7 +2062,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 user_key=f"discord:{message.author.id}",
             )
         except Exception as e:
-            logger.warning("cognitive_loop.notify_activity failed: {e}", e=e)
+            logger.warning("cognitive_loop.notify_activity failed: {e!r}", e=e)
 
     content_lower = message.content.lower()
     mentioned = bot.user in message.mentions
@@ -2160,7 +2160,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         try:
             await message.add_reaction(emoji)
         except Exception as exc:  # noqa: BLE001 — réagir est un bonus, pas le sujet
-            logger.debug("Réaction de mute impossible: {e}", e=exc)
+            logger.debug("Réaction de mute impossible: {e!r}", e=exc)
         # Appliqué INDÉPENDAMMENT du succès de la réaction.
         if bot.config.discord.spam_detection.enabled:
             bot.emotion.apply_delta("anger", bot.config.discord.spam_detection.spam_anger_delta)
@@ -2209,7 +2209,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             )
             decision, gate_reason, gate_emoji = _gd.decision, _gd.reason, _gd.emoji
         except Exception as e:
-            logger.warning("gate.decide() failed, fallback RESPOND: {e}", e=e)
+            logger.warning("gate.decide() failed, fallback RESPOND: {e!r}", e=e)
 
     _clog(
         bot, _conv_channel(message), "gate_decision",
@@ -2232,7 +2232,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         try:
             await message.add_reaction(_resolve_emoji(_raw, bot))
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Emoji du gate refusé ({r}) — repli sur l'humeur : {e}",
+            logger.debug("Emoji du gate refusé ({r}) — repli sur l'humeur : {e!r}",
                          r=_raw, e=exc)
             try:
                 await message.add_reaction(_mood_emoji(bot.emotion.get_state()))
@@ -2326,7 +2326,7 @@ async def _apex_chart_file(bot, requester: str) -> "discord.File | None":
     try:
         buf = await api.derniere_courbe(requester)
     except Exception as exc:  # noqa: BLE001 — un graphe raté ne retient pas la réponse
-        logger.warning("Apex: courbe indisponible: {e}", e=exc)
+        logger.warning("Apex: courbe indisponible: {e!r}", e=exc)
         return None
     if buf is None:
         return None
@@ -2351,7 +2351,7 @@ async def _fetch_referenced_message(
         if isinstance(ref_msg, discord.Message):
             return ref_msg
     except Exception as e:
-        logger.debug("Failed to fetch referenced message: {e}", e=e)
+        logger.debug("Failed to fetch referenced message: {e!r}", e=e)
     return None
 
 
@@ -2380,7 +2380,7 @@ async def _auto_scrape_block(bot: "WallyDiscord", message: "discord.Message") ->
     try:
         content = await scrape.scrape(url)
     except Exception as exc:
-        logger.warning("Auto-scrape failed for {u}: {e}", u=url, e=exc)
+        logger.warning("Auto-scrape failed for {u}: {e!r}", u=url, e=exc)
         return ""
     if not content:
         return ""
@@ -2404,7 +2404,7 @@ async def _respond(
         try:
             await message.add_reaction("🔍")
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Réaction 🔍 refusée dans {c} : {e}", c=message.channel.id, e=exc)
+            logger.debug("Réaction 🔍 refusée dans {c} : {e!r}", c=message.channel.id, e=exc)
 
         platform = "discord"
         trust = await bot.db.get_trust_score(platform, user_id)
@@ -2436,7 +2436,7 @@ async def _respond(
                     absence_note = f"\nDernière interaction avec cet utilisateur : il y a {days_ago} jours."
                     mem_context = (mem_context + absence_note) if mem_context else absence_note.strip()
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « note d'absence » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « note d'absence » ignoré : {e!r}", e=exc)
 
         # ── Fetch context messages early (needed for priority 6) ──────
         context_messages = await bot.memory.get_context_summarized_if_needed(
@@ -2460,7 +2460,7 @@ async def _respond(
             if recall_block:
                 memory_parts.append((2, recall_block, "recall-session"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « recall de session » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « recall de session » ignoré : {e!r}", e=exc)
 
         # Priority 4: Recent successful jokes for this channel
         try:
@@ -2471,7 +2471,7 @@ async def _respond(
                     jokes_block += f'\n- "{j}"'
                 memory_parts.append((4, jokes_block, "blagues"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « blagues récentes » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « blagues récentes » ignoré : {e!r}", e=exc)
 
         # Priority 5: Community topics (sujets de communauté enrichis)
         try:
@@ -2484,7 +2484,7 @@ async def _respond(
                     topics_block += f'\n- {t["name"]}{who} — ton avis : "{t["opinion"]}"'
                 memory_parts.append((5, topics_block, "topics"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « sujets de la communauté » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « sujets de la communauté » ignoré : {e!r}", e=exc)
 
         # Priority 6: Third-party mentions
         try:
@@ -2494,7 +2494,7 @@ async def _respond(
             if third_party_ctx:
                 memory_parts.append((6, third_party_ctx, "tiers"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « mentions de tiers » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « mentions de tiers » ignoré : {e!r}", e=exc)
 
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
@@ -2526,7 +2526,7 @@ async def _respond(
             _pid = await _canonical_uid(bot, platform, user_id)
             person_context = await bot.db.get_user_profile(_pid) or ""
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « portrait de la personne » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « portrait de la personne » ignoré : {e!r}", e=exc)
         # Le compte Apex déclaré, s'il y en a un : un fait, pas une déduction du
         # portrait nocturne. Il rejoint le portrait plutôt que le budget mémoire
         # — c'est une propriété de la personne, pas un souvenir en concurrence
@@ -2545,7 +2545,7 @@ async def _respond(
         try:
             persistent_notes = await bot.db.get_persistent_notes()
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
-            logger.warning("Mémoire : bloc « notes persistantes » ignoré : {e}", e=exc)
+            logger.warning("Mémoire : bloc « notes persistantes » ignoré : {e!r}", e=exc)
             persistent_notes = []
 
         situation: dict = {"platform": "Discord"}
@@ -2645,7 +2645,7 @@ async def _respond(
                                 f"{ref_desc}]\n"
                             )
             except Exception as e:
-                logger.debug("Failed to process referenced message: {e}", e=e)
+                logger.debug("Failed to process referenced message: {e!r}", e=e)
 
         # Texte à envoyer — ajoute un marqueur image si texte+image pour que le LLM traite l'image
         if image_urls and resolved_content:
@@ -3045,7 +3045,7 @@ async def _respond(
         ))
 
     except Exception as e:
-        logger.error("Error handling Discord message: {e}", e=e)
+        logger.error("Error handling Discord message: {e!r}", e=e)
         try:
             await message.remove_reaction("🔍", bot.user)
         except Exception:
@@ -3134,7 +3134,7 @@ async def _post_process(
                                          origin=origin or None)
                     logger.debug("Image analysis stored for {u}", u=display_name)
             except Exception as e:
-                logger.warning("Image analysis (memory) failed: {e}", e=e)
+                logger.warning("Image analysis (memory) failed: {e!r}", e=e)
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8 and not _beloved:
@@ -3170,7 +3170,7 @@ async def _post_process(
                 anger=round(anger, 3),
             )
     except Exception as e:
-        logger.error("Post-process error: {e}", e=e)
+        logger.error("Post-process error: {e!r}", e=e)
 
 
 async def _veiller_questions(
@@ -3238,7 +3238,7 @@ async def _veiller_questions(
             ),
         )
     except Exception as exc:  # noqa: BLE001 — une veille qui casse ne casse pas le salon
-        logger.warning("Veille des questions sans réponse (Discord) en échec : {e}", e=exc)
+        logger.warning("Veille des questions sans réponse (Discord) en échec : {e!r}", e=exc)
 
 
 async def _spontaneous_respond(
@@ -3393,6 +3393,6 @@ async def _spontaneous_respond(
             logger.info("Memory recall for {user}: {mem}", user=message.author.display_name, mem=recall_memory[:80])
 
     except Exception as e:
-        logger.error("Spontaneous intervention error: {e}", e=e)
+        logger.error("Spontaneous intervention error: {e!r}", e=e)
 
 

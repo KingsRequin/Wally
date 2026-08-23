@@ -41,7 +41,7 @@ class UserModeler:
         try:
             user_ids = await self._db.get_users_with_recent_facts(since)
         except Exception as e:  # noqa: BLE001 — non-fatal
-            logger.warning("UserModeler : sélection des personnes échouée : {e}", e=e)
+            logger.warning("UserModeler : sélection des personnes échouée : {e!r}", e=e)
             return
         if not user_ids:
             logger.debug("UserModeler : aucune personne active à modéliser")
@@ -52,7 +52,7 @@ class UserModeler:
                 if await self._refresh_one(user_id):
                     done += 1
             except Exception as e:  # noqa: BLE001 — une personne ne casse pas les autres
-                logger.warning("UserModeler : portrait de {u} échoué : {e}", u=user_id, e=e)
+                logger.warning("UserModeler : portrait de {u} échoué : {e!r}", u=user_id, e=e)
         logger.info("UserModeler : {n} portrait(s) régénéré(s)", n=done)
 
     async def _refresh_one(self, user_id: str) -> bool:
@@ -77,7 +77,7 @@ class UserModeler:
         try:
             return await self._db.get_memory_username(user_id)
         except Exception as e:  # noqa: BLE001 — un pseudo manquant ne bloque rien
-            logger.warning("UserModeler : pseudo de {u} illisible : {e}", u=user_id, e=e)
+            logger.warning("UserModeler : pseudo de {u} illisible : {e!r}", u=user_id, e=e)
             return None
 
     async def _build_portrait(self, name, active, superseded, trust, love) -> str | None:
@@ -98,6 +98,6 @@ class UserModeler:
                 purpose="user_model",
             )
         except Exception as e:  # noqa: BLE001 — non-fatal
-            logger.warning("UserModeler : génération LLM échouée : {e}", e=e)
+            logger.warning("UserModeler : génération LLM échouée : {e!r}", e=e)
             return None
         return (result.get("portrait") or "").strip() or None

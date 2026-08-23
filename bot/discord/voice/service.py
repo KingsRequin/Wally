@@ -263,7 +263,7 @@ class VoiceService:
             try:
                 self._tts = build_tts(cfg)
             except Exception as e:  # noqa: BLE001
-                logger.warning("VoiceService: TTS non rechargé: {e}", e=e)
+                logger.warning("VoiceService: TTS non rechargé: {e!r}", e=e)
             return
 
         # Fermer l'ancien pipeline AVANT d'en construire un nouveau : sinon un
@@ -288,7 +288,7 @@ class VoiceService:
             logger.info("VoiceService: config rechargée (voix={v}, stt={s})",
                         v=cfg.azure_voice, s=cfg.stt_provider)
         except Exception as e:  # noqa: BLE001
-            logger.warning("VoiceService.reload_config a échoué: {e}", e=e)
+            logger.warning("VoiceService.reload_config a échoué: {e!r}", e=e)
 
     def members_in_channel(self) -> list[int]:
         """Retourne les IDs des membres non-bot présents dans le salon."""
@@ -454,7 +454,7 @@ class VoiceService:
             if text:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice _greet a échoué: {e}", e=e)
+            logger.warning("voice _greet a échoué: {e!r}", e=e)
         finally:
             self._pending_inviter = None
 
@@ -473,7 +473,7 @@ class VoiceService:
             if text:
                 await self.speak(text)
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice greet_newcomer a échoué: {e}", e=e)
+            logger.warning("voice greet_newcomer a échoué: {e!r}", e=e)
 
     def follow_move(self, channel) -> None:
         """Prend acte d'un déplacement décidé depuis Discord.
@@ -503,7 +503,7 @@ class VoiceService:
         try:
             feed.clear(reason)
         except Exception as e:  # noqa: BLE001 — un tampon de contexte ne casse pas le vocal
-            logger.warning("VoiceTranscript: purge échouée: {e}", e=e)
+            logger.warning("VoiceTranscript: purge échouée: {e!r}", e=e)
 
     async def _remember_channel(self, channel) -> None:
         """Retient ce salon comme salon de stream, pour le prochain démarrage."""
@@ -515,7 +515,7 @@ class VoiceService:
 
             await remember_voice_channel(db, channel.id)
         except Exception as exc:  # noqa: BLE001 — ne pas retenir n'est pas fatal
-            logger.debug("voice: salon non retenu: {e}", e=exc)
+            logger.debug("voice: salon non retenu: {e!r}", e=exc)
 
     def _fire_detached(self, coro) -> None:
         """Détache une coroutine depuis un contexte synchrone, sans la perdre."""
@@ -594,13 +594,13 @@ class VoiceService:
             try:
                 await self._streaming.close_all()  # ferme toutes les connexions WS distantes
             except Exception as e:  # noqa: BLE001
-                logger.warning("voice: fermeture des sessions streaming a échoué: {e}", e=e)
+                logger.warning("voice: fermeture des sessions streaming a échoué: {e!r}", e=e)
         self._stream_users.clear()
         if self._vc is not None:
             try:
                 await self._vc.disconnect()
             except Exception as e:  # noqa: BLE001
-                logger.warning("voice: disconnect a échoué: {e}", e=e)
+                logger.warning("voice: disconnect a échoué: {e!r}", e=e)
         if getattr(self, "_test_mode_taken", False):
             from bot.discord.voice.readiness import release_test_mode
 
@@ -724,7 +724,7 @@ class VoiceService:
             try:
                 note_voice_speech(self.channel_id, self.members_names())
             except Exception as exc:  # noqa: BLE001 — une trace ne casse pas la voix
-                logger.debug("voice: parole non tracée: {e}", e=exc)
+                logger.debug("voice: parole non tracée: {e!r}", e=exc)
             # Au MÊME endroit que `note_voice_speech` et pour la même raison :
             # c'est le seul point du corps qui prouve que la lecture est allée
             # au bout. Une synthèse expirée ou en panne tombe dans les `except`
@@ -817,7 +817,7 @@ class VoiceService:
             self._vc.play(source, after=lambda _e: loop.call_soon_threadsafe(done.set))
             await done.wait()
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice play_cue a échoué: {e}", e=e)
+            logger.warning("voice play_cue a échoué: {e!r}", e=e)
 
     def stop_speaking(self) -> None:
         """Coupe la lecture en cours (barge-in)."""
@@ -825,7 +825,7 @@ class VoiceService:
             if self._vc is not None and self._vc.is_playing():
                 self._vc.stop()
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice stop_speaking a échoué: {e}", e=e)
+            logger.warning("voice stop_speaking a échoué: {e!r}", e=e)
 
     # ------------------------------------------------------------------
     # Callback interne — segment audio validé par VAD (mode batch)
@@ -848,7 +848,7 @@ class VoiceService:
             stt_ms = (asyncio.get_running_loop().time() - _t0) * 1000  # latence de transcription
             await self._dispatch_transcript(user, text, stt_ms)
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice _on_segment a échoué: {e}", e=e)
+            logger.warning("voice _on_segment a échoué: {e!r}", e=e)
 
     async def _dispatch_transcript(self, user, text: str, stt_ms: float) -> None:
         """Aiguille une transcription finale (batch ou streaming) vers le cerveau.
@@ -912,7 +912,7 @@ class VoiceService:
             if feed is not None:
                 feed.record(self.channel_id, label, text)
         except Exception as e:  # noqa: BLE001 — l'écoute ne casse jamais
-            logger.debug("voice: parole non consignée dans le tampon: {e}", e=e)
+            logger.debug("voice: parole non consignée dans le tampon: {e!r}", e=e)
 
         # Compteurs à la demande : la détection est mécanique (sous-chaînes), donc
         # elle passe sur CHAQUE phrase sans coûter d'appel LLM.
@@ -923,7 +923,7 @@ class VoiceService:
                 self._listen_tasks.add(task)
                 task.add_done_callback(self._listen_tasks.discard)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("voice: comptage non lancé: {e}", e=exc)
+                logger.debug("voice: comptage non lancé: {e!r}", e=exc)
 
         narrator = getattr(self._bot, "overlay_narrator", None)
         if narrator is None:
@@ -935,7 +935,7 @@ class VoiceService:
             if narrator.count_spoken_vote(label, text):
                 return      # c'était un vote, pas une réaction à commenter
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("voice: vote vocal non compté: {e}", e=exc)
+            logger.debug("voice: vote vocal non compté: {e!r}", e=exc)
         # Une phrase qui le nomme est une DEMANDE : elle part vers le chemin
         # outillé, seul capable d'afficher quelque chose. Le reste n'est qu'une
         # réaction possible — et le silence y est le cas normal, d'où l'absence
@@ -977,14 +977,14 @@ class VoiceService:
             self._listen_tasks.add(task)
             task.add_done_callback(self._listen_tasks.discard)
         except Exception as e:  # noqa: BLE001
-            logger.debug("voice: overlay non notifié: {e}", e=e)
+            logger.debug("voice: overlay non notifié: {e!r}", e=e)
 
     async def _count_tally(self, tally, text: str) -> None:
         """Incrémente les compteurs touchés et le montre, si le budget le permet."""
         try:
             touched = await tally.scan(text)
         except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas l'écoute
-            logger.warning("voice: comptage en erreur: {e}", e=exc)
+            logger.warning("voice: comptage en erreur: {e!r}", e=exc)
             return
         narrator = getattr(self._bot, "overlay_narrator", None)
         for row in touched:
@@ -1116,7 +1116,7 @@ class VoiceService:
         except asyncio.CancelledError:
             pass
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice _silence_watch a échoué: {e}", e=e)
+            logger.warning("voice _silence_watch a échoué: {e!r}", e=e)
 
     def _nom_locuteur(self, uid: int) -> str:
         """Le nom lisible d'un locuteur du pouls, ou son identifiant à défaut."""
@@ -1151,4 +1151,4 @@ class VoiceService:
         except asyncio.CancelledError:
             pass
         except Exception as e:  # noqa: BLE001
-            logger.warning("voice _auto_leave_watch a échoué: {e}", e=e)
+            logger.warning("voice _auto_leave_watch a échoué: {e!r}", e=e)

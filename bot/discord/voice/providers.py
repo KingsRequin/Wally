@@ -83,7 +83,7 @@ class AzureSTT:
                 return result.text or ""
             return ""
         except Exception as e:  # noqa: BLE001
-            logger.warning("AzureSTT.transcribe a échoué: {e}", e=e)
+            logger.warning("AzureSTT.transcribe a échoué: {e!r}", e=e)
             return ""
 
 
@@ -191,7 +191,7 @@ class FasterWhisperSTT:
             # Chaque segment whisper porte déjà un espace de tête → on strip avant de joindre.
             return " ".join(t for seg in segments if (t := seg.text.strip()))
         except Exception as e:  # noqa: BLE001
-            logger.warning("FasterWhisperSTT.transcribe a échoué: {e}", e=e)
+            logger.warning("FasterWhisperSTT.transcribe a échoué: {e!r}", e=e)
             return ""
 
 
@@ -289,7 +289,7 @@ class XaiSTT:
         try:
             presents = self._extra_terms()
         except Exception as exc:  # noqa: BLE001 — un biais optionnel ne coûte pas un énoncé
-            logger.debug("XaiSTT: présents illisibles, biais réduit au nom : {e}", e=exc)
+            logger.debug("XaiSTT: présents illisibles, biais réduit au nom : {e!r}", e=exc)
             return self.keyterms
         deja = {k.lower() for k in self.keyterms}
         reste = self._MAX_KEYTERMS - len(self.keyterms)
@@ -372,7 +372,7 @@ class XaiSTT:
                 purpose="voice_stt_overflow",
             )
         except Exception as exc:  # noqa: BLE001 — écrire la dépense est un confort
-            logger.debug("XaiSTT: dépense non enregistrée : {e}", e=exc)
+            logger.debug("XaiSTT: dépense non enregistrée : {e!r}", e=exc)
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
         import httpx
@@ -381,7 +381,7 @@ class XaiSTT:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 return await self._transcrire(client, self._wav(pcm16k_mono))
         except Exception as e:  # noqa: BLE001 — une soupape ne casse jamais l'écoute
-            logger.warning("XaiSTT.transcribe a échoué: {e}", e=e)
+            logger.warning("XaiSTT.transcribe a échoué: {e!r}", e=e)
             return ""
 
 
@@ -471,7 +471,7 @@ class AzureTTS:
                     s=getattr(stream, "status", "?"),
                 )
         except Exception as e:  # noqa: BLE001
-            logger.warning("AzureTTS.synthesize_stream a échoué: {e}", e=e)
+            logger.warning("AzureTTS.synthesize_stream a échoué: {e!r}", e=e)
 
     def _build_ssml(self, text: str, style: str | None) -> str:
         from xml.sax.saxutils import escape, quoteattr

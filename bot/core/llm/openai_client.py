@@ -187,7 +187,7 @@ class OpenAILLMClient(BaseLLMClient):
                 user_id=user_id,
             )
         except Exception as e:  # noqa: BLE001 — une compta ratée n'est pas fatale
-            logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
+            logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
 
     def _build_image_content(
         self, text: str, image_urls: list[str], use_responses_api: bool
@@ -300,7 +300,7 @@ class OpenAILLMClient(BaseLLMClient):
                         )
                         await asyncio.sleep(wait)
                     else:
-                        logger.error("OpenAI Responses API error {code}: {e}", code=exc.status_code, e=exc)
+                        logger.error("OpenAI Responses API error {code}: {e!r}", code=exc.status_code, e=exc)
                         return fallback
                 # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
                 # `APIStatusError` : ils tombaient dans le `except Exception`
@@ -308,10 +308,10 @@ class OpenAILLMClient(BaseLLMClient):
                 # sur la panne la PLUS fréquente, là où un 503 en a trois.
                 except (APIConnectionError, APITimeoutError) as exc:
                     wait = 2 ** attempt
-                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    logger.warning("OpenAI réseau ({e!r}) — reprise dans {w}s", e=exc, w=wait)
                     await asyncio.sleep(wait)
                 except Exception as exc:
-                    logger.error("OpenAI Responses API error: {e}", e=exc)
+                    logger.error("OpenAI Responses API error: {e!r}", e=exc)
                     return fallback
             logger.error("OpenAI Responses API failed after 3 retries")
             return fallback
@@ -367,7 +367,7 @@ class OpenAILLMClient(BaseLLMClient):
                     )
                     await asyncio.sleep(wait)
                 else:
-                    logger.error("OpenAI API error {code}: {e}", code=exc.status_code, e=exc)
+                    logger.error("OpenAI API error {code}: {e!r}", code=exc.status_code, e=exc)
                     break
             # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
             # `APIStatusError` : ils tombaient dans le `except Exception`
@@ -375,10 +375,10 @@ class OpenAILLMClient(BaseLLMClient):
             # sur la panne la PLUS fréquente, là où un 503 en a trois.
             except (APIConnectionError, APITimeoutError) as exc:
                 wait = 2 ** attempt
-                logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                logger.warning("OpenAI réseau ({e!r}) — reprise dans {w}s", e=exc, w=wait)
                 await asyncio.sleep(wait)
             except Exception as exc:
-                logger.error("OpenAI unexpected error: {e}", e=exc)
+                logger.error("OpenAI unexpected error: {e!r}", e=exc)
                 break
 
         return FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
@@ -499,7 +499,7 @@ class OpenAILLMClient(BaseLLMClient):
                 )
 
         except Exception as exc:
-            logger.error("OpenAI streaming error: {e}", e=exc)
+            logger.error("OpenAI streaming error: {e!r}", e=exc)
             yield FALLBACK_RESPONSE
 
     async def complete_with_tools(
@@ -628,11 +628,11 @@ class OpenAILLMClient(BaseLLMClient):
                     user_id=user_id,
                 )
             except Exception as e:
-                logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
+                logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
             return text, tools_called
 
         except Exception as exc:
-            logger.error("OpenAI Responses API (tools) error: {e}", e=exc)
+            logger.error("OpenAI Responses API (tools) error: {e!r}", e=exc)
             fallback = FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
             return fallback, tools_called
 
@@ -730,7 +730,7 @@ class OpenAILLMClient(BaseLLMClient):
                         user_id=user_id,
                     )
                 except Exception as e:
-                    logger.debug("OpenAI log_cost failed (non-fatal): {e}", e=e)
+                    logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
                 return msg.content.strip() if msg.content else FALLBACK_RESPONSE, tools_called
 
             except RateLimitError:
@@ -743,7 +743,7 @@ class OpenAILLMClient(BaseLLMClient):
                     logger.warning("OpenAI server error {code} (tools), retrying in {w}s", code=exc.status_code, w=wait)
                     await asyncio.sleep(wait)
                 else:
-                    logger.error("OpenAI API error {code} (tools): {e}", code=exc.status_code, e=exc)
+                    logger.error("OpenAI API error {code} (tools): {e!r}", code=exc.status_code, e=exc)
                     break
             # `APIConnectionError` / `APITimeoutError` ne dérivent PAS de
             # `APIStatusError` : ils tombaient dans le `except Exception`
@@ -751,10 +751,10 @@ class OpenAILLMClient(BaseLLMClient):
             # sur la panne la PLUS fréquente, là où un 503 en a trois.
             except (APIConnectionError, APITimeoutError) as exc:
                 wait = 2 ** attempt
-                logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                logger.warning("OpenAI réseau ({e!r}) — reprise dans {w}s", e=exc, w=wait)
                 await asyncio.sleep(wait)
             except Exception as exc:
-                logger.error("OpenAI unexpected error (tools): {e}", e=exc)
+                logger.error("OpenAI unexpected error (tools): {e!r}", e=exc)
                 break
 
         fallback = FALLBACK_IMAGE_RESPONSE if image_urls else FALLBACK_RESPONSE
@@ -863,7 +863,7 @@ class OpenAILLMClient(BaseLLMClient):
                         await asyncio.sleep(wait)
                     else:
                         logger.error(
-                            "OpenAI API error {code} (structured): {e}",
+                            "OpenAI API error {code} (structured): {e!r}",
                             code=exc.status_code, e=exc,
                         )
                         break
@@ -873,10 +873,10 @@ class OpenAILLMClient(BaseLLMClient):
                 # sur la panne la PLUS fréquente, là où un 503 en a trois.
                 except (APIConnectionError, APITimeoutError) as exc:
                     wait = 2 ** attempt
-                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    logger.warning("OpenAI réseau ({e!r}) — reprise dans {w}s", e=exc, w=wait)
                     await asyncio.sleep(wait)
                 except Exception as exc:
-                    logger.error("OpenAI unexpected error (structured/responses): {e}", e=exc)
+                    logger.error("OpenAI unexpected error (structured/responses): {e!r}", e=exc)
                     break
 
             raise RuntimeError(
@@ -950,7 +950,7 @@ class OpenAILLMClient(BaseLLMClient):
                         await asyncio.sleep(wait)
                     else:
                         logger.error(
-                            "OpenAI API error {code} (structured): {e}",
+                            "OpenAI API error {code} (structured): {e!r}",
                             code=exc.status_code, e=exc,
                         )
                         break
@@ -960,10 +960,10 @@ class OpenAILLMClient(BaseLLMClient):
                 # sur la panne la PLUS fréquente, là où un 503 en a trois.
                 except (APIConnectionError, APITimeoutError) as exc:
                     wait = 2 ** attempt
-                    logger.warning("OpenAI réseau ({e}) — reprise dans {w}s", e=exc, w=wait)
+                    logger.warning("OpenAI réseau ({e!r}) — reprise dans {w}s", e=exc, w=wait)
                     await asyncio.sleep(wait)
                 except Exception as exc:
-                    logger.error("OpenAI unexpected error (structured/chat): {e}", e=exc)
+                    logger.error("OpenAI unexpected error (structured/chat): {e!r}", e=exc)
                     break
 
             raise RuntimeError(
@@ -1013,7 +1013,7 @@ class OpenAILLMClient(BaseLLMClient):
                 break
             except RateLimitError as e:
                 last_error = e
-                logger.warning("Image rate limit, attempt {a}/3: {e}", a=attempt + 1, e=e)
+                logger.warning("Image rate limit, attempt {a}/3: {e!r}", a=attempt + 1, e=e)
                 await asyncio.sleep(2 ** attempt)
             except APIStatusError as e:
                 if e.status_code == 400:
@@ -1023,7 +1023,7 @@ class OpenAILLMClient(BaseLLMClient):
                     raise ValueError(f"Erreur API image : {detail}") from e
                 if e.status_code >= 500:
                     last_error = e
-                    logger.warning("Image API 5xx, attempt {a}/3: {e}", a=attempt + 1, e=e)
+                    logger.warning("Image API 5xx, attempt {a}/3: {e!r}", a=attempt + 1, e=e)
                     await asyncio.sleep(2 ** attempt)
                 else:
                     raise

@@ -17,7 +17,7 @@ async def remember_voice_channel(db, channel_id: int) -> None:
     try:
         await db.set_state(LAST_CHANNEL_KEY, str(int(channel_id)))
     except Exception as exc:  # noqa: BLE001 — mémoriser est un confort, pas une condition
-        logger.debug("voice: dernier salon non retenu: {e}", e=exc)
+        logger.debug("voice: dernier salon non retenu: {e!r}", e=exc)
 
 
 async def resolve_voice_channel_id(db, configured: int | None) -> int | None:
@@ -25,7 +25,7 @@ async def resolve_voice_channel_id(db, configured: int | None) -> int | None:
     try:
         stored = await db.get_state(LAST_CHANNEL_KEY)
     except Exception as exc:  # noqa: BLE001 — une base muette ne bloque pas le démarrage
-        logger.debug("voice: dernier salon illisible: {e}", e=exc)
+        logger.debug("voice: dernier salon illisible: {e!r}", e=exc)
         stored = None
     if stored:
         try:
@@ -40,7 +40,7 @@ async def forget_voice_channel(db) -> None:
     try:
         await db.delete_state(LAST_CHANNEL_KEY)
     except Exception as exc:  # noqa: BLE001 — un oubli raté se retentera au tour suivant
-        logger.debug("voice: dernier salon non oublié: {e}", e=exc)
+        logger.debug("voice: dernier salon non oublié: {e!r}", e=exc)
 
 
 async def _lookup(bot, channel_id: int):

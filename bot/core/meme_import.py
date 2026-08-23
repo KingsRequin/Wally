@@ -77,7 +77,7 @@ def convertir_si_avantageux(octets: bytes, suffixe: str) -> tuple[bytes, str]:
             if verifier_conversion(src, dst):
                 return octets, suffixe
         except Exception as e:  # noqa: BLE001 — un format exotique ne fait pas échouer l'import
-            logger.warning("conversion de {suffixe} échouée : {err}", suffixe=suffixe, err=e)
+            logger.warning("conversion de {suffixe} échouée : {err!r}", suffixe=suffixe, err=e)
             return octets, suffixe
         return dst.read_bytes(), ".webp"
 

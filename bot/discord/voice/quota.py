@@ -42,7 +42,7 @@ class VoiceQuota:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(json.dumps(self._data))
         except Exception as e:  # noqa: BLE001
-            logger.warning("VoiceQuota save a échoué: {e}", e=e)
+            logger.warning("VoiceQuota save a échoué: {e!r}", e=e)
 
     def add_stt_seconds(self, seconds: float) -> None:
         self._reset_if_new_month()

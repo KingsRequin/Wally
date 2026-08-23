@@ -74,7 +74,7 @@ async def progression_png(
     try:
         progression = await history.progression(uid, notion, depuis)
     except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour un graphe
-        logger.warning("Apex chart: progression illisible: {e}", e=exc)
+        logger.warning("Apex chart: progression illisible: {e!r}", e=exc)
         raise HTTPException(status_code=503, detail="historique illisible") from exc
     if progression is None:
         logger.info("Apex chart: aucun relevé pour {uid} ({n}, {p})",
@@ -87,7 +87,7 @@ async def progression_png(
     try:
         rp = await history.rp_de_la_fenetre(uid, depuis)
     except Exception as exc:  # noqa: BLE001 — sans RP la courbe se trace quand même
-        logger.warning("Apex chart: relevés de RP illisibles: {e}", e=exc)
+        logger.warning("Apex chart: relevés de RP illisibles: {e!r}", e=exc)
         rp = []
 
     fenetre = libelle_de(libelle, depuis, maintenant=maintenant)

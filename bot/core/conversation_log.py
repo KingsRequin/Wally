@@ -147,7 +147,7 @@ class ConversationLogger:
             try:
                 await asyncio.to_thread(self._flush, batch)
             except Exception as exc:  # noqa: BLE001 — le writer ne doit jamais crash
-                logger.warning("ConversationLogger flush failed: {e}", e=exc)
+                logger.warning("ConversationLogger flush failed: {e!r}", e=exc)
             for _ in batch:
                 self._queue.task_done()
             if stop:

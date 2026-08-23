@@ -166,7 +166,7 @@ async def _scan_tally(bot, tally, text: str) -> None:
     try:
         touched = await tally.scan(text)
     except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas le chat
-        logger.warning("Tally (chat) en erreur : {e}", e=exc)
+        logger.warning("Tally (chat) en erreur : {e!r}", e=exc)
         return
     narrator = _overlay_narrator(bot)
     if narrator is None:
@@ -238,7 +238,7 @@ async def _envoyer_reponse_twitch(
                 return "irc_reply"
         except Exception as exc:  # noqa: BLE001 — la réponse doit partir malgré tout
             logger.warning(
-                "Twitch: réponse chaînée impossible sur {ch} ({e}) — repli sur la mention",
+                "Twitch: réponse chaînée impossible sur {ch} ({e!r}) — repli sur la mention",
                 ch=channel_name, e=exc,
             )
 
@@ -493,7 +493,7 @@ async def run_duel_tool(bot: "WallyTwitch", args: dict, *, auteur: dict,
                     duel=True,
                 ) is not None
             except Exception as exc:  # noqa: BLE001 — les chiffres restent dicibles
-                logger.warning("duel_apex : tableau non affiché : {e}", e=exc)
+                logger.warning("duel_apex : tableau non affiché : {e!r}", e=exc)
         return json.dumps({"status": "ok", "message": (
             f"Score du duel : {tableau}."
             + (" Le tableau est à l'écran." if affiche
@@ -790,7 +790,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         try:
             _seen_days = await bot.db.days_since_viewer_seen(author)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("overlay: ancienneté spectateur indisponible: {e}", e=exc)
+            logger.debug("overlay: ancienneté spectateur indisponible: {e!r}", e=exc)
 
     # Persiste le login Twitch pour que le dashboard affiche un nom lisible
     await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
@@ -808,7 +808,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         try:
             _stream_feed.record_chat(author, content)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("StreamFeed: chat non enregistré : {e}", e=exc)
+            logger.warning("StreamFeed: chat non enregistré : {e!r}", e=exc)
 
     # Overlay : compte les votes d'un sondage en cours et salue les nouveaux
     # venus / les revenants. Détaché — le salut demande un appel LLM. Chemin
@@ -840,7 +840,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             if emote := _emote_waves.feed(author, content):
                 _narrator.show_emote_wave(emote)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("Vague d'emote non traitée : {e}", e=exc)
+            logger.debug("Vague d'emote non traitée : {e!r}", e=exc)
 
     # Compteurs à la demande : le chat compte autant que le vocal — une punchline
     # récurrente s'y répète tout autant. Détaché : le scan touche la base.
@@ -875,7 +875,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             # cognitive : un silence ici rendait Wally sourd à Twitch sans
             # qu'aucun log ne l'indique. « Une absence sans log = un `continue`
             # silencieux », déjà vu sur le congé vocal.
-            logger.warning("Cognition : notify_activity (twitch) en échec : {e}", e=exc)
+            logger.warning("Cognition : notify_activity (twitch) en échec : {e!r}", e=exc)
     if getattr(bot, "fact_extractor", None) is not None:
         bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False,
                                           origin=f"Twitch/{channel_name}")
@@ -1244,7 +1244,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         _fire(_post_process(bot, content, platform, user_id, trust, context_msgs, channel_id=channel_id, username=author, trace_id=_trace, conv_channel=channel_name))
 
     except Exception as e:
-        logger.error("Twitch message handling error: {e}", e=e)
+        logger.error("Twitch message handling error: {e!r}", e=e)
 
 
 async def _post_process(
@@ -1309,7 +1309,7 @@ async def _post_process(
                 facts_extracted=len(llm_deltas.get("user_facts", [])) if llm_deltas else 0,
             )
     except Exception as e:
-        logger.error("Twitch post-process error: {e}", e=e)
+        logger.error("Twitch post-process error: {e!r}", e=e)
 
 
 async def _announce_overlay_image(
@@ -1394,7 +1394,7 @@ async def _announce_overlay_image(
         bot.memory.append_prelude(channel_id, self_name, reply)
         bot.memory.append_message(channel_id, self_name, reply, platform="twitch")
     except Exception as e:
-        logger.error("Overlay image announce error: {e}", e=e)
+        logger.error("Overlay image announce error: {e!r}", e=e)
 
 
 async def _veiller_questions(
@@ -1477,7 +1477,7 @@ async def _veiller_questions(
             ),
         )
     except Exception as exc:  # noqa: BLE001 — une veille qui casse ne casse pas le chat
-        logger.warning("Veille des questions sans réponse en échec : {e}", e=exc)
+        logger.warning("Veille des questions sans réponse en échec : {e!r}", e=exc)
 
 
 async def _spontaneous_respond_twitch(
@@ -1594,4 +1594,4 @@ async def _spontaneous_respond_twitch(
         logger.info("Spontaneous intervention in twitch:{ch}", ch=channel_name)
 
     except Exception as e:
-        logger.error("Twitch spontaneous error: {e}", e=e)
+        logger.error("Twitch spontaneous error: {e!r}", e=e)

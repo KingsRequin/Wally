@@ -265,7 +265,7 @@ class VoiceTranscriptFeed:
         try:
             names = self._presence_source() or []
         except Exception as exc:  # noqa: BLE001 — un fournisseur cassé ne casse pas le bloc
-            logger.warning("VoiceTranscript: présents illisibles: {e}", e=exc)
+            logger.warning("VoiceTranscript: présents illisibles: {e!r}", e=exc)
             return ""
         return ", ".join(names)
 

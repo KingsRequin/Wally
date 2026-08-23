@@ -53,7 +53,7 @@ async def charger_layout(db) -> dict:
     try:
         brut = await db.get_state(LAYOUT_KEY)
     except Exception as exc:  # noqa: BLE001 — une base muette n'efface pas l'overlay
-        logger.warning("Overlay layout : lecture impossible ({e})", e=exc)
+        logger.warning("Overlay layout : lecture impossible ({e!r})", e=exc)
         return layout_par_defaut()
     if not brut:
         return layout_par_defaut()
@@ -62,7 +62,7 @@ async def charger_layout(db) -> dict:
     except (ValueError, TypeError) as exc:
         # Une écriture interrompue laisse du JSON tronqué. On le dit — un
         # layout perdu en silence se découvrirait des semaines plus tard.
-        logger.warning("Overlay layout : JSON illisible, défauts repris ({e})", e=exc)
+        logger.warning("Overlay layout : JSON illisible, défauts repris ({e!r})", e=exc)
         return layout_par_defaut()
 
 
@@ -83,7 +83,7 @@ async def enregistrer_layout(db, brut) -> dict:
         # que l'antenne diffuse toujours l'ancienne.
         await db.set_state(MAJ_KEY, datetime.now(_FUSEAU).isoformat(timespec="seconds"))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Overlay layout : écriture impossible ({e})", e=exc)
+        logger.warning("Overlay layout : écriture impossible ({e!r})", e=exc)
     return layout
 
 
@@ -100,7 +100,7 @@ async def date_maj(db) -> str | None:
     try:
         return await db.get_state(MAJ_KEY) or None
     except Exception as exc:  # noqa: BLE001 — une date manquante n'efface rien
-        logger.warning("Overlay layout : date de publication illisible ({e})", e=exc)
+        logger.warning("Overlay layout : date de publication illisible ({e!r})", e=exc)
         return None
 
 
@@ -122,7 +122,7 @@ async def semer_reglages_image(db, config) -> bool:
         if await db.get_state(GRAINE_IMAGE_KEY):
             return False
     except Exception as exc:  # noqa: BLE001 — une base muette ne migre rien
-        logger.warning("Overlay layout : graine `image` illisible ({e})", e=exc)
+        logger.warning("Overlay layout : graine `image` illisible ({e!r})", e=exc)
         return False
 
     img = getattr(config, "overlay_image", None)

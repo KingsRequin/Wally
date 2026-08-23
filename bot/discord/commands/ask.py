@@ -85,5 +85,5 @@ class AskCog(commands.Cog):
                 await interaction.followup.send(part)
 
         except Exception as e:
-            logger.error("Error in /wally ask: {e}", e=e)
+            logger.error("Error in /wally ask: {e!r}", e=e)
             await interaction.followup.send("Une erreur s'est produite.")

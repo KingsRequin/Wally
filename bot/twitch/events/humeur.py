@@ -101,7 +101,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
     try:
         rendu = await bot.twitch_api.refund_redemption(reward_id, redemption_id)
     except Exception as exc:  # noqa: BLE001 — on annonce quand même
-        logger.error("Humeur : remboursement en erreur : {e}", e=exc)
+        logger.error("Humeur : remboursement en erreur : {e!r}", e=exc)
     mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
     if rendu:
         texte = f"{mention}{motif} — tes points t'ont été rendus."
@@ -112,7 +112,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
     try:
         await bot.twitch_api.send_message(text=texte)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
-        logger.error("Humeur : refus non annoncé dans le chat : {e}", e=exc)
+        logger.error("Humeur : refus non annoncé dans le chat : {e!r}", e=exc)
 
 
 def _feed(bot, description: str) -> None:
@@ -122,7 +122,7 @@ def _feed(bot, description: str) -> None:
     try:
         feed.record(description, kind="humeur_redemption")
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("StreamFeed : humeur non consignée : {e}", e=exc)
+        logger.warning("StreamFeed : humeur non consignée : {e!r}", e=exc)
 
 
 async def forcer_humeur(bot, *, acheteur: str, texte: str, intensite: float,
@@ -148,7 +148,7 @@ async def forcer_humeur(bot, *, acheteur: str, texte: str, intensite: float,
         try:
             moteur.set_emotion(emotion, float(intensite))
         except Exception as exc:  # noqa: BLE001 — on rembourse plutôt que de garder
-            logger.error("Humeur : application impossible : {e}", e=exc)
+            logger.error("Humeur : application impossible : {e!r}", e=exc)
             await _rendre(bot, acheteur, reward_id, redemption_id,
                           "je n'ai pas réussi à changer d'humeur (pépin technique)")
             return
@@ -163,9 +163,9 @@ async def forcer_humeur(bot, *, acheteur: str, texte: str, intensite: float,
                 text=f"{mention}c'est fait, me voilà {_en_francais(emotion)} "
                      f"à {pourcent} %. Merci qui.")
         except Exception as exc:  # noqa: BLE001 — l'humeur est déjà changée
-            logger.error("Humeur : changement non annoncé dans le chat : {e}", e=exc)
+            logger.error("Humeur : changement non annoncé dans le chat : {e!r}", e=exc)
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
-        logger.error("Humeur en erreur : {e}", e=exc)
+        logger.error("Humeur en erreur : {e!r}", e=exc)
         await _rendre(bot, acheteur, reward_id, redemption_id,
                       "l'humeur n'a pas pu être changée (pépin technique)")
 

@@ -15,7 +15,7 @@ async def _is_dead(bot, channel_id: int) -> bool:
     except discord.NotFound:
         return True
     except Exception as e:  # noqa: BLE001 — accès refusé / réseau : on signale sans planter
-        logger.warning("channel_health: {id} non vérifiable ({e})", id=channel_id, e=e)
+        logger.warning("channel_health: {id} non vérifiable ({e!r})", id=channel_id, e=e)
         return True
 
 
@@ -33,7 +33,7 @@ async def find_dead_channels(bot, channels_md_path) -> list[tuple[str, str]]:
         for cid, cname in directory.name_map().items():
             candidates.append((int(cid), f"CHANNELS.md ({cname})"))
     except Exception as e:  # noqa: BLE001 — CHANNELS.md absent/illisible : on continue
-        logger.warning("channel_health: CHANNELS.md illisible ({e})", e=e)
+        logger.warning("channel_health: CHANNELS.md illisible ({e!r})", e=e)
 
     dead: list[tuple[str, str]] = []
     for cid, origin in candidates:
@@ -51,7 +51,7 @@ async def report_dead_channels(bot, channels_md_path=None) -> None:
     try:
         dead = await find_dead_channels(bot, channels_md_path)
     except Exception as e:  # noqa: BLE001
-        logger.warning("channel_health: scan a échoué ({e})", e=e)
+        logger.warning("channel_health: scan a échoué ({e!r})", e=e)
         return
     if not dead:
         logger.info("channel_health: tous les canaux configurés sont vivants")
@@ -68,4 +68,4 @@ async def report_dead_channels(bot, channels_md_path=None) -> None:
 
         await send_chunked(owner, body)
     except Exception as e:  # noqa: BLE001
-        logger.warning("channel_health: DM créateur a échoué ({e})", e=e)
+        logger.warning("channel_health: DM créateur a échoué ({e!r})", e=e)

@@ -53,7 +53,7 @@ def _feed(bot, description: str) -> None:
     try:
         feed.record(description, kind="im_out_redemption")
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("StreamFeed : « im out » non consigné : {e}", e=exc)
+        logger.warning("StreamFeed : « im out » non consigné : {e!r}", e=exc)
 
 
 async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,

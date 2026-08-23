@@ -35,5 +35,5 @@ class PersonaCog(commands.Cog):
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
-            logger.error("reload-persona error: {e}", e=e)
+            logger.error("reload-persona error: {e!r}", e=e)
             await interaction.followup.send("Erreur lors du rechargement de la persona.", ephemeral=True)

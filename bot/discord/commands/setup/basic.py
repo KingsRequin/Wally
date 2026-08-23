@@ -336,7 +336,7 @@ async def _send_model_tab(
             ephemeral=True,
         )
     except Exception as e:
-        logger.error("Model tab error: {e}", e=e)
+        logger.error("Model tab error: {e!r}", e=e)
         await interaction.followup.send(
             "Erreur lors de la récupération des modeles.", ephemeral=True
         )

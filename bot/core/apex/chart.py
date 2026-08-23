@@ -150,7 +150,7 @@ def render(
         import matplotlib.dates as mdates
         import matplotlib.pyplot as plt
     except Exception as exc:  # noqa: BLE001 — pas de graphe ≠ pas de réponse
-        logger.warning("Apex chart: matplotlib indisponible: {e}", e=exc)
+        logger.warning("Apex chart: matplotlib indisponible: {e!r}", e=exc)
         return None
 
     duree = points[-1][0] - points[0][0]

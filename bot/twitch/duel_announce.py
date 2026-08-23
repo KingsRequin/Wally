@@ -348,7 +348,7 @@ class DuelAnnonceur:
                 purpose="apex_duel",
             )
         except Exception as exc:  # noqa: BLE001 — sans habillage, le fait part nu
-            logger.warning("Duel : annonce non rédigée ({t}) : {e}", t=type_evt, e=exc)
+            logger.warning("Duel : annonce non rédigée ({t}) : {e!r}", t=type_evt, e=exc)
             return ""
         reponse = (reponse or "").strip()
         if not reponse or reponse == FALLBACK_RESPONSE.strip():
@@ -381,7 +381,7 @@ class DuelAnnonceur:
                 logger.warning("Duel : annonce refusée par Twitch — « {t} »",
                                t=texte[:80])
         except Exception as exc:  # noqa: BLE001 — l'overlay doit rester servi
-            logger.error("Duel : annonce non publiée dans le chat : {e}", e=exc)
+            logger.error("Duel : annonce non publiée dans le chat : {e!r}", e=exc)
 
     def _ecran(self, evt: Evenement, commentaire: str) -> None:
         """Le tableau du duel, quand il y a un score à montrer.
@@ -434,4 +434,4 @@ class DuelAnnonceur:
                 duel=True, final=evt.type == "verdict",
             )
         except Exception as exc:  # noqa: BLE001 — l'écran n'est pas le canal principal
-            logger.warning("Duel : tableau non affiché : {e}", e=exc)
+            logger.warning("Duel : tableau non affiché : {e!r}", e=exc)

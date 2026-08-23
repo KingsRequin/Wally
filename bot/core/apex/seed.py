@@ -60,7 +60,7 @@ async def seed_known_accounts(db, requesters: list[dict]) -> int:
                 )
                 created += 1
             except Exception as exc:  # noqa: BLE001 — un amorçage raté ne bloque pas le boot
-                logger.warning("Apex: compte {i} non inscrit : {e}", i=identity, e=exc)
+                logger.warning("Apex: compte {i} non inscrit : {e!r}", i=identity, e=exc)
     if created:
         logger.info("Apex: {n} compte(s) connu(s) inscrit(s)", n=created)
     return created

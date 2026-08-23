@@ -171,7 +171,7 @@ class ActionDispatcher:
             occupe = (narrator.game_already_running(widget, **extra)
                       or narrator.refus_faute_de_demande(widget, **extra))
         except Exception as exc:  # noqa: BLE001 — un diagnostic ne casse pas un tick
-            logger.warning("ACT show_overlay: état de l'overlay illisible: {e}", e=exc)
+            logger.warning("ACT show_overlay: état de l'overlay illisible: {e!r}", e=exc)
             return
         if not occupe:
             return
@@ -183,7 +183,7 @@ class ActionDispatcher:
             if feed is not None:
                 feed.record(occupe, notify=False)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("ACT show_overlay: refus non consigné: {e}", e=exc)
+            logger.debug("ACT show_overlay: refus non consigné: {e!r}", e=exc)
 
     def _owner_id(self) -> str:
         for b in (self._bot, self._twitch_bot):

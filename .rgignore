@@ -1,0 +1,14 @@
+# ripgrep lit `.rgignore` AVANT `.ignore`, donc ce fichier a le dernier mot.
+#
+# `graft init` pose un `.ignore` qui RÉADMET ses 833 cartes markdown à la
+# recherche. L'intention est bonne — une carte est plus courte à lire que la
+# source — mais chaque recherche sur un symbole rend alors le doublon généré à
+# côté du vrai fichier, dans l'outil qu'on utilise le plus.
+#
+# On ne modifie PAS `.ignore` : graft le réécrit à chaque `graft build`, et sa
+# ligne `!graft/` finissait après la nôtre, donc gagnait. Ce fichier-ci lui
+# appartient, celui-là est le sien.
+#
+# Les cartes restent joignables par l'interface faite pour ça : `graft ask`,
+# `graft grep`, `graft callers`.
+graft/

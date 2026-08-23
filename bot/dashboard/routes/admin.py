@@ -465,7 +465,7 @@ async def get_openai_models(request: Request) -> dict:
         ])
         return {"models": filtered}
     except Exception as exc:
-        logger.warning("Failed to list OpenAI models: {e}", e=exc)
+        logger.warning("Failed to list OpenAI models: {e!r}", e=exc)
         return {"models": [
             state.config.llm.primary.model,
             state.config.llm.secondary.model,
@@ -494,7 +494,7 @@ async def get_claude_models(request: Request) -> dict:
         ])
         return {"models": filtered}
     except Exception as exc:
-        logger.warning("Failed to list Claude models: {e}", e=exc)
+        logger.warning("Failed to list Claude models: {e!r}", e=exc)
         return {"models": [
             state.config.llm.primary.model,
             state.config.llm.secondary.model,

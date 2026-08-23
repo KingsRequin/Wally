@@ -121,7 +121,7 @@ class StreamFeed:
             try:
                 self._observer(description, kind or "")
             except Exception as exc:  # noqa: BLE001 — un observateur ne casse pas le flux
-                logger.warning("StreamFeed: observateur en erreur: {e}", e=exc)
+                logger.warning("StreamFeed: observateur en erreur: {e!r}", e=exc)
 
     def record_chat(self, author: str, text: str) -> None:
         """Empile une ligne de chat du stream (perception passive uniquement)."""

@@ -172,7 +172,7 @@ def note_act(summary: str) -> None:
     try:
         _TRACE.record(summary)
     except Exception as exc:  # noqa: BLE001 — une trace ne casse pas son sujet
-        logger.debug("SelfTrace: acte non consigné: {e}", e=exc)
+        logger.debug("SelfTrace: acte non consigné: {e!r}", e=exc)
 
 
 def note_voice_speech(channel_id, present: Optional[list] = None) -> None:
@@ -205,7 +205,7 @@ def note_voice_speech(channel_id, present: Optional[list] = None) -> None:
 
         diffuse = bool(voice_is_broadcast(channel_id))
     except Exception as exc:  # noqa: BLE001 — dans le doute, la parole est privée
-        logger.debug("SelfTrace: diffusion vocale indéterminée: {e}", e=exc)
+        logger.debug("SelfTrace: diffusion vocale indéterminée: {e!r}", e=exc)
         diffuse = False
     if not diffuse:
         note_act("tu as parlé à voix haute dans un salon vocal privé (Discord)")
@@ -223,7 +223,7 @@ def current_self_trace_block(*, limit: int = MAX_ACTS,
     try:
         return _TRACE.render(limit=limit, compact=compact) or None
     except Exception as exc:  # noqa: BLE001 — un bloc de contexte ne casse pas un prompt
-        logger.debug("SelfTrace: bloc illisible: {e}", e=exc)
+        logger.debug("SelfTrace: bloc illisible: {e!r}", e=exc)
         return None
 
 
@@ -299,4 +299,4 @@ def note_journal_act(platform: str, channel: str, event_type: str,
             if outil and outil not in OUTILS_TRACES_AILLEURS:
                 note_act(f"tu as utilisé ton outil « {outil} »")
     except Exception as exc:  # noqa: BLE001 — une trace ne casse pas son sujet
-        logger.debug("SelfTrace: événement {t} non traduit: {e}", t=event_type, e=exc)
+        logger.debug("SelfTrace: événement {t} non traduit: {e!r}", t=event_type, e=exc)

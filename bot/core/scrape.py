@@ -120,7 +120,7 @@ class ScrapeService:
         try:
             infos = socket.getaddrinfo(host, None)
         except OSError as exc:
-            logger.warning("Scrape refusé, hôte irrésolu {h} : {e}", h=host, e=exc)
+            logger.warning("Scrape refusé, hôte irrésolu {h} : {e!r}", h=host, e=exc)
             return False
         if not infos:
             return False
@@ -161,7 +161,7 @@ class ScrapeService:
             if await self.daily_limit_reached():
                 return "Limite quotidienne de scraping atteinte."
         except Exception as exc:
-            logger.warning("daily_limit_reached error: {e}", e=exc)
+            logger.warning("daily_limit_reached error: {e!r}", e=exc)
             return "Impossible de vérifier la limite quotidienne de scraping."
 
         try:
@@ -173,7 +173,7 @@ class ScrapeService:
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as exc:
-            logger.warning("Firecrawl scrape error for {u}: {e}", u=url, e=exc)
+            logger.warning("Firecrawl scrape error for {u}: {e!r}", u=url, e=exc)
             return f"Impossible de lire la page ({url})."
 
         markdown = (data.get("data") or {}).get("markdown") or ""
@@ -201,7 +201,7 @@ class ScrapeService:
                 max_tokens=400,
             )
         except Exception as exc:
-            logger.warning("Scrape summary failed for {u}: {e}", u=url, e=exc)
+            logger.warning("Scrape summary failed for {u}: {e!r}", u=url, e=exc)
             budget_chars = self._config.firecrawl.inline_max_tokens * 4
             return f"Contenu (tronqué) de {url} :\n{markdown[:budget_chars].strip()}…"
 

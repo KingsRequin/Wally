@@ -117,7 +117,7 @@ class TwitchTokenManager:
                         await self.refresh(token_type)
             except Exception as exc:
                 logger.error(
-                    "Twitch {t} token validation error: {e}", t=token_type, e=exc
+                    "Twitch {t} token validation error: {e!r}", t=token_type, e=exc
                 )
 
     # Fenêtre de coalescence : au-delà, un nouveau 401 est un vrai problème,
@@ -180,7 +180,7 @@ class TwitchTokenManager:
             return True
         except Exception as exc:
             logger.error(
-                "Twitch {t} token refresh failed: {e}", t=token_type, e=exc
+                "Twitch {t} token refresh failed: {e!r}", t=token_type, e=exc
             )
             return False
 

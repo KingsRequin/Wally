@@ -215,7 +215,7 @@ async def ws_chat(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        logger.warning("WebChat error for {u}: {e}", u=username, e=exc)
+        logger.warning("WebChat error for {u}: {e!r}", u=username, e=exc)
     finally:
         _clients.pop(ws, None)
         if heartbeat_task:
@@ -302,7 +302,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
             _fire(_post_process(state, content, sender_id, trust))
 
         except Exception as exc:
-            logger.error("WebChat Wally response failed: {e}", e=exc)
+            logger.error("WebChat Wally response failed: {e!r}", e=exc)
 
 
 @router.get("/api/chat/sessions")
@@ -409,7 +409,7 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
         try:
             await state.memory.add("discord", str(user.discord_id), f"{user.username} a généré une image : {title}", username=user.username, origin="Web (dashboard)")
         except Exception as e:
-            logger.warning("Failed to add image memory: {e}", e=e)
+            logger.warning("Failed to add image memory: {e!r}", e=e)
 
         # Broadcast result embed to all connected clients
         await _broadcast({
@@ -430,7 +430,7 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
         # Cancel the generating embed for all clients
         await _broadcast({"type": "image_cancelled", "id": msg_id, "error": str(e)})
     except Exception as e:
-        logger.error("Image generation failed in web chat: {e}", e=e)
+        logger.error("Image generation failed in web chat: {e!r}", e=e)
         await _broadcast({"type": "image_cancelled", "id": msg_id, "error": "Erreur lors de la génération de l'image."})
 
 
@@ -493,7 +493,7 @@ async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser, quer
                 stored = await fe._extract_facts(batch, "discord", "web:chat")
                 total_stored += stored
             except Exception as exc:
-                logger.warning("scan-web-chat batch {i} failed: {e}", i=i, e=exc)
+                logger.warning("scan-web-chat batch {i} failed: {e!r}", i=i, e=exc)
 
         await _send_to(ws, {
             "type": "system",
@@ -502,7 +502,7 @@ async def _handle_scan(state: AppState, ws: WebSocket, user: ConnectedUser, quer
         logger.info("/scan web-chat: {n} facts from {m} messages", n=total_stored, m=len(msg_dicts))
 
     except Exception as exc:
-        logger.error("/scan web-chat failed: {e}", e=exc)
+        logger.error("/scan web-chat failed: {e!r}", e=exc)
         await _send_to(ws, {"type": "system", "content": f"❌ Erreur: {exc}"})
 
 
@@ -530,7 +530,7 @@ async def get_my_memory(request: Request) -> dict:
             "relation": {"trust": round(trust, 3), "love": round(love, 3)},
         }
     except Exception as exc:
-        logger.warning("get_my_memory failed for {u}: {e}", u=user_id, e=exc)
+        logger.warning("get_my_memory failed for {u}: {e!r}", u=user_id, e=exc)
         return {"facts": [], "preferences": [], "relation": {"trust": 0.0, "love": 0.0}}
 
 
@@ -547,4 +547,4 @@ async def _post_process(state: AppState, text: str, sender_id: str, trust: float
             if not (beloved and trust_delta < 0):
                 await state.db.update_trust_score("discord", discord_raw_id, trust_delta)
     except Exception as exc:
-        logger.warning("WebChat post-process failed: {e}", e=exc)
+        logger.warning("WebChat post-process failed: {e!r}", e=exc)

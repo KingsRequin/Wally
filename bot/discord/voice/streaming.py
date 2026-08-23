@@ -121,7 +121,7 @@ class RemoteSTTSession:
                 ping_interval=self._ping_interval, ping_timeout=self._ping_timeout,
             )
         except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteSTTSession: connexion à {u} a échoué: {e}", u=self._url, e=e)
+            logger.warning("RemoteSTTSession: connexion à {u} a échoué: {e!r}", u=self._url, e=e)
             self.unreachable = True
             return False
         self._recv_task = asyncio.create_task(self._recv_loop())
@@ -169,7 +169,7 @@ class RemoteSTTSession:
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteSTTSession: envoi a échoué: {e}", e=e)
+            logger.warning("RemoteSTTSession: envoi a échoué: {e!r}", e=e)
 
     async def _recv_loop(self) -> None:
         try:
@@ -203,7 +203,7 @@ class RemoteSTTSession:
             if getattr(rcvd, "code", None) == 1013:
                 self.server_full = True
         except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteSTTSession: réception a échoué: {e}", e=e)
+            logger.warning("RemoteSTTSession: réception a échoué: {e!r}", e=e)
         finally:
             self._ready_evt.set()  # ne jamais laisser start() bloqué
             # Connexion fermée sans close() volontaire = session perdue (serveur tombé en
@@ -212,19 +212,19 @@ class RemoteSTTSession:
                 try:
                     self._on_close()
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("RemoteSTTSession on_close a échoué: {e}", e=e)
+                    logger.warning("RemoteSTTSession on_close a échoué: {e!r}", e=e)
 
     def _safe_partial(self, text: str) -> None:
         try:
             self._on_partial(text)
         except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteSTTSession on_partial a échoué: {e}", e=e)
+            logger.warning("RemoteSTTSession on_partial a échoué: {e!r}", e=e)
 
     def _safe_final(self, text: str, stt_ms: float) -> None:
         try:
             self._on_final(text, stt_ms)
         except Exception as e:  # noqa: BLE001
-            logger.warning("RemoteSTTSession on_final a échoué: {e}", e=e)
+            logger.warning("RemoteSTTSession on_final a échoué: {e!r}", e=e)
 
     async def close(self) -> None:
         self._closed = True
@@ -352,7 +352,7 @@ class RemoteStreamingSTT:
         try:
             pret = await session.start()
         except Exception as exc:  # noqa: BLE001 — un préchauffage raté n'est pas fatal
-            logger.debug("RemoteStreamingSTT: préchauffage distant en échec: {e}", e=exc)
+            logger.debug("RemoteStreamingSTT: préchauffage distant en échec: {e!r}", e=exc)
             return False
         finally:
             try:
@@ -639,7 +639,7 @@ class RemoteStreamingSTT:
             try:
                 text = await self._fallback.transcribe(segment)
             except Exception as e:  # noqa: BLE001
-                logger.warning("RemoteStreamingSTT fallback batch a échoué: {e}", e=e)
+                logger.warning("RemoteStreamingSTT fallback batch a échoué: {e!r}", e=e)
                 text = ""
             stt_ms = (self._now() - t0) * 1000
             if text and self.on_final is not None:
@@ -678,7 +678,7 @@ class RemoteStreamingSTT:
             try:
                 self.on_partial(speaker_id, text)
             except Exception as e:  # noqa: BLE001
-                logger.warning("RemoteStreamingSTT on_partial a échoué: {e}", e=e)
+                logger.warning("RemoteStreamingSTT on_partial a échoué: {e!r}", e=e)
 
     def _emit_final(self, speaker_id: str, text: str, stt_ms: float) -> None:
         if self.on_final is not None and text:

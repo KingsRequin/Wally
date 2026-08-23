@@ -150,7 +150,7 @@ class WallyAudioSink(voice_recv.AudioSink):
                         self._segments_emis += 1
                         self._emit_segment(user, out)
         except Exception as e:  # noqa: BLE001
-            logger.warning("WallyAudioSink.write a échoué: {e}", e=e)
+            logger.warning("WallyAudioSink.write a échoué: {e!r}", e=e)
 
     def flush_idle(self) -> None:
         """Clôt l'énoncé d'un locuteur silencieux depuis `silence_timeout_s` (Discord coupe le

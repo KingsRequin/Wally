@@ -54,7 +54,7 @@ def current_apex_block() -> str | None:
     try:
         return _active.block()
     except Exception as exc:  # noqa: BLE001 — la perception ne casse jamais un prompt
-        logger.debug("Apex watcher: bloc indisponible: {e}", e=exc)
+        logger.debug("Apex watcher: bloc indisponible: {e!r}", e=exc)
         return None
 
 
@@ -243,7 +243,7 @@ class ApexWatcher:
         try:
             await self._history.enregistrer(profile.uid, compteurs)
         except Exception as exc:  # noqa: BLE001 — l'historique est un bonus
-            logger.warning("Apex watcher: relevé non historisé: {e}", e=exc)
+            logger.warning("Apex watcher: relevé non historisé: {e!r}", e=exc)
 
     def _echec(self, motif: str) -> None:
         """Consigne un échec de sonde, au CHANGEMENT de motif seulement.
@@ -270,7 +270,7 @@ class ApexWatcher:
         try:
             return str(self._live_id() or "")
         except Exception as exc:  # noqa: BLE001 — une sonde cassée n'est pas fatale
-            logger.debug("Apex watcher: identité du live indisponible: {e}", e=exc)
+            logger.debug("Apex watcher: identité du live indisponible: {e!r}", e=exc)
             return ""
 
     async def _reprendre_kills(self, suivi: KillsDuLive, live_courant: str) -> None:
@@ -319,7 +319,7 @@ class ApexWatcher:
                 return {}
             return {k: int(v) for k, v in (data.get("stats") or {}).items()}
         except Exception as exc:  # noqa: BLE001 — un départ illisible n'empêche pas de suivre
-            logger.debug("Apex watcher: point de départ illisible: {e}", e=exc)
+            logger.debug("Apex watcher: point de départ illisible: {e!r}", e=exc)
             return {}
 
     async def _store_baseline(self, baseline: dict[str, int]) -> None:
@@ -330,7 +330,7 @@ class ApexWatcher:
                 {"live": self._live_courant(), "stats": baseline}
             ))
         except Exception as exc:  # noqa: BLE001 — ne pas retenir n'est pas fatal
-            logger.debug("Apex watcher: point de départ non rangé: {e}", e=exc)
+            logger.debug("Apex watcher: point de départ non rangé: {e!r}", e=exc)
 
     def progress(self) -> dict[str, int]:
         """Ce qui a bougé depuis le début du live. Vide tant qu'on n'a qu'un point."""

@@ -329,7 +329,7 @@ async def main() -> None:
                         })
                 except Exception as exc:
                     logger.debug(
-                        "Journal history: cannot read channel {ch}: {e}",
+                        "Journal history: cannot read channel {ch}: {e!r}",
                         ch=channel.id, e=exc,
                     )
         messages.sort(key=lambda m: m["timestamp"])
@@ -531,7 +531,7 @@ async def main() -> None:
                     # est de 5 min — jusqu'à 20 clips étaient réannoncés au tour
                     # suivant. Ici les plus vieux sortent un par un.
                 except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("veille des clips en erreur: {e}", e=e)
+                    logger.warning("veille des clips en erreur: {e!r}", e=e)
 
         async def _stream_voice_watch() -> None:
             """Ramène Wally en vocal tant qu'un live tourne sans lui.
@@ -765,7 +765,7 @@ async def main() -> None:
                 except Exception as exc:  # noqa: BLE001 — un duel raté ne bloque pas le boot
                     # Même règle que le canari : un bot qui tourne sans duel vaut
                     # mieux qu'un bot qui refuse de démarrer.
-                    logger.error("Duel Apex non armé : {e}", e=exc)
+                    logger.error("Duel Apex non armé : {e!r}", e=exc)
         else:
             # JAMAIS de silence : c'est ici qu'un démarrage rate le plus
             # souvent, et une capacité absente sans un mot est indétectable.
@@ -803,7 +803,7 @@ async def main() -> None:
             logger.info("Attaque de meme armée (récompense {r})",
                         r=_virus_id or "INDISPONIBLE")
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Attaque de meme non armée : {e}", e=exc)
+            logger.error("Attaque de meme non armée : {e!r}", e=exc)
 
         # Le pari sur les kills, repris s'il en restait un ouvert. Créé ICI et
         # non à la demande : l'objet naissait dans `run_prediction_tool`, donc
@@ -866,7 +866,7 @@ async def main() -> None:
                 logger.info("Humeur {c} pts armée (récompense {r})",
                             c=_cout, r=_id or "INDISPONIBLE")
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Récompenses d'humeur non armées : {e}", e=exc)
+            logger.error("Récompenses d'humeur non armées : {e!r}", e=exc)
 
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(_stream_voice_watch())
@@ -1160,7 +1160,7 @@ async def main() -> None:
                 from bot.twitch.events import close_eventsub_client
                 await close_eventsub_client(twitch_bot)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
-                logger.warning("Fermeture EventSub échouée: {e}", e=exc)
+                logger.warning("Fermeture EventSub échouée: {e!r}", e=exc)
         dashboard_server.should_exit = True  # idempotent : couvre l'arrêt hors signal
 
         # Fermer les clients eux-mêmes, sinon leurs threads survivent à la boucle :
@@ -1176,9 +1176,9 @@ async def main() -> None:
                 # twitchio fait `self._keeper.cancel()` sans garde : `_keeper` est
                 # None tant que la connexion IRC n'a pas été pleinement établie.
                 # Bénin — EventSub est déjà fermé juste au-dessus.
-                logger.debug("Fermeture {c} partielle: {e}", c=label, e=exc)
+                logger.debug("Fermeture {c} partielle: {e!r}", c=label, e=exc)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
-                logger.warning("Fermeture {c} échouée: {e}", c=label, e=exc)
+                logger.warning("Fermeture {c} échouée: {e!r}", c=label, e=exc)
 
         if update_checker:
             await update_checker.stop()
@@ -1190,7 +1190,7 @@ async def main() -> None:
             if shared_scheduler.running:
                 shared_scheduler.shutdown(wait=False)
         except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
-            logger.warning("Arrêt du scheduler échoué: {e}", e=exc)
+            logger.warning("Arrêt du scheduler échoué: {e!r}", e=exc)
         await conv_log.stop()
         # L'état émotionnel attend dans un debounce de 5 s, sans cesse repoussé
         # tant que des messages arrivent. Rien ne le forçait à l'arrêt : la tâche
@@ -1199,12 +1199,12 @@ async def main() -> None:
         try:
             await emotion.flush()
         except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
-            logger.warning("Flush émotionnel échoué: {e}", e=exc)
+            logger.warning("Flush émotionnel échoué: {e!r}", e=exc)
         # Dernier : tout le reste écrit encore en base jusqu'ici.
         try:
             await db.close()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Fermeture de la base échouée: {e}", e=exc)
+            logger.warning("Fermeture de la base échouée: {e!r}", e=exc)
         logger.info("Arrêt terminé proprement")
 
 
@@ -1229,7 +1229,7 @@ async def _demarrer() -> None:
                 from bot.twitch.events import close_eventsub_client
                 await close_eventsub_client(twitch_bot)
             except Exception as exc:  # noqa: BLE001 — ne jamais bloquer l'arrêt
-                logger.warning("Fermeture EventSub au démarrage échouée: {e}", e=exc)
+                logger.warning("Fermeture EventSub au démarrage échouée: {e!r}", e=exc)
         raise
 
 

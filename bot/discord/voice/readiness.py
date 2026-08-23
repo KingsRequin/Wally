@@ -24,7 +24,7 @@ async def set_muted(vc: Any, muted: bool) -> None:
     try:
         await vc.guild.change_voice_state(channel=vc.channel, self_mute=muted)
     except Exception as exc:  # noqa: BLE001 — un signal raté ne casse pas l'écoute
-        logger.debug("voice: micro non {e}: {x}", e="coupé" if muted else "rétabli", x=exc)
+        logger.debug("voice: micro non {e}: {x!r}", e="coupé" if muted else "rétabli", x=exc)
 
 
 # Une demi-seconde de silence, à 16 kHz mono 16 bits : de quoi faire traverser
@@ -65,13 +65,13 @@ async def signal_ready_when_warm(
         try:
             await warmup
         except Exception as exc:  # noqa: BLE001
-            logger.warning("voice: préchauffage STT en échec : {e}", e=exc)
+            logger.warning("voice: préchauffage STT en échec : {e!r}", e=exc)
     transcriber = _transcriber(stt)
     if transcriber is not None and hasattr(transcriber, "transcribe"):
         try:
             await transcriber.transcribe(_SILENCE)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("voice: transcription à blanc en échec : {e}", e=exc)
+            logger.debug("voice: transcription à blanc en échec : {e!r}", e=exc)
     # Ce préchauffage dure 10 à 40 s (serveur GPU absent, deux chargements du
     # modèle, transcription à blanc). Si Wally a quitté entre-temps — /leave,
     # kick, auto-leave — un `set_muted` envoie un VOICE_STATE_UPDATE portant un
@@ -105,7 +105,7 @@ async def take_test_mode_if_needed(narrator: Any) -> bool:
         logger.info("voice: pas de live — mode test activé pour l'écoute")
         return True
     except Exception as exc:  # noqa: BLE001 — jamais bloquant pour l'écoute
-        logger.debug("voice: mode test non activé: {e}", e=exc)
+        logger.debug("voice: mode test non activé: {e!r}", e=exc)
         return False
 
 
@@ -118,4 +118,4 @@ async def release_test_mode(narrator: Any, *, taken: bool) -> None:
         await narrator.flush_force_live()
         logger.info("voice: sortie du vocal — mode test coupé")
     except Exception as exc:  # noqa: BLE001
-        logger.debug("voice: mode test non coupé: {e}", e=exc)
+        logger.debug("voice: mode test non coupé: {e!r}", e=exc)

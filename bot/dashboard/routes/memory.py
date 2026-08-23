@@ -96,7 +96,7 @@ async def _resolve_missing_usernames(
             # inaccessible était retenté à CHAQUE ouverture de l'onglet, donc le
             # coût ne décroissait jamais. Le pseudo brut vaut mieux qu'un
             # aller-retour perdu ; il sera écrasé si le compte réapparaît.
-            logger.debug("Discord name resolve failed for {uid}: {e}", uid=u["user_id"], e=e)
+            logger.debug("Discord name resolve failed for {uid}: {e!r}", uid=u["user_id"], e=e)
             try:
                 await state.db.upsert_memory_user(
                     u["user_id"], "discord", username=f"@{raw_id}",
@@ -135,7 +135,7 @@ async def _resolve_missing_usernames(
                             avatar_url=avatar or "",
                         )
             except Exception as e:
-                logger.debug("Twitch batch resolve failed: {e}", e=e)
+                logger.debug("Twitch batch resolve failed: {e!r}", e=e)
 
 
 # ── GET /memory/users ─────────────────────────────────────────────────────────
@@ -570,7 +570,7 @@ async def sync_memory_users(request: Request):
                         id=raw_id, name=name, has=bool(avatar),
                     )
             except Exception as e:
-                logger.warning("Impossible de résoudre discord:{id}: {e}", id=raw_id, e=e)
+                logger.warning("Impossible de résoudre discord:{id}: {e!r}", id=raw_id, e=e)
 
     # Twitch — resolve usernames and avatars
     # Twitch user IDs are max ~10 digits; skip Discord snowflakes stored by mistake
@@ -617,7 +617,7 @@ async def sync_memory_users(request: Request):
                     else:
                         logger.warning("Twitch API n'a pas retourné: {uid}", uid=full_id)
             except Exception as e:
-                logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
+                logger.warning("Impossible de résoudre batch Twitch: {e!r}", e=e)
 
     # memory_count update omis (store V1 supprimé — refonte V2 en cours)
     return {"synced": 0, "resolved": resolved}
@@ -657,7 +657,7 @@ async def resolve_usernames(request: Request):
                     if need_name and name:
                         resolved += 1
             except Exception as e:
-                logger.warning("Impossible de résoudre discord:{id}: {e}", id=raw_id, e=e)
+                logger.warning("Impossible de résoudre discord:{id}: {e!r}", id=raw_id, e=e)
 
     # ── Twitch ──
     if state.twitch_bot is not None:
@@ -693,7 +693,7 @@ async def resolve_usernames(request: Request):
                         if need_name and name:
                             resolved += 1
             except Exception as e:
-                logger.warning("Impossible de résoudre batch Twitch: {e}", e=e)
+                logger.warning("Impossible de résoudre batch Twitch: {e!r}", e=e)
 
     return {"resolved": resolved}
 
@@ -749,7 +749,7 @@ async def scan_web_chat(request: Request):
             stored = await fe._extract_facts(batch, "discord", "web:chat")
             total_stored += stored
         except Exception as exc:
-            logger.warning("scan-web-chat batch {i} failed: {e}", i=i, e=exc)
+            logger.warning("scan-web-chat batch {i} failed: {e!r}", i=i, e=exc)
 
     logger.info("scan-web-chat complete: {n} facts from {m} messages", n=total_stored, m=len(msg_dicts))
     return {"status": "ok", "messages_scanned": len(msg_dicts), "facts_stored": total_stored}

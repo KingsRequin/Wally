@@ -267,7 +267,7 @@ async def log_history(request: Request, lines: int = 200):
         entries = [e for line in recent if (e := _parse_log_line(line)) is not None]
         return {"entries": entries, "file": str(log_path)}
     except Exception as exc:
-        logger.warning("Failed to read log history: {e}", e=exc)
+        logger.warning("Failed to read log history: {e!r}", e=exc)
         return {"entries": [], "file": str(log_path)}
 
 

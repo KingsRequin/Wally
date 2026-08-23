@@ -213,7 +213,7 @@ class _VoiceJournal:
         try:
             diffuse = voice_is_broadcast(channel_id)
         except Exception as exc:  # noqa: BLE001 — dans le doute, on n'écrit pas
-            logger.debug("Journal vocal : diffusion indéterminée ({e})", e=exc)
+            logger.debug("Journal vocal : diffusion indéterminée ({e!r})", e=exc)
         self._clog = conv_log_of(bot, getattr(bot, "_twitch_bot", None)) if diffuse else None
         self._channel = (channel_name or str(channel_id or "salon")).strip() or "salon"
         self.trace = new_trace_id("vocal")
@@ -374,7 +374,7 @@ async def handle_voice_request(
             total_ms=int(stt_ms + (time.monotonic() - depart) * 1000),
         )
     except Exception as exc:  # noqa: BLE001 — une demande ratée ne casse pas l'écoute
-        logger.warning("Demande vocale non traitée : {e}", e=exc)
+        logger.warning("Demande vocale non traitée : {e!r}", e=exc)
         if jrnl is not None:
             jrnl.write("gate_decision", kind="vocal", decision="silence",
                        reason=f"demande non traitée : {exc}")
@@ -400,4 +400,4 @@ def journal_near_miss(bot, channel_id, channel_name: str, speaker: str,
                    word=verdict.word, name=verdict.name, rule=verdict.rule,
                    distance=verdict.distance)
     except Exception as exc:  # noqa: BLE001 — un journal ne casse pas l'écoute
-        logger.debug("Quasi-déclenchement vocal non consigné : {e}", e=exc)
+        logger.debug("Quasi-déclenchement vocal non consigné : {e!r}", e=exc)

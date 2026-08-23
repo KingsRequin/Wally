@@ -666,7 +666,7 @@ class DailyJournal:
         try:
             await self._memory.cleanup_expired_facts()
         except Exception as exc:
-            logger.warning("Memory cleanup failed: {e}", e=exc)
+            logger.warning("Memory cleanup failed: {e!r}", e=exc)
 
         # `cleanup_old_questions` existait depuis le début et n'était branchée
         # sur AUCUN cron : les questions en attente s'accumulaient sans fin et
@@ -677,7 +677,7 @@ class DailyJournal:
                 if n:
                     logger.info("Ménage mémoire : {n} question(s) périmée(s) retirée(s)", n=n)
             except Exception as exc:
-                logger.warning("Ménage des questions mémoire échoué : {e}", e=exc)
+                logger.warning("Ménage des questions mémoire échoué : {e!r}", e=exc)
 
         # Repli des doublons EXACTS avant le tri LLM, et sur TOUT LE MONDE.
         # Le tri qui suit ne voit qu'une personne par nuit, par lots de 25 : deux
@@ -689,12 +689,12 @@ class DailyJournal:
             try:
                 await store.merge_exact_duplicates()
             except Exception as exc:
-                logger.warning("Ménage mémoire : repli des doublons exacts échoué : {e}", e=exc)
+                logger.warning("Ménage mémoire : repli des doublons exacts échoué : {e!r}", e=exc)
 
         try:
             await self._sort_one_user_memory()
         except Exception as exc:
-            logger.warning("Memory cleanup: tri LLM échoué : {e}", e=exc)
+            logger.warning("Memory cleanup: tri LLM échoué : {e!r}", e=exc)
 
     async def _sort_one_user_memory(self) -> None:
         """Relit tous les souvenirs d'une personne et applique le verdict du LLM.
@@ -903,7 +903,7 @@ class DailyJournal:
                 else:
                     db_messages = await self._db.get_today_messages()
             except Exception as exc:
-                logger.warning("Failed to get daily_log messages: {e}", e=exc)
+                logger.warning("Failed to get daily_log messages: {e!r}", e=exc)
                 db_messages = []
         else:
             db_messages = []
@@ -918,7 +918,7 @@ class DailyJournal:
                         n=len(db_messages),
                     )
             except Exception as exc:
-                logger.warning("Journal Discord history fallback failed: {e}", e=exc)
+                logger.warning("Journal Discord history fallback failed: {e!r}", e=exc)
                 db_messages = []
 
         # Source 3 : fenêtres RAM (depuis le dernier démarrage)
@@ -968,14 +968,14 @@ class DailyJournal:
                         )
                     peaks_block = "Moments forts émotionnels :\n" + "\n".join(peak_lines)
             except Exception as exc:
-                logger.warning("Failed to get emotion peaks for journal: {e}", e=exc)
+                logger.warning("Failed to get emotion peaks for journal: {e!r}", e=exc)
 
         # ── Emotion arc ──
         try:
             all_snapshots = await self._db.get_emotion_snapshots_since(midnight) if self._db else []
             snapshots = [s for s in all_snapshots if s["snapshot_at"] < end_of_day] if is_backfill else all_snapshots
         except Exception as exc:
-            logger.warning("Failed to get emotion snapshots for journal: {e}", e=exc)
+            logger.warning("Failed to get emotion snapshots for journal: {e!r}", e=exc)
             snapshots = []
 
         arc = _build_emotion_arc(snapshots)
@@ -998,7 +998,7 @@ class DailyJournal:
                     if diffs:
                         weather_block = "Comparé à la semaine : " + ", ".join(diffs)
             except Exception as exc:
-                logger.warning("Failed to compute emotion weather: {e}", e=exc)
+                logger.warning("Failed to compute emotion weather: {e!r}", e=exc)
 
         # ── Yesterday's journal (F6) ──
         yesterday_block = ""
@@ -1008,7 +1008,7 @@ class DailyJournal:
                 if yesterday:
                     yesterday_block = f"Ton journal d'hier :\n{yesterday['content']}"
             except Exception as exc:
-                logger.warning("Failed to get yesterday's journal: {e}", e=exc)
+                logger.warning("Failed to get yesterday's journal: {e!r}", e=exc)
 
         # ── Habitués sans nouvelles : matière à continuité d'un soir à l'autre ──
         missing_block = ""
@@ -1020,7 +1020,7 @@ class DailyJournal:
                         f"{m['username']} ({m['days']} jours)" for m in missing
                     )
             except Exception as exc:
-                logger.warning("Failed to get missing regulars: {e}", e=exc)
+                logger.warning("Failed to get missing regulars: {e!r}", e=exc)
 
         # ── Entrées précédentes : synthèse narrative + garde anti-répétition stylistique ──
         past_journals: list[dict] = []
@@ -1030,7 +1030,7 @@ class DailyJournal:
                     n=_STYLE_LOOKBACK_DAYS, before_date=effective_date.isoformat()
                 )
             except Exception as exc:
-                logger.warning("Failed to load past journals: {e}", e=exc)
+                logger.warning("Failed to load past journals: {e!r}", e=exc)
 
         style_block = _build_style_avoidance_block(past_journals)
 
@@ -1049,7 +1049,7 @@ class DailyJournal:
                 if result and result != FALLBACK_RESPONSE:
                     narrative_block = result
             except Exception as exc:
-                logger.warning("Failed to build journal narrative synthesis: {e}", e=exc)
+                logger.warning("Failed to build journal narrative synthesis: {e!r}", e=exc)
 
         # ── Gallery of the day ──
         gallery_block = ""
@@ -1065,7 +1065,7 @@ class DailyJournal:
                         lines.append(f'- "{title}" par {username} ({votes} 🔥)')
                     gallery_block = "\n".join(lines)
             except Exception as exc:
-                logger.warning("Failed to get gallery images for journal: {e}", e=exc)
+                logger.warning("Failed to get gallery images for journal: {e!r}", e=exc)
 
         # ── Twitch visits of the day ──
         twitch_visits_block = ""
@@ -1079,7 +1079,7 @@ class DailyJournal:
                         lines.append(f"- {v['channel']} ({dur}) : {v.get('summary') or '...'}")
                     twitch_visits_block = "\n".join(lines)
             except Exception as exc:
-                logger.warning("Failed to get twitch visits for journal: {e}", e=exc)
+                logger.warning("Failed to get twitch visits for journal: {e!r}", e=exc)
 
         # ── Current emotion state ──
         emotions = self._emotion.get_state()
@@ -1171,7 +1171,7 @@ class DailyJournal:
                 else:
                     journal_text = voice_result
             except Exception as exc:
-                logger.warning("Journal voice pass failed: {e}", e=exc)
+                logger.warning("Journal voice pass failed: {e!r}", e=exc)
 
         # ── Emotion chart image (F10) ──
         # En thread : l'import de matplotlib puis le rendu du PNG sont du
@@ -1189,7 +1189,7 @@ class DailyJournal:
             try:
                 chart_buf = await asyncio.to_thread(_generate_emotion_chart, snapshots)
             except Exception as exc:  # noqa: BLE001 — le journal passe sans graphe
-                logger.warning("Journal : graphe des émotions non rendu : {e}", e=exc)
+                logger.warning("Journal : graphe des émotions non rendu : {e!r}", e=exc)
 
         formatted = f"# Journal de {self._config.bot.name} — {display_date}\n\n{journal_text}"
         if self._send_cb:
@@ -1218,7 +1218,7 @@ class DailyJournal:
                 )
                 logger.info("Journal archived ({n} words)", n=word_count)
             except Exception as exc:
-                logger.warning("Failed to archive journal: {e}", e=exc)
+                logger.warning("Failed to archive journal: {e!r}", e=exc)
 
         # ── Topic formation (fire-and-forget) ──
         if self._db is not None:
@@ -1284,7 +1284,7 @@ class DailyJournal:
                 logger.info("Topic formed: {n}", n=name)
             await self._db.cleanup_topics()
         except Exception as exc:  # noqa: BLE001 — non-fatal
-            logger.warning("Topic formation failed: {e}", e=exc)
+            logger.warning("Topic formation failed: {e!r}", e=exc)
 
     async def _build_context_text(self, messages: list[dict]) -> str:
         total_chars = sum(len(m["content"]) for m in messages)
@@ -1331,7 +1331,7 @@ class DailyJournal:
         try:
             users = await self._db.list_memory_users()
         except Exception as exc:
-            logger.warning("Failed to list memory users for journal fallback: {e}", e=exc)
+            logger.warning("Failed to list memory users for journal fallback: {e!r}", e=exc)
             return ""
 
         if not users:
@@ -1346,7 +1346,7 @@ class DailyJournal:
             try:
                 facts = await self._memory.get_all(platform, raw_id)
             except Exception as exc:
-                logger.debug("Journal memory fallback: failed for user {u}: {e}", u=username, e=exc)
+                logger.debug("Journal memory fallback: failed for user {u}: {e!r}", u=username, e=exc)
                 continue
             if facts:
                 parts.append(f"[{username}] {facts}")

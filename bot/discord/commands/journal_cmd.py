@@ -43,7 +43,7 @@ class JournalCog(commands.Cog):
                 f"Journal généré et envoyé ({label}).", ephemeral=True
             )
         except Exception as e:
-            logger.error("Error generating journal on demand: {e}", e=e)
+            logger.error("Error generating journal on demand: {e!r}", e=e)
             await interaction.followup.send(
                 "Erreur lors de la génération du journal.", ephemeral=True
             )

@@ -30,7 +30,7 @@ def _feed(bot, description: str) -> None:
     try:
         feed.record(description, kind="duel_redemption")
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("StreamFeed: enregistrement échoué : {e}", e=exc)
+        logger.warning("StreamFeed: enregistrement échoué : {e!r}", e=exc)
 
 
 async def _dire(bot, acheteur: str, texte: str) -> None:
@@ -53,7 +53,7 @@ async def _dire(bot, acheteur: str, texte: str) -> None:
     try:
         await bot.twitch_api.send_message(text=f"{mention}{texte}")
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
-        logger.error("Duel : refus non annoncé dans le chat : {e}", e=exc)
+        logger.error("Duel : refus non annoncé dans le chat : {e!r}", e=exc)
 
 
 def _rendus_ou_pas(rendu: bool, redemption_id: str, motif: str) -> str:
@@ -105,7 +105,7 @@ async def _est_notre_recompense(bot, reward_id: str) -> bool:
             try:
                 attendu = str(await db.get_state("apex:duel_reward_id") or "")
             except Exception as exc:  # noqa: BLE001 — un repli ne casse jamais le filtrage
-                logger.debug("Repli reward_id persistée indisponible : {e}", e=exc)
+                logger.debug("Repli reward_id persistée indisponible : {e!r}", e=exc)
     return bool(attendu) and str(reward_id) == attendu
 
 
@@ -125,7 +125,7 @@ async def _est_le_spam_virus(bot, reward_id: str) -> bool:
     try:
         attendu = str(await db.get_state(CLE_RECOMPENSE) or "")
     except Exception as exc:  # noqa: BLE001 — un filtrage ne casse jamais l'événement
-        logger.debug("Spam de virus : ID persisté illisible : {e}", e=exc)
+        logger.debug("Spam de virus : ID persisté illisible : {e!r}", e=exc)
         return False
     return bool(attendu) and str(reward_id) == attendu
 
@@ -166,7 +166,7 @@ async def _est_une_humeur(bot, reward_id: str) -> float | None:
         try:
             attendu = str(await db.get_state(cle) or "")
         except Exception as exc:  # noqa: BLE001 — un filtrage ne casse pas l'événement
-            logger.debug("Humeur : ID persisté illisible : {e}", e=exc)
+            logger.debug("Humeur : ID persisté illisible : {e!r}", e=exc)
             continue
         if attendu and str(reward_id) == attendu:
             return intensite
@@ -257,7 +257,7 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
             reward_id=reward_id, redemption_id=redemption_id,
         )
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
-        logger.error("Redemption en erreur : {e}", e=exc)
+        logger.error("Redemption en erreur : {e!r}", e=exc)
         # Best-effort : une exception ici (p. ex. un timeout réseau au milieu
         # d'`ouvrir()`) ne doit pas coûter ses points au viewer. `reward_id` et
         # `redemption_id` ne sont posés qu'après le filtrage — vides, il n'y a
@@ -268,7 +268,7 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
             try:
                 rendu = await bot.twitch_api.refund_redemption(reward_id, redemption_id)
             except Exception as exc2:  # noqa: BLE001 — le repli ne relève jamais non plus
-                logger.error("Remboursement de secours en erreur : {e}", e=exc2)
+                logger.error("Remboursement de secours en erreur : {e!r}", e=exc2)
             # Annoncé même si le remboursement a levé ou a été refusé : le
             # viewer doit savoir que sa demande a échoué, ET si ses points sont
             # revenus. Un silence lui laisse croire que le duel va démarrer ;

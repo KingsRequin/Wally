@@ -78,7 +78,7 @@ def parse_decisions(text: str) -> list[MetaDecision]:
             # Wally croit avoir agi, et rien ne distingue « le modèle n'a rien
             # demandé » de « le modèle a demandé quelque chose d'illisible ».
             logger.warning(
-                "meta_agent : ACT {n} ignoré, JSON illisible ({e}) : {a}",
+                "meta_agent : ACT {n} ignoré, JSON illisible ({e!r}) : {a}",
                 n=m.group(1), e=exc, a=m.group(2)[:200],
             )
             continue

@@ -133,7 +133,7 @@ async def run_catchup(bot: "WallyDiscord") -> None:
                         pending.append((msg.created_at.timestamp(), msg))
             except Exception as exc:  # noqa: BLE001 — un canal illisible n'arrête pas le rattrapage
                 logger.debug(
-                    "Rattrapage : lecture du canal {ch} impossible : {e}",
+                    "Rattrapage : lecture du canal {ch} impossible : {e!r}",
                     ch=channel.id, e=exc,
                 )
 
@@ -151,7 +151,7 @@ async def run_catchup(bot: "WallyDiscord") -> None:
             await handle_message(bot, msg)
         except Exception as exc:  # noqa: BLE001 — un message fautif n'arrête pas les suivants
             logger.warning(
-                "Rattrapage : échec du traitement du message {mid} : {e}",
+                "Rattrapage : échec du traitement du message {mid} : {e!r}",
                 mid=msg.id, e=exc,
             )
     logger.info("Rattrapage Discord terminé")

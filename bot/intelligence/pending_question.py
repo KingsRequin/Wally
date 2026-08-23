@@ -161,7 +161,7 @@ async def le_gate_veut_repondre(
         # Repli SILENCIEUX, à l'inverse du chemin « on t'a appelé » où le gate
         # retombe sur RESPOND. Une panne ne doit pas faire parler Wally là où
         # personne ne lui a rien demandé.
-        logger.warning("Question sans réponse : gate en échec, on se tait ({e})", e=exc)
+        logger.warning("Question sans réponse : gate en échec, on se tait ({e!r})", e=exc)
         return False, f"gate en échec ({exc})"
     motif = decision.reason or ""
     return decision.decision == "RESPOND", motif

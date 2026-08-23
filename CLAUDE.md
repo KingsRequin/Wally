@@ -56,6 +56,7 @@ python3 -m pytest tests/ -q              # 5864 tests, ~55 s (parallèle par dé
 python3 scripts/lint_types.py            # mypy + cliquet : la dette de types ne monte pas
 python3 scripts/lint_silences.py         # cliquet : aucun nouveau `except` muet
 python3 scripts/lint_ruff.py             # porte dure (F/PLE/T20/ASYNC1) + cliquet
+python3 scripts/lint_logs.py             # aucune exception journalisée sans `!r`
 ```
 
 **Si le changement touche du JS** (`bot/dashboard/static/`, `public-ui/`,
@@ -134,6 +135,7 @@ python3 scripts/lint_types.py [--liste|--maj]
 python3 scripts/lint_silences.py [--liste|--maj]
 python3 scripts/lint_ruff.py [--liste|--maj]
 python3 scripts/lint_js.py [--liste|--maj]
+python3 scripts/lint_logs.py [--liste|--maj|--corriger]
 python3 scripts/smoke_front.py [--overlay|--admin] [--captures /tmp]
 python3 scripts/audit_deps.py            # CVE des paquets DE L'IMAGE (pas de l'hôte)
 python3 scripts/installer_hooks.py       # pose le hook pre-push (à faire une fois)
@@ -316,6 +318,10 @@ Un log DEBUG n'existe pas en prod (le niveau est plus haut) : pour une preuve de
 - `complete()` renvoie `FALLBACK_RESPONSE`, jamais une exception
 - **Aucun `except` muet** : journaliser, relever, rendre un repli explicite, ou commenter
   POURQUOI le silence est le bon choix (`scripts/lint_silences.py` le vérifie)
+- **Toujours `{e!r}`, jamais `{e}`** pour journaliser une exception : `ConnectError('')`,
+  `ReadTimeout('')`, `CancelledError()` ont tous un `str()` VIDE, et la ligne s'arrête alors
+  sur le deux-points sans rien dire. Le `repr` porte le TYPE, qui est souvent toute la donnée
+  utile. `scripts/lint_logs.py` refuse tout nouveau site (cliquet à ZÉRO)
 
 ### Author Labels (Discord)
 `_author_label(member)` dans `handlers.py` : `display_name (@username)` quand les deux diffèrent,
@@ -778,6 +784,7 @@ cette signature, pas les bugs un par un.
 | `scripts/lint_ruff.py` | Nom indéfini, `print()`, bloquant dans une coroutine (porte DURE, zéro toléré) + `datetime` naïf et bugbear (cliquet) |
 | `scripts/lint_js.py` | Le MÊME filet sur les 16 k lignes de front. Il n'y en avait aucun : `catch (e) {}` y était invisible |
 | `scripts/smoke_front.py` | Le front MONTE-t-il ? Charge overlay + les 7 onglets + les sous-onglets, échoue sur une erreur JS OU un panneau vide. Le seul outil qui exécute le JavaScript |
+| `scripts/lint_logs.py` | Une exception journalisée sans `!r`. `ConnectError('')` a un `str()` VIDE : la ligne s'arrête sur le deux-points et ne dit RIEN (599 lignes en août, dont 205 en un jour) |
 | `scripts/audit_deps.py` | CVE des paquets **de l'image**. Auditer l'hôte donne une liste fausse : son environnement Python date de l'installation de CT100 |
 | Hook `pre-push` | Les trois cliquets rapides avant chaque push (`scripts/installer_hooks.py`). Ni la suite ni le smoke test : un hook à deux minutes finit en `--no-verify` |
 | `bot/core/canari.py` | Invariants au BOOT sur l'état RÉEL (base + disque) |

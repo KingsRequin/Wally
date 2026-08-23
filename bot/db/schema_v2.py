@@ -297,6 +297,6 @@ async def _poser_unicite_faits(db) -> None:
         await db.commit()
     except (aiosqlite.OperationalError, aiosqlite.IntegrityError) as exc:
         logger.warning(
-            "Unicité des faits actifs non posée ({e}) — des doublons exacts "
+            "Unicité des faits actifs non posée ({e!r}) — des doublons exacts "
             "subsistent, le ménage nocturne les repliera", e=exc,
         )

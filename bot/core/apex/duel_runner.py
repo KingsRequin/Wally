@@ -441,7 +441,7 @@ class DuelRunner:
         try:
             await self._annoncer(evt)
         except Exception as exc:  # noqa: BLE001 — une annonce ratée n'est pas fatale
-            logger.warning("Annonce de duel en erreur ({t}) : {e}", t=evt.type, e=exc)
+            logger.warning("Annonce de duel en erreur ({t}) : {e!r}", t=evt.type, e=exc)
 
     # -- Récompense -----------------------------------------------------------
     async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
@@ -560,7 +560,7 @@ class DuelRunner:
             logger.info("Duel Apex repris après redémarrage : {v} en état {e}",
                         v=self.duel_en_cours.viewer_nom, e=self.duel_en_cours.etat.value)
         except Exception as exc:  # noqa: BLE001 — un état illisible ne bloque pas le boot
-            logger.warning("État de duel illisible, ignoré : {e}", e=exc)
+            logger.warning("État de duel illisible, ignoré : {e!r}", e=exc)
             self.duel_en_cours = None
 
     # -- Ouverture ----------------------------------------------------------
@@ -618,7 +618,7 @@ class DuelRunner:
         try:
             return self._stream_en_ligne() is False
         except Exception as exc:  # noqa: BLE001 — un statut illisible ne refuse rien
-            logger.warning("Duel Apex : statut du live illisible à l'ouverture : {e}",
+            logger.warning("Duel Apex : statut du live illisible à l'ouverture : {e!r}",
                            e=exc)
             return False
 
@@ -1093,7 +1093,7 @@ class DuelRunner:
                                    source="apex_duel",
                                    origin="Duel Apex (points de chaîne)")
         except Exception as exc:  # noqa: BLE001 — une trace ratée n'annule pas un duel
-            logger.warning("Duel Apex : résultat non mémorisé : {e}", e=exc)
+            logger.warning("Duel Apex : résultat non mémorisé : {e!r}", e=exc)
 
     async def _api_muette(self, duel: Duel, maintenant: float) -> bool:
         """Un duel que plus aucun relevé ne peut faire avancer.
@@ -1163,7 +1163,7 @@ class DuelRunner:
         try:
             en_ligne = self._stream_en_ligne()
         except Exception as exc:  # noqa: BLE001 — un statut illisible n'abandonne rien
-            logger.warning("Duel Apex : statut du live illisible : {e}", e=exc)
+            logger.warning("Duel Apex : statut du live illisible : {e!r}", e=exc)
             return False
         if en_ligne is not False:
             self._offline_depuis = None
@@ -1397,7 +1397,7 @@ async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
     try:
         await runner.rattraper_les_achats_manques()
     except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-        logger.error("Duel Apex : rattrapage des achats manqués en erreur : {e}",
+        logger.error("Duel Apex : rattrapage des achats manqués en erreur : {e!r}",
                      e=exc)
     runner.activate()
     return reward_id
@@ -1448,5 +1448,5 @@ async def boucle_sonde(source: Callable[[], "DuelRunner | None"], *,
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — la sonde ne meurt jamais en silence
-            logger.error("Boucle de duel en erreur : {e}", e=exc)
+            logger.error("Boucle de duel en erreur : {e!r}", e=exc)
             await sleep(RECUL_ERREUR_S)

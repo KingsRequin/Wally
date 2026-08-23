@@ -88,7 +88,7 @@ def journal(conv_log, platform: str, channel: str, event_type: str, /, **fields)
         conv_log.log(platform, channel, event_type, **_clean(fields))
         return True
     except Exception as exc:  # noqa: BLE001 — un journal ne casse pas son sujet
-        logger.debug("journal {t} non écrit : {e}", t=event_type, e=exc)
+        logger.debug("journal {t} non écrit : {e!r}", t=event_type, e=exc)
         return False
 
 
@@ -185,7 +185,7 @@ def note_speech(conv_log, platform: str, channel: str, trace_id: str) -> None:
             _RECEPTION.spoke(platform, channel, str(trace_id))
         _flush_reception(conv_log)
     except Exception as exc:  # noqa: BLE001 — un journal ne casse pas son sujet
-        logger.debug("signal de réception non ouvert : {e}", e=exc)
+        logger.debug("signal de réception non ouvert : {e!r}", e=exc)
 
 
 def note_audience(conv_log, platform: str, channel: str, author: str,
@@ -195,7 +195,7 @@ def note_audience(conv_log, platform: str, channel: str, author: str,
         _RECEPTION.heard(platform, channel, str(author or ""), str(content or ""))
         _flush_reception(conv_log)
     except Exception as exc:  # noqa: BLE001 — un journal ne casse pas son sujet
-        logger.debug("signal de réception non crédité : {e}", e=exc)
+        logger.debug("signal de réception non crédité : {e!r}", e=exc)
 
 
 def observe_event(conv_log, platform: str, channel: str, event_type: str,

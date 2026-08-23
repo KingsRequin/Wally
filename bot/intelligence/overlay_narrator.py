@@ -68,7 +68,7 @@ def _vocal_diffuse() -> bool:
 
         return voice_broadcast_open()
     except Exception as exc:  # noqa: BLE001 — dans le doute, on n'écrit pas
-        logger.debug("Overlay: diffusion vocale indéterminée ({e})", e=exc)
+        logger.debug("Overlay: diffusion vocale indéterminée ({e!r})", e=exc)
         return False
 
 
@@ -293,7 +293,7 @@ async def widgets_disponibles(db) -> frozenset:
         layout = await charger_layout(db)
         scenes = layout.get("scenes") or []
     except Exception as exc:      # lecture ratée, modèle inattendu
-        logger.warning("Overlay : widgets disponibles illisibles ({e}) — "
+        logger.warning("Overlay : widgets disponibles illisibles ({e!r}) — "
                        "aucun n'est retiré", e=exc)
         return connus
     if not scenes:
@@ -335,7 +335,7 @@ async def spec_overlay_pour(narrateur) -> dict:
     try:
         return await narrateur.spec_outil()
     except Exception as exc:
-        logger.warning("Overlay : enum non filtré ({e}) — spec entière servie",
+        logger.warning("Overlay : enum non filtré ({e!r}) — spec entière servie",
                        e=exc)
         return OVERLAY_TOOL_SPEC
 
@@ -511,7 +511,7 @@ def current_overlay_state_block() -> Optional[str]:
     try:
         return _active_narrator.current_state_block() or None
     except Exception as exc:  # noqa: BLE001 — un bloc de contexte ne casse pas un prompt
-        logger.debug("Overlay: bloc d'état illisible: {e}", e=exc)
+        logger.debug("Overlay: bloc d'état illisible: {e!r}", e=exc)
         return None
 
 
@@ -814,7 +814,7 @@ class OverlayNarrator:
         try:
             await self._db.set_state(FORCE_LIVE_KEY, str(getattr(self, "_force_epoch", 0.0)))
         except Exception as exc:  # noqa: BLE001 — un réglage non rangé n'est pas fatal
-            logger.debug("Overlay: mode test non rangé: {e}", e=exc)
+            logger.debug("Overlay: mode test non rangé: {e!r}", e=exc)
 
     async def restore_force_live(self) -> None:
         """Reprend le mode test laissé en cours par le process précédent."""
@@ -824,7 +824,7 @@ class OverlayNarrator:
             raw = await self._db.get_state(FORCE_LIVE_KEY)
             echeance = float(raw or 0)
         except Exception as exc:  # noqa: BLE001 — une valeur illisible ne bloque rien
-            logger.debug("Overlay: mode test illisible: {e}", e=exc)
+            logger.debug("Overlay: mode test illisible: {e!r}", e=exc)
             return
         reste = echeance - time.time()
         if reste <= 0:
@@ -931,7 +931,7 @@ class OverlayNarrator:
             await self._db.set_state(LIVE_STATE_KEY,
                                      json.dumps(self._live_state_snapshot()))
         except Exception as exc:  # noqa: BLE001 — un état non rangé n'est pas fatal
-            logger.debug("Overlay: parties en cours non rangées: {e}", e=exc)
+            logger.debug("Overlay: parties en cours non rangées: {e!r}", e=exc)
 
     def _planifier_flush(self) -> None:
         """Range l'état sans attendre : les mutations de partie sont synchrones.
@@ -965,7 +965,7 @@ class OverlayNarrator:
             raw = await self._db.get_state(LIVE_STATE_KEY)
             data = json.loads(raw) if raw else None
         except Exception as exc:  # noqa: BLE001 — une valeur illisible ne bloque rien
-            logger.debug("Overlay: parties en cours illisibles: {e}", e=exc)
+            logger.debug("Overlay: parties en cours illisibles: {e!r}", e=exc)
             return
         if not isinstance(data, dict) or not self._en_live_sans_effet():
             return
@@ -1178,7 +1178,7 @@ class OverlayNarrator:
             return {k: round(float(v), 3)
                     for k, v in (self._emotion.get_state() or {}).items()}
         except Exception as exc:  # noqa: BLE001 — une humeur illisible ne bloque rien
-            logger.debug("Overlay: humeur illisible pour le journal: {e}", e=exc)
+            logger.debug("Overlay: humeur illisible pour le journal: {e!r}", e=exc)
             return {}
 
     def _note_budget(self, raison: str) -> None:
@@ -1271,7 +1271,7 @@ class OverlayNarrator:
         try:
             short = await self._condense(text, source="thought", trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("OverlayNarrator: condensation échouée: {e}", e=exc)
+            logger.debug("OverlayNarrator: condensation échouée: {e!r}", e=exc)
             self._journal("overlay_rejected", "thought", text, trace_id=trace,
                           motif=f"condensation en échec : {exc}")
             short = None
@@ -1330,7 +1330,7 @@ class OverlayNarrator:
         try:
             directive = (persona.event_directives or {}).get(kind, "")
         except Exception as exc:  # noqa: BLE001 — un registre absent ne bloque rien
-            logger.debug("Overlay: registre d'événement illisible ({k}) : {e}",
+            logger.debug("Overlay: registre d'événement illisible ({k}) : {e!r}",
                          k=kind, e=exc)
             return _EVENT_SYSTEM
         if not directive:
@@ -1390,7 +1390,7 @@ class OverlayNarrator:
             if feed is not None:
                 tours = feed.recent_lines(_OVERHEARD_CONTEXT_LINES)
         except Exception as exc:  # noqa: BLE001 — un contexte absent n'est pas fatal
-            logger.debug("Overlay: échange vocal illisible ({e})", e=exc)
+            logger.debug("Overlay: échange vocal illisible ({e!r})", e=exc)
         if not tours:
             return line, set()
         noms: set = set()
@@ -1444,7 +1444,7 @@ class OverlayNarrator:
             short = await self._condense(description, system=system,
                                          source=source, trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("OverlayNarrator: réaction échouée: {e}", e=exc)
+            logger.debug("OverlayNarrator: réaction échouée: {e!r}", e=exc)
             self._journal("overlay_rejected", source, description, trace_id=trace,
                           motif=f"condensation en échec : {exc}")
             short = None
@@ -1547,7 +1547,7 @@ class OverlayNarrator:
         except RuntimeError:
             pass
         except Exception as exc:   # pragma: no cover - filet
-            logger.debug("Overlay : relecture des widgets impossible ({e})", e=exc)
+            logger.debug("Overlay : relecture des widgets impossible ({e!r})", e=exc)
 
     def show_widget(
         self, widget: str, comment: str = "", result=None, *,
@@ -1878,7 +1878,7 @@ class OverlayNarrator:
                 panel, player, requester=requester, period=period
             )
         except Exception as exc:  # noqa: BLE001 — un panneau raté ne casse rien
-            logger.warning("Overlay: panneau Apex {p} échoué: {e}", p=panel, e=exc)
+            logger.warning("Overlay: panneau Apex {p} échoué: {e!r}", p=panel, e=exc)
             return None
         if not data:
             return None
@@ -1954,7 +1954,7 @@ class OverlayNarrator:
             short = await self._condense(kind, system=_EVENT_SYSTEM,
                                          source="greet", trace=trace)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("OverlayNarrator: salut échoué: {e}", e=exc)
+            logger.debug("OverlayNarrator: salut échoué: {e!r}", e=exc)
             self._journal("overlay_rejected", "greet", kind, trace_id=trace,
                           motif=f"condensation en échec : {exc}")
             short = None
@@ -1999,7 +1999,7 @@ class OverlayNarrator:
         try:
             self._feed.clear()
         except Exception as exc:  # noqa: BLE001 — un live qui démarre ne doit pas échouer
-            logger.warning("Overlay: vidage du flux au reset échoué : {e}", e=exc)
+            logger.warning("Overlay: vidage du flux au reset échoué : {e!r}", e=exc)
         # L'oubli doit franchir le redémarrage comme le reste : sans ce
         # rangement, la base garderait la partie du live précédent.
         self._planifier_flush()
@@ -2352,7 +2352,7 @@ class OverlayNarrator:
             short = await self._condense(entree, system=_EVENT_SYSTEM,
                                          source="milestone", trace=trace)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("Overlay: commentaire de palier échoué: {e}", e=exc)
+            logger.debug("Overlay: commentaire de palier échoué: {e!r}", e=exc)
             self._journal("overlay_rejected", "milestone", entree, trace_id=trace,
                           motif=f"condensation en échec : {exc}")
             return None
@@ -2543,7 +2543,7 @@ class OverlayNarrator:
         try:
             clip = await self._last_clip(creator, query=query, most_viewed=most_viewed)
         except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
-            logger.warning("Overlay: dernier clip introuvable : {e}", e=exc)
+            logger.warning("Overlay: dernier clip introuvable : {e!r}", e=exc)
             return None
         if not clip:
             return None
@@ -2576,7 +2576,7 @@ class OverlayNarrator:
         try:
             clips = await self._top_clips(count)
         except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
-            logger.warning("Overlay: podium des clips indisponible : {e}", e=exc)
+            logger.warning("Overlay: podium des clips indisponible : {e!r}", e=exc)
             return None
         rows = [
             {
@@ -2665,7 +2665,7 @@ class OverlayNarrator:
             try:
                 stock = len(library.list_medias())
             except Exception as exc:  # noqa: BLE001 — on lance quand même
-                logger.warning("Spam virus : stock illisible ({e}) — durée par défaut",
+                logger.warning("Spam virus : stock illisible ({e!r}) — durée par défaut",
                                e=exc)
                 return self.VIRUS_S
         if stock <= 0:
@@ -3079,7 +3079,7 @@ class OverlayNarrator:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("Overlay: clôture du sondage en erreur: {e}", e=exc)
+            logger.warning("Overlay: clôture du sondage en erreur: {e!r}", e=exc)
 
     def close_poll(self) -> Optional[dict]:
         """Termine le sondage : gagnant à l'écran, résultat retenu.
@@ -3128,7 +3128,7 @@ class OverlayNarrator:
             try:
                 feed.record(self.poll_result_line(), notify=False)
             except Exception as exc:  # noqa: BLE001 — jamais bloquant
-                logger.debug("Overlay: résultat du sondage non consigné: {e}", e=exc)
+                logger.debug("Overlay: résultat du sondage non consigné: {e!r}", e=exc)
         logger.info("Overlay: sondage clos — {r}", r=self.poll_result_line())
         # Le résultat est ce que Wally répondra à « ça a donné quoi ? » : il doit
         # survivre au rebuild autant que le sondage lui-même.

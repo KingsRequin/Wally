@@ -35,7 +35,7 @@ class VoiceCog(commands.Cog):
             await interaction.followup.send(
                 f"J'arrive dans **{voice.channel.name}** 🎙️", ephemeral=True)
         except Exception as e:  # noqa: BLE001
-            logger.warning("/join a échoué: {e}", e=e)
+            logger.warning("/join a échoué: {e!r}", e=e)
             await interaction.followup.send("Impossible de rejoindre le vocal.", ephemeral=True)
 
     @app_commands.command(
@@ -81,7 +81,7 @@ class VoiceCog(commands.Cog):
         try:
             await service.join(channel, listen_only=True)
         except Exception as e:  # noqa: BLE001
-            logger.warning("/ecoute a échoué: {e}", e=e)
+            logger.warning("/ecoute a échoué: {e!r}", e=e)
             await interaction.followup.send(
                 f"Impossible de rejoindre **{channel.name}**.", ephemeral=True
             )
@@ -104,5 +104,5 @@ class VoiceCog(commands.Cog):
             await self.bot.voice_service.leave()
             await interaction.followup.send("Je vous laisse 👋")
         except Exception as e:  # noqa: BLE001
-            logger.warning("/leave a échoué: {e}", e=e)
+            logger.warning("/leave a échoué: {e!r}", e=e)
             await interaction.followup.send("Impossible de quitter le vocal.", ephemeral=True)

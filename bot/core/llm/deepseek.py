@@ -263,7 +263,7 @@ class DeepSeekLLMClient(BaseLLMClient):
             catalogue = await self._client.models.list()
             return sorted(m.id for m in catalogue.data)
         except Exception as e:
-            logger.warning("DeepSeek list_models() a échoué : {e}", e=e)
+            logger.warning("DeepSeek list_models() a échoué : {e!r}", e=e)
             return []
 
     # ── Helpers privés ────────────────────────────────────────────────────────
@@ -315,7 +315,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                     raise
                 delai = _RETRY_BASE_DELAY * (2 ** tentative)
                 logger.warning(
-                    "DeepSeek: tentative {n}/{m} échouée ({e}) — nouvelle dans {d}s",
+                    "DeepSeek: tentative {n}/{m} échouée ({e!r}) — nouvelle dans {d}s",
                     n=tentative + 1, m=_MAX_RETRIES, e=e, d=delai,
                 )
                 await asyncio.sleep(delai)
@@ -350,7 +350,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 user_id=user_id,
             )
         except Exception as e:
-            logger.debug("DeepSeek log_cost failed (non-fatal): {e}", e=e)
+            logger.debug("DeepSeek log_cost failed (non-fatal): {e!r}", e=e)
 
     # ── Interface publique ────────────────────────────────────────────────────
 
@@ -390,7 +390,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 return FALLBACK_RESPONSE
             return text
         except Exception as e:
-            logger.error("DeepSeek complete() failed: {e}", e=e)
+            logger.error("DeepSeek complete() failed: {e!r}", e=e)
             return FALLBACK_RESPONSE
 
     async def complete_with_reasoning(
@@ -424,7 +424,7 @@ class DeepSeekLLMClient(BaseLLMClient):
             await self._log_cost(response, purpose, user_id)
             return content, reasoning
         except Exception as e:
-            logger.error("DeepSeek complete_with_reasoning() failed: {e}", e=e)
+            logger.error("DeepSeek complete_with_reasoning() failed: {e!r}", e=e)
             return "", ""
 
     async def complete_with_tools(
@@ -449,7 +449,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                     **params,
                 )
             except Exception as e:
-                logger.error("DeepSeek complete_with_tools() iter {i} failed: {e}", i=iteration, e=e)
+                logger.error("DeepSeek complete_with_tools() iter {i} failed: {e!r}", i=iteration, e=e)
                 return (FALLBACK_RESPONSE, tools_called)
 
             msg = response.choices[0].message
@@ -513,7 +513,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 try:
                     return await tool_executor(tc.function.name, json.dumps(args))
                 except Exception as e:
-                    logger.warning("Tool executor error for {name}: {e}", name=tc.function.name, e=e)
+                    logger.warning("Tool executor error for {name}: {e!r}", name=tc.function.name, e=e)
                     return f"Tool error: {e}"
 
             for tc in tool_calls:
@@ -545,7 +545,7 @@ class DeepSeekLLMClient(BaseLLMClient):
             await self._log_cost(response, purpose, user_id)
             return (text, tools_called)
         except Exception as e:
-            logger.error("DeepSeek complete_with_tools() final fallback failed: {e}", e=e)
+            logger.error("DeepSeek complete_with_tools() final fallback failed: {e!r}", e=e)
             return (FALLBACK_RESPONSE, tools_called)
 
     async def complete_structured(
@@ -591,9 +591,9 @@ class DeepSeekLLMClient(BaseLLMClient):
                 return result
             except Exception as e:
                 if attempt == 0:
-                    logger.warning("DeepSeek complete_structured() échec, réessai: {e}", e=e)
+                    logger.warning("DeepSeek complete_structured() échec, réessai: {e!r}", e=e)
                     continue
-                logger.error("DeepSeek complete_structured() failed: {e}", e=e)
+                logger.error("DeepSeek complete_structured() failed: {e!r}", e=e)
                 raise RuntimeError(f"DeepSeek structured output failed: {e}") from e
 
     async def complete_stream(
@@ -635,9 +635,9 @@ class DeepSeekLLMClient(BaseLLMClient):
                 try:
                     await self._log_cost(await stream.get_final_completion(), purpose, user_id)
                 except Exception as e:
-                    logger.debug("DeepSeek stream cost log failed (non-fatal): {e}", e=e)
+                    logger.debug("DeepSeek stream cost log failed (non-fatal): {e!r}", e=e)
         except Exception as e:
-            logger.error("DeepSeek complete_stream() failed: {e}", e=e)
+            logger.error("DeepSeek complete_stream() failed: {e!r}", e=e)
             # Le fallback ne remplace que ce qui n'est PAS déjà parti. Émis en
             # plus, il donnait au lecteur une demi-phrase suivie de « Je
             # rencontre un problème technique… ».

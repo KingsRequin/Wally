@@ -241,9 +241,9 @@ class TwitchAPI:
                         return False
                     return True
         except httpx.HTTPStatusError as exc:
-            logger.error("Twitch send_message HTTP error: {e}", e=exc)
+            logger.error("Twitch send_message HTTP error: {e!r}", e=exc)
         except Exception as exc:
-            logger.error("Twitch send_message error: {e}", e=exc)
+            logger.error("Twitch send_message error: {e!r}", e=exc)
         return False
 
     async def get_broadcaster_id(self, login: str) -> Optional[str]:
@@ -278,7 +278,7 @@ class TwitchAPI:
                     data = resp.json().get("data", [])
                     return data[0]["id"] if data else None
         except Exception as exc:
-            logger.warning("get_broadcaster_id failed for {login}: {e}", login=login, e=exc)
+            logger.warning("get_broadcaster_id failed for {login}: {e!r}", login=login, e=exc)
             return None
 
     async def get_streams_status(self, broadcaster_ids: list[str]) -> dict[str, bool]:
@@ -312,7 +312,7 @@ class TwitchAPI:
                     live_ids = {s["user_id"] for s in resp.json().get("data", [])}
                     return {bid: (bid in live_ids) for bid in broadcaster_ids}
         except Exception as exc:
-            logger.warning("get_streams_status failed: {e}", e=exc)
+            logger.warning("get_streams_status failed: {e!r}", e=exc)
             return {}
 
     async def get_users_by_ids(self, ids: list[str]) -> dict[str, str]:
@@ -351,7 +351,7 @@ class TwitchAPI:
                             result[user["id"]] = user["login"]
                         break
         except Exception as exc:
-            logger.warning("get_users_by_ids failed: {e}", e=exc)
+            logger.warning("get_users_by_ids failed: {e!r}", e=exc)
         return result
 
     # ------------------------------------------------------------------
@@ -400,7 +400,7 @@ class TwitchAPI:
                         return None
                     return resp.json()
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("Twitch {u} a échoué : {e}", u=url, e=exc)
+            logger.warning("Twitch {u} a échoué : {e!r}", u=url, e=exc)
         return None
 
     async def get_global_emotes(self) -> Optional[list[str]]:
@@ -485,7 +485,7 @@ class TwitchAPI:
             if not qualities or not token.get("signature"):
                 return None
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("Twitch GQL clip a échoué : {e}", e=exc)
+            logger.debug("Twitch GQL clip a échoué : {e!r}", e=exc)
             return None
 
         # La qualité voulue si elle existe, sinon la plus haute en dessous —
@@ -629,7 +629,7 @@ class TwitchAPI:
                     return resp.json().get("data") or []
                 return []
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.debug("Twitch clips API a échoué : {e}", e=exc)
+            logger.debug("Twitch clips API a échoué : {e!r}", e=exc)
             return []
 
     async def refund_redemption(self, reward_id: str, redemption_id: str) -> bool:
@@ -718,7 +718,7 @@ class TwitchAPI:
                     return True
                 return False
         except Exception as exc:  # noqa: BLE001 — un arbitrage raté ne tue pas le duel
-            logger.error("Redemption {s} en erreur : {e}", s=statut, e=exc)
+            logger.error("Redemption {s} en erreur : {e!r}", s=statut, e=exc)
             return False
 
     async def redemptions_en_attente(self, reward_id: str) -> list[dict] | None:
@@ -788,7 +788,7 @@ class TwitchAPI:
                     "({n} déjà lues)", n=len(tout))
                 return tout
         except Exception as exc:  # noqa: BLE001
-            logger.error("Redemptions en attente en erreur : {e}", e=exc)
+            logger.error("Redemptions en attente en erreur : {e!r}", e=exc)
             return None
 
     async def recompenses_gerables(self) -> list[dict] | None:
@@ -841,7 +841,7 @@ class TwitchAPI:
                     return (resp.json() or {}).get("data") or []
                 return None
         except Exception as exc:  # noqa: BLE001
-            logger.error("Liste des récompenses en erreur : {e}", e=exc)
+            logger.error("Liste des récompenses en erreur : {e!r}", e=exc)
             return None
 
     async def inventaire_recompenses(self) -> tuple[int, int] | None:
@@ -867,7 +867,7 @@ class TwitchAPI:
                 data = (resp.json() or {}).get("data") or []
                 return len(data), sum(1 for r in data if not r.get("is_enabled"))
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Inventaire des récompenses en erreur : {e}", e=exc)
+            logger.warning("Inventaire des récompenses en erreur : {e!r}", e=exc)
             return None
 
     async def _diagnostic_plafond(self, titre: str) -> str:
@@ -971,7 +971,7 @@ class TwitchAPI:
                     return rid
                 return None
         except Exception as exc:  # noqa: BLE001
-            logger.error("Création de récompense en erreur : {e}", e=exc)
+            logger.error("Création de récompense en erreur : {e!r}", e=exc)
             return None
 
     # ── Prédictions (§13) ───────────────────────────────────────────────────
@@ -1021,7 +1021,7 @@ class TwitchAPI:
                                       "title": str(o.get("title") or "")}
                                      for o in (pred.get("outcomes") or [])]}
         except Exception as exc:  # noqa: BLE001 — une panne d'API ne casse pas le chat
-            logger.error("Prédiction en erreur : {e}", e=exc)
+            logger.error("Prédiction en erreur : {e!r}", e=exc)
             return None
 
     async def resoudre_prediction(self, prediction_id: str,
@@ -1063,7 +1063,7 @@ class TwitchAPI:
                 logger.info("Prédiction {a} : {i}", a=action, i=prediction_id)
                 return True
         except Exception as exc:  # noqa: BLE001 — une panne d'API ne casse pas le chat
-            logger.error("Prédiction ({a}) en erreur : {e}", a=action, e=exc)
+            logger.error("Prédiction ({a}) en erreur : {e!r}", a=action, e=exc)
             return False
 
     async def maj_recompense(self, reward_id: str, titre: str, cout: int,
@@ -1163,7 +1163,7 @@ class TwitchAPI:
                     return True
                 return False
         except Exception as exc:  # noqa: BLE001
-            logger.error("Mise à jour de récompense en erreur : {e}", e=exc)
+            logger.error("Mise à jour de récompense en erreur : {e!r}", e=exc)
             return False
 
     async def get_stream(self) -> dict:

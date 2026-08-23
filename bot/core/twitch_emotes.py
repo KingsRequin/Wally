@@ -249,7 +249,7 @@ class EmoteRegistry:
             recentes = sorted({c.name for c in tous})[-max(1, days):]
             fichiers = [c for c in tous if c.name in recentes]
         except Exception as exc:  # noqa: BLE001 — un amorçage ne casse pas le boot
-            logger.warning("Emotes : journaux illisibles ({e})", e=exc)
+            logger.warning("Emotes : journaux illisibles ({e!r})", e=exc)
             return 0
         for chemin in fichiers:
             try:
@@ -264,7 +264,7 @@ class EmoteRegistry:
                         self.note_chat(str(event.get("content") or ""))
                         lignes += 1
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Emotes : {f} non relu ({e})", f=chemin, e=exc)
+                logger.debug("Emotes : {f} non relu ({e!r})", f=chemin, e=exc)
         logger.info(
             "Emotes : amorcées sur {n} ligne(s) de chat — {top}",
             n=lignes, top=", ".join(self.top()) or "aucune",
@@ -319,7 +319,7 @@ def note_chat_emotes(text: str) -> None:
     try:
         _REGISTRE.note_chat(text)
     except Exception as exc:  # noqa: BLE001 — un compteur ne casse pas le chat
-        logger.debug("Emotes : ligne non comptée ({e})", e=exc)
+        logger.debug("Emotes : ligne non comptée ({e!r})", e=exc)
 
 
 def current_emote_block() -> Optional[str]:
@@ -331,7 +331,7 @@ def current_emote_block() -> Optional[str]:
     try:
         return _REGISTRE.render() or None
     except Exception as exc:  # noqa: BLE001 — un bloc de contexte ne casse pas un prompt
-        logger.debug("Emotes : bloc illisible ({e})", e=exc)
+        logger.debug("Emotes : bloc illisible ({e!r})", e=exc)
         return None
 
 
@@ -356,4 +356,4 @@ async def refresh_from_api(api) -> None:
             logger.info("Emotes : {n} emote(s) de chaîne ouverte(s) au bot", n=len(chaine))
         _REGISTRE.set_verified([*globales, *(chaine or [])], channel_names=chaine)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
-        logger.warning("Emotes : rafraîchissement impossible ({e})", e=exc)
+        logger.warning("Emotes : rafraîchissement impossible ({e!r})", e=exc)

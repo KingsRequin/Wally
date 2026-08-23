@@ -141,7 +141,7 @@ class ActionScheduler:
             except Exception as exc:  # noqa: BLE001 — une ligne bancale n'empêche pas le boot
                 ignored_count += 1
                 logger.warning(
-                    "Tâche {id} non replanifiée ({t}) : {e}",
+                    "Tâche {id} non replanifiée ({t}) : {e!r}",
                     id=task.get("id"), t=task.get("schedule_type"), e=exc,
                 )
         logger.info(
@@ -268,6 +268,6 @@ class ActionScheduler:
                 prochaine = CronTrigger(timezone=TZ, **cron_kwargs).get_next_fire_time(None, now)
                 return prochaine.isoformat() if prochaine else None
             except Exception as exc:  # noqa: BLE001 — un spec cron bancal n'est pas fatal
-                logger.warning("next_run_at cron incalculable ({s}): {e}", s=spec, e=exc)
+                logger.warning("next_run_at cron incalculable ({s}): {e!r}", s=spec, e=exc)
                 return None
         return None

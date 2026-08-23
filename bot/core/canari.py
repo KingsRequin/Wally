@@ -221,6 +221,6 @@ def lancer_canari(config, db_path: str | None = None) -> asyncio.Task:
         try:
             await verifier_invariants(config, db_path)
         except Exception as exc:  # noqa: BLE001 — un canari ne fait jamais échouer le boot
-            logger.warning("🐤 Canari de démarrage indisponible : {e}", e=exc)
+            logger.warning("🐤 Canari de démarrage indisponible : {e!r}", e=exc)
 
     return asyncio.create_task(_passer(), name="canari-demarrage")

@@ -34,5 +34,5 @@ class NotificationService:
             await channel.send(message)
             return True
         except Exception as exc:
-            logger.warning("Failed to send notification: {e}", e=exc)
+            logger.warning("Failed to send notification: {e!r}", e=exc)
             return False

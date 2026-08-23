@@ -96,13 +96,13 @@ class ScanCog(commands.Cog):
                 ephemeral=True,
             )
         except discord.HTTPException as e:
-            logger.error("scan: HTTPException lors du fetch: {e}", e=e)
+            logger.error("scan: HTTPException lors du fetch: {e!r}", e=e)
             await interaction.followup.send(
                 "❌ Erreur réseau lors du fetch. Consulte les logs.",
                 ephemeral=True,
             )
         except Exception as e:
-            logger.error("scan: erreur inattendue: {e}", e=e)
+            logger.error("scan: erreur inattendue: {e!r}", e=e)
             await interaction.followup.send(
                 "❌ Erreur lors de l'analyse. Consulte les logs.", ephemeral=True
             )

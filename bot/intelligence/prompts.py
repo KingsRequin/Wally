@@ -42,7 +42,7 @@ def load_prompt(name: str, fallback: str = "", render: bool = True) -> str:
     except FileNotFoundError:
         logger.warning("Prompt file missing: {f}", f=path)
     except Exception as exc:
-        logger.warning("Prompt file read error {f}: {e}", f=path, e=exc)
+        logger.warning("Prompt file read error {f}: {e!r}", f=path, e=exc)
     return render_identity(fallback) if render else fallback
 
 
@@ -590,7 +590,7 @@ class PromptBuilder:
             return template.format(**kwargs)
         except (KeyError, IndexError, ValueError) as exc:
             logger.warning(
-                "Gabarit d'événement invalide ({e}) — laissé tel quel : {t}",
+                "Gabarit d'événement invalide ({e!r}) — laissé tel quel : {t}",
                 e=exc, t=template[:80],
             )
             return template

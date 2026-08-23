@@ -48,7 +48,7 @@ async def announce_clip(
         try:
             playable = await api.get_clip_video_url(slug)
         except Exception as exc:  # noqa: BLE001 — une API muette ne casse rien
-            logger.debug("Overlay: vidéo du clip {s} indisponible : {e}", s=slug, e=exc)
+            logger.debug("Overlay: vidéo du clip {s} indisponible : {e!r}", s=slug, e=exc)
             playable = None
         if playable:
             if attempt:

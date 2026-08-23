@@ -167,7 +167,7 @@ async def link_apex_account(payload: LinkRequest, request: Request):
         try:
             connu = await state.db.apex_uid_pour_nom(ref)
         except Exception as e:  # noqa: BLE001 — le registre est un appui, pas une dépendance
-            logger.warning("Apex: registre illisible à la liaison: {e}", e=e)
+            logger.warning("Apex: registre illisible à la liaison: {e!r}", e=e)
         if connu:
             uid = connu["uid"]
 

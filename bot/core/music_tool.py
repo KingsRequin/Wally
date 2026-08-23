@@ -113,7 +113,7 @@ async def run_music_tool(bot, args: dict, *, roles=None, maison: bool = True,
                                      joue=bool(etat.get("joue")),
                                      url=etat.get("url") or "")
             except Exception as exc:  # noqa: BLE001 — l'écran ne doit rien casser
-                logger.warning("Musique : affichage impossible : {e}", e=exc)
+                logger.warning("Musique : affichage impossible : {e!r}", e=exc)
         return _dire_ce_qui_passe(etat)
 
     if action not in ACTIONS:

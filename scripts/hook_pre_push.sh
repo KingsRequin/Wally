@@ -24,7 +24,7 @@ cd "$RACINE" || exit 0
 
 echo "── pre-push : cliquets rapides ──"
 ECHECS=0
-for c in lint_types lint_silences lint_ruff; do
+for c in lint_types lint_silences lint_ruff lint_logs; do
     if ! python3 "scripts/$c.py" >/tmp/prepush_$c.out 2>&1; then
         echo "❌ scripts/$c.py"
         sed 's/^/     /' /tmp/prepush_$c.out
@@ -46,5 +46,5 @@ FIN
     exit 1
 fi
 
-echo "  ✅ les trois cliquets passent"
+echo "  ✅ les quatre cliquets passent"
 exit 0

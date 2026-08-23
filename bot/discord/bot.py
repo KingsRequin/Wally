@@ -454,7 +454,7 @@ class WallyDiscord(commands.Bot):
                     older_than_hours=getattr(self.self_fix, "_approval_timeout", 72 * 3600) / 3600
                 )
             except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
-                logger.warning("Réconciliation des demandes d'auto-modif échouée: {e}", e=exc)
+                logger.warning("Réconciliation des demandes d'auto-modif échouée: {e!r}", e=exc)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
@@ -482,7 +482,7 @@ class WallyDiscord(commands.Bot):
                 logger.info("VoiceService activé")
             except Exception as e:  # noqa: BLE001
                 self.voice_service = None
-                logger.warning("VoiceService init échouée, vocal désactivé: {e}", e=e)
+                logger.warning("VoiceService init échouée, vocal désactivé: {e!r}", e=e)
         from bot.discord.commands.voice_cmd import VoiceCog
         if self.voice_service is not None:
             await self.add_cog(VoiceCog(self))
@@ -544,7 +544,7 @@ class WallyDiscord(commands.Bot):
         try:
             await report_dead_channels(self)
         except Exception as e:  # noqa: BLE001
-            logger.warning("channel_health au boot a échoué: {e}", e=e)
+            logger.warning("channel_health au boot a échoué: {e!r}", e=e)
 
         # Auto-description des emotes custom de tous les serveurs (en tâche de
         # fond : la vision peut enchaîner des dizaines d'appels, on ne bloque
@@ -574,7 +574,7 @@ class WallyDiscord(commands.Bot):
             if _guild_allowed(self, guild) and len(after) > len(before):
                 await run_emote_description(self, guild=guild)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
-            logger.warning("on_guild_emojis_update a échoué: {e}", e=e)
+            logger.warning("on_guild_emojis_update a échoué: {e!r}", e=e)
 
     async def on_voice_state_update(self, member, before, after) -> None:
         """Salue les nouveaux arrivants dans le salon vocal où Wally est déjà présent."""
@@ -613,7 +613,7 @@ class WallyDiscord(commands.Bot):
                 if emotion is not None:
                     emotion.world_event("left_alone_in_voice", platform="discord")
         except Exception as e:  # noqa: BLE001
-            logger.warning("on_voice_state_update a échoué: {e}", e=e)
+            logger.warning("on_voice_state_update a échoué: {e!r}", e=e)
 
     async def close(self) -> None:
         if self.self_upgrade is not None:

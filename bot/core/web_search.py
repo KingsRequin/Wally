@@ -139,7 +139,7 @@ class WebSearchService:
             return self._format_results(response, platform)
 
         except Exception as exc:
-            logger.error("Tavily search error: {e}", e=exc)
+            logger.error("Tavily search error: {e!r}", e=exc)
             return f"Web search failed: {exc}"
 
     async def search_images(self, query: str) -> str:
@@ -168,7 +168,7 @@ class WebSearchService:
             return "\n".join(images[:3])
 
         except Exception as exc:
-            logger.error("Tavily image search error: {e}", e=exc)
+            logger.error("Tavily image search error: {e!r}", e=exc)
             return f"Image search failed: {exc}"
 
     # Exposants Unicode pour les marqueurs de citation (1→¹ … 5→⁵).

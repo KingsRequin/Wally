@@ -381,7 +381,7 @@ class CognitiveLoop:
             return {k: round(float(v), 3)
                     for k, v in (self._emotion.get_state() or {}).items()}
         except Exception as exc:  # noqa: BLE001 — une humeur illisible ne bloque rien
-            logger.debug("CognitiveLoop: humeur illisible pour le journal: {e}", e=exc)
+            logger.debug("CognitiveLoop: humeur illisible pour le journal: {e!r}", e=exc)
             return {}
 
     def _rumination_rate(self) -> float:

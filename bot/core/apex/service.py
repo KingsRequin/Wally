@@ -292,7 +292,7 @@ class ApexLegendsService:
                 profil.uid, "kills", avant=ts
             )
         except Exception as exc:  # noqa: BLE001 — l'historique est un bonus
-            logger.warning("Apex: historique indisponible: {e}", e=exc)
+            logger.warning("Apex: historique indisponible: {e!r}", e=exc)
             return ""
         if progression is None or progression.gain <= 0:
             return ""
@@ -465,7 +465,7 @@ class ApexLegendsService:
         try:
             return await asyncio.to_thread(chart.render, points, notion, titre, rp=rp)
         except Exception as exc:  # noqa: BLE001 — pas de graphe ≠ pas de réponse
-            logger.warning("Apex: courbe non rendue: {e}", e=exc)
+            logger.warning("Apex: courbe non rendue: {e!r}", e=exc)
             return None
 
     def _introuvable(self, cherche: str, erreur: str, *, cherche_par_uid: bool) -> str:
@@ -554,7 +554,7 @@ class ApexLegendsService:
                 else (await self._db.apex_account_for_person(requester) if requester else None)
             )
         except Exception as e:                       # une base grippée ne casse pas la recherche
-            logger.warning("Apex: lecture des comptes liés impossible: {e}", e=e)
+            logger.warning("Apex: lecture des comptes liés impossible: {e!r}", e=e)
             return None
 
     async def _resolve_uid(self, requester: str | None, player_name: str) -> str | None:
@@ -573,7 +573,7 @@ class ApexLegendsService:
         try:
             return await self._db.apex_uid_pour_nom(nom)
         except Exception as e:                       # noqa: BLE001
-            logger.warning("Apex: registre des profils illisible: {e}", e=e)
+            logger.warning("Apex: registre des profils illisible: {e!r}", e=e)
             return None
 
     async def _consigner(self, profil: PlayerProfile, tape: str = "") -> None:
@@ -595,7 +595,7 @@ class ApexLegendsService:
                 saisi=tape,
             )
         except Exception as e:                       # noqa: BLE001
-            logger.warning("Apex: profil non consigné: {e}", e=e)
+            logger.warning("Apex: profil non consigné: {e!r}", e=e)
 
     async def _remember(
         self, profil, cherche: str, platform: str, requester: str, requester_name: str
@@ -619,7 +619,7 @@ class ApexLegendsService:
                 "Apex: compte {name} lié à {who}", name=nom, who=requester_name or requester
             )
         except Exception as e:
-            logger.warning("Apex: impossible de mémoriser le compte: {e}", e=e)
+            logger.warning("Apex: impossible de mémoriser le compte: {e!r}", e=e)
 
     def _render_profile(self, p: PlayerProfile, legend: str = "") -> str:
         lignes = [f"{p.name} — niveau {_fr(p.level)} ({p.platform})"]
@@ -745,7 +745,7 @@ class ApexLegendsService:
                     # Rien à l'écran plutôt qu'une carte sur une fenêtre
                     # inventée : le modèle apprend le refus par `apex_legends`,
                     # qui rend le texte de l'erreur.
-                    logger.info("Apex: panneau de courbe refusé — {r}", r=refus)
+                    logger.info("Apex: panneau de courbe refusé — {r!r}", r=refus)
                     return None
                 if not await self._a_de_quoi_tracer(profil, fenetre, notion):
                     return None
@@ -788,7 +788,7 @@ class ApexLegendsService:
             try:
                 debut = rappel()
             except Exception as exc:  # noqa: BLE001 — une sonde cassée n'est pas fatale
-                logger.debug("Apex: début du live indisponible: {e}", e=exc)
+                logger.debug("Apex: début du live indisponible: {e!r}", e=exc)
                 debut = None
             if debut:
                 return float(debut)
@@ -801,7 +801,7 @@ class ApexLegendsService:
         try:
             return await derniere(uid)
         except Exception as exc:  # noqa: BLE001 — pas de session ≠ pas de réponse
-            logger.warning("Apex: dernière session illisible: {e}", e=exc)
+            logger.warning("Apex: dernière session illisible: {e!r}", e=exc)
             return None
 
     async def _a_de_quoi_tracer(self, profil, fenetre, notion: str) -> bool:
@@ -829,7 +829,7 @@ class ApexLegendsService:
                 profil.uid, notion, fenetre.depuis
             )
         except Exception as exc:  # noqa: BLE001 — l'overlay ne casse pas pour ça
-            logger.warning("Apex: relevés illisibles pour le panneau: {e}", e=exc)
+            logger.warning("Apex: relevés illisibles pour le panneau: {e!r}", e=exc)
             return False
         if progression is None or len(progression.points) < MIN_POINTS:
             logger.info(

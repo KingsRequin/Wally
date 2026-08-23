@@ -105,7 +105,7 @@ class MemoryCog(commands.Cog):
                 embed=view._make_embed(), view=view, ephemeral=True
             )
         except Exception as e:
-            logger.error("Memory show error: {e}", e=e)
+            logger.error("Memory show error: {e!r}", e=e)
             await interaction.followup.send(
                 "Erreur lors de la lecture de la memoire.", ephemeral=True
             )

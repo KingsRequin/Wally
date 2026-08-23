@@ -128,7 +128,7 @@ class StreamWatcher:
                 try:
                     await self._poll_once()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("StreamWatcher: poll en erreur : {e}", e=exc)
+                    logger.warning("StreamWatcher: poll en erreur : {e!r}", e=exc)
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
             pass
@@ -137,7 +137,7 @@ class StreamWatcher:
         try:
             new = await self._api.get_stream()
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
-            logger.warning("StreamWatcher poll a échoué : {e}", e=exc)
+            logger.warning("StreamWatcher poll a échoué : {e!r}", e=exc)
             return
         if not isinstance(new, dict):
             logger.warning("StreamWatcher: statut inattendu {t}, poll ignoré",
@@ -157,7 +157,7 @@ class StreamWatcher:
             try:
                 self._on_poll(new)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("StreamWatcher on_poll a échoué : {e}", e=exc)
+                logger.warning("StreamWatcher on_poll a échoué : {e!r}", e=exc)
         # Premier poll = baseline silencieuse (pas de fausse notif au boot).
         if not self._initialized:
             self._initialized = True
@@ -174,7 +174,7 @@ class StreamWatcher:
                 try:
                     self._on_transition(old, new)
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("StreamWatcher on_transition a échoué : {e}", e=exc)
+                    logger.warning("StreamWatcher on_transition a échoué : {e!r}", e=exc)
         self._emit_feed_events(old, new)
 
     def _emit(self, description: str, *, kind: str = "", notify: bool = True) -> None:
@@ -195,7 +195,7 @@ class StreamWatcher:
         try:
             self._on_event(description, kind=kind, notify=notify)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("StreamWatcher on_event a échoué : {e}", e=exc)
+            logger.warning("StreamWatcher on_event a échoué : {e!r}", e=exc)
 
     def _emit_feed_events(self, old: dict, new: dict) -> None:
         """Traduit l'écart entre deux polls en événements de flux passif.

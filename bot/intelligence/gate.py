@@ -213,5 +213,5 @@ class ResponseGate:
             return decision
 
         except Exception as e:
-            logger.warning("ResponseGate.decide() failed, fallback RESPOND: {e}", e=e)
+            logger.warning("ResponseGate.decide() failed, fallback RESPOND: {e!r}", e=e)
             return GateDecision(decision="RESPOND")

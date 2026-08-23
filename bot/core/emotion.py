@@ -744,7 +744,7 @@ class EmotionEngine:
                     e=emotion, v=new_value, u=trigger_user or "unknown",
                 )
             except Exception as exc:
-                logger.warning("Failed to log emotion peak: {e}", e=exc)
+                logger.warning("Failed to log emotion peak: {e!r}", e=exc)
 
     async def load_state(self) -> None:
         """Charge l'état émotionnel depuis la DB. No-op si db est None."""
@@ -763,7 +763,7 @@ class EmotionEngine:
             try:
                 sauvegarde = await self._db.load_emotion_state_age()
             except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
-                logger.warning("Âge de l'état émotionnel illisible : {e}", e=exc)
+                logger.warning("Âge de l'état émotionnel illisible : {e!r}", e=exc)
                 sauvegarde = None
             logger.info("Emotion state loaded from DB: {s}", s=self._state)
             # Load mood layer
@@ -805,7 +805,7 @@ class EmotionEngine:
                     h=ecoule / 3600.0, s=self._state,
                 )
         except Exception as exc:
-            logger.warning("Failed to load emotion state: {e}", e=exc)
+            logger.warning("Failed to load emotion state: {e!r}", e=exc)
 
     async def load_user_affinities(self) -> None:
         """Load all affinities from DB into memory cache."""
@@ -890,7 +890,7 @@ class EmotionEngine:
             self._dirty = False
             logger.info("État émotionnel écrit avant l'arrêt")
         except Exception as exc:  # noqa: BLE001 — un arrêt ne doit pas bloquer
-            logger.warning("Flush de l'état émotionnel échoué: {e}", e=exc)
+            logger.warning("Flush de l'état émotionnel échoué: {e!r}", e=exc)
 
     async def _delayed_save(self) -> None:
         await asyncio.sleep(5)
@@ -902,7 +902,7 @@ class EmotionEngine:
                 await self._save_user_affinities()
                 self._dirty = False
             except Exception as exc:
-                logger.warning("Failed to persist emotion state: {e}", e=exc)
+                logger.warning("Failed to persist emotion state: {e!r}", e=exc)
                 # _dirty reste True → retry au prochain apply_delta
 
     def _load_learned_words(self) -> None:
@@ -918,7 +918,7 @@ class EmotionEngine:
         except FileNotFoundError:
             pass  # premier démarrage — normal
         except Exception as exc:
-            logger.warning("Failed to load learned words: {e}", e=exc)
+            logger.warning("Failed to load learned words: {e!r}", e=exc)
 
     def _is_known_word(self, word: str) -> bool:
         """Vérifie si un mot existe déjà (hardcodé ou appris) — case-insensitive."""
@@ -948,7 +948,7 @@ class EmotionEngine:
             try:
                 await asyncio.to_thread(self._write_learned_words_sync, data, _LEARNED_WORDS_PATH)
             except Exception as exc:
-                logger.warning("Failed to save learned words: {e}", e=exc)
+                logger.warning("Failed to save learned words: {e!r}", e=exc)
 
     async def _learn_words(self, new_words: list[dict]) -> None:
         """Valide et ajoute les nouveaux mots appris depuis le LLM."""
@@ -1175,7 +1175,7 @@ class EmotionEngine:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — un tour raté ne tue pas la boucle
-                logger.error("Emotion decay tick failed: {e}", e=exc)
+                logger.error("Emotion decay tick failed: {e!r}", e=exc)
 
     def start_decay_task(self) -> None:
         self._decay_task = asyncio.create_task(self._decay_loop())
@@ -1232,7 +1232,7 @@ class EmotionEngine:
 
             return deltas
         except Exception as exc:
-            logger.warning("NRCLex analysis failed: {e}", e=exc)
+            logger.warning("NRCLex analysis failed: {e!r}", e=exc)
             return {}
 
     def record_interaction(self) -> None:
@@ -1267,7 +1267,7 @@ class EmotionEngine:
                     text, trust_score, context_messages, image_urls=image_urls
                 )
             except Exception as exc:
-                logger.warning("LLM emotion analysis failed, using fallback: {e}", e=exc)
+                logger.warning("LLM emotion analysis failed, using fallback: {e!r}", e=exc)
 
         if analyse is not None:
             deltas, new_words, trust_delta, love_delta, user_facts = analyse
@@ -1279,7 +1279,7 @@ class EmotionEngine:
                 try:
                     await self._learn_words(new_words)
                 except Exception as exc:
-                    logger.warning("Apprentissage des mots échoué : {e}", e=exc)
+                    logger.warning("Apprentissage des mots échoué : {e!r}", e=exc)
             if user_id and platform:
                 self.update_user_affinity(user_id, platform, deltas)
             # Check for peaks
