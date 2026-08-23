@@ -63,7 +63,13 @@ python3 scripts/lint_ruff.py             # porte dure (F/PLE/T20/ASYNC1) + cliqu
 
 ```bash
 python3 scripts/lint_js.py               # porte dure + cliquet sur les 16 k lignes de front
+python3 scripts/smoke_front.py           # le front MONTE-T-IL ? (Playwright, ~40 s)
 ```
+
+⚠️ `lint_js.py` ne prouve PAS qu'un panneau monte, et les tests « front » du
+projet lisent les fichiers en TEXTE. Seul `smoke_front.py` charge les pages et
+exécute le JavaScript. Il ne demande aucun rebuild (tout est bind-monté) et
+s'adresse à `127.0.0.1:8080`, pas au tunnel.
 
 Corriger TOUTES les erreurs. Ne jamais abaisser un cliquet (`--maj`) pour faire passer du code neuf : `--maj` ne sert qu'après une baisse RÉELLE de la dette.
 
@@ -128,6 +134,9 @@ python3 scripts/lint_types.py [--liste|--maj]
 python3 scripts/lint_silences.py [--liste|--maj]
 python3 scripts/lint_ruff.py [--liste|--maj]
 python3 scripts/lint_js.py [--liste|--maj]
+python3 scripts/smoke_front.py [--overlay|--admin] [--captures /tmp]
+python3 scripts/audit_deps.py            # CVE des paquets DE L'IMAGE (pas de l'hôte)
+python3 scripts/installer_hooks.py       # pose le hook pre-push (à faire une fois)
 
 # Publication : rebuild AVEC les build args, sinon BOT_GIT_HASH=unknown
 GIT_HASH=$(git rev-parse --short HEAD) BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
@@ -147,7 +156,8 @@ rebuild** :
 | Chemin | Effet d'une modification |
 |---|---|
 | `bot/**/*.py` | **Rebuild obligatoire** (le code vit dans l'image) |
-| `bot/dashboard/static/` (front admin + overlay) | Rechargement du navigateur suffit |
+| `requirements.txt` | Rebuild. ⚠️ Sans modification de CE fichier, la couche `pip install` reste EN CACHE : un `>=` ne re-résout donc PAS tout seul au rebuild. Une dépendance ne monte que si la ligne bouge |
+| `bot/dashboard/static/` (front admin + overlay) | Rechargement du navigateur suffit — d'où `smoke_front.py`, qui teste sans rebuild |
 | `public-ui/` (site public) | Rechargement du navigateur suffit |
 | `bot/persona/` (SOUL, VOICE, prompts persona…) | `/reload-persona`, pas de restart |
 | `bot/intelligence/persona/prompts/` (prompts de cognition) | **Restart** requis (lus au boot) |
@@ -767,6 +777,9 @@ cette signature, pas les bugs un par un.
 | `scripts/lint_types.py` | Erreurs mypy (cliquet). Les tests ne les voient pas, mypy si |
 | `scripts/lint_ruff.py` | Nom indéfini, `print()`, bloquant dans une coroutine (porte DURE, zéro toléré) + `datetime` naïf et bugbear (cliquet) |
 | `scripts/lint_js.py` | Le MÊME filet sur les 16 k lignes de front. Il n'y en avait aucun : `catch (e) {}` y était invisible |
+| `scripts/smoke_front.py` | Le front MONTE-t-il ? Charge overlay + les 7 onglets + les sous-onglets, échoue sur une erreur JS OU un panneau vide. Le seul outil qui exécute le JavaScript |
+| `scripts/audit_deps.py` | CVE des paquets **de l'image**. Auditer l'hôte donne une liste fausse : son environnement Python date de l'installation de CT100 |
+| Hook `pre-push` | Les trois cliquets rapides avant chaque push (`scripts/installer_hooks.py`). Ni la suite ni le smoke test : un hook à deux minutes finit en `--no-verify` |
 | `bot/core/canari.py` | Invariants au BOOT sur l'état RÉEL (base + disque) |
 | Tests de parité Discord/Twitch | Une capacité branchée d'un seul côté |
 

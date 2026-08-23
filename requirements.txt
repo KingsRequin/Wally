@@ -2,6 +2,9 @@
 discord.py[voice]>=2.6  # DAVE (chiffrement E2EE vocal Discord 2026) requiert discord.py récent
 # Fork vocolboy : ajoute le déchiffrement DAVE en RÉCEPTION (la lib d'origine plante "corrupted stream").
 discord-ext-voice-recv @ git+https://github.com/vocolboy/discord-ext-voice-recv.git@ee160c0f36516927b6214bc9d6babe524016770f
+# `discord.py[voice]` épingle `PyNaCl<1.6` jusqu'à la 2.7.1 incluse : on ne peut
+# pas monter plus haut sans casser le vocal. Cf. l'exception motivée dans
+# `scripts/audit_deps.py` pour PYSEC-2026-3002.
 PyNaCl>=1.5.0
 
 # Voice (STT/TTS)
