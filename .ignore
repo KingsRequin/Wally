@@ -1,0 +1,8 @@
+# ripgrep lit ce fichier AVANT `.gitignore`.
+#
+# graft y réadmettait ses 833 cartes markdown, au motif qu'elles sont plus
+# courtes à lire que la source. En pratique chaque `rg` sur un symbole rendait
+# le doublon généré à côté du vrai fichier — du bruit dans l'outil qu'on
+# utilise le plus. Les cartes restent joignables par leur propre interface
+# (`graft ask`, `graft grep`, `graft callers`), qui est faite pour ça.
+graft/
