@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from loguru import logger
 
@@ -86,3 +89,74 @@ async def announce_clip(
         m="joué" if joue else ("player en attente de clic"
                                if clip.get("embed_url") else "carte seule"),
     )
+
+
+class VeilleDesClips:
+    """Interroge Twitch et annonce les clips créés pendant le live.
+
+    Extraite de `main()` le 2026-08-23 : c'était une closure de plus dans une
+    fonction de mille lignes, donc du comportement qu'aucun test ne pouvait
+    exécuter — alors qu'elle porte deux arbitrages payés en production.
+
+    Twitch n'émet AUCUN événement EventSub à la création d'un clip : la seule
+    voie est d'interroger l'API régulièrement. Deux minutes suffisent — un clip
+    signalé deux minutes après reste un moment frais, et on ne martèle pas
+    l'API pour rien.
+
+    `un_tour()` est séparé de `veiller()` pour la même raison que dans
+    `PresenceDeStream` : une boucle `while True` avec un `sleep(120)` ne se
+    teste pas, un tour se teste en une ligne.
+    """
+
+    #: La fenêtre demandée à Twitch. Plus large que la période, pour ne pas
+    #: rater un clip créé pile entre deux tours.
+    FENETRE_MIN = 5
+    PERIODE_S = 120.0
+    #: `deque(maxlen=...)` et PAS un `set` vidé d'un coup : le `clear()`
+    #: oubliait TOUT alors que la fenêtre d'interrogation est de 5 min —
+    #: jusqu'à 20 clips étaient réannoncés au tour suivant. Ici les plus vieux
+    #: sortent un par un.
+    MEMOIRE = 200
+
+    def __init__(self, *, discord_bot: Any, twitch_bot: Any) -> None:
+        self._discord = discord_bot
+        self._twitch = twitch_bot
+        self._vus: deque[str] = deque(maxlen=self.MEMOIRE)
+        # Référence forte : l'annonce attend que Twitch ait fini de préparer le
+        # clip, une tâche détachée serait ramassée par le GC entre-temps.
+        self._taches: set[asyncio.Task] = set()
+
+    async def veiller(self, *, periode: float | None = None) -> None:
+        while True:
+            await asyncio.sleep(self.PERIODE_S if periode is None else periode)
+            await self.un_tour()
+
+    async def un_tour(self) -> None:
+        """Un passage. Ne lève jamais."""
+        try:
+            narrateur = getattr(self._discord, "overlay_narrator", None)
+            if narrateur is None or not narrateur.is_active():
+                return
+            depuis = datetime.now(timezone.utc) - timedelta(minutes=self.FENETRE_MIN)
+            clips = await self._twitch.twitch_api.get_recent_clips(
+                depuis.strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
+            neufs = []
+            for clip in clips or []:
+                cid = str(clip.get("id") or "")
+                if not cid or cid in self._vus:
+                    continue
+                neufs.append(cid)
+                # Le clip est REJOUÉ, pas seulement annoncé : muet, il occupe
+                # l'écran le temps de la vidéo. L'annonce attend que Twitch ait
+                # fini de le préparer, donc en tâche de fond — sinon la veille
+                # resterait bloquée et les clips suivants passeraient à la
+                # trappe.
+                t = asyncio.create_task(
+                    announce_clip(narrateur, self._twitch.twitch_api, clip)
+                )
+                self._taches.add(t)
+                t.add_done_callback(self._taches.discard)
+            self._vus.extend(neufs)
+        except Exception as e:  # noqa: BLE001 — jamais bloquant
+            logger.warning("veille des clips en erreur: {e!r}", e=e)

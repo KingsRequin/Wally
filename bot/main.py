@@ -3,7 +3,6 @@ import asyncio
 import os
 import signal
 import sys
-from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from loguru import logger
 
 from bot.intelligence.actions.handlers import enregistrer_actions
 from bot.core.music import MusicService
+from bot.discord.journal_feed import JournalDiscord
 
 load_dotenv()
 
@@ -284,64 +284,19 @@ async def main() -> None:
         from bot.discord.handlers import handle_message
         await handle_message(discord_bot, message)
 
-    async def journal_send_cb(text: str, file=None) -> None:
-        channel_id = config.bot.journal_channel_id
-        if channel_id:
-            ch = discord_bot.get_channel(channel_id)
-            if ch:
-                if file and not text:
-                    import discord as _discord
-                    await ch.send(file=_discord.File(file, filename="emotions_jour.png"))
-                elif file:
-                    import discord as _discord
-                    await ch.send(text, file=_discord.File(file, filename="emotions_jour.png"))
-                else:
-                    await ch.send(text)
+    # Les deux tuyaux Discord du journal — ce qu'il lit, ce qu'il publie.
+    # Sortis de `main()` le 2026-08-23 : ils portent la borne à minuit HEURE
+    # DE PARIS (l'hôte est en UTC) et la tolérance aux salons illisibles, que
+    # rien ne vérifiait. Voir `tests/test_journal_feed.py`.
+    JournalDiscord(discord_bot=discord_bot, config=config).brancher(journal)
 
-    journal.set_send_callback(journal_send_cb)
-
-    async def journal_history_cb() -> list[dict]:
-        """Lit l'historique de tous les canaux Discord autorisés depuis minuit."""
-        from bot.discord.handlers import _is_channel_allowed, _author_label
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        midnight = datetime.now(ZoneInfo("Europe/Paris")).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        messages: list[dict] = []
-        if not discord_bot.guilds:
-            logger.warning("Journal history callback: discord_bot.guilds is empty, skipping")
-            return []
-        for guild in discord_bot.guilds:
-            for channel in guild.text_channels:
-                if not _is_channel_allowed(config, channel.id):
-                    continue
-                try:
-                    async for msg in channel.history(after=midnight, limit=2000):
-                        if not msg.content.strip():
-                            continue
-                        # Include all messages (humans + Wally) — journal reflects the full conversation
-                        messages.append({
-                            "author": _author_label(msg.author),
-                            "content": msg.content,
-                            "timestamp": msg.created_at.timestamp(),
-                        })
-                except Exception as exc:
-                    logger.debug(
-                        "Journal history: cannot read channel {ch}: {e!r}",
-                        ch=channel.id, e=exc,
-                    )
-        messages.sort(key=lambda m: m["timestamp"])
-        return messages
-
-    journal.set_history_callback(journal_history_cb)
     logger.info("Discord adapter configured")
 
     # ── Twitch adapter ────────────────────────────────────────────────────────
     from bot.twitch.bot import WallyTwitch
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
-    from bot.twitch.clip_announce import announce_clip
+    from bot.twitch.clip_announce import VeilleDesClips
     from bot.twitch.events import register_events
 
     env_path = Path(__file__).parent.parent / ".env"
@@ -427,58 +382,12 @@ async def main() -> None:
             loop.notify_event(bedroom, desc, relevant=True)
 
         _stream_voice_tasks: set[asyncio.Task] = set()
-        # Référence forte : l'annonce d'un clip attend que Twitch l'ait préparé,
-        # une tâche détachée serait ramassée par le GC entre-temps.
-        _clip_tasks: set[asyncio.Task] = set()
 
-        async def _clip_watch() -> None:
-            """Signale les clips créés pendant le live.
-
-            Twitch n'émet AUCUN événement EventSub à la création d'un clip : la
-            seule voie est d'interroger l'API régulièrement. Deux minutes
-            suffisent — un clip signalé deux minutes après reste un moment
-            frais, et on ne martèle pas l'API pour rien.
-            """
-            from datetime import datetime, timedelta, timezone
-
-            # Bornée : les plus vieux IDs sortent un par un plutôt que tous
-            # d'un coup (cf. commentaire plus bas).
-            seen: deque[str] = deque(maxlen=200)
-            while True:
-                await asyncio.sleep(120)
-                try:
-                    narrator = getattr(discord_bot, "overlay_narrator", None)
-                    if narrator is None or not narrator.is_active():
-                        continue
-                    since = (datetime.now(timezone.utc) - timedelta(minutes=5))
-                    clips = await twitch_bot.twitch_api.get_recent_clips(
-                        since.strftime("%Y-%m-%dT%H:%M:%SZ")
-                    )
-                    fresh = []
-                    for clip in clips:
-                        cid = str(clip.get("id") or "")
-                        if not cid or cid in seen:
-                            continue
-                        fresh.append(cid)
-                        # Le clip est REJOUÉ, pas seulement annoncé : muet, il
-                        # occupe l'écran le temps de la vidéo. C'est l'URL du
-                        # FICHIER qui le rend lisible tout seul ; sans elle,
-                        # `show_clip` retombe sur le player puis sur la carte.
-                        # L'annonce attend que Twitch ait fini de préparer le
-                        # clip, donc en tâche de fond : sinon la veille resterait
-                        # bloquée et les clips suivants passeraient à la trappe.
-                        t = asyncio.create_task(
-                            announce_clip(narrator, twitch_bot.twitch_api, clip)
-                        )
-                        _clip_tasks.add(t)
-                        t.add_done_callback(_clip_tasks.discard)
-                    seen.extend(fresh)
-                    # `deque(maxlen=...)` plutôt qu'un `set` vidé d'un coup : le
-                    # `clear()` oubliait TOUT alors que la fenêtre d'interrogation
-                    # est de 5 min — jusqu'à 20 clips étaient réannoncés au tour
-                    # suivant. Ici les plus vieux sortent un par un.
-                except Exception as e:  # noqa: BLE001 — jamais bloquant
-                    logger.warning("veille des clips en erreur: {e!r}", e=e)
+        # Twitch n'émet aucun événement à la création d'un clip : on interroge.
+        # Sortie de `main()` le 2026-08-23 avec ses deux arbitrages payés en
+        # prod — mémoire BORNÉE des clips déjà vus, annonce en tâche de fond.
+        # Voir `tests/test_clip_watch.py`.
+        veille_clips = VeilleDesClips(discord_bot=discord_bot, twitch_bot=twitch_bot)
 
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events
@@ -787,7 +696,7 @@ async def main() -> None:
         _watch_task = asyncio.create_task(presence_stream.veiller())
         _stream_voice_tasks.add(_watch_task)
         _watch_task.add_done_callback(_stream_voice_tasks.discard)
-        _clip_task = asyncio.create_task(_clip_watch())
+        _clip_task = asyncio.create_task(veille_clips.veiller())
         _stream_voice_tasks.add(_clip_task)
         _clip_task.add_done_callback(_stream_voice_tasks.discard)
         twitch_bot.stream_watcher = stream_watcher
