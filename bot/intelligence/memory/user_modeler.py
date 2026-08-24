@@ -16,6 +16,14 @@ from bot.intelligence.prompts import load_prompt
 
 _PORTRAIT_PROMPT = load_prompt("user_portrait")
 
+# `wally:self` (les pensées du bot) et `wally:emotes` (le catalogue d'emotes) ne
+# sont pas des personnes : ce sont les carnets internes de Wally, rangés sous un
+# faux identifiant. `get_user_profile()` n'est jamais appelé avec — leur portrait
+# n'est lu par personne, et coûtait un appel LLM chaque nuit. Le 2026-08-24, le
+# modèle a rendu pour `wally:self` le portrait de KassandreYunikon, dont les
+# pensées de Wally parlaient beaucoup ce jour-là.
+_NAMESPACE_INTERNE = "wally:"
+
 # ── Genre : lu dans les faits, jamais déduit du pseudo ────────────────────────
 # La consigne seule ne mordait pas. Le 2026-08-24, 58 des 126 portraits parlaient
 # au féminin alors que 3 personnes seulement avaient un fait de genre : le modèle
@@ -72,6 +80,7 @@ class UserModeler:
         except Exception as e:  # noqa: BLE001 — non-fatal
             logger.warning("UserModeler : sélection des personnes échouée : {e!r}", e=e)
             return
+        user_ids = [u for u in user_ids if not u.startswith(_NAMESPACE_INTERNE)]
         if not user_ids:
             logger.debug("UserModeler : aucune personne active à modéliser")
             return
