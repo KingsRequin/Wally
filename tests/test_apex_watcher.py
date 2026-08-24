@@ -261,3 +261,49 @@ async def test_sans_base_le_watcher_fonctionne_comme_avant():
                     is_live=lambda: True)
     await w.tick()
     assert w.block() is not None
+
+
+@pytest.mark.asyncio
+async def test_chaque_tracker_est_historise_separement():
+    """Le défaut du 2026-08-20 : on ne consignait QUE le tracker élu par
+    `profile.stats`, élu par priorité d'alias. Azraël a épinglé « Career Kills »
+    puis l'a retiré ; l'élu est resté figé et l'historique des kills s'est tu
+    quatre jours, sans une alerte. Une série PAR TRACKER, et la lecture retient
+    celui qui a bougé.
+    """
+    releves: list[dict] = []
+
+    class _Hist:
+        async def enregistrer(self, uid, stats, **kw):
+            releves.append(stats)
+            return len(stats)
+
+    w = _watcher(live=True, service=_FakeService(_bridge("azrael")))
+    w._history = _Hist()
+    await w.tick()
+    ranges = releves[0]
+    # Les DEUX trackers de « BR Kills », chacun sous sa propre clé.
+    assert ranges["kills:specialEvent_kills"] == 92182
+    assert ranges["kills:kills"] == 10142
+    # Et surtout : plus une seule ligne rangée sous la notion nue, qui serait
+    # l'élu — donc le candidat au gel.
+    assert "kills" not in ranges
+
+
+@pytest.mark.asyncio
+async def test_la_progression_du_live_prend_le_maximum_jamais_la_somme():
+    """`progress()` alimente la perception passive (« +N kills depuis le début
+    du live »). Les trackers d'une notion bougent ENSEMBLE à chaque partie : le
+    gelé dirait +0 et la somme dirait le double."""
+    depart = _bridge("azrael")
+    # La situation RÉELLE d'Azraël depuis le 2026-08-20 : « Career Kills »
+    # épinglé puis retiré, donc gelé — et c'est lui que `profile.stats` élit,
+    # parce qu'il vient avant « BR Kills » dans les alias.
+    depart["total"]["career_kills"] = {"name": "Career Kills", "value": 109113}
+    arrivee = json.loads(json.dumps(depart))
+    arrivee["total"]["specialEvent_kills"]["value"] = 92186   # +4, le vivant
+    # `career_kills` et `kills` ne bougent pas : ils sont dépinglés, donc gelés.
+    w = _watcher(live=True, service=_FakeService(depart, arrivee))
+    await w.tick()
+    await w.tick()
+    assert w.progress()["kills"] == 4

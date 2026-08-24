@@ -18,6 +18,7 @@ from collections.abc import Callable
 
 from loguru import logger
 
+from bot.core.apex.history import SEPARATEUR_TRACKER, aplatir_trackers
 from bot.core.apex.kills_live import KillsDuLive
 from bot.core.apex.reader import PlayerProfile
 from bot.core.etat_persistant import EtatPersistant
@@ -209,7 +210,7 @@ class ApexWatcher:
             self._baseline_loaded = True
         if not self._baseline:
             # Premier passage du live : c'est le point de départ, pas un progrès.
-            self._baseline = {k: s.value for k, s in profile.stats.items()}
+            self._baseline = aplatir_trackers(profile.trackers)
             await self._store_baseline(self._baseline)
 
     async def run(self) -> None:
@@ -230,7 +231,12 @@ class ApexWatcher:
         """Range les compteurs du relevé. Jamais bloquant pour la perception."""
         if self._history is None:
             return
-        compteurs = {k: s.value for k, s in profile.stats.items()}
+        # Un relevé par TRACKER, pas un par notion. `profile.stats` élit un
+        # tracker par priorité d'alias, et l'élu peut être dépinglé donc gelé :
+        # le 2026-08-20, « Career Kills » a été élu puis retiré, et l'historique
+        # des kills d'Azraël s'est tu pendant quatre jours sans une alerte.
+        # `ApexHistory.progression()` retiendra celui qui a réellement bougé.
+        compteurs = aplatir_trackers(profile.trackers)
         # Le RP part avec les autres. Le mode d'une partie n'existe NULLE PART
         # dans l'API — « BR Kills » inclut le classé, et `realtime` ne porte pas
         # la file de jeu — donc un RP qui bouge est le seul signal exploitable
@@ -333,14 +339,24 @@ class ApexWatcher:
             logger.debug("Apex watcher: point de départ non rangé: {e!r}", e=exc)
 
     def progress(self) -> dict[str, int]:
-        """Ce qui a bougé depuis le début du live. Vide tant qu'on n'a qu'un point."""
+        """Ce qui a bougé depuis le début du live. Vide tant qu'on n'a qu'un point.
+
+        Le MAXIMUM des écarts par notion, jamais leur somme : plusieurs trackers
+        mesurent la même chose et bougent ensemble à chaque partie. Et surtout
+        pas l'écart du seul tracker élu par `profile.stats` : élu par priorité
+        d'alias, il peut être dépinglé donc gelé, et cette ligne de perception
+        annoncerait « +0 kill » toute la soirée. C'est ce qui est arrivé à
+        partir du 2026-08-20 sur le compte d'Azraël.
+        """
         if self._profile is None or not self._baseline:
             return {}
-        gains = {}
-        for notion, stat in self._profile.stats.items():
-            depart = self._baseline.get(notion)
-            if depart is not None and stat.value > depart:
-                gains[notion] = stat.value - depart
+        gains: dict[str, int] = {}
+        for cle, valeur in aplatir_trackers(self._profile.trackers).items():
+            depart = self._baseline.get(cle)
+            if depart is None or valeur <= depart:
+                continue
+            notion = cle.split(SEPARATEUR_TRACKER, 1)[0]
+            gains[notion] = max(gains.get(notion, 0), valeur - depart)
         return gains
 
     def block(self) -> str | None:

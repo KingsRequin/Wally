@@ -27,6 +27,14 @@ STAT_ALIASES: dict[str, tuple[str, ...]] = {
     "matches": ("Games Played", "BR Games Played", "Matches Played"),
 }
 
+# L'index inverse : un libellé publié → la notion qu'il mesure. Les alias sont
+# uniques d'une notion à l'autre, sans quoi cette table écraserait en silence.
+_NOTION_PAR_LIBELLE: dict[str, str] = {
+    alias.lower(): notion
+    for notion, alias_possibles in STAT_ALIASES.items()
+    for alias in alias_possibles
+}
+
 
 @dataclass(frozen=True)
 class StatValue:
@@ -80,6 +88,10 @@ class PlayerProfile:
     # il retient le premier alias connu, qui peut être un tracker dépinglé —
     # donc figé — et le compteur resterait immobile quoi qu'il arrive en jeu.
     kill_trackers: dict[str, int] = field(default_factory=dict)
+    # TOUS les trackers de carrière, rangés par notion — `read_stat_trackers`.
+    # Même raison que `kill_trackers`, étendue aux autres notions : `stats` ne
+    # convient pas pour MESURER une progression dans le temps.
+    trackers: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 def _num(value: Any) -> float | None:
@@ -315,6 +327,7 @@ def read_profile(payload: Any) -> PlayerProfile | None:
         stats=_read_stats(payload),
         legend_stats=_read_legend_stats(payload),
         kill_trackers=read_kill_trackers(payload),
+        trackers=read_stat_trackers(payload),
     )
 
 
@@ -365,3 +378,45 @@ def read_kill_trackers(payload: Any) -> dict[str, int]:
                 trackers[f"legend:{cle}"] = int(valeur)
 
     return trackers
+
+
+def read_stat_trackers(payload: Any) -> dict[str, dict[str, int]]:
+    """Tous les trackers de carrière, rangés par NOTION : notion → clé → valeur.
+
+    `_read_stats()` élit UN tracker par notion et rend un seul chiffre. C'est ce
+    qu'il faut pour AFFICHER un total à vie, jamais pour MESURER une progression
+    dans le temps : l'élection se fait par priorité d'alias (« Career Kills »
+    avant « BR Kills »), et rien dans un relevé isolé ne dit si le tracker élu
+    est encore épinglé. Dépinglé, il est GELÉ — le compteur reste immobile quoi
+    qu'il arrive en jeu, et personne n'est prévenu.
+
+    Vécu le 2026-08-20 sur le compte d'Azraël : « Career Kills » (109 113) est
+    apparu, a été élu, puis retiré de la bannière. L'historique n'a plus écrit
+    une seule ligne de kills pendant quatre jours — pendant que le compteur du
+    live, lui, en comptait trente-quatre le 24 au matin — et « la courbe de ce
+    stream » n'avait plus de quoi être tracée.
+
+    On rend donc TOUS les trackers de chaque notion, sans en préférer aucun.
+    L'appelant les consigne séparément et retiendra, sur la fenêtre, celui qui a
+    le plus GAGNÉ — jamais leur somme : les trackers d'une même notion bougent
+    ensemble à chaque partie, les additionner multiplierait le résultat.
+
+    Seul le bloc `total` compte ici : les trackers par légende portent parfois
+    les mêmes libellés sans mesurer la même chose (« BR Kills » sous Revenant,
+    ce sont les kills faits AVEC Revenant).
+    """
+    total = payload.get("total") if isinstance(payload, dict) else None
+    if not isinstance(total, dict):
+        return {}
+    par_notion: dict[str, dict[str, int]] = {}
+    for cle, entree in total.items():
+        if not isinstance(entree, dict):
+            continue
+        notion = _NOTION_PAR_LIBELLE.get(str(entree.get("name", "")).lower())
+        if notion is None:
+            continue
+        valeur = _num(entree.get("value"))
+        if valeur is None or not str(cle):
+            continue
+        par_notion.setdefault(notion, {})[str(cle)] = int(valeur)
+    return par_notion

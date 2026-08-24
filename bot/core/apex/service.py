@@ -282,7 +282,12 @@ class ApexLegendsService:
         historique = getattr(self, "history", None)
         if historique is None or not profil.uid:
             return ""
-        stats = {k: s.value for k, s in profil.stats.items()}
+        # Un relevé par TRACKER, comme la sonde du live : `profil.stats` élit un
+        # tracker par priorité d'alias, et l'élu peut être gelé (dépinglé). Deux
+        # points d'écriture pour la même table, donc deux fois la même règle.
+        from bot.core.apex.history import aplatir_trackers
+
+        stats = aplatir_trackers(profil.trackers)
         if not stats:
             return ""
         ts = time.time()

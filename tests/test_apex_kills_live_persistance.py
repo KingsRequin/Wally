@@ -111,6 +111,7 @@ class _Profil:
         self.kill_trackers = trackers
         self.rank = None
         self.stats = {}
+        self.trackers = {"kills": dict(trackers)}
         self.name = "Azrael"
         self.legend = None
         self.state = "online"

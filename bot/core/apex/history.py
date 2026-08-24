@@ -58,6 +58,24 @@ def plafond_plausible(secondes: float) -> float:
     """Gain maximal crédible sur un intervalle donné."""
     return MAX_GAIN_BASE + MAX_GAIN_PAR_HEURE * max(0.0, secondes) / 3600.0
 
+# Ce qui sépare la notion de la clé du tracker dans `apex_stat_points.notion` —
+# « kills:specialEvent_kills ». Un relevé par tracker et non par notion : voir
+# `progression()`, qui retient celui qui a réellement bougé.
+SEPARATEUR_TRACKER = ":"
+
+
+def aplatir_trackers(par_notion: dict[str, dict[str, int]]) -> dict[str, int]:
+    """`{"kills": {"specialEvent_kills": 94891}}` → `{"kills:specialEvent_kills": 94891}`.
+
+    L'ÉCRIVAIN UNIQUE du format de clé. Trois endroits mesurent dans le temps —
+    la sonde du live, le point de départ du live, la consultation manuelle — et
+    trois façons de composer la clé finiraient par diverger d'un caractère, ce
+    qui ne se verrait qu'en prod, sous la forme d'un historique vide.
+    """
+    return {f"{notion}{SEPARATEUR_TRACKER}{cle}": valeur
+            for notion, trackers in par_notion.items()
+            for cle, valeur in trackers.items()}
+
 # Un an d'historique : de quoi comparer deux mois et voir une saison passer.
 RETENTION_JOURS = 400
 
@@ -277,10 +295,78 @@ class ApexHistory:
             return []
         return await self.releves(uid, "rank_score", depuis)
 
+    async def _series_par_tracker(
+        self, uid: str, notion: str, depuis: float
+    ) -> dict[str, list[tuple[float, int]]]:
+        """Les relevés d'une notion, UNE SÉRIE PAR TRACKER.
+
+        Les lignes sont rangées sous `notion:cle_du_tracker`. Les lignes
+        historiques, écrites sous la seule `notion`, sont lues comme une série
+        de plus : elles portent de vrais relevés, simplement élus autrement.
+
+        `substr()` et pas `LIKE` : `_` est un joker en SQL, et `rank_score`
+        aurait ramené des lignes d'autres notions le jour où on grouperait
+        dessus. Un piège qui ne se serait vu sur aucun jeu de tests.
+
+        `substr()` sur la colonne écarte l'index `(uid, notion, recorded_at)`
+        au-delà de `uid`. Assumé : la table gagne quelques dizaines de lignes
+        par jour et la rétention est de 400 jours — le balayage porte sur des
+        milliers de lignes, pas des millions. Le jour où ça pèse, la borne de
+        préfixe (`notion >= 'kills:' AND notion < 'kills;'`) rend l'index.
+        """
+        prefixe = f"{notion}{SEPARATEUR_TRACKER}"
+        rows = await self._db.fetch_all(
+            "SELECT notion, value, recorded_at FROM apex_stat_points "
+            "WHERE uid = ? AND recorded_at >= ? "
+            "AND (notion = ? OR substr(notion, 1, ?) = ?) "
+            "ORDER BY recorded_at",
+            (str(uid), depuis, notion, len(prefixe), prefixe),
+        )
+        series: dict[str, list[tuple[float, int]]] = {}
+        for r in rows or []:
+            series.setdefault(str(r["notion"]), []).append(
+                (float(r["recorded_at"]), int(r["value"]))
+            )
+        return series
+
+    async def _point_avant(
+        self, rangee: str, uid: str, depuis: float
+    ) -> tuple[float, int] | None:
+        """Le relevé qui PRÉCÈDE la fenêtre, s'il est assez proche pour compter.
+
+        Sans lui, le premier gain de la période serait perdu — deux relevés à
+        cheval sur minuit appartiennent à la journée qui commence.
+
+        Mais SEULEMENT s'il est proche. Le 2026-08-12, « la courbe de ce
+        stream » annonçait +74 kills là où l'image en traçait 63 : le relevé
+        précédent datait de neuf heures, et les onze kills de la nuit tombaient
+        dans le stream du matin. On ne sait pas quand ils ont été faits — donc
+        on ne les attribue à personne.
+        """
+        row = await self._db.fetch_one(
+            "SELECT value, recorded_at FROM apex_stat_points "
+            "WHERE uid = ? AND notion = ? AND recorded_at < ? AND recorded_at >= ? "
+            "ORDER BY recorded_at DESC LIMIT 1",
+            (str(uid), rangee, depuis, depuis - self.TROU_DE_SESSION_S),
+        )
+        return (float(row["recorded_at"]), int(row["value"])) if row else None
+
     async def progression(
         self, uid: str, notion: str, depuis: float, *, maintenant: float | None = None
     ) -> Progression | None:
         """Ce que `notion` a gagné depuis `depuis`, ou None sans aucun relevé.
+
+        Plusieurs trackers mesurent la même notion, et on ne peut pas savoir
+        d'un relevé isolé lequel est encore épinglé. On retient donc celui qui a
+        le plus GAGNÉ sur la fenêtre — jamais leur somme : ils bougent ensemble
+        à chaque partie, les additionner multiplierait le résultat. Un tracker
+        gelé gagne zéro et perd d'office, ce qui est exactement le tri voulu.
+
+        C'est la même règle que `score_manche()` pour une manche de duel, et
+        elle vaut pour la même raison. Faute de l'appliquer ici, l'historique
+        des kills d'Azraël s'est tu quatre jours durant à partir du 2026-08-20 :
+        « Career Kills » avait été épinglé puis retiré, et c'est lui qu'on
+        consignait.
 
         La fenêtre commence au premier relevé DISPONIBLE, qui peut être plus
         récent que celui demandé : `complet` le dit, et l'appelant doit le
@@ -288,42 +374,38 @@ class ApexHistory:
         un chiffre faux présenté comme complet.
         """
         ts = maintenant or _maintenant()
-        rows = await self._db.fetch_all(
-            "SELECT value, recorded_at FROM apex_stat_points "
-            "WHERE uid = ? AND notion = ? AND recorded_at >= ? ORDER BY recorded_at",
-            (str(uid), notion, depuis),
-        )
-        points = [(float(r["recorded_at"]), int(r["value"])) for r in rows or []]
-        if not points:
+        series = await self._series_par_tracker(uid, notion, depuis)
+        if not series:
             return None
 
-        # Le relevé qui PRÉCÈDE la fenêtre en donne le vrai point de départ :
-        # sans lui, le premier gain de la période serait perdu — deux relevés à
-        # cheval sur minuit appartiennent à la journée qui commence.
-        #
-        # Mais SEULEMENT s'il est proche. Le 2026-08-12, « la courbe de ce
-        # stream » annonçait +74 kills là où l'image en traçait 63 : le relevé
-        # précédent datait de neuf heures, et les onze kills de la nuit
-        # tombaient dans le stream du matin. On ne sait pas quand ils ont été
-        # faits — donc on ne les attribue à personne.
-        avant = await self._db.fetch_one(
-            "SELECT value, recorded_at FROM apex_stat_points "
-            "WHERE uid = ? AND notion = ? AND recorded_at < ? AND recorded_at >= ? "
-            "ORDER BY recorded_at DESC LIMIT 1",
-            (str(uid), notion, depuis, depuis - self.TROU_DE_SESSION_S),
-        )
-        if avant is not None:
-            points.insert(0, (float(avant["recorded_at"]), int(avant["value"])))
-        # Complète aussi quand la fenêtre commence juste avant son premier
-        # relevé : « ce stream » démarre quelques minutes avant la première
-        # partie, il n'y manque rien et annoncer un minimum serait une réserve
-        # inutile.
-        complet = avant is not None or (points[0][0] - depuis) <= self.TROU_DE_SESSION_S
+        meilleur: tuple[int, int, str] | None = None
+        retenu: tuple[list[tuple[float, int]], bool] | None = None
+        for rangee, points in sorted(series.items()):
+            avant = await self._point_avant(rangee, uid, depuis)
+            if avant is not None:
+                points.insert(0, avant)
+            gain = self._gain(points, uid=str(uid), notion=rangee)
+            # Complète aussi quand la fenêtre commence juste avant son premier
+            # relevé : « ce stream » démarre quelques minutes avant la première
+            # partie, il n'y manque rien et annoncer un minimum serait une
+            # réserve inutile.
+            complet = avant is not None or (points[0][0] - depuis) <= self.TROU_DE_SESSION_S
+            # À gain égal — tous gelés, ou une vraie fenêtre sans partie — c'est
+            # la série la mieux observée qui trace la courbe. Puis la clé, pour
+            # que deux appels de suite ne rendent pas deux images différentes.
+            candidat = (gain, len(points), rangee)
+            if meilleur is None or candidat > meilleur:
+                meilleur, retenu = candidat, (points, complet)
 
-        gain = self._gain(points, uid=str(uid), notion=notion)
+        if meilleur is None or retenu is None:
+            # Inatteignable : `series` n'est pas vide, donc la boucle a élu.
+            # Un `assert` disparaîtrait sous `python -O` et laisserait un
+            # `TypeError` sur le déballage — un refus explicite ne coûte rien.
+            return None
+        points, complet = retenu
         return Progression(
             notion=notion,
-            gain=gain,
+            gain=meilleur[0],
             depuis=datetime.fromtimestamp(points[0][0], PARIS),
             jusqua=datetime.fromtimestamp(max(points[-1][0], ts), PARIS),
             points=points,
@@ -359,21 +441,26 @@ class ApexHistory:
         l'as demandé » : ces comptes-là ne sont pas sondés automatiquement, leur
         historique est fait des consultations elles-mêmes.
 
-        `avant` est l'instant du relevé courant : on cherche le dernier point
-        qui le PRÉCÈDE. Rien si cette consultation précédente date de moins de
-        `ecart_min_s` — « +0 kill depuis tout à l'heure » n'apprend rien à
-        personne, et redemander deux fois de suite est fréquent.
+        `avant` est l'instant du relevé courant : on cherche le dernier instant
+        qui le PRÉCÈDE, TOUS trackers de la notion confondus — une consultation
+        les écrit ensemble, mais seuls ceux qui ont bougé laissent une ligne.
+        Chercher sur un seul tracker remonterait à la dernière fois que
+        CELUI-LÀ a changé, c'est-à-dire au jour de son dépinglage.
+
+        Rien si cette consultation précédente date de moins de `ecart_min_s` —
+        « +0 kill depuis tout à l'heure » n'apprend rien à personne, et
+        redemander deux fois de suite est fréquent.
         """
+        prefixe = f"{notion}{SEPARATEUR_TRACKER}"
         precedent = await self._db.fetch_one(
-            "SELECT value, recorded_at FROM apex_stat_points "
-            "WHERE uid = ? AND notion = ? AND recorded_at < ? "
-            "ORDER BY recorded_at DESC LIMIT 1",
-            (str(uid), notion, avant),
+            "SELECT MAX(recorded_at) AS instant FROM apex_stat_points "
+            "WHERE uid = ? AND recorded_at < ? "
+            "AND (notion = ? OR substr(notion, 1, ?) = ?)",
+            (str(uid), avant, notion, len(prefixe), prefixe),
         )
-        if precedent is None:
+        instant = precedent["instant"] if precedent else None
+        if instant is None:
             return None
-        if avant - float(precedent["recorded_at"]) < ecart_min_s:
+        if avant - float(instant) < ecart_min_s:
             return None
-        return await self.progression(
-            uid, notion, float(precedent["recorded_at"]) - 0.001
-        )
+        return await self.progression(uid, notion, float(instant) - 0.001)

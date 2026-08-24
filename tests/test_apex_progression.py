@@ -34,8 +34,10 @@ async def service(db):
     return svc
 
 
-async def _releve(svc, t: float, kills: int) -> None:
-    await svc.history.enregistrer(UID, {"kills": kills}, maintenant=t)
+async def _releve(svc, t: float, kills: int, *, notion: str = "kills") -> None:
+    """Un relevé rangé sous `notion`. Par défaut le format historique, PLAT :
+    les lignes écrites avant le 2026-08-24 le sont, et doivent rester lues."""
+    await svc.history.enregistrer(UID, {notion: kills}, maintenant=t)
 
 
 @pytest.mark.asyncio
@@ -148,11 +150,15 @@ class _Profil:
     def __init__(self, uid: str, kills: int):
         self.uid = uid
         self.stats = {"kills": type("S", (), {"value": kills})()}
+        # Deux trackers de kills, dont un GELÉ plus haut que l'autre : c'est la
+        # forme réelle du compte d'Azraël, et celle qui a cassé l'historique.
+        self.trackers = {"kills": {"specialEvent_kills": kills, "career_kills": 999_000}}
 
 
 @pytest.mark.asyncio
 async def test_la_consultation_rappelle_le_gain_depuis_la_derniere(service):
-    await _releve(service, time.time() - 4 * HEURE, 500)
+    await _releve(service, time.time() - 4 * HEURE, 500,
+                  notion="kills:specialEvent_kills")
     rappel = await service._comparer_a_la_derniere_fois(_Profil(UID, 624))
     assert "+124 kills" in rappel
 
@@ -165,7 +171,7 @@ async def test_une_premiere_consultation_ne_rappelle_rien(service):
 @pytest.mark.asyncio
 async def test_deux_consultations_rapprochees_ne_rappellent_rien(service):
     """On redemande souvent deux fois de suite : « +0 kill » n'apprend rien."""
-    await _releve(service, time.time() - 60, 500)
+    await _releve(service, time.time() - 60, 500, notion="kills:specialEvent_kills")
     assert await service._comparer_a_la_derniere_fois(_Profil(UID, 502)) == ""
 
 
@@ -173,8 +179,10 @@ async def test_deux_consultations_rapprochees_ne_rappellent_rien(service):
 async def test_la_consultation_alimente_l_historique(service):
     """C'est le SEUL historique des comptes qu'on ne sonde pas."""
     await service._comparer_a_la_derniere_fois(_Profil(UID, 777))
-    p = await service.history._derniere_valeur(UID, "kills")
-    assert p == 777
+    # Un relevé par TRACKER, pas un par notion : c'est ce qui permet de retenir
+    # plus tard celui qui a réellement bougé.
+    assert await service.history._derniere_valeur(UID, "kills:specialEvent_kills") == 777
+    assert await service.history._derniere_valeur(UID, "kills:career_kills") == 999_000
 
 
 @pytest.mark.asyncio
