@@ -609,6 +609,53 @@ async def user_chat_messages(request: Request, discord_id: str, limit: int = 100
     return {"messages": messages}
 
 
+@router.get("/ignored")
+async def list_ignored(request: Request) -> dict:
+    """Tout ce que Wally ignore, réglable ou non, en un seul appel.
+
+    Trois mécanismes coexistent et ne se voyaient nulle part ensemble : la
+    liste Twitch de la config, la table des bannis Discord, et deux socles
+    câblés en dur. Le panneau les montre côte à côte parce que la question
+    qu'on se pose est « pourquoi Wally lit-il encore ce compte ? » — et la
+    réponse est dans celui des trois qu'on n'avait pas sous les yeux.
+
+    Le SOCLE est servi ici, jamais recopié dans le JavaScript. Une liste
+    dupliquée au front diverge du jour où quelqu'un ajoute un bot à
+    `handlers._KNOWN_BOTS`, et le panneau annonce alors le contraire du code
+    qui décide. C'est la règle que le panneau de mise en scène a déjà payée.
+
+    Lecture seule : les écritures gardent leurs routes (`/chat-bans` pour
+    Discord, `/config` pour Twitch), qui portent déjà leur validation.
+    """
+    from bot.twitch.handlers import _KNOWN_BOTS
+
+    state = request.app.state.wally
+    bans = await state.db.list_chat_bans()
+    return {
+        "discord": [
+            {
+                # Sans pseudo, l'id : la table ne l'exige pas, et une carte
+                # vide ne dirait plus qui on a ignoré.
+                "id": str(b.get("discord_id") or ""),
+                "label": b.get("username") or str(b.get("discord_id") or ""),
+                "reason": b.get("reason"),
+                "depuis": b.get("banned_at"),
+            }
+            for b in bans or []
+        ],
+        # `or []` et pas un défaut de `.get` : un `config.yaml` antérieur peut
+        # porter `ignored_users: null`, que le défaut ne couvre PAS.
+        "twitch": list(getattr(state.config.twitch, "ignored_users", None) or []),
+        "socle": {
+            "discord": "Tous les bots Discord sont ignorés d'office "
+                       "(Wally ne lit jamais un message dont l'auteur est un bot).",
+            "twitch": sorted(_KNOWN_BOTS),
+            "twitch_badge": "Les comptes portant le badge « bot » sur Twitch "
+                            "le sont également, sans être listés ici.",
+        },
+    }
+
+
 @router.get("/chat-bans")
 async def list_chat_bans(request: Request) -> dict:
     """Liste les utilisateurs bannis du chat/bot."""

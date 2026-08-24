@@ -45,13 +45,33 @@ _RACINE = pathlib.Path(__file__).resolve().parent.parent
 ONGLETS = ["Paramètres", "Mémoire", "Actions", "Prompts",
            "Mise en scène", "Système", "Vocal"]
 
-# Sous-onglets de Paramètres et l'id du panneau qu'ils remplissent. C'est ici
-# que vivait le défaut : un sous-onglet peut être le seul cassé des quatre.
-SOUS_PARAMETRES = [
-    ("Émotions", "parametres-sub-emotions"),
-    ("LLM", "parametres-sub-llm"),
-    ("Images", "parametres-sub-images"),
-    ("Vocal", "parametres-sub-vocal"),
+# Sous-onglets, et l'id du panneau que chacun remplit. C'est ici que vivait le
+# défaut : un sous-onglet peut être le seul cassé de sa famille, l'onglet parent
+# s'ouvrant sans erreur.
+#
+# Mémoire manquait entièrement à ce parcours — sept panneaux, dont ceux qui
+# portent les gens et leur mémoire, montaient sans qu'aucun outil ne le vérifie.
+SOUS_ONGLETS = [
+    ("Paramètres", [
+        ("Émotions", "parametres-sub-emotions"),
+        ("LLM", "parametres-sub-llm"),
+        ("Images", "parametres-sub-images"),
+        ("Vocal", "parametres-sub-vocal"),
+    ]),
+    ("Mémoire", [
+        ("Utilisateurs", "memoire-sub-users"),
+        ("Mémoire communautaire", "memoire-sub-global"),
+        ("Questions", "memoire-sub-dashboard"),
+        ("Notes du bot", "memoire-sub-notes"),
+        ("Comptes Apex", "memoire-sub-apex"),
+        ("Dans la tête de Wally", "memoire-sub-self"),
+        ("Ignorés", "memoire-sub-ignores"),
+    ]),
+    ("Système", [
+        ("Logs", "systeme-sub-logs"),
+        ("Twitch", "systeme-sub-twitch"),
+        ("Overlay", "systeme-sub-overlay"),
+    ]),
 ]
 
 # Un panneau qui rend moins que ça n'a rien monté : même vide de données, il
@@ -154,18 +174,21 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
         page.wait_for_timeout(1800)
         rap.dire(not erreurs, f"onglet {nom}", " · ".join(erreurs[:2]))
 
-    print("\n── sous-onglets de Paramètres ──")
-    page.get_by_text("Paramètres", exact=True).first.click()
-    page.wait_for_timeout(1200)
-    for nom, ident in SOUS_PARAMETRES:
-        del erreurs[:]
-        page.get_by_text(nom, exact=True).last.click()
-        taille = _attendre_contenu(page, ident)
-        # Les deux conditions, pas une : sans erreur mais vide reste un panneau
-        # mort, et c'est exactement la forme qu'avait le défaut.
-        rap.dire(not erreurs and taille >= _CONTENU_MIN,
-                 f"Paramètres → {nom}",
-                 f"{taille} car." + (" · " + erreurs[0] if erreurs else ""))
+    for parent, enfants in SOUS_ONGLETS:
+        print(f"\n── sous-onglets de {parent} ──")
+        page.get_by_text(parent, exact=True).first.click()
+        page.wait_for_timeout(1200)
+        for nom, ident in enfants:
+            del erreurs[:]
+            # `.last` : le nom du sous-onglet apparaît aussi dans la sidebar et
+            # dans les panneaux déjà montés ; la pilule est le dernier rendu.
+            page.get_by_text(nom, exact=True).last.click()
+            taille = _attendre_contenu(page, ident)
+            # Les deux conditions, pas une : sans erreur mais vide reste un
+            # panneau mort, et c'est exactement la forme qu'avait le défaut.
+            rap.dire(not erreurs and taille >= _CONTENU_MIN,
+                     f"{parent} → {nom}",
+                     f"{taille} car." + (" · " + erreurs[0] if erreurs else ""))
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))

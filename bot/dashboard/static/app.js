@@ -265,7 +265,7 @@ async function startTwitchOAuth(account) {
 }
 
 async function restartTwitchContainer() {
-  if (!confirm('Redemarrer le container Wally ? Le dashboard sera indisponible ~10s.')) return;
+  if (!confirm('Redémarrer le container Wally ? Le dashboard sera indisponible ~10 s.')) return;
   var r = await apiFetch('/api/admin/twitch/restart', { method: 'POST' });
   if (!r || !r.ok) {
     var err = r ? await r.json().catch(function() { return {}; }) : {};
@@ -329,8 +329,6 @@ function showTab(tabId) {
   if (tabId === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
   if (tabId === 'admin-prompts') renderPromptsTab();
   if (tabId === 'admin-scene') renderSceneTab();
-  if (tabId === 'admin-overlay') loadOverlayTab();
-  if (tabId === 'admin-twitch') loadTwitchChannelsTab();
   pollLinksBadge();
 }
 
@@ -1135,162 +1133,6 @@ async function removeGuestChannel(name) {
 }
 
 // ── Twitch Channels Tab ────────────────────────────────────────────
-
-async function loadTwitchChannelsTab() {
-  const el = document.getElementById('tab-admin-twitch');
-  if (!el) return;
-
-  el.innerHTML = '<p style="color:var(--text-muted);padding:16px">Chargement…</p>';
-
-  const r = await apiFetch('/api/admin/twitch/channels');
-  if (!r || !r.ok) {
-    if (r && r.status === 503) {
-      el.textContent = 'Twitch non disponible — BOT_ACCESS_TOKEN manquant dans .env';
-      el.style.padding = '16px';
-      el.style.color = 'var(--c-offline)';
-    } else {
-      el.textContent = 'Erreur de chargement.';
-      el.style.padding = '16px';
-      el.style.color = 'var(--c-offline)';
-    }
-    return;
-  }
-  const channels = await r.json();
-
-  const cardsHtml = channels.length === 0
-    ? '<p style="color:var(--text-muted);margin-bottom:12px">Aucune chaîne invitée.</p>'
-    : channels.map(ch => {
-        // ch.name is a validated Twitch login (^[a-z0-9_]{1,25}$) — safe for innerHTML
-        const dotClass = ch.irc_connected ? 'connected' : 'pending';
-        const badgeClass = ch.live ? 'live' : 'offline';
-        const badgeText = ch.live ? '🔴 LIVE' : 'hors ligne';
-        return '<div class="twitch-channel-card" id="guest-ch-' + ch.name + '">'
-          + '<div class="tc-dot ' + dotClass + '"></div>'
-          + '<span class="tc-name">' + ch.name + '</span>'
-          + '<span class="tc-badge ' + badgeClass + '">' + badgeText + '</span>'
-          + '<button class="tc-kick" onclick="removeGuestChannel(\'' + ch.name + '\')">Déconnecter</button>'
-          + '</div>';
-      }).join('');
-
-  el.innerHTML = '<div style="padding:0 2px">'
-    + '<div id="guest-channels-list">' + cardsHtml + '</div>'
-    + '<div id="twitch-channels-add">'
-    + '<input type="text" id="guest-channel-input" placeholder="nom de chaîne twitch…"'
-    + ' style="flex:1" onkeydown="if(event.key===\'Enter\') addGuestChannel()">'
-    + '<button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>'
-    + '</div>'
-    + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
-    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">'
-    + 'Le broadcaster doit avoir autorisé le bot (scope <code>channel:bot</code>) pour que Wally puisse parler,'
-    + ' et Wally doit suivre la chaîne si le chat est en mode « abonnés/followers ».'
-    + '</p>'
-    + '<div id="ignored-users-section" style="margin-top:22px"></div>'
-    + '</div>';
-
-  loadIgnoredUsers();
-}
-
-// ── Comptes ignorés ────────────────────────────────────────────────
-// Les bots varient d'une chaîne invitée à l'autre. Les câbler dans le code
-// demandait un rebuild par pseudo ; ils vivent donc dans la config.
-
-let _ignoredUsers = [];
-
-async function loadIgnoredUsers() {
-  const host = document.getElementById('ignored-users-section');
-  if (!host) return;
-  const r = await apiFetch('/api/admin/config');
-  if (!r || !r.ok) return;
-  const cfg = await r.json();
-  _ignoredUsers = ((cfg.twitch || {}).ignored_users) || [];
-  renderIgnoredUsers();
-}
-
-function renderIgnoredUsers() {
-  const host = document.getElementById('ignored-users-section');
-  if (!host) return;
-  host.replaceChildren();
-
-  const titre = document.createElement('h3');
-  titre.textContent = 'Comptes ignorés';
-  titre.style.cssText = 'font-size:0.95em;margin:0 0 4px';
-  const aide = document.createElement('p');
-  aide.textContent = "Wally ne lit rien de ces comptes. Les bots courants "
-    + "(Nightbot, StreamElements, Fossabot…) le sont déjà d'office.";
-  aide.style.cssText = 'color:var(--text-muted);font-size:0.8em;margin:0 0 10px';
-  host.append(titre, aide);
-
-  const liste = document.createElement('div');
-  liste.id = 'ignored-users-list';
-  if (_ignoredUsers.length === 0) {
-    const vide = document.createElement('p');
-    vide.textContent = 'Aucun compte ignoré pour le moment.';
-    vide.style.cssText = 'color:var(--text-muted);margin-bottom:12px';
-    liste.appendChild(vide);
-  } else {
-    // `textContent` et non `innerHTML` : un pseudo est une saisie libre. Il est
-    // validé côté serveur, mais la config peut aussi être éditée à la main.
-    for (const nom of _ignoredUsers) {
-      const carte = document.createElement('div');
-      carte.className = 'twitch-channel-card';
-      const label = document.createElement('span');
-      label.className = 'tc-name';
-      label.textContent = nom;
-      const btn = document.createElement('button');
-      btn.className = 'tc-kick';
-      btn.textContent = 'Retirer';
-      btn.onclick = () => saveIgnoredUsers(_ignoredUsers.filter(u => u !== nom));
-      carte.append(label, btn);
-      liste.appendChild(carte);
-    }
-  }
-  host.appendChild(liste);
-
-  const ajout = document.createElement('div');
-  ajout.id = 'twitch-channels-add';
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.id = 'ignored-user-input';
-  input.placeholder = 'pseudo twitch à ignorer…';
-  input.style.flex = '1';
-  input.onkeydown = (e) => { if (e.key === 'Enter') addIgnoredUser(); };
-  const btn = document.createElement('button');
-  btn.className = 'btn btn-success';
-  btn.textContent = '+ Ajouter';
-  btn.onclick = addIgnoredUser;
-  ajout.append(input, btn);
-  host.appendChild(ajout);
-}
-
-function addIgnoredUser() {
-  const input = document.getElementById('ignored-user-input');
-  if (!input) return;
-  const nom = input.value.trim().replace(/^@/, '').toLowerCase();
-  if (!nom) return;
-  if (!/^[a-z0-9_]{1,25}$/.test(nom)) {
-    toast('Pseudo Twitch invalide', 'error');
-    return;
-  }
-  if (_ignoredUsers.includes(nom)) {
-    toast('Déjà dans la liste', 'error');
-    return;
-  }
-  input.value = '';
-  saveIgnoredUsers([..._ignoredUsers, nom]);
-}
-
-async function saveIgnoredUsers(liste) {
-  const r = await apiFetch('/api/admin/config', {
-    method: 'POST',
-    body: JSON.stringify({ twitch: { ignored_users: liste } }),
-  });
-  if (!r || !r.ok) { toast('Erreur d\'enregistrement', 'error'); return; }
-  _ignoredUsers = liste;
-  renderIgnoredUsers();
-  toast('Comptes ignorés mis à jour', 'success');
-}
-
-// ── Admin emotions ────────────────────────────────────────────────────────────
 
 async function setEmotion(emotion, value) {
   const r = await apiFetch('/api/admin/emotions/set', {
@@ -3479,7 +3321,9 @@ async function _renderParametresLLM(panel) {
 async function _renderParametresImages(panel) {
   if (!panel) return;
 
-  // Delegate to loadOverlayConfig but only inject image_generation section
+  // Seule la section image_generation, lue au même endroit que le reste
+  // de la config. (`loadOverlayConfig`, cité ici jusqu'au 2026-08-24,
+  // était injoignable depuis la refonte des onglets.)
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const cfg = await r.json();
@@ -3701,7 +3545,7 @@ async function _renderSystemeTwitch(panel) {
   if (chR && chR.ok) {
     var channels = await chR.json();
     channelsHtml = channels.length === 0
-      ? '<p style="color:var(--text-muted);margin-bottom:12px">Aucune chaine invitee.</p>'
+      ? '<p style="color:var(--text-muted);margin-bottom:12px">Aucune chaîne invitée.</p>'
       : channels.map(function(ch) {
           var dotClass   = ch.irc_connected ? 'connected' : 'pending';
           var badgeClass = ch.live ? 'live' : 'offline';
@@ -3710,17 +3554,17 @@ async function _renderSystemeTwitch(panel) {
             + '<div class="tc-dot ' + dotClass + '"></div>'
             + '<span class="tc-name">' + ch.name + '</span>'
             + '<span class="tc-badge ' + badgeClass + '">' + badgeText + '</span>'
-            + '<button class="tc-kick" onclick="removeGuestChannel(\'' + ch.name + '\')">Deconnecter</button>'
+            + '<button class="tc-kick" onclick="removeGuestChannel(\'' + ch.name + '\')">Déconnecter</button>'
             + '</div>';
         }).join('');
   } else {
-    channelsHtml = '<p style="color:var(--text-muted);font-size:0.85em">Twitch non demarre — connecte les comptes ci-dessus et redemarre.</p>';
+    channelsHtml = '<p style="color:var(--text-muted);font-size:0.85em">Twitch non démarré — connecte les comptes ci-dessus et redémarre.</p>';
   }
 
   var restartHtml = _twitchPendingRestart
     ? '<div style="margin-top:20px">'
-      + '<button class="btn" style="background:#f59e0b;color:#000;font-weight:600;width:100%" onclick="restartTwitchContainer()">Redemarrer le container</button>'
-      + '<p style="font-size:0.75em;color:var(--text-muted);margin-top:6px;text-align:center">Le dashboard sera indisponible ~10s.</p>'
+      + '<button class="btn" style="background:#f59e0b;color:#000;font-weight:600;width:100%" onclick="restartTwitchContainer()">Redémarrer le container</button>'
+      + '<p style="font-size:0.75em;color:var(--text-muted);margin-top:6px;text-align:center">Le dashboard sera indisponible ~10 s.</p>'
       + '</div>'
     : '';
 
@@ -3732,17 +3576,21 @@ async function _renderSystemeTwitch(panel) {
     + '</div>'
     + restartHtml
     + '<hr style="border-color:var(--border);margin:16px 0">'
-    + '<div style="font-size:0.7em;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">Chaines invitees</div>'
+    + '<div style="font-size:0.7em;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px">Chaînes invitées</div>'
     + '<div id="guest-channels-list">' + channelsHtml + '</div>'
     + '<div id="twitch-channels-add">'
-    + '<input type="text" id="guest-channel-input" placeholder="nom de chaine twitch..." style="flex:1" onkeydown="if(event.key===\'Enter\') addGuestChannel()">'
+    + '<input type="text" id="guest-channel-input" placeholder="nom de chaîne twitch…" style="flex:1" onkeydown="if(event.key===\'Enter\') addGuestChannel()">'
     + '<button class="btn btn-success" onclick="addGuestChannel()">+ Ajouter</button>'
     + '</div>'
     + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
-    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">Le broadcaster doit avoir autorise le bot (scope channel:bot) pour que Wally puisse parler.</p>'
+    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">Le broadcaster doit avoir autorisé le bot (scope channel:bot) pour que Wally puisse parler.</p>'
+    + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">'
+    + 'Les comptes que Wally ignore se règlent dans <strong>Mémoire → Ignorés</strong>,'
+    + ' avec ceux de Discord et la liste des bots déjà couverts d\'office.</p>'
     + '</div>';
 
-  // Vider le div legacy tab-admin-twitch pour eviter les doublons
+  // Le div `tab-admin-twitch` n'existe plus depuis la refonte des onglets :
+  // le vidage restait par prudence, il n'a plus de cible.
   var twitchEl = document.getElementById('tab-admin-twitch');
   if (twitchEl) twitchEl.innerHTML = '';
 }
@@ -4122,6 +3970,7 @@ function renderMemoireTab() {
         <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
         <button class="mem-subnav-pill" data-subtab="apex" onclick="switchMemoireSubTab('apex')">Comptes Apex</button>
         <button class="mem-subnav-pill" data-subtab="self" onclick="switchMemoireSubTab('self')">Dans la tête de Wally</button>
+        <button class="mem-subnav-pill" data-subtab="ignores" onclick="switchMemoireSubTab('ignores')">Ignorés</button>
       </div>
       <div class="mem-subnav-content active" id="memoire-sub-users"></div>
       <div class="mem-subnav-content" id="memoire-sub-global"></div>
@@ -4129,6 +3978,7 @@ function renderMemoireTab() {
       <div class="mem-subnav-content" id="memoire-sub-notes"></div>
       <div class="mem-subnav-content" id="memoire-sub-apex"></div>
       <div class="mem-subnav-content" id="memoire-sub-self"></div>
+      <div class="mem-subnav-content" id="memoire-sub-ignores"></div>
     `;
   }
 
@@ -4164,7 +4014,417 @@ function switchMemoireSubTab(subtab) {
     if (panel) renderApexProfilesTab(panel);
   } else if (subtab === 'self') {
     if (panel) renderWallySelfTab(panel);
+  } else if (subtab === 'ignores') {
+    // Rechargé à CHAQUE visite, sans garde sur le contenu : on y vient après
+    // avoir banni quelqu'un ailleurs, et un panneau mis en cache annoncerait
+    // qu'il est encore écouté.
+    if (panel) renderIgnoresTab(panel);
   }
+}
+
+// L'annuaire des gens que Wally connaît, chargé une fois pour toute la page.
+// Il n'a rien d'Apex — il est né dans ce formulaire, il sert aussi au panneau
+// « Ignorés ». Deux caches de la même liste, c'était deux requêtes et deux
+// états qui se désynchronisent dès qu'on ajoute quelqu'un.
+let _annuaireCache = null;
+let _annuairePromesse = null;
+
+async function annuairePersonnes() {
+  if (_annuaireCache) return _annuaireCache;
+  // La PROMESSE est mémorisée, pas seulement le résultat : deux panneaux qui
+  // s'ouvrent coup sur coup lanceraient sinon deux fois la même requête, et le
+  // second écraserait le cache du premier en pleine lecture.
+  if (!_annuairePromesse) {
+    _annuairePromesse = apiFetch('/api/admin/apex/personnes')
+      .then(function(r) { return (r && r.ok) ? r.json() : null; })
+      .then(function(d) { _annuaireCache = (d && d.people) || null; return _annuaireCache; })
+      .catch(function(e) {
+        console.error('Annuaire indisponible', e);
+        return null;
+      })
+      .finally(function() { _annuairePromesse = null; });
+  }
+  return _annuairePromesse;
+}
+
+// ── Ignorés : tout ce que Wally ne lit pas ───────────────────────────────────
+//
+// Trois mécanismes coexistaient sans jamais se voir ensemble : la liste Twitch
+// de la config (enterrée sous Système → Twitch), la table des bannis Discord
+// (accessible seulement depuis la liste des visiteurs du chat web, donc
+// impossible pour un membre qui n'y est jamais passé), et deux socles câblés
+// en dur. La question qu'on se pose ici est « pourquoi Wally lit-il encore ce
+// compte ? », et la réponse était toujours dans celui des trois qu'on n'avait
+// pas sous les yeux.
+//
+// Tout est construit par le DOM, jamais par concaténation de HTML : ces pseudos
+// viennent du chat et de Discord, personne ne les contrôle.
+//
+// Le socle est SERVI par `/api/admin/ignored`, jamais recopié ici : une liste
+// dupliquée au front diverge du jour où quelqu'un ajoute un bot au module
+// Python, et le panneau annonce alors le contraire du code qui décide.
+
+let _ignores = null;
+
+async function renderIgnoresTab(panel) {
+  if (!panel) return;
+  panel.replaceChildren();
+  const attente = document.createElement('p');
+  attente.style.cssText = 'color:var(--text-secondary);padding:16px';
+  attente.textContent = 'Chargement…';
+  panel.appendChild(attente);
+
+  const r = await apiFetch('/api/admin/ignored');
+  if (!r || !r.ok) { attente.textContent = 'Erreur de chargement'; return; }
+  _ignores = await r.json();
+
+  panel.replaceChildren(
+    blocIgnores('discord'),
+    blocIgnores('twitch'),
+    blocSocle(),
+  );
+  // L'annuaire arrive après coup : le panneau est utilisable sans lui (on peut
+  // toujours coller un id ou un pseudo), il ne fait qu'éviter de le chercher.
+  annuairePersonnes().then(function() { majPlaceholdersIgnores(); });
+}
+
+// Ce que chaque plateforme appelle une identité, et comment on la saisit. Une
+// table plutôt que deux blocs jumeaux : les deux formulaires ne diffèrent que
+// par ces lignes-là, et deux copies auraient divergé au premier correctif.
+const IGNORES_PLATEFORMES = {
+  discord: {
+    titre: 'Discord',
+    aide: "Wally ne lit plus rien de ces personnes : aucune réponse, aucune "
+        + "perception, aucun fait mémorisé. ⚠️ La connexion au chat web leur est "
+        + "aussi refusée — c'est la même liste que le bouton « Bannir » des "
+        + "visiteurs.",
+    saisie: "Colle un id Discord, ou cherche quelqu'un par son nom",
+    // Un id Discord est un snowflake : uniquement des chiffres.
+    valide: function(v) { return /^[0-9]{5,25}$/.test(v); },
+    refus: "Un id Discord ne contient que des chiffres. Pour ignorer quelqu'un "
+         + "par son nom, choisis-le dans la liste qui s'ouvre.",
+  },
+  twitch: {
+    titre: 'Twitch',
+    aide: "Les bots croisés sur les chaînes invitées changent d'une chaîne à "
+        + "l'autre. Wally ne lit plus une ligne de ces comptes.",
+    saisie: 'Pseudo Twitch, ou cherche quelqu\'un par son nom',
+    valide: function(v) { return /^[a-z0-9_]{1,25}$/.test(v); },
+    refus: 'Pseudo Twitch invalide (lettres, chiffres et « _ » seulement).',
+  },
+};
+
+function blocIgnores(plateforme) {
+  const spec = IGNORES_PLATEFORMES[plateforme];
+  const card = document.createElement('div');
+  card.className = 'card apex-link-form';
+
+  const titre = document.createElement('h3');
+  titre.textContent = spec.titre;
+  card.appendChild(titre);
+
+  const aide = document.createElement('p');
+  aide.className = 'apex-hint';
+  aide.textContent = spec.aide;
+  card.appendChild(aide);
+
+  const liste = document.createElement('div');
+  const entrees = ignoresDe(plateforme);
+  if (!entrees.length) {
+    const vide = document.createElement('p');
+    vide.style.cssText = 'color:var(--text-secondary);margin:0 0 12px';
+    vide.textContent = 'Personne d\'ignoré ici pour le moment.';
+    liste.appendChild(vide);
+  } else {
+    entrees.forEach(function(e) { liste.appendChild(carteIgnore(plateforme, e)); });
+  }
+  card.appendChild(liste);
+
+  card.appendChild(formulaireIgnore(plateforme));
+  return card;
+}
+
+function ignoresDe(plateforme) {
+  const brut = (_ignores || {})[plateforme] || [];
+  // Twitch range des pseudos nus, Discord des objets : une seule forme en
+  // sortie, pour que la carte et le retrait n'aient pas à savoir laquelle.
+  return brut.map(function(e) {
+    return (typeof e === 'string')
+      ? { id: e, label: e, reason: null, depuis: null }
+      : e;
+  });
+}
+
+function carteIgnore(plateforme, e) {
+  const carte = document.createElement('div');
+  carte.className = 'twitch-channel-card';
+
+  const nom = document.createElement('span');
+  nom.className = 'tc-name';
+  nom.textContent = e.label;
+  carte.appendChild(nom);
+
+  // L'id ne s'affiche que s'il n'EST pas déjà le libellé : sinon on écrit deux
+  // fois la même chose, et la carte d'un ignoré sans pseudo devient illisible.
+  const detail = [];
+  if (e.id && e.id !== e.label) detail.push(e.id);
+  if (e.reason) detail.push(e.reason);
+  if (e.depuis) {
+    detail.push('depuis le ' + new Date(e.depuis * 1000)
+      .toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }));
+  }
+  if (detail.length) {
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--text-secondary);font-size:0.75rem;margin-left:8px';
+    meta.textContent = detail.join(' · ');
+    carte.appendChild(meta);
+  }
+
+  const btn = document.createElement('button');
+  btn.className = 'tc-kick';
+  btn.textContent = 'Ne plus ignorer';
+  btn.onclick = function() { retirerIgnore(plateforme, e.id); };
+  carte.appendChild(btn);
+  return carte;
+}
+
+function formulaireIgnore(plateforme) {
+  const ligne = document.createElement('div');
+  ligne.className = 'apex-link-row';
+
+  // Le même sélecteur cherchable que le formulaire Apex — il n'a rien d'Apex,
+  // il est simplement né là. 494 personnes connues en prod : un menu déroulant
+  // ne se parcourt pas.
+  const boite = document.createElement('div');
+  boite.className = 'apex-people-box';
+  const champ = document.createElement('input');
+  champ.type = 'text';
+  champ.id = 'ignore-champ-' + plateforme;
+  champ.autocomplete = 'off';
+  champ.placeholder = IGNORES_PLATEFORMES[plateforme].saisie;
+  champ.oninput = function() { renderMenuIgnores(plateforme, champ.value); };
+  champ.onfocus = function() { renderMenuIgnores(plateforme, champ.value); };
+  champ.onblur = function() { fermerMenuIgnores(plateforme); };
+  champ.onkeydown = function(e) { if (e.key === 'Enter') ajouterIgnoreSaisi(plateforme); };
+  boite.appendChild(champ);
+
+  const menu = document.createElement('div');
+  menu.className = 'apex-people-menu';
+  menu.id = 'ignore-menu-' + plateforme;
+  boite.appendChild(menu);
+  ligne.appendChild(boite);
+
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-success';
+  btn.textContent = '+ Ignorer';
+  btn.onclick = function() { ajouterIgnoreSaisi(plateforme); };
+  ligne.appendChild(btn);
+  return ligne;
+}
+
+function majPlaceholdersIgnores() {
+  const gens = _annuaireCache || [];
+  Object.keys(IGNORES_PLATEFORMES).forEach(function(plateforme) {
+    const champ = document.getElementById('ignore-champ-' + plateforme);
+    if (!champ) return;
+    const combien = gens.filter(function(p) {
+      return String(p.identity || '').indexOf(plateforme + ':') === 0;
+    }).length;
+    if (combien) {
+      champ.placeholder = IGNORES_PLATEFORMES[plateforme].saisie
+        + ' (' + combien + ' connues)';
+    }
+  });
+}
+
+// Combien de propositions on montre. Au-delà, c'est un mur qu'on ne lit plus.
+const IGNORES_MENU_MAX = 10;
+
+function candidatsIgnores(plateforme, q) {
+  const prefixe = plateforme + ':';
+  const terme = (q || '').trim().toLowerCase();
+  const deja = ignoresDe(plateforme).map(function(e) {
+    return String(e.id).toLowerCase();
+  });
+  const trouves = [];
+  (_annuaireCache || []).forEach(function(p) {
+    const identite = String(p.identity || '');
+    if (identite.indexOf(prefixe) !== 0) return;
+    // La clé d'ignorance n'est pas la même des deux côtés : Discord range un
+    // id, Twitch un pseudo — c'est ce que compare `is_ignored_chatter`.
+    const cle = (plateforme === 'discord')
+      ? identite.slice(prefixe.length)
+      : String(p.nom || '').toLowerCase();
+    if (!cle || deja.indexOf(String(cle).toLowerCase()) >= 0) return;
+    if (terme) {
+      const noms = (p.noms || []).concat([p.nom, cle]);
+      const touche = noms.some(function(n) {
+        return String(n || '').toLowerCase().indexOf(terme) >= 0;
+      });
+      if (!touche) return;
+    }
+    trouves.push({ cle: cle, nom: p.nom || cle, identite: identite });
+  });
+  trouves.sort(function(a, b) {
+    const ap = String(a.nom).toLowerCase().indexOf(terme) === 0 ? 0 : 1;
+    const bp = String(b.nom).toLowerCase().indexOf(terme) === 0 ? 0 : 1;
+    return ap - bp || String(a.nom).localeCompare(String(b.nom));
+  });
+  return { liste: trouves.slice(0, IGNORES_MENU_MAX), total: trouves.length };
+}
+
+function renderMenuIgnores(plateforme, q) {
+  const menu = document.getElementById('ignore-menu-' + plateforme);
+  if (!menu) return;
+  menu.replaceChildren();
+  const res = candidatsIgnores(plateforme, q);
+  if (!res.liste.length) {
+    const rien = document.createElement('div');
+    rien.className = 'apex-people-vide';
+    rien.textContent = _annuaireCache
+      ? 'Personne à proposer — tape l\'identité directement'
+      : 'Chargement de l\'annuaire…';
+    menu.appendChild(rien);
+    menu.classList.add('ouvert');
+    return;
+  }
+  res.liste.forEach(function(c, i) {
+    const item = document.createElement('div');
+    item.className = 'apex-people-item' + (i === 0 ? ' actif' : '');
+    const nom = document.createElement('span');
+    nom.className = 'apex-people-nom';
+    nom.textContent = c.nom;
+    const ident = document.createElement('span');
+    ident.className = 'apex-people-id';
+    ident.textContent = c.cle;
+    item.append(nom, ident);
+    // `mousedown` et non `click` : le `blur` du champ ferme le menu avant
+    // qu'un `click` n'ait lieu, et le choix ne partirait jamais.
+    item.onmousedown = function(e) {
+      e.preventDefault();
+      ajouterIgnore(plateforme, c.cle, c.nom);
+    };
+    menu.appendChild(item);
+  });
+  if (res.total > res.liste.length) {
+    const reste = document.createElement('div');
+    reste.className = 'apex-people-vide';
+    reste.textContent = '… et ' + (res.total - res.liste.length)
+      + ' autres — précise ta recherche';
+    menu.appendChild(reste);
+  }
+  menu.classList.add('ouvert');
+}
+
+function fermerMenuIgnores(plateforme) {
+  const menu = document.getElementById('ignore-menu-' + plateforme);
+  if (menu) menu.classList.remove('ouvert');
+}
+
+function ajouterIgnoreSaisi(plateforme) {
+  const champ = document.getElementById('ignore-champ-' + plateforme);
+  if (!champ) return;
+  const spec = IGNORES_PLATEFORMES[plateforme];
+  const saisi = champ.value.trim().replace(/^@/, '').toLowerCase();
+  if (!saisi) return;
+  if (!spec.valide(saisi)) { toast(spec.refus, 'error'); return; }
+  ajouterIgnore(plateforme, saisi, saisi);
+}
+
+async function ajouterIgnore(plateforme, cle, label) {
+  const cible = String(cle).toLowerCase();
+  if (ignoresDe(plateforme).some(function(e) {
+    return String(e.id).toLowerCase() === cible;
+  })) {
+    toast('Déjà ignoré', 'error');
+    return;
+  }
+  if (plateforme === 'discord') {
+    await ecrireBanDiscord(cle, label);
+  } else {
+    await ecrireIgnoresTwitch(
+      ignoresDe('twitch').map(function(e) { return e.id; }).concat([cible]));
+  }
+}
+
+async function retirerIgnore(plateforme, cle) {
+  if (plateforme === 'discord') {
+    const r = await apiFetch('/api/admin/chat-bans/' + encodeURIComponent(cle),
+                             { method: 'DELETE' });
+    if (!r || !r.ok) { toast('Erreur', 'error'); return; }
+    toast('Wally le lit de nouveau', 'success');
+    rechargerIgnores();
+  } else {
+    await ecrireIgnoresTwitch(ignoresDe('twitch')
+      .map(function(e) { return e.id; })
+      .filter(function(v) { return v !== cle; }));
+  }
+}
+
+async function ecrireBanDiscord(discordId, username) {
+  const r = await apiFetch('/api/admin/chat-bans', {
+    method: 'POST',
+    body: JSON.stringify({ discord_id: String(discordId), username: username || null,
+                           reason: 'ignoré depuis le dashboard' }),
+  });
+  if (!r || !r.ok) { toast('Erreur d\'enregistrement', 'error'); return; }
+  toast('Wally ne le lira plus', 'success');
+  rechargerIgnores();
+}
+
+async function ecrireIgnoresTwitch(liste) {
+  const r = await apiFetch('/api/admin/config', {
+    method: 'POST',
+    body: JSON.stringify({ twitch: { ignored_users: liste } }),
+  });
+  if (!r || !r.ok) { toast('Erreur d\'enregistrement', 'error'); return; }
+  toast('Comptes ignorés mis à jour', 'success');
+  rechargerIgnores();
+}
+
+function rechargerIgnores() {
+  renderIgnoresTab(document.getElementById('memoire-sub-ignores'));
+}
+
+function blocSocle() {
+  const socle = (_ignores || {}).socle || {};
+  const card = document.createElement('div');
+  card.className = 'card apex-link-form';
+
+  const titre = document.createElement('h3');
+  titre.textContent = 'Déjà ignorés, sans rien régler';
+  card.appendChild(titre);
+
+  const aide = document.createElement('p');
+  aide.className = 'apex-hint';
+  aide.textContent = 'Inutile de les ajouter ci-dessus : c\'est déjà fait, dans '
+    + 'le code. Les lister ici évite de les saisir à la main puis de se demander '
+    + 'pourquoi rien ne change.';
+  card.appendChild(aide);
+
+  [socle.discord, socle.twitch_badge].forEach(function(phrase) {
+    if (!phrase) return;
+    const p = document.createElement('p');
+    p.style.cssText = 'margin:0 0 8px;font-size:0.82rem';
+    p.textContent = '• ' + phrase;
+    card.appendChild(p);
+  });
+
+  const bots = socle.twitch || [];
+  if (bots.length) {
+    const repli = document.createElement('details');
+    const resume = document.createElement('summary');
+    resume.style.cssText = 'cursor:pointer;font-size:0.82rem';
+    resume.textContent = 'Les ' + bots.length + ' bots Twitch connus d\'office';
+    repli.appendChild(resume);
+    const corps = document.createElement('p');
+    corps.style.cssText = 'color:var(--text-secondary);font-size:0.78rem;'
+      + 'margin:8px 0 0;line-height:1.6';
+    corps.textContent = bots.join(' · ');
+    repli.appendChild(corps);
+    card.appendChild(repli);
+  }
+  return card;
 }
 
 // ── Comptes Apex : le registre des profils croisés ───────────────────────────
@@ -4175,8 +4435,6 @@ function switchMemoireSubTab(subtab) {
 //
 // Tout est construit par le DOM, jamais par concaténation de HTML : ces pseudos
 // viennent de l'API Apex et du chat, ils ne sont contrôlés par personne ici.
-
-let _apexPeopleCache = null;
 
 async function renderApexProfilesTab(panel) {
   if (!panel) return;
@@ -4260,15 +4518,10 @@ function apexLinkForm() {
 }
 
 async function fillApexPeople(champ) {
-  if (_apexPeopleCache) return;
-  const r = await apiFetch('/api/admin/apex/personnes');
-  if (!r || !r.ok) {
-    champ.placeholder = 'Annuaire indisponible — donne l\'identité à la main';
-    return;
-  }
-  _apexPeopleCache = (await r.json()).people || [];
-  champ.placeholder = 'Cherche parmi ' + _apexPeopleCache.length
-    + ' personnes (pseudo, surnom, id…)';
+  const gens = await annuairePersonnes();
+  champ.placeholder = gens
+    ? 'Cherche parmi ' + gens.length + ' personnes (pseudo, surnom, id…)'
+    : 'Annuaire indisponible — donne l\'identité à la main';
 }
 
 // Combien de propositions on affiche. Au-delà, la liste devient un mur qu'on
@@ -4276,7 +4529,7 @@ async function fillApexPeople(champ) {
 const APEX_PEOPLE_MAX = 12;
 
 function apexPeopleTrouves(q) {
-  const gens = _apexPeopleCache || [];
+  const gens = _annuaireCache || [];
   const terme = (q || '').trim().toLowerCase();
   if (!terme) return { liste: gens.slice(0, APEX_PEOPLE_MAX), total: gens.length };
   const trouves = [];
@@ -4307,7 +4560,7 @@ function renderApexPeopleMenu(q) {
   if (!liste.length) {
     const rien = document.createElement('div');
     rien.className = 'apex-people-vide';
-    rien.textContent = _apexPeopleCache ? 'Personne ne porte ce nom' : 'Chargement…';
+    rien.textContent = _annuaireCache ? 'Personne ne porte ce nom' : 'Chargement…';
     menu.appendChild(rien);
     menu.classList.add('ouvert');
     return;
@@ -4741,35 +4994,6 @@ async function deleteNote(id) {
 
 // ── Merged Overlay Tab (toggle + config) ────────────────────────────────────
 
-function loadOverlayTab() {
-  const container = document.getElementById('overlay-config-container');
-  if (!container) return;
-
-  // Add the toggle at the top if not already present
-  if (!document.getElementById('overlay-tab-toggle')) {
-    const toggleCard = document.createElement('div');
-    toggleCard.className = 'card';
-    toggleCard.id = 'overlay-tab-toggle';
-    toggleCard.style.marginBottom = '20px';
-    toggleCard.innerHTML = `
-      <div class="card-title">OVERLAY ON/OFF</div>
-      <div style="display:flex;align-items:center;gap:16px">
-        <span style="color:var(--text-secondary);font-size:0.85rem">Basculer la visibilité de l'overlay OBS</span>
-        <div class="overlay-switch" id="overlay-switch-tab" style="cursor:pointer" onclick="toggleOverlayFromTab()">
-          <div class="overlay-switch-knob"></div>
-        </div>
-        <span id="overlay-status-label" style="font-size:0.78rem;color:var(--text-secondary)"></span>
-      </div>
-    `;
-    container.parentElement.insertBefore(toggleCard, container);
-
-    // Sync the switch state
-    pollOverlayStatusForTab();
-  }
-
-  loadOverlayConfig();
-}
-
 async function toggleOverlayFromTab() {
   const r = await apiFetch('/api/admin/overlay/toggle', { method: 'POST' });
   if (r && r.ok) {
@@ -4788,177 +5012,6 @@ function updateOverlaySwitchTab(visible) {
     else sw.classList.remove('on');
   }
   if (lbl) lbl.textContent = visible ? 'Visible' : 'Masqué';
-}
-
-async function pollOverlayStatusForTab() {
-  try {
-    const r = await apiFetch('/api/admin/overlay/status');
-    if (r && r.ok) {
-      const data = await r.json();
-      updateOverlaySwitchTab(data.visible);
-    }
-  } catch {
-    // Sondage périodique : le tour suivant réessaie.
-  }
-}
-
-
-// ── Overlay Config (Admin) ────────────────────────────────────────────────────
-
-
-async function loadOverlayConfig() {
-  const r = await apiFetch('/api/admin/config');
-  if (!r || !r.ok) return;
-  const cfg = await r.json();
-  const oi = cfg.overlay_image || {};
-  const ig = cfg.image_generation || {};
-  const container = document.getElementById('overlay-config-container');
-  container.textContent = '';
-
-  // Image generation section
-  const igSection = document.createElement('div');
-  igSection.className = 'overlay-section';
-  const igTitle = document.createElement('h3');
-  igTitle.textContent = 'Génération d\'images';
-  igSection.appendChild(igTitle);
-
-
-  function makeSelect(id, options, selected) {
-    const sel = document.createElement('select');
-    sel.id = id;
-    sel.className = 'neo-select';
-    options.forEach(function(o) {
-      const opt = document.createElement('option');
-      opt.value = o;
-      opt.textContent = o;
-      if (o === selected) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    return sel;
-  }
-
-  igSection.appendChild(makeFormRow('Modèle', makeSelect('ig-model', ['gpt-image-1.5','gpt-image-1','gpt-image-1-mini'], ig.model)));
-  igSection.appendChild(makeFormRow('Qualité', makeSelect('ig-quality', ['low','medium','high'], ig.quality)));
-  igSection.appendChild(makeFormRow('Taille', makeSelect('ig-size', ['1024x1024','1024x1536','1536x1024'], ig.size)));
-  igSection.appendChild(makeFormRow('Format', makeSelect('ig-format', ['png','jpeg','webp'], ig.format)));
-  igSection.appendChild(makeFormRow('Background', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
-
-  // Daily limit
-  const dlRow = document.createElement('div');
-  dlRow.className = 'form-row';
-  const dlLabel = document.createElement('label');
-  dlLabel.textContent = 'Limite/jour (global)';
-  dlRow.appendChild(dlLabel);
-  const dlInput = document.createElement('input');
-  dlInput.type = 'number'; dlInput.id = 'ig-daily-limit'; dlInput.className = 'neo-input';
-  dlInput.value = ig.daily_limit; dlInput.style.width = '80px';
-  dlRow.appendChild(dlInput);
-  const dlHint = document.createElement('span');
-  dlHint.style.color = 'rgba(255,255,255,0.35)'; dlHint.style.fontSize = '0.78rem'; dlHint.textContent = '-1 = illimité';
-  dlRow.appendChild(dlHint);
-  igSection.appendChild(dlRow);
-
-  // Per user limit
-  const puRow = document.createElement('div');
-  puRow.className = 'form-row';
-  const puLabel = document.createElement('label');
-  puLabel.textContent = 'Limite/jour (par user)';
-  puRow.appendChild(puLabel);
-  const puInput = document.createElement('input');
-  puInput.type = 'number'; puInput.id = 'ig-per-user-limit'; puInput.className = 'neo-input';
-  puInput.value = ig.per_user_limit; puInput.style.width = '80px';
-  puRow.appendChild(puInput);
-  const puHint = document.createElement('span');
-  puHint.style.color = 'rgba(255,255,255,0.35)'; puHint.style.fontSize = '0.78rem'; puHint.textContent = '-1 = illimité';
-  puRow.appendChild(puHint);
-  igSection.appendChild(puRow);
-
-  const costEst = document.createElement('div');
-  costEst.className = 'form-row';
-  costEst.id = 'ig-cost-estimate';
-  costEst.style.color = 'var(--accent)';
-  costEst.style.fontWeight = '600';
-  costEst.style.fontSize = '0.85rem';
-  igSection.appendChild(costEst);
-
-  const igSaveBtn = document.createElement('button');
-  igSaveBtn.className = 'neo-btn';
-  igSaveBtn.textContent = 'Sauvegarder';
-  igSaveBtn.onclick = saveImageGenConfig;
-  igSection.appendChild(igSaveBtn);
-
-  container.appendChild(igSection);
-
-  // Overlay image section
-  const oiSection = document.createElement('div');
-  oiSection.className = 'overlay-section';
-  const oiTitle = document.createElement('h3');
-  oiTitle.textContent = 'Overlay Image (Twitch)';
-  oiSection.appendChild(oiTitle);
-
-  // Enabled checkbox
-  const enRow = document.createElement('div');
-  enRow.className = 'form-row';
-  const enLabel = document.createElement('label');
-  enLabel.textContent = 'Activé';
-  enRow.appendChild(enLabel);
-  const enCheck = document.createElement('input');
-  enCheck.type = 'checkbox'; enCheck.id = 'oi-enabled';
-  if (oi.enabled) enCheck.checked = true;
-  enRow.appendChild(enCheck);
-  oiSection.appendChild(enRow);
-
-  // Command
-  const cmdRow = document.createElement('div');
-  cmdRow.className = 'form-row';
-  const cmdLabel = document.createElement('label');
-  cmdLabel.textContent = 'Commande Twitch';
-  cmdRow.appendChild(cmdLabel);
-  const cmdInput = document.createElement('input');
-  cmdInput.type = 'text'; cmdInput.id = 'oi-command'; cmdInput.className = 'neo-input';
-  cmdInput.value = oi.command || '!image'; cmdInput.style.width = '120px';
-  cmdRow.appendChild(cmdInput);
-  oiSection.appendChild(cmdRow);
-
-  // Les quatre réglages d'AFFICHAGE — durée, animations d'entrée et de sortie,
-  // durée d'animation — sont partis dans « Mise en scène », où ils se règlent
-  // PAR SCÈNE comme ceux de tous les autres widgets. Ils vivaient ici,
-  // globalement : deux endroits pour la même question, dont l'un que le panneau
-  // de mise en scène ignorait. Laisser un champ mort rouvrirait le doublon.
-  const oiRenvoi = document.createElement('div');
-  oiRenvoi.className = 'form-row';
-  oiRenvoi.style.opacity = '0.75';
-  oiRenvoi.style.fontSize = '0.8rem';
-  oiRenvoi.textContent = "Durée d'affichage et animations : onglet « Mise en "
-    + "scène », élément « Image de la galerie » — et par scène.";
-  oiSection.appendChild(oiRenvoi);
-
-  // Filter
-  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter', ['all','top','recent'], oi.random_filter)));
-
-  // Buttons row
-  const btnRow = document.createElement('div');
-  btnRow.className = 'form-row';
-  const oiSaveBtn = document.createElement('button');
-  oiSaveBtn.className = 'neo-btn';
-  oiSaveBtn.textContent = 'Sauvegarder';
-  oiSaveBtn.onclick = saveOverlayImageConfig;
-  btnRow.appendChild(oiSaveBtn);
-  const oiTestBtn = document.createElement('button');
-  oiTestBtn.className = 'neo-btn';
-  oiTestBtn.textContent = 'Tester';
-  oiTestBtn.style.marginLeft = '8px';
-  oiTestBtn.onclick = testOverlayImage;
-  btnRow.appendChild(oiTestBtn);
-  oiSection.appendChild(btnRow);
-
-  container.appendChild(oiSection);
-
-  updateCostEstimate();
-  document.getElementById('ig-model')?.addEventListener('change', updateCostEstimate);
-  document.getElementById('ig-quality')?.addEventListener('change', updateCostEstimate);
-  document.getElementById('ig-size')?.addEventListener('change', updateCostEstimate);
-
 }
 
 async function updateCostEstimate() {
