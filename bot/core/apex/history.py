@@ -50,18 +50,44 @@ PARIS = ZoneInfo("Europe/Paris")
 # taille d'un saut de tracker moyen — un tel saut passerait. C'est le cas des
 # relevés manuels espacés ; la sonde du live, elle, est protégée, et c'est elle
 # qui alimente ce que Wally annonce à l'antenne.
-MAX_GAIN_BASE = 100
-MAX_GAIN_PAR_HEURE = 150
-
-
-def plafond_plausible(secondes: float) -> float:
-    """Gain maximal crédible sur un intervalle donné."""
-    return MAX_GAIN_BASE + MAX_GAIN_PAR_HEURE * max(0.0, secondes) / 3600.0
-
 # Ce qui sépare la notion de la clé du tracker dans `apex_stat_points.notion` —
 # « kills:specialEvent_kills ». Un relevé par tracker et non par notion : voir
 # `progression()`, qui retient celui qui a réellement bougé.
 SEPARATEUR_TRACKER = ":"
+
+
+MAX_GAIN_BASE = 100
+MAX_GAIN_PAR_HEURE = 150
+
+# Le plafond ci-dessus est calibré sur des KILLS, et il était appliqué tel quel
+# à toutes les notions. Un compteur de DÉGÂTS ne se compte pas à la même
+# échelle : mesuré le 2026-08-24 sur le compte d'Azraël, une partie en rapporte
+# entre 1 000 et 4 000, quand le plafond en autorisait 120 sur huit minutes.
+# Résultat : CHAQUE relevé de dégâts était rejeté comme « tracker modifié », et
+# « combien de dégâts ce mois-ci » — une notion offerte au LLM — répondait zéro,
+# invariablement, en journalisant un avertissement à chaque intervalle.
+#
+# L'échelle est le rapport de la notion aux kills, relevé sur un compte réel :
+# 30 767 533 dégâts pour 94 901 kills, soit ~324. Arrondi au-dessus, parce que
+# ce plafond n'est PAS là pour juger un joueur — il est là pour attraper les
+# ré-épinglages de tracker, qui se comptent, eux, en millions.
+#
+# Les notions plus rares que les kills (victoires, parties, réanimations)
+# gardent l'échelle des kills : elle leur est déjà très généreuse.
+ECHELLE_PAR_NOTION: dict[str, float] = {"damage": 400.0}
+
+
+def plafond_plausible(secondes: float, notion: str = "kills") -> float:
+    """Gain maximal crédible sur un intervalle donné, à l'échelle de la notion.
+
+    `notion` peut porter la clé du tracker (« damage:specialEvent_damage ») :
+    c'est sous cette forme que les relevés sont rangés, et un plafond qui
+    tomberait au format court redeviendrait celui des kills en silence.
+    """
+    echelle = ECHELLE_PAR_NOTION.get(
+        (notion or "").split(SEPARATEUR_TRACKER, 1)[0], 1.0
+    )
+    return echelle * (MAX_GAIN_BASE + MAX_GAIN_PAR_HEURE * max(0.0, secondes) / 3600.0)
 
 
 def aplatir_trackers(par_notion: dict[str, dict[str, int]]) -> dict[str, int]:
@@ -419,7 +445,7 @@ class ApexHistory:
             ecart = apres - avant
             if ecart <= 0:
                 continue
-            if ecart > plafond_plausible(t_apres - t_avant):
+            if ecart > plafond_plausible(t_apres - t_avant, notion):
                 # Un tracker vient d'apparaître ou de fusionner : ce n'est pas
                 # du jeu. On le dit fort — un chiffre absurde diffusé à l'écran
                 # coûte plus cher qu'une ligne de log.

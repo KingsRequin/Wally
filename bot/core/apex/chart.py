@@ -57,12 +57,16 @@ def libelle(notion: str) -> str:
     return _LIBELLES.get(notion, notion)
 
 
-def _gains_par_jour(points: list[tuple[float, int]]) -> dict[datetime, int]:
-    """Gains plausibles regroupés par jour civil (heure de Paris)."""
+def _gains_par_jour(points: list[tuple[float, int]], notion: str) -> dict[datetime, int]:
+    """Gains plausibles regroupés par jour civil (heure de Paris).
+
+    `notion` fixe l'ÉCHELLE du plafond : un gain de dégâts se compte par
+    milliers là où un gain de kills se compte par unités. Sans elle, chaque
+    bâton de l'histogramme des dégâts valait zéro."""
     par_jour: dict[datetime, int] = {}
     for (t_av, av), (t_ap, ap) in zip(points, points[1:]):
         ecart = ap - av
-        if ecart <= 0 or ecart > plafond_plausible(t_ap - t_av):
+        if ecart <= 0 or ecart > plafond_plausible(t_ap - t_av, notion):
             continue
         jour = datetime.fromtimestamp(t_ap, PARIS).replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -159,7 +163,7 @@ def render(
     ax.set_facecolor(FOND)
 
     if duree >= SEUIL_HISTOGRAMME_S:
-        par_jour = _gains_par_jour(points)
+        par_jour = _gains_par_jour(points, notion)
         if not par_jour:
             plt.close(fig)
             return None
@@ -179,7 +183,7 @@ def render(
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m", tz=PARIS))
         ax.set_ylabel(f"{libelle(notion)} par jour", color=TEXTE, fontsize=10)
     else:
-        serie = construire(points, rp=rp)
+        serie = construire(points, rp=rp, notion=notion)
         # EN MARCHES, jamais en diagonale : Apex ne met ses compteurs à jour
         # qu'en FIN DE PARTIE. Les kills arrivent donc par paliers — 13 d'un
         # bloc à 12h51 — et une interpolation linéaire dessinerait une montée

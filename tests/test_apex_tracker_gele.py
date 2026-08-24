@@ -149,3 +149,49 @@ async def test_la_consultation_precedente_se_cherche_sur_tout_le_groupe(history)
     # consigne AVANT de comparer, et la borne est stricte.
     prog = await history.depuis_derniere_consultation(UID, "kills", avant=maintenant)
     assert prog is not None and prog.gain == 124
+
+
+# ── le plafond de vraisemblance est à l'échelle de la NOTION ─────────────────
+#
+# Trouvé en vérifiant la correction ci-dessus sur la base de prod : le plafond
+# était calibré sur des kills (100 + 150/h) et appliqué tel quel aux dégâts, qui
+# se comptent par milliers. CHAQUE relevé de dégâts était rejeté comme « tracker
+# modifié ». « Combien de dégâts ce mois-ci », une notion offerte au LLM,
+# répondait invariablement zéro — en journalisant un avertissement par
+# intervalle, jamais lu.
+
+
+def test_le_plafond_des_degats_nest_pas_celui_des_kills():
+    from bot.core.apex.history import plafond_plausible
+
+    assert plafond_plausible(480, "damage") > 3000        # une partie réelle
+    assert plafond_plausible(480, "kills") < 200          # inchangé
+
+
+def test_le_plafond_se_lit_aussi_sur_la_cle_rangee():
+    """Les relevés sont rangés sous « damage:specialEvent_damage » : un plafond
+    qui tomberait au format court redeviendrait celui des kills en silence."""
+    from bot.core.apex.history import plafond_plausible
+
+    assert (plafond_plausible(480, "damage:specialEvent_damage")
+            == plafond_plausible(480, "damage"))
+
+
+@pytest.mark.asyncio
+async def test_une_partie_de_degats_nest_plus_prise_pour_un_reepinglage(history):
+    """Relevés RÉELS d'Azraël, 2026-08-24 : +3 964 de dégâts en 1 426 s."""
+    t0 = 1_000_000.0
+    await _ranger(history, t0, **{"damage:specialEvent_damage": 30_750_837})
+    await _ranger(history, t0 + 1426, **{"damage:specialEvent_damage": 30_754_801})
+    prog = await history.progression(UID, "damage", t0 - 1)
+    assert prog is not None and prog.gain == 3964
+
+
+@pytest.mark.asyncio
+async def test_un_reepinglage_de_degats_reste_ecarte(history):
+    """Le plafond garde son travail : un tracker qui fusionne saute de MILLIONS."""
+    t0 = 1_000_000.0
+    await _ranger(history, t0, **{"damage:specialEvent_damage": 30_750_837})
+    await _ranger(history, t0 + 600, **{"damage:specialEvent_damage": 61_000_000})
+    prog = await history.progression(UID, "damage", t0 - 1)
+    assert prog is not None and prog.gain == 0

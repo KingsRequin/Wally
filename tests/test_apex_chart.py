@@ -113,7 +113,7 @@ def test_les_gains_sont_regroupes_par_jour():
         (T0 + 2 * 3600, 130),                     # même soirée : +30
         (T0 + JOUR, 150),                         # lendemain : +20
     ]
-    par_jour = _gains_par_jour(points)
+    par_jour = _gains_par_jour(points, "kills")
     assert sorted(par_jour.values()) == [20, 30]
 
 
@@ -137,7 +137,7 @@ def test_le_decoupage_par_jour_suit_l_heure_de_paris():
     minuit_paris = datetime(2026, 8, 11, 23, 30, tzinfo=PARIS)
     points = [(minuit_paris.timestamp(), 100),
               ((minuit_paris + timedelta(minutes=20)).timestamp(), 120)]
-    par_jour = _gains_par_jour(points)
+    par_jour = _gains_par_jour(points, "kills")
     assert list(par_jour)[0].day == 11
 
 

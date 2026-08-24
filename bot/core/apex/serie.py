@@ -281,11 +281,16 @@ def construire(
     *,
     seuil_compression_s: float = SEUIL_COMPRESSION_S,
     rp: list[tuple[float, int]] | None = None,
+    notion: str = "kills",
 ) -> Serie:
     """La série cumulative des gains, trous coupés et longs vides comprimés.
 
     Les `NaN` interrompent le trait de matplotlib : c'est ce qui distingue « il
     n'a rien fait » de « on n'a pas regardé ».
+
+    `notion` fixe l'ÉCHELLE du plafond de vraisemblance : les dégâts se
+    comptent par milliers, les kills par unités. La cumulative des dégâts était
+    plate — chaque marche était rejetée comme un ré-épinglage de tracker.
 
     `rp` porte les relevés de `rank_score` sur la fenêtre. Le mode d'une partie
     n'existe nulle part dans l'API : un RP qui bouge est le seul signal qu'elle
@@ -340,7 +345,7 @@ def construire(
             x += dt
 
         ecart = ap - av
-        if 0 < ecart <= plafond_plausible(dt):
+        if 0 < ecart <= plafond_plausible(dt, notion):
             total += ecart
         xs.append(x)
         ys.append(total)
