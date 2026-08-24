@@ -459,6 +459,27 @@ class MemoryMixin:
         )
         return [{"content": r["content"], "category": r["category"]} for r in rows]
 
+    async def get_gender_facts_for_user(self, user_id: str) -> list[dict]:
+        """Faits actifs qui affirment un genre — SANS le plafond du portrait.
+
+        `get_active_facts_for_user` coupe à 50 faits triés par importance. Chez
+        KingsRequin (922 faits actifs), sa correction « est un homme » du 19 août
+        attendait au-delà du 50e rang : le portrait est resté au féminin cinq
+        jours et le mégenrage a tenu jusqu'au 24. Aucune limite ici — un motif
+        aussi rare ne rapporte que quelques lignes.
+
+        Le filtre SQL est volontairement plus large que la décision : l'arbitre
+        reste `genre_etabli()`, qui refuse de trancher sur une contradiction.
+        """
+        rows = await self.fetch_all(
+            "SELECT content, category FROM atomic_facts "
+            "WHERE user_id=? AND status='active' AND confidence >= 0.3 "
+            "AND (content LIKE '%un homme%' OR content LIKE '%une femme%' "
+            "OR content LIKE '%pronom%')",
+            (user_id,),
+        )
+        return [{"content": r["content"], "category": r["category"]} for r in rows]
+
     async def get_superseded_facts_for_user(self, user_id: str, limit: int = 20) -> list[dict]:
         rows = await self.fetch_all(
             "SELECT content, category FROM atomic_facts "

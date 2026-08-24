@@ -9,6 +9,7 @@ def _make(users, active_by_user):
     db.get_users_with_recent_facts = AsyncMock(return_value=users)
     db.get_active_facts_for_user = AsyncMock(side_effect=lambda uid, **k: active_by_user.get(uid, []))
     db.get_superseded_facts_for_user = AsyncMock(return_value=[{"content": "détestait le solo", "category": "PREF"}])
+    db.get_gender_facts_for_user = AsyncMock(return_value=[])
     db.get_trust_score = AsyncMock(return_value=0.5)
     db.get_love_score = AsyncMock(return_value=0.2)
     db.upsert_user_profile = AsyncMock()

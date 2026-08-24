@@ -16,6 +16,7 @@ def _make(username="wengers14"):
     db.get_users_with_recent_facts = AsyncMock(return_value=["discord:440632152091000844"])
     db.get_active_facts_for_user = AsyncMock(return_value=[{"content": "habite dans le Sud", "category": "FAIT"}])
     db.get_superseded_facts_for_user = AsyncMock(return_value=[])
+    db.get_gender_facts_for_user = AsyncMock(return_value=[])
     db.get_trust_score = AsyncMock(return_value=0.5)
     db.get_love_score = AsyncMock(return_value=0.2)
     db.upsert_user_profile = AsyncMock()

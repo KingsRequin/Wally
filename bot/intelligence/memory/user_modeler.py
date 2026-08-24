@@ -7,6 +7,7 @@ régénère un portrait à partir de leurs faits actifs ET révolus (superseded)
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from loguru import logger
@@ -14,6 +15,34 @@ from loguru import logger
 from bot.intelligence.prompts import load_prompt
 
 _PORTRAIT_PROMPT = load_prompt("user_portrait")
+
+# ── Genre : lu dans les faits, jamais déduit du pseudo ────────────────────────
+# La consigne seule ne mordait pas. Le 2026-08-24, 58 des 126 portraits parlaient
+# au féminin alors que 3 personnes seulement avaient un fait de genre : le modèle
+# le devinait du pseudo, et se contredisait dans la phrase même (« toineleviking
+# est un joueur (…) séduite (…) elle », « Jubeii (…) père de famille (…) elle »).
+# On tranche donc AVANT l'appel, sur ce que la base dit — et l'inconnu reste
+# inconnu. Les deux formulations couvertes sont celles que le `fact_extractor`
+# produit réellement (« est un homme (pronom il) »).
+_GENRE_MOTIFS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("masculin", re.compile(r"est un homme|pronom\s*:?\s*«?\s*il\b", re.IGNORECASE)),
+    ("féminin", re.compile(r"est une femme|pronom\s*:?\s*«?\s*elle\b", re.IGNORECASE)),
+)
+
+
+def genre_etabli(faits: list[dict]) -> str | None:
+    """Genre affirmé par les faits, ou None — inconnu ET contradictoire.
+
+    Deux faits qui s'opposent rendent None à dessein : un portrait neutre est
+    toujours moins faux qu'un portrait qui tranche à pile ou face.
+    """
+    trouves = {
+        nom
+        for nom, motif in _GENRE_MOTIFS
+        for f in faits
+        if motif.search(f.get("content") or "")
+    }
+    return trouves.pop() if len(trouves) == 1 else None
 
 _PORTRAIT_SCHEMA = {
     "type": "object",
@@ -64,7 +93,12 @@ class UserModeler:
         trust = await self._db.get_trust_score(platform, raw_id)
         love = await self._db.get_love_score(platform, raw_id)
         name = await self._username(user_id) or raw_id
-        portrait = await self._build_portrait(name, active, superseded, trust, love)
+        # Le genre se cherche hors du lot servi au portrait : celui-ci est
+        # plafonné à 50 faits par importance, et chez une personne à 900 faits
+        # celui qui porte le genre n'y est pas. Vu le 2026-08-24 — KingsRequin
+        # restait au féminin cinq jours après s'être corrigé.
+        genre = genre_etabli(await self._db.get_gender_facts_for_user(user_id))
+        portrait = await self._build_portrait(name, active, superseded, trust, love, genre)
         if not portrait:
             return False
         await self._db.upsert_user_profile(user_id, portrait)
@@ -80,11 +114,20 @@ class UserModeler:
             logger.warning("UserModeler : pseudo de {u} illisible : {e!r}", u=user_id, e=e)
             return None
 
-    async def _build_portrait(self, name, active, superseded, trust, love) -> str | None:
+    async def _build_portrait(
+        self, name, active, superseded, trust, love, genre=None
+    ) -> str | None:
         present = "\n".join(f"- {f['content']}" for f in active)
         past = "\n".join(f"- {f['content']}" for f in superseded) or "(rien)"
+        consigne_genre = (
+            f"Genre : {genre} — emploie ce genre, pronoms et accords compris."
+            if genre
+            else "Genre : INCONNU — n'emploie ni « il », ni « elle », ni aucun accord genré. "
+            "Reprends le pseudo, ou tourne la phrase autrement."
+        )
         payload = (
-            f"Personne décrite : {name}\n\n"
+            f"Personne décrite : {name}\n"
+            f"{consigne_genre}\n\n"
             f"Traits actuels :\n{present}\n\n"
             f"Ce qu'elle disait avant (révolu) :\n{past}\n\n"
             f"Confiance : {trust:.2f}/1.0 | Affection : {love:.2f}/1.0"

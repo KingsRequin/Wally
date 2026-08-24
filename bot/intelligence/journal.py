@@ -1006,7 +1006,15 @@ class DailyJournal:
             try:
                 yesterday = await self._db.get_yesterday_journal(today=effective_date.isoformat())
                 if yesterday:
-                    yesterday_block = f"Ton journal d'hier :\n{yesterday['content']}"
+                    # Étiqueté comme RÉCIT, pas comme relevé : le journal du 2026-08-22
+                    # a inventé un bot rival (« picolo »), l'entrée du 23 l'a relu comme
+                    # un fait acquis et la boucle cognitive l'a poursuivi trois jours.
+                    yesterday_block = (
+                        "Ton journal d'hier — ton récit, pas un relevé de faits. Tu peux y "
+                        "avoir été de mauvaise foi, t'être trompé de personne ou avoir brodé. "
+                        "Reprends-en les fils, mais ne traite jamais ce qu'on n'y retrouve "
+                        f"nulle part ailleurs comme quelque chose qui a eu lieu :\n{yesterday['content']}"
+                    )
             except Exception as exc:
                 logger.warning("Failed to get yesterday's journal: {e!r}", e=exc)
 
