@@ -7,9 +7,9 @@
 #
 # Ce qu'il NE fait pas : la suite complète (55 s) et le smoke test navigateur
 # (40 s). Un hook qui coûte deux minutes finit court-circuité par `--no-verify`,
-# et un garde-fou contourné ne garde rien. Il lance les trois vérifications
-# rapides ; les deux longues restent à la charge de la discipline, qui est déjà
-# écrite dans le CLAUDE.md.
+# et un garde-fou contourné ne garde rien. Il lance les cinq cliquets rapides
+# (moins de dix secondes à eux tous) ; les deux longues restent à la charge de
+# la discipline, qui est déjà écrite dans le CLAUDE.md.
 #
 # Pour passer outre en connaissance de cause : `git push --no-verify`.
 set -uo pipefail
@@ -24,7 +24,7 @@ cd "$RACINE" || exit 0
 
 echo "── pre-push : cliquets rapides ──"
 ECHECS=0
-for c in lint_types lint_silences lint_ruff lint_logs; do
+for c in lint_types lint_silences lint_ruff lint_logs lint_mort; do
     if ! python3 "scripts/$c.py" >/tmp/prepush_$c.out 2>&1; then
         echo "❌ scripts/$c.py"
         sed 's/^/     /' /tmp/prepush_$c.out
@@ -46,5 +46,5 @@ FIN
     exit 1
 fi
 
-echo "  ✅ les quatre cliquets passent"
+echo "  ✅ les cinq cliquets passent"
 exit 0

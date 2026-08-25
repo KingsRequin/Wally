@@ -52,11 +52,12 @@ comportement réel), et publier — commit + push + rebuild — dans la même fo
 4. FORCED VERIFICATION: Your internal tools mark file writes as successful even if the code does not compile. Les vérifications obligatoires avant de déclarer une tâche terminée sont :
 
 ```bash
-python3 -m pytest tests/ -q              # 5864 tests, ~55 s (parallèle par défaut)
+python3 -m pytest tests/ -q              # 6082 tests, ~70 s (parallèle par défaut)
 python3 scripts/lint_types.py            # mypy + cliquet : la dette de types ne monte pas
 python3 scripts/lint_silences.py         # cliquet : aucun nouveau `except` muet
 python3 scripts/lint_ruff.py             # porte dure (F/PLE/T20/ASYNC1) + cliquet
 python3 scripts/lint_logs.py             # aucune exception journalisée sans `!r`
+python3 scripts/lint_mort.py             # cliquet : le code mort ne monte pas
 ```
 
 **Si le changement touche du JS** (`bot/dashboard/static/`, `public-ui/`,
@@ -136,6 +137,7 @@ python3 scripts/lint_silences.py [--liste|--maj]
 python3 scripts/lint_ruff.py [--liste|--maj]
 python3 scripts/lint_js.py [--liste|--maj]
 python3 scripts/lint_logs.py [--liste|--maj|--corriger]
+python3 scripts/lint_mort.py [--liste|--maj]
 python3 scripts/smoke_front.py [--overlay|--admin] [--captures /tmp]
 python3 scripts/audit_deps.py            # CVE des paquets DE L'IMAGE (pas de l'hôte)
 python3 scripts/installer_hooks.py       # pose le hook pre-push (à faire une fois)
@@ -786,7 +788,8 @@ cette signature, pas les bugs un par un.
 | `scripts/smoke_front.py` | Le front MONTE-t-il ? Charge overlay + les 7 onglets + les sous-onglets, échoue sur une erreur JS OU un panneau vide. Le seul outil qui exécute le JavaScript |
 | `scripts/lint_logs.py` | Une exception journalisée sans `!r`. `ConnectError('')` a un `str()` VIDE : la ligne s'arrête sur le deux-points et ne dit RIEN (599 lignes en août, dont 205 en un jour) |
 | `scripts/audit_deps.py` | CVE des paquets **de l'image**. Auditer l'hôte donne une liste fausse : son environnement Python date de l'installation de CT100 |
-| Hook `pre-push` | Les trois cliquets rapides avant chaque push (`scripts/installer_hooks.py`). Ni la suite ni le smoke test : un hook à deux minutes finit en `--no-verify` |
+| `scripts/lint_mort.py` | Une fonction, une méthode ou un paramètre que plus personne ne lit. Ruff ne voit QUE l'intra-fichier (`F401`/`F841`) ; il a fallu qu'un ajout soit greffé dans 253 lignes de JS mort et ne s'affiche pas pour qu'on le remarque |
+| Hook `pre-push` | Les cinq cliquets rapides avant chaque push (`scripts/installer_hooks.py`). Ni la suite ni le smoke test : un hook à deux minutes finit en `--no-verify` |
 | `bot/core/canari.py` | Invariants au BOOT sur l'état RÉEL (base + disque) |
 | Tests de parité Discord/Twitch | Une capacité branchée d'un seul côté |
 
