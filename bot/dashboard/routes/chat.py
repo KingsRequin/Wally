@@ -253,7 +253,7 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
                     username, content,
                     origin="Web (chat)",
                 )
-            mem_context = await state.memory.search("discord", discord_raw_id, content, username_hint=username)
+            mem_context = await state.memory.search("discord", discord_raw_id, content)
 
             context_messages = await state.memory.get_context_summarized_if_needed("web:chat")
             situation = {"platform": "Web", "channel": "Chat public"}

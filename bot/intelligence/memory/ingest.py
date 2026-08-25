@@ -154,7 +154,6 @@ class MemoryIngest:
         user_id: str,
         content: str,
         source: str = "conversation",
-        subject_hint: str | None = None,
     ) -> IngestResult:
         """Extrait les faits du `content` puis réconcilie chacun. Tout est scopé
         au `user_id` fourni.

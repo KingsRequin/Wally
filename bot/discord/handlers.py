@@ -1919,7 +1919,7 @@ async def _third_party_mention_context(
             if len(uid_parts) == 2:
                 third_platform, third_raw_id = uid_parts
                 try:
-                    memories_text = await bot.memory.search(third_platform, third_raw_id, query=token, username_hint=token)
+                    memories_text = await bot.memory.search(third_platform, third_raw_id, query=token)
                     if memories_text:
                         # Find username for display
                         display = third_raw_id
@@ -2464,7 +2464,7 @@ async def _respond(
             if replied_quote else resolved_content
         )
 
-        mem_context = await bot.memory.search(platform, user_id, search_query, context_messages=prelude, username_hint=message.author.display_name)
+        mem_context = await bot.memory.search(platform, user_id, search_query, context_messages=prelude)
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:

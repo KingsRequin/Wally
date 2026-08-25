@@ -316,7 +316,7 @@ class TestFactExtractorAnalyzeChannel:
         msg2.created_at.timestamp.return_value = time.time()
 
         result = await fe.analyze_channel_messages(
-            [msg1, msg2], "discord", "ch1", bot_user_id=999
+            [msg1, msg2], "discord", "ch1"
         )
         assert result >= 0
         fe._openai.complete_structured.assert_called_once()
@@ -333,7 +333,7 @@ class TestFactExtractorAnalyzeChannel:
 
         with pytest.raises(ValueError):
             await fe.analyze_channel_messages(
-                [msg1], "discord", "ch1", bot_user_id=999
+                [msg1], "discord", "ch1"
             )
 
     @pytest.mark.asyncio
@@ -356,7 +356,7 @@ class TestFactExtractorAnalyzeChannel:
         # Only 1 human message after filtering → ValueError
         with pytest.raises(ValueError):
             await fe.analyze_channel_messages(
-                [bot_msg, human_msg], "discord", "ch1", bot_user_id=999
+                [bot_msg, human_msg], "discord", "ch1"
             )
 
     @pytest.mark.asyncio
@@ -389,7 +389,7 @@ class TestFactExtractorAnalyzeChannel:
         msg2.created_at.timestamp.return_value = time.time()
 
         await fe.analyze_channel_messages(
-            [msg1, msg2], "discord", "ch1", bot_user_id=999
+            [msg1, msg2], "discord", "ch1"
         )
         # Facts are stored individually (one call per fact)
         assert fe._memory.add.call_count == 2
@@ -428,7 +428,7 @@ class TestFactExtractorAnalyzeChannel:
         msg2.created_at.timestamp.return_value = time.time()
 
         await fe.analyze_channel_messages(
-            [msg1, msg2], "discord", "ch1", bot_user_id=999
+            [msg1, msg2], "discord", "ch1"
         )
 
         await asyncio.sleep(0)  # let background tasks run
@@ -558,7 +558,7 @@ class TestFactExtractorAnalyzeChannel:
         msg2.created_at.timestamp.return_value = time.time()
 
         await fe.analyze_channel_messages(
-            [msg1, msg2], "discord", "ch1", bot_user_id=999
+            [msg1, msg2], "discord", "ch1"
         )
 
         await asyncio.sleep(0)

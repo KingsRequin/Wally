@@ -1006,7 +1006,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         platform = "twitch"
         trust = await bot.db.get_trust_score(platform, user_id)
 
-        mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude, username_hint=author)
+        mem_context = await bot.memory.search(platform, user_id, content, context_messages=prelude)
 
         # Temporal activity: inject absence note if user hasn't been seen in 7+ days
         try:

@@ -78,7 +78,6 @@ class ScanCog(commands.Cog):
                 messages=fetched,
                 platform="discord",
                 channel_id=str(interaction.channel_id),
-                bot_user_id=interaction.client.user.id,
             )
             await interaction.followup.send(
                 f"✅ Faits extraits pour {stored} utilisateur(s).", ephemeral=True

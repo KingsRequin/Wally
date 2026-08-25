@@ -822,7 +822,6 @@ async def test_scan_cmd_messages_nominal():
     call_kwargs = fact_extractor.analyze_channel_messages.call_args[1]
     assert call_kwargs["platform"] == "discord"
     assert call_kwargs["channel_id"] == str(interaction.channel_id)
-    assert call_kwargs["bot_user_id"] == 999
     # Message de succès
     interaction.followup.send.assert_called_once()
     msg = interaction.followup.send.call_args[0][0]

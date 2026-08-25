@@ -258,7 +258,6 @@ class PromptBuilder:
         person_context: str = "",
         secondary_directives: dict[str, str] | None = None,
         active_secondaries: list[tuple[str, float]] | None = None,
-        mood_state: dict[str, float] | None = None,
         persistent_notes: list[dict] | None = None,
         presence_context: str = "",
         user_directive: str | None = None,

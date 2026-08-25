@@ -933,7 +933,6 @@ class FactExtractor:
         messages: list,
         platform: str,
         channel_id: str,
-        bot_user_id: int,
     ) -> int:
         """Replacement for SessionManager.analyze_channel_messages.
 

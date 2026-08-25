@@ -1006,7 +1006,7 @@ class TwitchAPI:
                     timeout=10,
                 )
                 if resp.status_code not in (200, 201):
-                    _prediction_sans_scope(self, "création", resp)
+                    _prediction_sans_scope("création", resp)
                     return None
                 data = (resp.json() or {}).get("data") or []
                 if not data:
@@ -1058,7 +1058,7 @@ class TwitchAPI:
                     timeout=10,
                 )
                 if resp.status_code != 200:
-                    _prediction_sans_scope(self, action, resp)
+                    _prediction_sans_scope(action, resp)
                     return False
                 logger.info("Prédiction {a} : {i}", a=action, i=prediction_id)
                 return True
@@ -1242,7 +1242,7 @@ _PRED_FENETRE_MIN, _PRED_FENETRE_MAX = 30, 1800
 _SCOPE_PREDICTIONS = "channel:manage:predictions"
 
 
-def _prediction_sans_scope(api_self, action: str, reponse) -> None:
+def _prediction_sans_scope(action: str, reponse) -> None:
     """Journalise un refus de prédiction en NOMMANT le geste à faire.
 
     Un « 401 » sec envoie chercher la panne dans le code du bot, où il n'y a

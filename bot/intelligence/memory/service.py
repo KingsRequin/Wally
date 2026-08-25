@@ -239,9 +239,7 @@ class MemoryService:
 
     async def search(self, platform: str, user_id: str, query: str,
                      limit: int = 20,
-                     context_messages: list[dict] | None = None,
-                     username_hint: str | None = None,
-                     **_kw) -> str:
+                     context_messages: list[dict] | None = None) -> str:
         if self._retrieval is None:
             return ""
         # Enrichir la requête avec les derniers messages pour un retrieval plus contextuel.
