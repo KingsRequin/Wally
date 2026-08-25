@@ -47,11 +47,6 @@ _TWITCH_SEULEMENT: dict[str, str] = {
     # n'a aucune part lisible depuis Discord : l'offrir là-bas ne rendrait
     # qu'un refus systématique.
     "open_prediction": "engage les points de chaîne, autorisation par badge Twitch",
-    # Faire parler Wally à voix haute pendant un live est un pouvoir de
-    # modérateur, et l'autorisation se lit sur le badge du message Twitch. Un
-    # salon Discord n'en porte pas : l'offrir là-bas ne rendrait qu'un refus
-    # systématique. Décision de l'owner le 2026-08-17 — « chat Twitch ».
-    "say_in_voice": "l'autorisation vient du badge de modérateur Twitch",
 }
 
 
@@ -128,6 +123,15 @@ async def test_les_ecarts_declares_existent_vraiment():
         f"écarts déclarés qui n'existent plus : {sorted(perimes)} — retire-les de "
         "_DISCORD_SEULEMENT, sinon ils couvriront un futur oubli."
     )
+    # La même vérification pour l'autre table. Elle manquait : quand
+    # `say_in_voice` est passé côté Discord le 2026-08-25, sa ligne est restée
+    # dans `_TWITCH_SEULEMENT` sans que rien ne le signale — et elle aurait
+    # couvert n'importe quel futur oubli portant le même nom.
+    perimes_t = {n for n in _TWITCH_SEULEMENT if n in d or n not in t}
+    assert not perimes_t, (
+        f"écarts déclarés qui n'existent plus : {sorted(perimes_t)} — retire-les "
+        "de _TWITCH_SEULEMENT, sinon ils couvriront un futur oubli."
+    )
 
 
 @pytest.mark.asyncio
@@ -198,3 +202,28 @@ async def test_l_overlay_apex_suit_l_api_sur_les_TROIS_chemins():
     assert "show_apex" in _noms(await outils_discord(bot, author_id="42"))
     assert "show_apex" in _noms(await outils_twitch(bot))
     assert "show_apex" in _noms(await outils_vocal(_bot_avec_tout()))
+
+
+@pytest.mark.asyncio
+async def test_faire_parler_wally_a_voix_haute_marche_AUSSI_depuis_discord():
+    """L'owner écrit surtout en message privé, pas dans le chat Twitch.
+
+    L'outil y était réservé au motif que l'autorisation se lit sur un badge de
+    modérateur — mais en MP, `_resolve_discord_roles` rend `["everyone"]` et
+    l'owner se voyait refuser un pouvoir qu'il a plus que quiconque.
+    """
+    bot = _bot_avec_tout()
+    bot.voice_service.is_connected = True
+
+    assert "say_in_voice" in _noms(await outils_discord(bot, author_id="42"))
+    assert "say_in_voice" in _noms(await outils_twitch(bot))
+
+
+@pytest.mark.asyncio
+async def test_l_outil_n_est_PAS_offert_quand_wally_n_est_dans_aucun_salon():
+    """Un refus qui nomme un outil inutilisable est un cul-de-sac — déjà payé
+    sur Apex."""
+    bot = _bot_avec_tout()
+    bot.voice_service.is_connected = False
+
+    assert "say_in_voice" not in _noms(await outils_discord(bot, author_id="42"))

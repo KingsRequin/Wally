@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
@@ -30,9 +31,17 @@ from bot.intelligence.prompts import (
 from bot.intelligence.self_fix import UpgradeRequest
 
 try:
-    from bot.discord.voice.tools import VOICE_TOOLS
+    from bot.discord.voice.tools import (
+        SAY_IN_VOICE_TOOL, VOICE_TOOLS, run_say_in_voice_tool,
+    )
+    _VOCAL_DISPO = True
 except ImportError:
+    # Sans la brique vocale, la liste est vide et rien ne doit être proposé. Un
+    # DRAPEAU plutôt qu'un `= None` sur chaque symbole : réassigner un nom
+    # importé lui fait perdre son type, et un `None` glissé dans la liste
+    # d'outils ferait échouer TOUS les appels, même sans rapport avec le vocal.
     VOICE_TOOLS = []
+    _VOCAL_DISPO = False
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -821,6 +830,24 @@ def _resolve_discord_roles(member) -> list[str]:
         roles.append("admin")
     return roles
 
+def _roles_discord_effectifs(bot, author) -> list[str]:
+    """Les rôles de `author`, plus « admin » si la config le dit.
+
+    `_resolve_discord_roles` lit la GUILDE : en message privé, `author` est un
+    `discord.User` sans rôles ni permissions, et il rend `["everyone"]`. C'est
+    exactement le canal principal de l'owner — sans cette couche, tout pouvoir
+    réservé aux admins lui était refusé dans son propre MP.
+    """
+    roles = _resolve_discord_roles(author)
+    connus = {str(a) for a in getattr(bot.config, "admin_ids", [])}
+    proprio = str(getattr(bot.config.bot, "owner_discord_id", "") or "")
+    if proprio:
+        connus.add(proprio)
+    if str(getattr(author, "id", "")) in connus and "admin" not in roles:
+        roles.append("admin")
+    return roles
+
+
 _REACT_TAG_RE = re.compile(r"^\[react:(.+?)\]\s*")
 
 _LAUGH_WORDS = {"mdr", "lol", "ptdr", "xd", "haha", "😂", "🤣"}
@@ -1376,8 +1403,20 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
             tools.append(_APEX_OVERLAY_TOOL)
     # DISCORD SEULEMENT : le vocal est un salon Discord, ces outils n'ont aucun
     # sens depuis un chat Twitch.
-    if getattr(bot, "voice_service", None) is not None:
+    _vs = getattr(bot, "voice_service", None)
+    if _vs is not None:
         tools += VOICE_TOOLS
+    # Faire parler Wally à voix haute, depuis l'écrit — et notamment depuis un
+    # MP. C'était réservé au chat Twitch, au motif que l'autorisation se lit sur
+    # un badge de modérateur ; mais l'owner écrit surtout en message privé, et
+    # il y a plus de droits que n'importe quel modérateur.
+    #
+    # Offert seulement s'il est DANS un salon, comme sur Twitch : le proposer
+    # alors qu'il n'y est pas mène au cul-de-sac d'un refus qui nomme un outil
+    # inutilisable. Pas conditionné aux droits — la garde est à l'exécution,
+    # c'est elle qui permet de charrier celui qui essaie.
+    if _VOCAL_DISPO and _vs is not None and getattr(_vs, "is_connected", False):
+        tools.append(SAY_IN_VOICE_TOOL)
     # DISCORD SEULEMENT : la self-modification est réservée au créateur, qui est
     # identifié par son id Discord. Un pseudo Twitch ne prouve rien.
     if author_id == bot.config.bot.owner_discord_id and getattr(bot, "self_fix", None) is not None:
@@ -2788,8 +2827,28 @@ async def _respond(
                 if deleted:
                     return json.dumps({"status": "ok", "message": f"Note '{titre}' supprimée."})
                 return json.dumps({"status": "not_found", "message": f"Note '{titre}' introuvable."})
+            if name == "say_in_voice":
+                # Les rôles viennent du MESSAGE, jamais du modèle : ce sont eux
+                # qui décident si la personne a le droit de faire parler Wally.
+                # `maison=True` : un salon Discord n'est pas une chaîne invitée.
+                return await run_say_in_voice_tool(
+                    bot, args,
+                    roles=_roles_discord_effectifs(bot, message.author),
+                    maison=True)
             if name == "save_user_memory":
-                await bot.memory.add("discord", user_id, args["content"], username=_author_label(message.author),
+                contenu = str(args.get("content") or "").strip()
+                if not contenu:
+                    return json.dumps({"status": "error",
+                                       "message": "Il me faut ce que je dois retenir."})
+                # Le refus est DIT, pas avalé : le store refuserait de toute
+                # façon d'écrire, mais en silence — Wally répondrait « c'est
+                # noté » sur un souvenir qui n'existe pas.
+                refus = _detecter_surnom(contenu, f"discord:{user_id}")
+                if refus is not None:
+                    logger.info("save_user_memory refusé ({r}) : « {c} »",
+                                r=refus, c=contenu[:120])
+                    return json.dumps({"status": "denied", "message": REFUS_SURNOM})
+                await bot.memory.add("discord", user_id, contenu, username=_author_label(message.author),
                                      origin=_channel_origin(message.channel))
                 return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
 

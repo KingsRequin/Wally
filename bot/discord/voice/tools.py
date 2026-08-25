@@ -7,6 +7,7 @@ from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
+from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as detecter_surnom
 from bot.core.web_search import WEB_SEARCH_TOOL
 from bot.discord.voice.brain import generate_search_filler
 from bot.intelligence.overlay_narrator import (
@@ -378,6 +379,11 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             if not contenu:
                 return json.dumps({"status": "error",
                                    "message": "Il me faut ce que je dois retenir."})
+            refus = detecter_surnom(contenu)
+            if refus is not None:
+                logger.info("voice tool: souvenir refusé ({r}) : « {c} »",
+                            r=refus, c=contenu[:120])
+                return json.dumps({"status": "denied", "message": REFUS_SURNOM})
             # Pas `sid` : le nom porte déjà un `int | None` dans `leave_voice`,
             # et mypy type une locale à sa PREMIÈRE assignation.
             locuteur = _speaker()

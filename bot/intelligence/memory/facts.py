@@ -10,6 +10,8 @@ from enum import Enum
 
 from loguru import logger
 
+from bot.core.surnoms import detecter as detecter_surnom
+
 # Mots vides FR/EN courts ignorés dans les requêtes FTS (réduit le bruit).
 _FTS_STOPWORDS: frozenset[str] = frozenset(
     {"le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "à", "au",
@@ -160,12 +162,25 @@ class SQLiteFactStore:
         """Insère un fait. Si un fait ACTIF au contenu identique existe déjà,
         renforce celui-là et renvoie SON id — jamais une erreur.
 
+        Rend `0` — aucun id valide, l'AUTOINCREMENT part à 1 — quand le fait
+        enseigne un surnom. Le refus est posé ICI, au point d'écriture unique,
+        et pas dans un prompt : le portrait est réinjecté à chaque appel et bat
+        la consigne, c'est la leçon du mégenrage. Tout ce qui écrit un fait
+        passe par cette méthode, y compris `memory.add()` et la réconciliation.
+
         L'index unique `idx_facts_actif_unique` attrape la course que le verrou
         applicatif ne couvre pas : deux ingests concurrents peuvent tous deux
         passer `find_same_content()` avant que l'un n'ait inséré. Le conflit
         n'est pas un échec, c'est l'information « ce souvenir existe déjà » —
         on le confirme, exactement comme la dédup en amont l'aurait fait.
         """
+        refus = detecter_surnom(fact.content, fact.user_id)
+        if refus is not None:
+            logger.info(
+                "Fait REFUSÉ ({r}) pour {u} : « {c} »",
+                r=refus, u=fact.user_id, c=(fact.content or "")[:120],
+            )
+            return 0
         try:
             return await self._inserer(fact)
         except aiosqlite.IntegrityError:

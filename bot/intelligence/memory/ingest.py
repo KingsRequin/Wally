@@ -352,6 +352,15 @@ class MemoryIngest:
     ) -> AtomicFact:
         new = self._make_fact(cand, user_id, FactStatus.ACTIVE)
         new_id = await self._store.add(new)
+        if not new_id:
+            # Le remplaçant a été refusé (surnom). Marquer l'ancien comme
+            # remplacé par un fait inexistant casserait la chaîne : on laisse
+            # l'ancien en place, il vivra ou mourra par ses propres règles.
+            logger.info(
+                "Remplacement abandonné : le fait entrant a été refusé, "
+                "#{id} reste actif", id=old.id,
+            )
+            return old
         await self._store.supersede(old.id, new_id)
         old.status = FactStatus.SUPERSEDED
         return new
