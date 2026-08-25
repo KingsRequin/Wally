@@ -2766,13 +2766,28 @@ async def _respond(
                     bot, args, requester=f"discord:{message.author.id}"
                 )
             if name == "save_persistent_note":
-                await bot.db.upsert_persistent_note(args["title"], args["content"])
-                return json.dumps({"status": "ok", "message": f"Note '{args['title']}' sauvegardée."})
+                # `.get()` et non `args["title"]` : `required` au schéma ne garantit
+                # rien. Un champ omis levait un KeyError au milieu de
+                # `complete_with_tools` — le modèle n'obtenait aucun résultat pour
+                # son appel et annonçait quand même « c'est noté ».
+                titre = str(args.get("title") or "").strip()
+                contenu = str(args.get("content") or "").strip()
+                if not titre or not contenu:
+                    return json.dumps({"status": "error", "message": (
+                        "Il me faut un titre ET un contenu pour noter. Redemande-les."
+                    )})
+                await bot.db.upsert_persistent_note(titre, contenu)
+                return json.dumps({"status": "ok", "message": f"Note '{titre}' sauvegardée."})
             if name == "delete_persistent_note":
-                deleted = await bot.db.delete_persistent_note(args["title"])
+                titre = str(args.get("title") or "").strip()
+                if not titre:
+                    return json.dumps({"status": "error", "message": (
+                        "Il me faut le titre de la note à supprimer."
+                    )})
+                deleted = await bot.db.delete_persistent_note(titre)
                 if deleted:
-                    return json.dumps({"status": "ok", "message": f"Note '{args['title']}' supprimée."})
-                return json.dumps({"status": "not_found", "message": f"Note '{args['title']}' introuvable."})
+                    return json.dumps({"status": "ok", "message": f"Note '{titre}' supprimée."})
+                return json.dumps({"status": "not_found", "message": f"Note '{titre}' introuvable."})
             if name == "save_user_memory":
                 await bot.memory.add("discord", user_id, args["content"], username=_author_label(message.author),
                                      origin=_channel_origin(message.channel))

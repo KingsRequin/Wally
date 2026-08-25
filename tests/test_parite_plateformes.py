@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.discord.handlers import build_chat_tools as outils_discord
+from bot.discord.voice.tools import build_voice_tools as outils_vocal
 from bot.twitch.handlers import build_chat_tools as outils_twitch
 
 # Écarts assumés, avec leur raison. Modifier cette table est un acte délibéré.
@@ -157,3 +158,43 @@ async def test_une_chaine_invitee_ne_pilote_pas_loverlay_du_stream_maison():
 
     assert "show_overlay" in chez_nous
     assert "show_overlay" not in chez_un_invite
+
+
+# ────────────────────────────── le VOCAL ──────────────────────────────
+#
+# Le troisième chemin, et celui que cet inventaire ne regardait pas. Il a coûté
+# exactement ce que ce fichier existe pour éviter : le 2026-08-25 en direct,
+# Azraël a demandé trois fois un affichage à voix haute (« affiche le dernier
+# clip », « affiche un mème ») et Wally a répondu poliment sans rien afficher —
+# `build_voice_tools()` ne lui proposait aucun outil d'overlay, alors qu'il les
+# a sur Discord ET sur Twitch. Rien n'a échoué, rien n'a été journalisé.
+#
+# Les écarts vocaux restants sont RÉELS et non arbitrés (apex_legends, quote,
+# les compteurs, show_planning, predict) : ils ne sont pas inscrits ici, parce
+# qu'un inventaire sert à consigner des choix, pas à ranger des oublis.
+_OVERLAY_EN_VOCAL = ("show_overlay", "cancel_overlay", "show_clip")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outil", _OVERLAY_EN_VOCAL)
+async def test_ce_qui_s_affiche_depuis_le_chat_s_affiche_aussi_a_la_voix(outil):
+    bot = _bot_avec_tout()
+    bot.music = MagicMock()
+
+    au_chat = _noms(await outils_discord(bot, author_id="42"))
+    a_la_voix = _noms(await outils_vocal(_bot_avec_tout()))
+
+    assert outil in au_chat, f"« {outil} » a disparu du chat — ce test ne compare plus rien"
+    assert outil in a_la_voix, (
+        f"« {outil} » manque au vocal alors que le chat l'a. Wally répondra "
+        "poliment à « affiche-moi ça » sans rien afficher, et personne ne le "
+        "saura avant que quelqu'un le lui demande en direct."
+    )
+
+
+@pytest.mark.asyncio
+async def test_l_overlay_apex_suit_l_api_sur_les_TROIS_chemins():
+    bot = _bot_avec_tout()
+    assert "show_apex" in _noms(await outils_discord(bot, author_id="42"))
+    assert "show_apex" in _noms(await outils_twitch(bot))
+    assert "show_apex" in _noms(await outils_vocal(_bot_avec_tout()))
