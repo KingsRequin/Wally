@@ -269,6 +269,19 @@ class WallyDiscord(commands.Bot):
                 voice_presence_provider=self.presence.voice_channels,
                 server_watch=_server_watch,
             )
+            # Génération d'image à son initiative : politique unique, partagée
+            # par le prompt de cognition (ce qu'on lui annonce) et le dispatcher
+            # (ce qu'on le laisse faire). `self.user` est lu à l'APPEL et non
+            # capturé : ses propres images sont rangées en galerie sous son id
+            # Discord réel, et c'est cette ligne qui porte son quota.
+            from bot.core.image_initiative import ImageInitiative
+            _image_initiative = ImageInitiative(
+                self.config, self.db,
+                channel_names=_chan_dir.name_map,
+                auteur_id=lambda: f"discord:{self.user.id}" if self.user else "",
+            )
+            self.image_initiative = _image_initiative
+
             # Self-model : ce que Wally sait/ne sait pas faire (persona V1, bind-monté,
             # éditable/rechargeable). Injecté dans la cognition pour l'ancrage anti-RP
             # et le désir de capacité (DM créateur plutôt que prétendre).
@@ -280,7 +293,16 @@ class WallyDiscord(commands.Bot):
             # et pouvait affirmer le contraire dans le même prompt assemblé.
             if getattr(self, "persona", None) is not None:
                 self.persona.web_available = _web_ok
-            _caps_text = build_self_model(_caps_static, self.config, web_available=_web_ok)
+                # Même raison : sans ces noms, le prompt conversationnel
+                # affirmerait qu'il ne peut pas fabriquer d'image pendant que la
+                # cognition lui en donne l'action.
+                self.persona.image_channels = (
+                    _image_initiative.noms_salons() if _image_initiative.enabled else []
+                )
+            _caps_text = build_self_model(
+                _caps_static, self.config, web_available=_web_ok,
+                image_channels=_image_initiative.noms_salons() if _image_initiative.enabled else [],
+            )
             if _caps_static:
                 logger.info("CAPABILITIES.md chargé pour la cognition ({} chars)", len(_caps_text))
             else:
@@ -290,6 +312,7 @@ class WallyDiscord(commands.Bot):
                 channels_text=_chan_dir.render(), capabilities_text=_caps_text,
                 channel_names=_chan_dir.name_map(),
                 spontaneous_speak_enabled=self.config.bot.spontaneous_channel_speak_enabled,
+                image_initiative=_image_initiative,
             )
             _conv_log = getattr(self, "conv_log", None)
             # Historique persistant du flux cognitif (#observability) — rotation 1000.
@@ -387,7 +410,7 @@ class WallyDiscord(commands.Bot):
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator
 
-            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate, speak_guard=_speak_guard, overlay_narrator=_overlay_narrator)
+            _dispatcher = ActionDispatcher(bot=self, persona_manager=_persona_mgr, fact_store=_fact_store, feed=self.cognitive_feed, twitch_bot=getattr(self, "_twitch_bot", None), gate=self.owner_gate, speak_guard=_speak_guard, overlay_narrator=_overlay_narrator, image_initiative=_image_initiative)
 
             from bot.intelligence.thought_progress import ThoughtProgressJudge
             _progress_judge = ThoughtProgressJudge(self.llm_secondary, _prompts_dir)

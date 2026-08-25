@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -133,7 +134,7 @@ class ReasoningAgent:
       `parse_decisions`.
     """
 
-    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "", channel_names: dict[str, str] | None = None, spontaneous_speak_enabled: bool = True) -> None:
+    def __init__(self, llm, fact_store, prompts_dir: str | Path, channels_text: str = "", capabilities_text: str = "", channel_names: dict[str, str] | None = None, spontaneous_speak_enabled: bool = True, image_initiative: Any = None) -> None:
         self._llm = llm
         self._facts = fact_store
         self._system = render_identity((Path(prompts_dir) / "reasoning_system.md").read_text(encoding="utf-8"))
@@ -145,6 +146,17 @@ class ReasoningAgent:
         self._widgets_overlay = (
             render_identity(_widgets.read_text(encoding="utf-8")) if _widgets.exists() else ""
         )
+        # Image de sa propre initiative : même traitement que les widgets —
+        # injecté dans le CONTEXTE, et seulement quand la capacité est
+        # RÉELLEMENT ouverte. Les salons et la cadence sont SERVIS par
+        # `ImageInitiative`, jamais recopiés dans le gabarit : celui qui
+        # autorise et celui qui annonce doivent être le même objet, sinon il
+        # promet un salon interdit ou en ignore un nouveau.
+        _image_tpl = Path(prompts_dir) / "image_autonome.md"
+        self._image_template = (
+            render_identity(_image_tpl.read_text(encoding="utf-8")) if _image_tpl.exists() else ""
+        )
+        self._image_initiative: Any = image_initiative
         # Parole spontanée coupée : inutile de laisser le LLM choisir SPEAK et
         # rédiger un message qui sera jeté au dispatch. Il décidait en boucle une
         # action structurellement impossible (mesuré : 18 messages écrits pour
@@ -524,6 +536,22 @@ class ReasoningAgent:
         # à chaque tick — même motif que `[SPEAK]` désactivé, où le projet avait mesuré
         # 18 messages écrits pour rien en 5 jours avant de couper la consigne à la
         # source. Best-effort : perdre le catalogue est un moindre mal, perdre le tick non.
+        # Image de sa propre initiative : le catalogue ne part que quand la
+        # capacité est OUVERTE (salons configurés). Décrire une action
+        # impossible coûte des tokens à chaque tick et la fait décider en
+        # boucle — le projet l'a déjà mesuré sur `[SPEAK]` et sur les widgets.
+        _img = getattr(self, "_image_initiative", None)
+        _img_tpl = getattr(self, "_image_template", "")
+        if _img is not None and _img_tpl:
+            try:
+                if _img.enabled:
+                    lines.append(
+                        _img_tpl
+                        .replace("{{SALONS}}", _img.salons_texte())
+                        .replace("{{CADENCE}}", _img.cadence_texte() or "reste sobre")
+                    )
+            except Exception as e:  # noqa: BLE001 — jamais bloquant
+                logger.debug("bloc image autonome non injecté: {!r}", e)
         # `getattr` et non l'attribut direct : plusieurs tests construisent l'agent
         # sans passer par `__init__`, et un bloc de contexte optionnel ne doit pas
         # imposer sa présence à tous les chemins de construction.

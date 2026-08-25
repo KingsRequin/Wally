@@ -22,6 +22,10 @@ class PersonaService:
         # par la présence de TAVILY_API_KEY et pouvait affirmer l'inverse de la
         # cognition — deux phrases contradictoires dans le même prompt assemblé.
         self.web_available: bool | None = None
+        # Idem pour les salons ouverts à l'image de sa propre initiative : leurs
+        # NOMS viennent de l'annuaire de canaux, que la config ne porte pas.
+        # `None` = pas encore renseigné (repli sur la config, jamais sur l'inverse).
+        self.image_channels: list[str] | None = None
         self._emotion_directives: dict[str, str] = {}
         self._user_directives: dict[str, str] = {}
         self._event_directives: dict[str, str] = {}
@@ -206,6 +210,11 @@ class PersonaService:
                     self.web_available if self.web_available is not None
                     else bool(os.environ.get("TAVILY_API_KEY"))
                 ),
+                # Les NOMS des salons ouverts à l'image autonome, posés par le
+                # bot quand l'annuaire est chargé. `None` = « je ne sais pas les
+                # nommer » : le self-model retombe alors sur la config plutôt
+                # que d'affirmer le contraire de ce que la cognition peut faire.
+                image_channels=self.image_channels,
             )
             if self._config is not None
             else self._caps_static

@@ -480,6 +480,24 @@ class ImageGenerationConfig:
     format: str = "png"
     daily_limit: int = -1
     per_user_limit: int = 5
+    # Génération à l'INITIATIVE de Wally (cf. `bot/core/image_initiative.py`) :
+    # personne ne la demande, c'est lui qui décide. Les salons sont des ids
+    # Discord ; hors de cette liste, l'action est refusée. Liste vide = capacité
+    # éteinte, et elle est annoncée comme telle dans son self-model.
+    autonomous_enabled: bool = True
+    autonomous_channel_ids: list[str] = field(default_factory=list)
+    # Un plafond du jour ET un délai : le premier borne la facture, le second
+    # empêche la rafale. -1 / 0 lèvent la garde correspondante.
+    autonomous_daily_limit: int = 3
+    autonomous_cooldown_minutes: int = 90
+
+    def __post_init__(self) -> None:
+        # YAML rend `938504877464768603` en int : sans normalisation, la
+        # comparaison avec le `channel_id` du modèle (une chaîne) est fausse
+        # pour TOUS les salons, et la capacité serait morte en silence.
+        self.autonomous_channel_ids = [
+            str(c).strip() for c in (self.autonomous_channel_ids or []) if str(c).strip()
+        ]
 
 
 @dataclass

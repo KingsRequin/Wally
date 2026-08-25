@@ -74,6 +74,7 @@ class ActionDispatcher:
     # l'action qu'il observe.
     _thought_id: str | None = None
     _act_events: int = 0
+    _motif_refus: str | None = None
 
     def __init__(
         self,
@@ -85,11 +86,16 @@ class ActionDispatcher:
         gate=None,
         speak_guard=None,
         overlay_narrator=None,
+        image_initiative=None,
     ) -> None:
         # Overlay de stream : Wally DÉCIDE d'afficher un widget, il n'exécute pas
         # une commande. C'est ce qui lui permet de refuser, de commenter, ou de
         # proposer de lui-même — un widget télécommandé serait un gadget.
         self._overlay_narrator = overlay_narrator
+        # Génération d'image de sa propre initiative : l'objet ne génère rien, il
+        # dit seulement où et à quelle cadence Wally a le droit d'y aller. Le
+        # MÊME objet sert au prompt de cognition — deux listes divergeraient.
+        self._image_initiative = image_initiative
         self._bot = bot
         self._twitch_bot = twitch_bot
         self._persona = persona_manager
@@ -108,6 +114,9 @@ class ActionDispatcher:
         # Compteur d'ACT réellement publiés, pour repérer les actions décidées
         # qui s'éteignent en silence (cf. `_publish_act`).
         self._act_events: int = 0
+        # Motif du dernier refus d'ACT, quand la branche le connaît (cf.
+        # `_dispatch_act`). Remis à None à chaque dispatch.
+        self._motif_refus: str | None = None
         # Références fortes des tâches détachées : la boucle asyncio n'en garde
         # qu'une référence FAIBLE, donc le GC peut annuler une tâche en cours.
         # Le motif est appliqué partout ailleurs (`cognitive_loop`, `emotion`,
@@ -209,6 +218,7 @@ class ActionDispatcher:
         "create_desire", "advance_goal", "fulfill_goal", "drop_desire",
         "doubt_memory", "react", "dm", "note_to_self", "set_focus",
         "reflect_self", "note_relation", "note_emote", "code_fix",
+        "generate_image",
     })
 
     # Actions qui n'ont, par construction, aucun ACT à publier : leur trace vit
@@ -248,6 +258,13 @@ class ActionDispatcher:
         act_name = decision.act_name or ""
         args = decision.act_args or {}
         avant = self._act_events
+        # Motif POSÉ par la branche qui refuse, quand elle sait pourquoi.
+        # « action silencieuse (argument manquant, doublon ou refus) » suffit à
+        # dire qu'il ne s'est rien passé, jamais à dire quoi faire : sur une
+        # action qui coûte de l'argent (`generate_image`), la différence entre
+        # « plafond du jour atteint » et « salon interdit » est toute
+        # l'information. Écrit ici, lu plus bas, remis à None à chaque dispatch.
+        self._motif_refus = None
         try:
             await self._act(act_name, args)
         except Exception as exc:
@@ -270,7 +287,7 @@ class ActionDispatcher:
         elif self._service_manquant(act_name):
             motif = f"service indisponible ({self._service_manquant(act_name)})"
         else:
-            motif = "action silencieuse (argument manquant, doublon ou refus)"
+            motif = self._motif_refus or "action silencieuse (argument manquant, doublon ou refus)"
         self._journal_act_rejected(act_name, args, motif)
 
     def _service_manquant(self, act_name: str) -> str:
@@ -279,8 +296,10 @@ class ActionDispatcher:
             return "overlay_narrator"
         if act_name == "code_fix" and getattr(self._bot, "self_fix", None) is None:
             return "self_fix"
+        if act_name == "generate_image" and self._image_initiative is None:
+            return "image_initiative"
         if act_name not in ("show_overlay", "cancel_overlay", "react", "dm",
-                            "code_fix") and not self._facts:
+                            "code_fix", "generate_image") and not self._facts:
             return "fact_store"
         return ""
 
@@ -552,6 +571,137 @@ class ActionDispatcher:
             logger.warning("ACT {}: goal_id invalide {!r}", act_name, raw)
             return None
 
+    async def _generate_image(self, args: dict) -> None:
+        """Fabrique une image et la poste — de sa PROPRE initiative.
+
+        Jusqu'ici, une image n'existait que si quelqu'un tapait `/wally imagine`.
+        Wally pouvait vouloir illustrer une remarque ou alimenter un fil de
+        memes sans avoir aucun moyen de le faire : il devait solliciter un
+        humain. C'est la seule voie qui part de LUI.
+
+        Trois gardes, dans cet ordre : les arguments, la politique
+        (`ImageInitiative` — salon ouvert, plafond du jour, délai), puis l'API.
+        Le motif d'un refus est POSÉ (`_motif_refus`) et lui est rendu par sa
+        propre trace : sans ça, il redemanderait la même image à chaque tick
+        sans jamais comprendre pourquoi rien n'arrive.
+
+        Ne lève jamais : une image ratée ne casse pas un tick cognitif.
+        """
+        from bot.core.self_trace import note_act
+
+        initiative = self._image_initiative
+        if initiative is None or self._bot is None:
+            logger.debug("ACT generate_image ignoré : initiative ou bot absent")
+            return
+        channel_id = str(args.get("channel_id") or "").strip()
+        prompt = str(args.get("prompt") or "").strip()
+        # Sa phrase à lui, facultative : l'image est le message, le texte
+        # l'accompagne. Pas de SpeakGuard ici — il juge l'utilité d'un TEXTE et
+        # tuerait une légende de trois mots posée sur une image qui, elle, porte
+        # tout le propos.
+        comment = str(args.get("comment") or "").strip()[:400]
+        message_id = str(args.get("message_id") or "").strip()
+        if not channel_id or not prompt:
+            self._motif_refus = "channel_id ou prompt manquant"
+            logger.warning("ACT generate_image : channel_id ou prompt manquant")
+            return
+
+        motif = await initiative.refus(channel_id)
+        if motif:
+            self._motif_refus = motif
+            logger.info("ACT generate_image refusé — {m}", m=motif)
+            # PASSIF, comme le refus d'overlay : il le lit au tick suivant dans
+            # « ce que tu viens de faire », donc il sait qu'il a essayé et
+            # pourquoi ça n'a pas abouti. Aucun `notify_*` : un refus ne réveille
+            # pas la cadence, sinon insister deviendrait payant.
+            note_act(f"tu as voulu poster une image mais tu n'as pas pu : {motif}")
+            return
+
+        client = getattr(self._bot, "image_client", None)
+        config = getattr(self._bot, "config", None)
+        db = getattr(self._bot, "db", None)
+        if client is None or config is None or db is None:
+            self._motif_refus = "client d'image, config ou base indisponible"
+            logger.warning("ACT generate_image : image_client/config/db absent")
+            return
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+        except (TypeError, ValueError):
+            channel = None
+        if channel is None:
+            self._motif_refus = f"canal {channel_id} introuvable"
+            logger.warning("ACT generate_image : canal {c} introuvable", c=channel_id)
+            return
+
+        auteur = initiative.auteur_id()
+        try:
+            result = await client.generate_image(prompt, config.image_generation, auteur)
+        except ValueError as exc:
+            # Quota de l'image_client, ou prompt refusé par l'API (400). Un motif
+            # métier, pas une panne : il doit le LIRE, pas le retrouver en logs.
+            self._motif_refus = f"génération refusée : {exc}"
+            logger.info("ACT generate_image refusé par l'API: {e!r}", e=exc)
+            note_act(f"tu as voulu poster une image mais la génération a été refusée : {exc}")
+            return
+        except Exception as exc:  # noqa: BLE001 — un tick cognitif ne crashe pas
+            self._motif_refus = "génération en échec"
+            logger.error("ACT generate_image : génération échouée: {e!r}", e=exc)
+            return
+
+        # Rangée en galerie AVANT l'envoi : l'argent est dépensé, le fichier
+        # existe, et c'est cette ligne qui porte le plafond du jour et le délai
+        # (`get_last_image_ts`). Un envoi Discord raté ne doit pas rendre la
+        # dépense invisible — sinon il réessaierait aussitôt.
+        try:
+            await db.insert_gallery_image(
+                id=result["file_id"],
+                title=(comment or prompt)[:100],
+                prompt=prompt,
+                revised_prompt=result.get("revised_prompt"),
+                username=self._self_name(),
+                user_id=auteur,
+                platform="discord",
+                file_path=result["file_name"],
+                model=result["model"],
+                quality=result["quality"],
+                size=result["size"],
+                cost_usd=result["cost_usd"],
+            )
+        except Exception as exc:  # noqa: BLE001 — la galerie ne bloque pas l'envoi
+            logger.warning("ACT generate_image : insertion galerie échouée: {e!r}", e=exc)
+
+        ext = str(result["file_name"]).rsplit(".", 1)[-1]
+        try:
+            reference = None
+            if message_id:
+                # Répondre au post qui lui a donné l'idée. Best-effort : un
+                # message effacé ou hors du canal ne doit pas annuler l'envoi.
+                try:
+                    reference = await channel.fetch_message(int(message_id))
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("generate_image : message {m} introuvable: {e!r}",
+                                 m=message_id, e=exc)
+            fichier = discord.File(result["file_path"], filename=f"image.{ext}")
+            await channel.send(
+                content=comment or None, file=fichier,
+                allowed_mentions=_ALLOWED_MENTIONS, reference=reference,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._motif_refus = "envoi Discord en échec"
+            logger.error("ACT generate_image : envoi échoué: {e!r}", e=exc)
+            return
+
+        nom_canal = getattr(channel, "name", None) or channel_id
+        logger.info("ACT generate_image → {c} : {p}", c=nom_canal, p=prompt[:80])
+        self._publish_act(f"generate_image {nom_canal}: ", comment or prompt)
+        # Le chemin réactif lit cette mémoire pour bâtir son contexte : sans
+        # ça, il nierait avoir posté l'image dont on lui parle deux minutes plus
+        # tard. Le marqueur `[a envoyé une image]` est celui du reste du projet.
+        trace = f"[a envoyé une image] {comment}".strip()
+        self._record_self_message(channel_id, trace)
+        guild = getattr(getattr(channel, "guild", None), "name", None)
+        self._log_speak("discord", f"{guild}/{nom_canal}" if guild else str(nom_canal), trace)
+
     async def _act(self, act_name: str, args: dict) -> None:
         from bot.intelligence.memory.facts import AtomicFact, FactCategory, FactStatus
 
@@ -594,6 +744,9 @@ class ActionDispatcher:
                 # le consigne dans le flux du stream — perception passive, sans
                 # `notify` — pour qu'il le LISE au tick suivant.
                 self._note_overlay_refus(widget, extra)
+
+        elif act_name == "generate_image":
+            await self._generate_image(args)
 
         elif act_name == "cancel_overlay" and self._overlay_narrator:
             # Sans cette action, la cognition pouvait OUVRIR un bingo mais jamais

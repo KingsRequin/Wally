@@ -39,3 +39,54 @@ def test_real_capabilities_md_has_no_fossilised_voice_line():
         content = f.read()
     assert "pas branché" not in content
     assert "elle est désactivée" not in content
+
+
+def test_image_autonome_annoncee_avec_les_salons(tmp_path):
+    """Les salons annoncés sont ceux que la politique ouvre vraiment."""
+    cfg = SimpleNamespace(voice=SimpleNamespace(enabled=False))
+    ps = PersonaService(persona_dir=_persona_dir(tmp_path), config=cfg)
+    ps.image_channels = ["#shitpost", "#memes"]
+    block = ps.build_prompt_block()
+    assert "#shitpost, #memes" in block
+    assert "décider tout seul de fabriquer une image" in block
+
+
+def test_image_autonome_eteinte_quand_aucun_salon(tmp_path):
+    cfg = SimpleNamespace(voice=SimpleNamespace(enabled=False))
+    ps = PersonaService(persona_dir=_persona_dir(tmp_path), config=cfg)
+    ps.image_channels = []
+    assert "je ne peux pas pour l'instant" in ps.build_prompt_block()
+
+
+def test_sans_noms_le_self_model_suit_la_config(tmp_path):
+    """`image_channels` non renseigné ne doit pas faire dire l'inverse de la
+    vérité : le chemin conversationnel affirmait « je ne peux pas » pendant que
+    la cognition avait l'action."""
+    from bot.config import ImageGenerationConfig
+
+    cfg = SimpleNamespace(
+        voice=SimpleNamespace(enabled=False),
+        cognitive_loop={"enabled": True},
+        image_generation=ImageGenerationConfig(
+            autonomous_enabled=True, autonomous_channel_ids=["1"],
+        ),
+    )
+    ps = PersonaService(persona_dir=_persona_dir(tmp_path), config=cfg)
+    assert ps.image_channels is None
+    assert "décider tout seul de fabriquer une image" in ps.build_prompt_block()
+
+
+def test_sans_cognition_pas_dimage_autonome(tmp_path):
+    """La boucle cognitive est le seul chemin qui en décide : coupée, l'action
+    n'existe nulle part, même si la section image reste configurée."""
+    from bot.config import ImageGenerationConfig
+
+    cfg = SimpleNamespace(
+        voice=SimpleNamespace(enabled=False),
+        cognitive_loop={"enabled": False},
+        image_generation=ImageGenerationConfig(
+            autonomous_enabled=True, autonomous_channel_ids=["1"],
+        ),
+    )
+    ps = PersonaService(persona_dir=_persona_dir(tmp_path), config=cfg)
+    assert "je ne peux pas pour l'instant" in ps.build_prompt_block()

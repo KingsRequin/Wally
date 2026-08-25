@@ -141,6 +141,28 @@ class GalleryMixin:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
+    async def get_last_image_ts(self, user_id: str) -> float | None:
+        """Epoch de la dernière image générée par cet auteur, ou None.
+
+        Sert le délai entre deux images que Wally se fabrique de lui-même. Ce
+        délai doit survivre à un rebuild — on en fait plusieurs par soirée, et
+        un compteur gardé en RAM repartirait à zéro à chaque fois, exactement
+        les soirs où la garde sert le plus.
+
+        `created_at` est écrit par SQLite en UTC (`datetime('now')`), donc
+        `strftime('%s', ...)` rend l'epoch sans conversion de fuseau — pas de
+        `'localtime'` ici, contrairement aux comptages du JOUR juste au-dessus.
+        """
+        cursor = await self._conn.execute(
+            "SELECT strftime('%s', created_at) FROM gallery_images "
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] is None:
+            return None
+        return float(row[0])
+
     async def get_total_image_count_today(self) -> int:
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM gallery_images "

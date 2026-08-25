@@ -64,6 +64,52 @@ def _overlay_line() -> str:
         "s'affiche."
     )
 
+_IMAGE_OFF = (
+    "Fabriquer une image de ma propre initiative, je ne peux pas pour l'instant : "
+    "il faut que quelqu'un déclenche `/image`."
+)
+
+
+_IMAGE_SANS_NOMS = (
+    "Je peux décider tout seul de fabriquer une image et de la poster dans les "
+    "salons prévus pour ça — personne n'a besoin de me la demander."
+)
+
+
+def _image_line(channels: list[str] | None, config) -> str:
+    """Ce qu'il peut faire d'une image, dérivé des salons RÉELLEMENT ouverts.
+
+    `channels` porte les NOMS des salons quand l'appelant les connaît (ils
+    viennent de `CHANNELS.md`, que la config ne connaît pas). Une liste vide dit
+    « éteint », et `None` dit « je ne sais pas les nommer » — dans ce dernier cas
+    on retombe sur la config, jamais sur le contraire de la vérité : le chemin
+    conversationnel affirmait sinon qu'il ne peut pas, pendant que le chemin
+    cognitif lui donnait l'action.
+    """
+    if channels is None:
+        cfg = getattr(config, "image_generation", None)
+        # La boucle cognitive est le SEUL chemin qui décide d'une image tout
+        # seul : capacité éteinte, l'action n'existe nulle part, quoi que dise
+        # la section `image_generation`.
+        cog = getattr(config, "cognitive_loop", None) or {}
+        cog_on = cog.get("enabled", False) if isinstance(cog, dict) else getattr(cog, "enabled", False)
+        ouvert = (
+            bool(cog_on)
+            and bool(getattr(cfg, "autonomous_enabled", False))
+            and bool(getattr(cfg, "autonomous_channel_ids", None))
+        )
+        return _IMAGE_SANS_NOMS if ouvert else _IMAGE_OFF
+    salons = [c for c in channels if c]
+    if not salons:
+        return _IMAGE_OFF
+    return (
+        "Je peux décider tout seul de fabriquer une image et de la poster dans "
+        + ", ".join(salons)
+        + " — personne n'a besoin de me la demander. Ça coûte de l'argent, donc "
+        "je le fais quand l'image apporte vraiment quelque chose."
+    )
+
+
 _WEB_ON = (
     "Je peux chercher sur le web de moi-même quand une vraie curiosité me prend, "
     "même sans qu'on me le demande."
@@ -73,13 +119,17 @@ _WEB_OFF = (
 )
 
 
-def build_self_model(static_text: str, config, *, web_available: bool = False) -> str:
+def build_self_model(static_text: str, config, *, web_available: bool = False,
+                     image_channels: list[str] | None = None) -> str:
     """Assemble le self-model : narratif statique + capacités dérivées de l'état réel.
 
     `static_text` = CAPABILITIES.md nettoyé (vérités de personnage stables).
     `config` = la config runtime ; chaque capacité à bascule est évaluée contre elle.
     `web_available` = dispo RÉELLE de la recherche web (Tavily configuré). Dérivée
     d'un flag plutôt que de `config` car la clé vit dans l'environnement, pas la config.
+    `image_channels` = les NOMS des salons où il peut poster une image de sa propre
+    initiative (vide = capacité éteinte). Passés en argument et non recalculés ici :
+    les noms viennent de `CHANNELS.md`, que la config ne connaît pas.
 
     Fonction pure : aucune I/O, insensible à l'ordre de montage. Un `config`
     malformé fait juste tomber une capacité en « inactive », jamais une exception.
@@ -92,6 +142,7 @@ def build_self_model(static_text: str, config, *, web_available: bool = False) -
             active = False
         lines.append(f"- {on_text if active else off_text}")
     lines.append(f"- {_WEB_ON if web_available else _WEB_OFF}")
+    lines.append(f"- {_image_line(image_channels, config)}")
     if overlay := _overlay_line():
         lines.append(f"- {overlay}")
     derived = _SECTION_TITLE + "\n" + "\n".join(lines)
