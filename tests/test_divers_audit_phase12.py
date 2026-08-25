@@ -28,19 +28,26 @@ def test_un_modele_non_conversationnel_est_ecarte(modele):
     assert is_valid_model(modele) is False
 
 
-# Ce cas exigeait l'inverse : `gpt-5.1`, `gpt-4o`, `o3-mini`… devaient RESTER
-# offerts. C'était vrai quand le texte passait par OpenAI ; depuis, la factory
-# ne construit plus que du DeepSeek, et le modèle retenu ici part vers
-# `api.deepseek.com`. Le test verrouillait donc un menu qui ne proposait que des
-# choix cassants — la garde utile est qu'un modèle d'un AUTRE fournisseur soit
-# écarté.
-@pytest.mark.parametrize("modele", ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"])
+# Ce cas a changé DEUX fois de sens, toujours pour la même raison de fond : le
+# menu doit refléter ce que `create_llm_client` sait construire, ni plus ni
+# moins. `gpt-*` était offert quand le texte passait par OpenAI, écarté quand la
+# factory s'est restreinte à DeepSeek, et redevient offert le 2026-08-25 quand
+# `openai` réintègre `SUPPORTED_TEXT_PROVIDERS`. Ce n'est pas la marque du
+# fournisseur qui décide — c'est la factory.
+@pytest.mark.parametrize(
+    "modele",
+    ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat",
+     "gpt-5.6-luna", "gpt-5-mini", "gpt-5.4"],
+)
 def test_un_modele_conversationnel_reste_offert(modele):
     assert is_valid_model(modele) is True
 
 
-@pytest.mark.parametrize("modele", ["gpt-5.1", "gpt-4o", "chatgpt-4o-latest", "o3-mini"])
-def test_un_modele_d_un_autre_fournisseur_est_ecarte(modele):
+@pytest.mark.parametrize(
+    "modele",
+    ["claude-haiku-4-5", "mistral-small-4", "gemini-2.5-flash", "grok-4.3", "o3-mini"],
+)
+def test_un_modele_d_un_fournisseur_non_constructible_est_ecarte(modele):
     assert is_valid_model(modele) is False
 
 

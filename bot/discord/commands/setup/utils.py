@@ -31,14 +31,24 @@ EDITABLE_ENV_KEYS: list[str] = [
 EXCLUDED_MODEL_KEYWORDS = [
     "realtime", "preview", "audio", "vision",
     "image", "tts", "transcribe", "instruct", "embedding", "moderation", "search",
+    # Modèles de CODE : ils répondent en Chat Completions, donc rien ne les
+    # écarterait, mais ils sont entraînés à produire des diffs et des patchs —
+    # aux antipodes d'une persona qui tchatte. Ajouté en même temps que `gpt`
+    # aux familles acceptées, qui les faisait entrer par la porte ouverte.
+    "codex",
 ]
-# Familles conversationnelles acceptées. La liste valait ["gpt", "chatgpt"] plus
-# les préfixes o1/o3/o4, héritée de l'époque où le texte passait par OpenAI. Or
-# `create_llm_client` ne construit plus que du DeepSeek : le menu ne proposait
-# donc QUE des modèles que le LLM texte ne sait pas servir. En choisir un
-# écrivait `llm.primary.model = "gpt-…"` puis l'envoyait à `api.deepseek.com` —
-# chaque appel en échec, sur les deux plateformes, jusqu'à édition du YAML.
-INCLUDED_MODEL_KEYWORDS = ["deepseek"]
+# Familles conversationnelles acceptées. Elle valait ["gpt", "chatgpt"] plus les
+# préfixes o1/o3/o4, héritée de l'époque où le texte passait par OpenAI ; quand
+# la factory s'est restreinte à DeepSeek, le menu ne proposait plus QUE des
+# modèles que le LLM texte ne savait pas servir. En choisir un écrivait
+# `llm.primary.model = "gpt-…"` puis l'envoyait à `api.deepseek.com` — chaque
+# appel en échec, sur les deux plateformes, jusqu'à édition du YAML.
+#
+# `gpt` revient le 2026-08-25 parce que `openai` est de nouveau un fournisseur de
+# texte constructible (`SUPPORTED_TEXT_PROVIDERS`). Cette liste doit rester le
+# reflet de ce que la factory sait construire : l'élargir avant la factory
+# reproduirait exactement la panne ci-dessus, dans l'autre sens.
+INCLUDED_MODEL_KEYWORDS = ["deepseek", "gpt"]
 
 
 # ── Utilitaires .env ──────────────────────────────────────────────────────────

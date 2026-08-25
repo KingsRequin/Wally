@@ -5641,10 +5641,26 @@ var _MODEL_PRICE_TABLE = {
   'gpt-4.1':             2.00,
   'gpt-4.1-mini':        0.40,
   'gpt-4.1-nano':        0.10,
-  'gpt-5':               5.00,
-  'gpt-5.1':             5.00,
-  'gpt-5.1-mini':        0.40,
-  'gpt-5-nano':          0.10,
+  // Famille GPT-5 — prix d'ENTRÉE relevés le 2026-08-25 sur
+  // https://developers.openai.com/api/docs/pricing. Ils étaient tous faux :
+  // `gpt-5` porté à 5,00 au lieu de 1,25, `gpt-5-nano` au double du réel, et
+  // `gpt-5.1-mini` n'existe pas au catalogue. Les familles 4o / 4.1 / o* plus
+  // haut n'ont PAS été revérifiées à cette date — elles restent en l'état.
+  'gpt-5':               1.25,
+  'gpt-5-mini':          0.25,
+  'gpt-5-nano':          0.05,
+  'gpt-5-pro':          15.00,
+  'gpt-5.1':             1.25,
+  'gpt-5.2':             1.75,
+  'gpt-5.3':             1.75,
+  'gpt-5.4':             2.50,
+  'gpt-5.4-mini':        0.75,
+  'gpt-5.4-nano':        0.20,
+  'gpt-5.4-pro':        30.00,
+  'gpt-5.5':             5.00,
+  'gpt-5.6-luna':        0.20,
+  'gpt-5.6-terra':       2.00,
+  'gpt-5.6-sol':         4.00,
   'o1':                 15.00,
   'o1-mini':             3.00,
   'o3':                 10.00,
@@ -5658,12 +5674,17 @@ var _MODEL_PRICE_TABLE = {
   'claude-sonnet-4-5':   3.00,
   'claude-sonnet-4-6':   3.00,
   'claude-haiku-4':      0.80,
-  'claude-haiku-4-5':    0.80,
-  // DeepSeek (input cache miss / 1M — https://api-docs.deepseek.com/quick_start/pricing/)
-  'deepseek-v4-pro':     0.435,
-  'deepseek-v4-flash':   0.14,
-  'deepseek-chat':       0.14,
-  'deepseek-reasoner':   0.14,
+  'claude-haiku-4-5':    1.00,   // 0,80 était le tarif de Haiku 3.5, pas du 4.5
+  // DeepSeek — input cache MISS en heures CREUSES, par 1M
+  // (https://api-docs.deepseek.com/quick_start/pricing/, relevé le 2026-08-25).
+  // La table portait encore 0,14 et 0,435 : la grille d'AVANT la hausse du
+  // 2026-08-16, soit un affichage à la moitié du prix réellement facturé. Les
+  // heures pleines (01–04 h et 06–10 h UTC, du lundi au vendredi) doublent
+  // encore ces valeurs — le panneau annonce donc un plancher, pas une facture.
+  'deepseek-v4-pro':     0.66,
+  'deepseek-v4-flash':   0.22,
+  'deepseek-chat':       0.22,
+  'deepseek-reasoner':   0.22,
 };
 
 var _promptsModels = []; // [{ label, usd }] — peuplé depuis la config

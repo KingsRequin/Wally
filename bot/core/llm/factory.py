@@ -22,16 +22,39 @@ if TYPE_CHECKING:
 # et le bot ne redémarrait plus.
 #
 # Une liste tenue à côté du `if` qu'elle décrit ne peut plus diverger de lui.
-SUPPORTED_TEXT_PROVIDERS = ("deepseek",)
+SUPPORTED_TEXT_PROVIDERS = ("deepseek", "openai")
 
 
 def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMClient:
-    """Instantiate the text LLM client. DeepSeek is the only supported text provider.
+    """Instancie le client LLM de TEXTE pour un rôle donné.
 
-    OpenAI is reserved for image generation and is constructed directly in
-    bot/bootstrap.py — never through this factory.
+    Deux fournisseurs : `deepseek` et `openai`. Le second n'était pas branché ici
+    alors que `OpenAILLMClient` implémente `BaseLLMClient` en entier et tourne
+    déjà en production pour la vision et les images — il ne manquait que cette
+    branche pour qu'un rôle texte puisse le désigner.
+
+    La génération d'IMAGES reste construite directement dans `bot/bootstrap.py`
+    (`image_client`) : elle a sa propre config et n'est pas un rôle de texte.
     """
     provider = llm_config.provider.lower()
+
+    if provider == "openai":
+        from bot.core.llm.openai_client import OpenAILLMClient
+        client_openai = OpenAILLMClient(
+            model=llm_config.model,
+            db=db,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
+            reasoning_effort=llm_config.reasoning_effort,
+            text_verbosity=llm_config.text_verbosity,
+        )
+        logger.info(
+            "Created OpenAILLMClient — model={model}, temp={temp}, "
+            "reasoning={effort}, verbosity={verb}",
+            model=llm_config.model, temp=llm_config.temperature,
+            effort=llm_config.reasoning_effort, verb=llm_config.text_verbosity,
+        )
+        return client_openai
 
     if provider == "deepseek":
         from bot.core.llm.deepseek import DeepSeekLLMClient
@@ -51,7 +74,6 @@ def create_llm_client(llm_config: "LLMRoleConfig", db: "Database") -> BaseLLMCli
         return client
 
     raise ValueError(
-        f"Unknown text LLM provider: {provider!r}. Supported: "
-        f"{', '.join(SUPPORTED_TEXT_PROVIDERS)} "
-        "(OpenAI is image-only, constructed directly in bootstrap)."
+        f"Fournisseur LLM de texte inconnu : {provider!r}. "
+        f"Supportés : {', '.join(SUPPORTED_TEXT_PROVIDERS)}."
     )

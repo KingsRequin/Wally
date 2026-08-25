@@ -95,20 +95,37 @@ def test_is_valid_model_accepts_deepseek_chat_models():
     assert is_valid_model("deepseek-chat") is True
 
 
-def test_is_valid_model_rejects_models_of_other_providers():
-    """Un modèle d'un autre fournisseur choisi ici casse le bot en silence.
+def test_is_valid_model_accepts_openai_chat_models():
+    """`openai` est constructible depuis le 2026-08-25 : ses modèles reviennent.
 
-    `create_llm_client` ne construit que du DeepSeek : le modèle retenu part
-    vers `api.deepseek.com`. Proposer `gpt-5` dans le menu, c'est armer un
-    piège — le choix est persisté par `config.save()`, et CHAQUE appel échoue
-    ensuite sur les deux plateformes jusqu'à édition manuelle du YAML.
+    Ce test exigeait l'inverse, et il avait raison à l'époque — la factory ne
+    savait construire que DeepSeek, donc un `gpt-…` retenu ici partait vers
+    `api.deepseek.com` et cassait tout. La garde utile n'a jamais été « rejeter
+    gpt » mais « rejeter ce que la factory ne sait pas construire ».
     """
-    assert is_valid_model("gpt-5") is False
-    assert is_valid_model("gpt-4o") is False
-    assert is_valid_model("chatgpt-4o-latest") is False
+    assert is_valid_model("gpt-5.6-luna") is True
+    assert is_valid_model("gpt-5-mini") is True
+    assert is_valid_model("gpt-5.4") is True
+
+
+def test_is_valid_model_rejects_models_of_other_providers():
+    """Un modèle d'un fournisseur non constructible casse le bot en silence.
+
+    Le choix est persisté par `config.save()`, et CHAQUE appel échoue ensuite
+    sur les deux plateformes jusqu'à édition manuelle du YAML.
+    """
+    assert is_valid_model("claude-haiku-4-5-20251001") is False
+    assert is_valid_model("mistral-small-4") is False
+    assert is_valid_model("gemini-2.5-flash") is False
+    # o1/o3/o4 ne sont plus servis par ce projet et ne portent pas « gpt ».
     assert is_valid_model("o1") is False
     assert is_valid_model("o3-mini") is False
-    assert is_valid_model("claude-haiku-4-5-20251001") is False
+
+
+def test_is_valid_model_rejects_code_models():
+    """Les modèles Codex répondent en chat mais écrivent des patchs, pas Wally."""
+    assert is_valid_model("gpt-5-codex") is False
+    assert is_valid_model("gpt-5.1-codex-max") is False
 
 
 def test_is_valid_model_rejects_non_conversational():

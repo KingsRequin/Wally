@@ -358,9 +358,18 @@ async def test_un_provider_inconnu_est_refuse_en_400(client, app):
 
 async def test_get_config_annonce_les_providers_supportes(client, app):
     """Le front construit son `<select>` à partir de cette liste, au lieu de
-    coder en dur deux providers que le serveur ne sait pas instancier."""
+    coder en dur deux providers que le serveur ne sait pas instancier.
+
+    On compare à `SUPPORTED_TEXT_PROVIDERS` plutôt qu'à une liste écrite en dur :
+    la garantie utile est « le front reçoit exactement ce que la factory sait
+    construire », pas « la liste vaut deepseek ». Figer la valeur obligeait à
+    rouvrir ce test à chaque fournisseur ajouté, sans rien vérifier de plus.
+    """
+    from bot.core.llm.factory import SUPPORTED_TEXT_PROVIDERS
+
     app.state.wally.config.bot.dashboard_token = "testtoken"
     r = await client.get("/api/admin/config", headers=ADMIN_HEADERS)
 
     assert r.status_code == 200
-    assert r.json()["llm_providers"] == ["deepseek"]
+    assert r.json()["llm_providers"] == list(SUPPORTED_TEXT_PROVIDERS)
+    assert "openai" in r.json()["llm_providers"]

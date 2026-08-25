@@ -191,6 +191,32 @@ class OpenAILLMClient(BaseLLMClient):
     def text_verbosity(self, value: str) -> None:
         self._text_verbosity = value
 
+    async def list_models(self) -> list[str]:
+        """Le catalogue OpenAI, UNI aux modèles que ce fichier sait chiffrer.
+
+        `/v1/models` n'est PAS exhaustif : `gpt-5.6-luna` répond parfaitement aux
+        appels sans figurer dans le catalogue rendu par la clé. S'en tenir à
+        l'API rendrait donc invisible, dans le menu « Modèle principal », le
+        modèle même qu'on cherche à choisir — et un modèle qu'on ne peut pas
+        désigner depuis l'UI se pose à la main dans `config.yaml`, hors de tout
+        garde-fou.
+
+        L'union avec `MODEL_COSTS` est le bon complément parce que cette table
+        dit exactement une chose : « le projet sait facturer ce modèle ». Un
+        modèle qu'on ne sait pas chiffrer n'a rien à faire dans le menu, et un
+        modèle chiffrable est par construction un modèle qu'on assume.
+
+        Liste vide si l'API ne répond pas — jamais d'exception, l'appelant
+        affiche « aucun modèle compatible ».
+        """
+        connus = set(MODEL_COSTS)
+        try:
+            catalogue = await self._client.models.list()
+            return sorted(connus | {m.id for m in catalogue.data})
+        except Exception as e:
+            logger.warning("OpenAI list_models() a échoué : {e!r}", e=e)
+            return []
+
     async def _log_cost(
         self, *, input_tokens: int, output_tokens: int, cost: float,
         purpose: str, user_id: str | None,
