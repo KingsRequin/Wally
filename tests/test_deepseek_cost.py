@@ -97,6 +97,21 @@ def test_peak_plages_utc():
     assert not peak(0) and not peak(4) and not peak(5) and not peak(10) and not peak(23)
 
 
+def test_pas_d_heure_pleine_le_week_end():
+    """Samedi et dimanche sont creux 24 h/24, même dans les tranches de pointe.
+
+    La grille DeepSeek borne les heures pleines au lundi–vendredi. Sans cette
+    clause, tout appel du week-end entre 01–04 h ou 06–10 h UTC était chiffré au
+    double — et le week-end est justement le moment où Wally travaille le plus.
+    """
+    samedi = lambda h: _is_deepseek_peak(datetime(2026, 8, 22, h, 0, tzinfo=timezone.utc))
+    dimanche = lambda h: _is_deepseek_peak(datetime(2026, 8, 23, h, 0, tzinfo=timezone.utc))
+    assert not samedi(1) and not samedi(3) and not samedi(6) and not samedi(9)
+    assert not dimanche(1) and not dimanche(3) and not dimanche(6) and not dimanche(9)
+    # Le vendredi, lui, reste bien en pointe : la borne est le week-end, pas la semaine.
+    assert _is_deepseek_peak(datetime(2026, 8, 21, 7, 0, tzinfo=timezone.utc)) is True
+
+
 def test_cout_double_en_heure_de_pointe():
     usage = _usage(10_000, 2_000, hit=1_000, miss=9_000)
     creux = (1_000 * 0.022 + 9_000 * 0.66 + 2_000 * 1.98) / 1_000_000

@@ -28,22 +28,48 @@ def _uses_responses_api(model: str) -> bool:
     return any(model.startswith(p) for p in _RESPONSES_API_PREFIXES)
 
 
-# Cost per 1M tokens (input, output) in USD
-MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "gpt-5": (2.0, 8.0),
-    "gpt-5-mini": (0.15, 0.60),
-    "gpt-5-nano": (0.10, 0.40),
-    "gpt-5-pro": (10.0, 40.0),
-    "gpt-5.1": (2.0, 8.0),
-    "gpt-5.2": (2.0, 8.0),
-    "gpt-5.3": (2.0, 8.0),
-    "gpt-5.4": (2.0, 8.0),
-    "gpt-5.4-mini": (0.15, 0.60),
-    "gpt-5.4-nano": (0.10, 0.40),
-    "gpt-5.4-pro": (10.0, 40.0),
+# Coût par 1M de tokens en USD : (input, cached input, output).
+# Source : https://developers.openai.com/api/docs/pricing (relevé le 2026-08-25).
+#
+# La table ne portait auparavant que deux valeurs, et les ONZE lignes étaient
+# fausses — arrondies à la louche sur une génération de tarifs antérieure. Le
+# `cost_log` mentait donc sur chaque appel OpenAI : `gpt-5.4-mini` sous-estimé
+# d'un facteur 7,5 en sortie, `gpt-5-pro` d'un facteur 3, `gpt-5` d'un facteur
+# 1,25. C'est `gpt-5-nano` qui sert la VisionService en production, et son coût
+# d'entrée était surestimé du double.
+#
+# Le prix caché est désormais une colonne à part plutôt qu'une remise devinée :
+# OpenAI facture le cache à 10 % de l'entrée, pas à 50 % comme le calculait
+# `estimate_cost`. Un chiffrage de cache était donc cinq fois trop cher.
+#
+# `gpt-5-pro` et `gpt-5.4-pro` n'ont AUCUN tarif caché publié : on y répète le
+# prix plein plutôt que d'inventer une remise, pour ne jamais sous-estimer.
+#
+# ⚠️ Les `gpt-5.6-*` doublent leurs tarifs au-delà de 272 000 tokens d'entrée
+# (0,40/1,80 pour luna). Ce n'est pas modélisé ici : les appels de Wally font
+# 2 805 tokens en moyenne, deux ordres de grandeur sous le seuil. Le jour où un
+# prompt s'en approche, cette table devient fausse à la baisse.
+MODEL_COSTS: dict[str, tuple[float, float, float]] = {
+    "gpt-5": (1.25, 0.125, 10.0),
+    "gpt-5-mini": (0.25, 0.025, 2.0),
+    "gpt-5-nano": (0.05, 0.005, 0.40),
+    "gpt-5-pro": (15.0, 15.0, 120.0),
+    "gpt-5.1": (1.25, 0.125, 10.0),
+    "gpt-5.2": (1.75, 0.175, 14.0),
+    "gpt-5.3": (1.75, 0.175, 14.0),
+    "gpt-5.4": (2.50, 0.25, 15.0),
+    "gpt-5.4-mini": (0.75, 0.075, 4.50),
+    "gpt-5.4-nano": (0.20, 0.02, 1.25),
+    "gpt-5.4-pro": (30.0, 30.0, 180.0),
+    "gpt-5.5": (5.0, 0.50, 30.0),
+    "gpt-5.6-luna": (0.20, 0.02, 1.20),
+    "gpt-5.6-terra": (2.0, 0.20, 12.0),
+    "gpt-5.6-sol": (4.0, 0.40, 20.0),
 }
 
-FALLBACK_COST = (5.0, 15.0)
+# Repli d'un modèle inconnu : cher exprès, pour qu'une facture surprise se voie
+# dans le log plutôt que de s'y fondre.
+FALLBACK_COST = (5.0, 0.50, 15.0)
 
 IMAGE_COSTS: dict[str, dict[tuple[str, str], float]] = {
     "gpt-image-1.5": {
@@ -92,11 +118,12 @@ def estimate_cost(
          if model.startswith(k)),
         FALLBACK_COST,
     )
+    prix_entree, prix_cache, prix_sortie = costs
     non_cached = input_tokens - cached_input_tokens
     return (
-        non_cached * costs[0]
-        + cached_input_tokens * costs[0] * 0.5
-        + output_tokens * costs[1]
+        non_cached * prix_entree
+        + cached_input_tokens * prix_cache
+        + output_tokens * prix_sortie
     ) / 1_000_000
 
 

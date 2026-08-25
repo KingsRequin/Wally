@@ -55,12 +55,20 @@ _RETRY_BASE_DELAY = 1.0
 def _is_deepseek_peak(now: datetime | None = None) -> bool:
     """True si `now` (UTC) tombe dans une plage de pointe DeepSeek (tarif ×2).
 
-    Plages UTC : 01:00–04:00 et 06:00–10:00 (04:00–06:00 = creux). Les heures
-    pleines n'existent qu'à partir de `_NEW_PRICING_START`. `now` est injectable
-    pour les tests.
+    Plages UTC : 01:00–04:00 et 06:00–10:00 (04:00–06:00 = creux), **du lundi au
+    vendredi seulement**. Le samedi et le dimanche sont creux 24 h sur 24 — la
+    grille tarifaire le dit noir sur blanc, et la clause manquait ici : le
+    `cost_log` majorait donc de ×2 tous les appels du week-end tombant dans ces
+    tranches, sur une plateforme dont le pic d'activité EST le week-end. Le
+    chiffrage du passé s'en trouvait faux à la hausse, sans que rien ne le dise.
+
+    Les heures pleines n'existent qu'à partir de `_NEW_PRICING_START`. `now` est
+    injectable pour les tests.
     """
     now = now or datetime.now(timezone.utc)
     if now < _NEW_PRICING_START:
+        return False
+    if now.weekday() >= 5:      # 5 = samedi, 6 = dimanche
         return False
     h = now.hour
     return (1 <= h < 4) or (6 <= h < 10)

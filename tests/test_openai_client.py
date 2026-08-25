@@ -36,8 +36,26 @@ def make_mock_response(content: str, prompt_tokens: int = 50, completion_tokens:
 
 
 def test_estimate_cost_known_model():
-    cost = estimate_cost("gpt-5", 1_000_000, 1_000_000)
-    assert cost > 0
+    """Un million d'entrée + un million de sortie = le tarif catalogue, à l'unité près.
+
+    `assert cost > 0` laissait passer n'importe quel chiffre : la table entière
+    était fausse (gpt-5 à 2,00/8,00 au lieu de 1,25/10,00) sans qu'un seul test
+    bronche. On assert désormais la valeur, pas sa positivité.
+    """
+    assert estimate_cost("gpt-5", 1_000_000, 1_000_000) == pytest.approx(1.25 + 10.0)
+    assert estimate_cost("gpt-5.6-luna", 1_000_000, 1_000_000) == pytest.approx(0.20 + 1.20)
+    assert estimate_cost("gpt-5-nano", 1_000_000, 1_000_000) == pytest.approx(0.05 + 0.40)
+
+
+def test_estimate_cost_prefixe_le_plus_long_gagne():
+    """`gpt-5.6-luna` ne doit pas être facturé au tarif de `gpt-5`.
+
+    Le repli par préfixe trie du plus long au plus court ; sans ce tri, un modèle
+    daté (`gpt-5.6-luna-2026-07-09`) tomberait sur l'entrée `gpt-5` et serait
+    chiffré six fois trop cher.
+    """
+    assert estimate_cost("gpt-5.6-luna-2026-07-09", 1_000_000, 0) == pytest.approx(0.20)
+    assert estimate_cost("gpt-5.4-mini-preview", 1_000_000, 0) == pytest.approx(0.75)
 
 
 def test_estimate_cost_unknown_model_uses_default():
@@ -46,15 +64,33 @@ def test_estimate_cost_unknown_model_uses_default():
 
 
 def test_estimate_cost_cached_tokens_reduce_cost():
+    """OpenAI facture le cache à 10 % de l'entrée, pas à 50 %.
+
+    Ce test EXIGEAIT auparavant la remise de 50 % que le code appliquait — il
+    verrouillait donc l'erreur au lieu de la révéler. Tout appel avec cache était
+    chiffré cinq fois trop cher.
+    """
     full_cost = estimate_cost("gpt-5", 1000, 0, cached_input_tokens=0)
-    half_cached = estimate_cost("gpt-5", 1000, 0, cached_input_tokens=1000)
-    assert half_cached == pytest.approx(full_cost * 0.5)
+    tout_en_cache = estimate_cost("gpt-5", 1000, 0, cached_input_tokens=1000)
+    assert tout_en_cache == pytest.approx(full_cost * 0.1)
 
 
 def test_estimate_cost_partial_cache():
     full_cost = estimate_cost("gpt-5", 1000, 0, cached_input_tokens=0)
     partial = estimate_cost("gpt-5", 1000, 0, cached_input_tokens=500)
-    assert partial == pytest.approx(full_cost * 0.75)
+    assert partial == pytest.approx(full_cost * 0.55)   # moitié plein + moitié à 10 %
+
+
+def test_estimate_cost_pro_sans_remise_de_cache():
+    """`gpt-5-pro` n'a aucun tarif caché publié : on ne suppose aucune remise.
+
+    Inventer un cache à 10 % là où OpenAI n'en annonce pas ferait sous-estimer
+    la facture du modèle le plus cher du catalogue.
+    """
+    plein = estimate_cost("gpt-5-pro", 1_000_000, 0, cached_input_tokens=0)
+    cache = estimate_cost("gpt-5-pro", 1_000_000, 0, cached_input_tokens=1_000_000)
+    assert plein == pytest.approx(15.0)
+    assert cache == pytest.approx(plein)
 
 
 @pytest.mark.asyncio
