@@ -55,7 +55,14 @@ class BotConfig:
     self_modify_enabled: bool = False
 
 
-VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
+# ⚠️ Le vocabulaire des efforts DÉPEND du modèle, et cette liste est leur union.
+# Vérifié en appelant l'API le 2026-08-25 : `gpt-5-nano` et `gpt-5-mini`
+# acceptent `minimal` et REFUSENT `none` ; `gpt-5.4-mini` et `gpt-5.6-luna` font
+# exactement l'inverse, et seul `luna` accepte `max`. Aucune liste plate ne peut
+# donc être juste pour tous — un effort validé ici peut être rejeté à chaque
+# appel par le modèle en place. L'API nomme les valeurs qu'elle accepte dans son
+# message d'erreur, et le client le journalise : c'est là qu'on le lit.
+VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 VALID_TEXT_VERBOSITIES = ("low", "medium", "high")
 # `VALID_LLM_PROVIDERS` valait ici `("openai", "claude")` — deux providers que la
 # factory ne sait pas construire, et la constante n'était lue nulle part. La

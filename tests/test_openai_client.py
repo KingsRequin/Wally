@@ -347,3 +347,55 @@ async def test_complete_no_images_uses_generic_fallback():
         )
 
     assert result == FALLBACK_RESPONSE
+
+
+# ── reasoning_effort : « none » doit être ENVOYÉ, pas omis ───────────────────
+
+def _client(effort: str, max_tokens: int = 8192):
+    return OpenAILLMClient(
+        model="gpt-5.6-luna", db=None, max_tokens=max_tokens, reasoning_effort=effort,
+    )
+
+
+def test_effort_none_est_envoye_explicitement():
+    """`none` est une valeur que l'API accepte et qui rend 0 token de raisonnement.
+
+    L'omettre ne désactive rien : le modèle applique SON défaut, qui raisonne.
+    Le code omettait le paramètre pour `none`, aux trois endroits qui le
+    construisaient — un `reasoning_effort: none` en config produisait donc
+    l'inverse de ce qu'il demande (2 234 tokens de sortie contre 1 051 en `low`,
+    mesuré au banc sur gpt-5.6-luna).
+    """
+    params = _client("none")._params_raisonnement()
+    assert params["reasoning"] == {"effort": "none"}
+
+
+def test_plafond_pose_sans_raisonnement_et_retire_avec():
+    """Le plafond n'est retiré que quand le raisonnement peut l'affamer.
+
+    La Responses API partage `max_output_tokens` entre réflexion et texte : un
+    petit modèle épuise le budget avant d'écrire un mot. Sans raisonnement, il
+    n'y a rien à affamer — le plafond doit revenir, c'est lui qui borne la
+    dépense.
+    """
+    assert _client("none")._params_raisonnement()["max_output_tokens"] == 8192
+    assert "max_output_tokens" not in _client("low")._params_raisonnement()
+    assert "max_output_tokens" not in _client("high")._params_raisonnement()
+
+
+def test_plafond_ponctuel_prime_sur_celui_du_client():
+    assert _client("none")._params_raisonnement(512)["max_output_tokens"] == 512
+
+
+def test_sortie_structuree_ne_pose_jamais_de_plafond():
+    """Un JSON coupé au plafond serait un schéma invalide."""
+    params = _client("none")._params_raisonnement(avec_plafond=False)
+    assert "max_output_tokens" not in params
+    assert params["reasoning"] == {"effort": "none"}
+
+
+def test_effort_vide_n_envoie_pas_de_reasoning():
+    """Chaîne vide = « ne te prononce pas », le modèle garde son défaut."""
+    params = _client("")._params_raisonnement()
+    assert "reasoning" not in params
+    assert params["max_output_tokens"] == 8192

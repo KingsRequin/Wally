@@ -242,6 +242,42 @@ class OpenAILLMClient(BaseLLMClient):
         except Exception as e:  # noqa: BLE001 — une compta ratée n'est pas fatale
             logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
 
+    def _params_raisonnement(
+        self, max_tokens: int | None = None, *, avec_plafond: bool = True
+    ) -> dict:
+        """Les kwargs `reasoning` / `max_output_tokens` de la Responses API.
+
+        Cette logique vivait RECOPIÉE en trois endroits (`_complete_responses_api`,
+        `_complete_with_tools_responses`, `complete_structured`), avec la même
+        erreur aux trois : `effort == "none"` faisait OMETTRE le paramètre.
+
+        Or `none` est une valeur que l'API accepte, et qui rend zéro token de
+        raisonnement. L'omettre ne désactive rien — cela laisse le modèle
+        appliquer SON défaut, qui raisonne. Un `reasoning_effort: none` en config
+        produisait donc exactement l'inverse de ce qu'il demande : mesuré au banc
+        sur `gpt-5.6-luna`, 2 234 tokens de sortie contre 1 051 en `low`, pour des
+        réponses de même longueur.
+
+        `max_output_tokens` reste omis quand le raisonnement est ACTIF : la
+        Responses API partage ce budget entre réflexion et texte, et un petit
+        modèle l'épuise avant d'écrire un mot — c'est ce qui rend des réponses
+        vides. Sans raisonnement, aucune famine possible : le plafond revient, et
+        c'est lui qui borne la dépense.
+
+        `avec_plafond=False` pour la sortie STRUCTURÉE, qui n'en pose jamais :
+        un JSON coupé au plafond serait un schéma invalide, et l'appelant
+        préfère lire `status != "completed"` et relancer.
+        """
+        params: dict = {}
+        effort = self._reasoning_effort
+        if effort:
+            params["reasoning"] = {"effort": effort}
+        raisonne = bool(effort) and effort != "none"
+        effective_max = max_tokens or self._max_tokens
+        if avec_plafond and effective_max and not raisonne:
+            params["max_output_tokens"] = effective_max
+        return params
+
     def _build_image_content(
         self, text: str, image_urls: list[str], use_responses_api: bool
     ) -> list[dict]:
@@ -263,17 +299,9 @@ class OpenAILLMClient(BaseLLMClient):
             "model": self._model,
             "input": messages,
         }
-        uses_reasoning = self._reasoning_effort and self._reasoning_effort != "none"
-        if uses_reasoning:
-            kwargs["reasoning"] = {"effort": self._reasoning_effort}
         if self._text_verbosity:
             kwargs["text"] = {"format": {"type": "text"}, "verbosity": self._text_verbosity}
-        effective_max = max_tokens or self._max_tokens
-        if effective_max and not uses_reasoning:
-            # Skip max_output_tokens when reasoning is active: the Responses API
-            # shares the budget between reasoning and text, which can starve the
-            # visible response on small models.
-            kwargs["max_output_tokens"] = effective_max
+        kwargs.update(self._params_raisonnement(max_tokens))
         response = await self._client.responses.create(**kwargs)
         text = response.output_text
         if response.usage:
@@ -606,11 +634,7 @@ class OpenAILLMClient(BaseLLMClient):
                 "input": full_messages,
                 "tools": resp_tools,
             }
-            uses_reasoning = self._reasoning_effort and self._reasoning_effort != "none"
-            if uses_reasoning:
-                resp_kwargs["reasoning"] = {"effort": self._reasoning_effort}
-            if self._max_tokens and not uses_reasoning:
-                resp_kwargs["max_output_tokens"] = self._max_tokens
+            resp_kwargs.update(self._params_raisonnement())
             response = await self._client.responses.create(**resp_kwargs)
 
             total_input = 0
@@ -838,8 +862,7 @@ class OpenAILLMClient(BaseLLMClient):
                             }
                         },
                     }
-                    if self._reasoning_effort and self._reasoning_effort != "none":
-                        kwargs["reasoning"] = {"effort": self._reasoning_effort}
+                    kwargs.update(self._params_raisonnement(avec_plafond=False))
 
                     response = await self._client.responses.create(**kwargs)
 
