@@ -115,8 +115,23 @@ async def run_say_in_voice_tool(bot, args: dict, *, roles=None,
         return ("Refusé : cette personne n'est ni modérateur ni le streamer, "
                 "elle n'a pas le droit de te faire parler en vocal. Moque-toi "
                 "gentiment d'elle dans le chat, en une phrase.")
-    service = getattr(getattr(bot, "discord_bot", None), "voice_service", None)
-    if service is None or not getattr(service, "is_connected", False):
+    # Des DEUX côtés, comme `_overlay_narrator`. `bot.discord_bot` est la
+    # référence CROISÉE, posée sur le bot TWITCH ; `voice_service` n'existe en
+    # propre que sur `WallyDiscord`. Appelé depuis un MP Discord, `bot` EST déjà
+    # le bot Discord : la seule recherche croisée rendait None, et Wally
+    # répondait « je ne suis plus dans le salon vocal » depuis un salon où il
+    # était assis (vécu le 2026-08-25, premier essai de l'owner).
+    #
+    # On retient celui qui est CONNECTÉ, pas le premier attribut trouvé : c'est
+    # un salon vocal actif qu'on cherche, et la question se pose à l'identique
+    # des deux côtés.
+    service = next(
+        (s for s in (getattr(bot, "voice_service", None),
+                     getattr(getattr(bot, "discord_bot", None), "voice_service", None))
+         if s is not None and getattr(s, "is_connected", False)),
+        None,
+    )
+    if service is None:
         return ("Impossible : tu n'es pas dans un salon vocal en ce moment. "
                 "Dis-le à la personne.")
     try:

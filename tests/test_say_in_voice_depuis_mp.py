@@ -71,11 +71,17 @@ def test_un_admin_de_GUILDE_garde_son_droit():
 # ── le pouvoir lui-même ────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_l_owner_fait_VRAIMENT_parler_wally_depuis_un_MP():
+    # Sur le chemin DISCORD, `bot` EST le bot Discord : il porte `voice_service`
+    # directement. `bot.discord_bot` est la référence CROISÉE, qui n'existe que
+    # sur le bot Twitch. Poser `discord_bot` ici calquerait le chemin Twitch et
+    # figerait le défaut vécu le 2026-08-25 — « je ne suis plus dans le salon
+    # vocal » répondu alors que Wally y était.
     bot = _bot(owner="42")
     service = MagicMock()
     service.is_connected = True
     service.speak = AsyncMock(return_value="Salut à tous")
-    bot.discord_bot = SimpleNamespace(voice_service=service)
+    bot.voice_service = service
+    bot.discord_bot = None
 
     rendu = await run_say_in_voice_tool(
         bot, {"text": "Salut à tous"},
@@ -95,7 +101,8 @@ async def test_un_inconnu_en_MP_se_fait_refuser():
     service = MagicMock()
     service.is_connected = True
     service.speak = AsyncMock(return_value="x")
-    bot.discord_bot = SimpleNamespace(voice_service=service)
+    bot.voice_service = service
+    bot.discord_bot = None
 
     rendu = await run_say_in_voice_tool(
         bot, {"text": "coucou"},
@@ -103,3 +110,48 @@ async def test_un_inconnu_en_MP_se_fait_refuser():
 
     assert not service.speak.called, "un inconnu a fait parler Wally en vocal"
     assert rendu.startswith("Refusé")
+
+
+@pytest.mark.asyncio
+async def test_le_service_vocal_est_trouve_DES_DEUX_COTES():
+    """Vécu le 2026-08-25 : « je ne suis plus dans le salon vocal actuellement »,
+    alors que Wally y était bel et bien.
+
+    `run_say_in_voice_tool` ne cherchait le service que sur `bot.discord_bot` —
+    la référence CROISÉE, posée sur le bot TWITCH. Depuis un MP Discord, `bot`
+    est déjà le bot Discord : la recherche rendait None et l'outil répondait
+    qu'il n'était dans aucun salon. Même patron que `_overlay_narrator`, qui
+    cherche des deux côtés depuis toujours.
+    """
+    service = MagicMock()
+    service.is_connected = True
+    service.speak = AsyncMock(return_value="dit")
+
+    # Chemin DISCORD : le service est posé directement sur le bot.
+    cote_discord = _bot(owner="42")
+    cote_discord.voice_service = service
+    cote_discord.discord_bot = None
+    rendu = await run_say_in_voice_tool(
+        cote_discord, {"text": "coucou"}, roles=["admin"], maison=True)
+    assert "à voix haute" in rendu, (
+        "depuis Discord, Wally se croit hors du salon alors qu'il y est"
+    )
+
+    # Chemin TWITCH : le service est derrière la référence croisée.
+    cote_twitch = _bot(owner="42")
+    cote_twitch.voice_service = None
+    cote_twitch.discord_bot = SimpleNamespace(voice_service=service)
+    rendu = await run_say_in_voice_tool(
+        cote_twitch, {"text": "coucou"}, roles=["moderator"], maison=True)
+    assert "à voix haute" in rendu
+
+
+@pytest.mark.asyncio
+async def test_hors_salon_le_refus_reste():
+    """La garde doit continuer de mordre quand il n'est VRAIMENT nulle part."""
+    bot = _bot(owner="42")
+    bot.voice_service = None
+    bot.discord_bot = None
+    rendu = await run_say_in_voice_tool(
+        bot, {"text": "coucou"}, roles=["admin"], maison=True)
+    assert "Impossible" in rendu

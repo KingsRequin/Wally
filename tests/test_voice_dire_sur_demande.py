@@ -178,6 +178,10 @@ def _bot_twitch(*, en_vocal=True):
     bot.tally = bot.predictions = bot.quotes = MagicMock()
     service = MagicMock()
     service.is_connected = en_vocal
+    # `WallyTwitch` n'a PAS de `voice_service` en propre — il n'existe que sur
+    # `WallyDiscord`, d'où la référence croisée. `MagicMock` fabriquerait
+    # l'attribut à la volée et masquerait le vrai chemin.
+    bot.voice_service = None
     bot.discord_bot = SimpleNamespace(voice_service=service, overlay_narrator=None)
     return bot
 
