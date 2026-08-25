@@ -1393,9 +1393,21 @@
       top: 50%; left: 50%;
       width: 130vmax; height: 130vmax;
       margin: -65vmax 0 0 -65vmax;
+      /* Des bords FONDUS. Vu à l'écran avec des arrêts francs : ce ne sont
+         pas des projecteurs mais des parts de camembert opaques, et elles
+         mangent le jeu au lieu de l'éclairer. Chaque faisceau naît de rien,
+         culmine, et se rend à rien. */
       background: repeating-conic-gradient(from 0deg,
-        rgba(255, 209, 102, .2) 0deg 6deg,
-        transparent 6deg 30deg);
+        transparent 0deg,
+        rgba(255, 209, 102, .14) 5deg,
+        transparent 10deg,
+        transparent 36deg);
+      /* Les projecteurs viennent de HORS CADRE : au centre, là où la carte
+         porte le nom, ils s'éteignent. Sans ce masque, les dix faisceaux
+         convergent exactement sur le texte — le point le plus lumineux de
+         l'écran tombait sur la seule chose à lire. */
+      -webkit-mask-image: radial-gradient(circle, transparent 18%, #000 42%);
+      mask-image: radial-gradient(circle, transparent 18%, #000 42%);
       /* `screen` : de la lumière ADDITIVE là où les faisceaux croisent le
          flash et la vignette — sans quoi trois voiles dorés s'empilent et
          ternissent au lieu d'éclairer. Le blend ne va PAS au-delà de cette
@@ -1408,7 +1420,7 @@
     .raid-vignette {
       position: absolute; inset: 0; opacity: 0;
       background: radial-gradient(ellipse at 50% 50%,
-        transparent 40%, rgba(255, 209, 102, .34) 100%);
+        transparent 40%, rgba(255, 209, 102, .28) 100%);
       animation: raid-vignette 4.2s ease-in-out;
     }
     @keyframes raid-flash {
@@ -1418,8 +1430,8 @@
     }
     @keyframes raid-faisceaux {
       0%   { opacity: 0;   transform: rotate(0deg); }
-      7%   { opacity: .9; }
-      68%  { opacity: .5; }
+      7%   { opacity: .62; }
+      68%  { opacity: .34; }
       100% { opacity: 0;   transform: rotate(155deg); }
     }
     @keyframes raid-vignette {
