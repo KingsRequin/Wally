@@ -53,3 +53,6 @@ data/
 
 # Rapport de couverture (scripts/… --cov)
 .coverage
+
+# Copie de travail de mutmut (scripts/mutation.py) — jetable, régénérée à chaque passe.
+mutants/
