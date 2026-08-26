@@ -310,3 +310,31 @@ def test_la_defaite_leve_le_filet():
 
     assert n._hangman is None
     assert redact("le mot est fusee") == "le mot est fusee"
+
+
+def test_le_nombre_de_lettres_annonce_est_celui_du_mot():
+    """« N lettres à deviner » doit compter les emplacements, pas les lettres
+    distinctes — l'overlay dessine un slot par caractère, et le chat les voit.
+
+    Onze annonces sur quinze étaient fausses en juillet-août 2026 : le narrateur
+    rendait `len(set(...))`, donc « replicator » s'annonçait à 9 devant 10 tirets.
+    """
+    n, feed = _n()
+    shown = n.show_widget("hangman", word="replicator", hint="on y craft",
+                          sollicite=True)
+    assert shown is not None
+    assert shown["letters"] == 10
+
+    q = feed.subscribe()
+    n.show_widget("hangman", sollicite=True)      # « remontre le pendu »
+    ev = _events(q)[-1]
+    assert len(ev["params"]["mask"]) == 10        # autant de slots que d'annonce
+
+
+def test_les_lettres_repetees_et_les_espaces_sont_comptes_juste():
+    """« knuckle cluster » : 9 lettres distinctes, 14 emplacements alphabétiques."""
+    n, _ = _n()
+    shown = n.show_widget("hangman", word="knuckle cluster", hint="Apex",
+                          sollicite=True)
+    assert shown is not None
+    assert shown["letters"] == 14

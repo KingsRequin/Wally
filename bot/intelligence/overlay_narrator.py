@@ -72,6 +72,22 @@ def _vocal_diffuse() -> bool:
         return False
 
 
+def _compte_lettres(mot: str) -> int:
+    """Le nombre de lettres du mot — pas celui des lettres DISTINCTES.
+
+    C'est ce chiffre que Wally annonce au chat (« N lettres à deviner »), et
+    c'est le nombre d'emplacements que l'overlay dessine : un `slot` par
+    caractère du masque. Le décompte des lettres distinctes a sa place, mais
+    ailleurs — dans `_hangman_context`, où « il reste N lettres à trouver »
+    parle bien des propositions restantes, pas des cases.
+
+    Compté sur 15 annonces de juillet-août 2026 : 11 étaient fausses, toujours
+    trop basses, parce que ce site rendait des lettres distinctes. « replicator »
+    s'annonçait à 9 devant 10 tirets ; « KNUCKLE CLUSTER », à 9 devant 14.
+    """
+    return sum(1 for c in mot if c.isalpha())
+
+
 def ouverture_de_partie(widget: str, **extra) -> str | None:
     """Le nom de la partie que cet appel OUVRIRAIT, ou None.
 
@@ -1726,12 +1742,12 @@ class OverlayNarrator:
                 if not self._hangman:
                     return None
                 self._publish_hangman()
-                return {"widget": "hangman", "letters": len(set(
-                    c for c in self._hangman["word"] if c.isalpha()))}
+                return {"widget": "hangman", "letters": _compte_lettres(
+                    self._hangman["word"])}
             if not self.start_hangman(mot, str(extra.get("hint") or comment or "")):
                 return None
-            return {"widget": "hangman", "letters": len(set(
-                c for c in self._fold(mot) if c.isalpha()))}
+            return {"widget": "hangman", "letters": _compte_lettres(
+                self._fold(mot))}
 
         elif widget == "rps":
             # Un duel tranché sur-le-champ. Le chat votait quinze secondes et
@@ -2907,7 +2923,7 @@ class OverlayNarrator:
         # levé sont deux clés différentes, et le `pop()` échouait sans un bruit.
         guard_secret(self._hangman["display"])
         self._publish_hangman()
-        logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(set(letters)))
+        logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(letters))
         self._planifier_flush()
         return True
 
