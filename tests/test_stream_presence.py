@@ -257,3 +257,57 @@ async def test_le_veilleur_dit_UNE_fois_qu_il_est_arme():
 
     armes = [v for v in vues if "veilleur de stream armé" in v]
     assert len(armes) == 1, f"attendu 1 ligne, vu {len(armes)}"
+
+
+# ── le log doit distinguer le NORMAL du SUSPECT ────────────────────────
+#
+# `voice: live en cours sans Wally → retour en écoute` sortait 31 fois en sept
+# jours. Mesuré : 27 suivaient un démarrage de moins de trois minutes — les
+# rebuilds de l'owner, où aucune transition n'a pu être émise pendant que le bot
+# était éteint. C'est le fonctionnement NORMAL du filet.
+#
+# Les 4 autres sont le vrai signal — Wally sorti d'un salon en plein live sans
+# que personne sache comment — et ils étaient noyés dans les 27. Un log qui crie
+# tout le temps ne dit plus rien.
+async def _un_tour_en_ecoutant(p, *, age_du_bot_s):
+    """Joue un tour et rend (messages, niveaux). Loguru n'passe pas par `caplog`."""
+    import time
+
+    from loguru import logger
+
+    vues = []
+    sink = logger.add(lambda m: vues.append((m.record["level"].name,
+                                             m.record["message"])), level="INFO")
+    try:
+        p._premier_tour = False
+        p._ne_le = time.monotonic() - age_du_bot_s
+        await p.un_tour()
+    finally:
+        logger.remove(sink)
+    return vues
+
+
+@pytest.mark.asyncio
+async def test_le_retour_juste_apres_un_demarrage_est_attendu():
+    p, vs, _transcript = _presence(connecte=False)
+    p._watcher = MagicMock(status=dict(ON))
+
+    vues = await _un_tour_en_ecoutant(p, age_du_bot_s=5)
+
+    messages = " ".join(m for _n, m in vues)
+    assert "après redémarrage" in messages, messages
+    assert not [n for n, _m in vues if n == "WARNING"], vues
+    vs.join.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_une_sortie_SANS_redemarrage_est_un_avertissement():
+    p, vs, _transcript = _presence(connecte=False)
+    p._watcher = MagicMock(status=dict(ON))
+
+    vues = await _un_tour_en_ecoutant(p, age_du_bot_s=3600)
+
+    avertis = [m for n, m in vues if n == "WARNING"]
+    assert avertis, f"une sortie inexpliquée doit se voir : {vues}"
+    assert "sans redémarrage" in " ".join(avertis)
+    vs.join.assert_awaited_once()

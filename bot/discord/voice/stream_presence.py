@@ -28,6 +28,7 @@ Deux chemins mènent au même endroit, et c'est voulu :
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -38,6 +39,16 @@ if TYPE_CHECKING:
 # Le rythme du filet. Assez court pour qu'un retour après crash ne coûte pas un
 # quart de live, assez long pour ne pas marteler l'API Discord.
 _PERIODE_S = 30.0
+
+# En deçà, un retour en écoute s'explique par le redémarrage qui vient d'avoir
+# lieu : aucune transition n'a été émise pendant que le bot était éteint, donc
+# c'est au filet de le faire rentrer. C'est le fonctionnement NORMAL.
+#
+# Mesuré sur 7 jours : 27 des 31 retours suivaient un démarrage de moins de
+# trois minutes — la plupart des rebuilds de l'owner. Les 4 autres sont le vrai
+# signal, et ils étaient noyés dans les 27. Un log qui crie tout le temps ne dit
+# plus rien.
+_APRES_DEMARRAGE_S = 180.0
 
 
 class PresenceDeStream:
@@ -66,6 +77,9 @@ class PresenceDeStream:
         # avant la fin du join.
         self._taches: set[asyncio.Task] = set()
         self._premier_tour = True
+        # L'instant de naissance de cet objet vaut celui du démarrage : il est
+        # construit au boot, dans `main()`.
+        self._ne_le = time.monotonic()
 
     def brancher_watcher(self, stream_watcher: Any) -> None:
         self._watcher = stream_watcher
@@ -185,7 +199,20 @@ class PresenceDeStream:
                 return
             if salon is None:
                 return          # rien de joignable : déjà signalé par la résolution
-            logger.info("voice: live en cours sans Wally → retour en écoute")
+            # DIRE POURQUOI. Après un redémarrage, c'est attendu — le filet
+            # existe pour ça. Sans redémarrage, Wally est sorti d'un salon en
+            # plein live sans que personne sache comment : ça mérite un
+            # WARNING, et c'est ce qu'on veut pouvoir retrouver.
+            depuis_demarrage = time.monotonic() - self._ne_le
+            if depuis_demarrage <= _APRES_DEMARRAGE_S:
+                logger.info("voice: retour en écoute après redémarrage "
+                            "({d:.0f} s) — le filet a fait son travail",
+                            d=depuis_demarrage)
+            else:
+                logger.warning("voice: Wally était SORTI du vocal en plein live, "
+                               "sans redémarrage ({d:.0f} min de fonctionnement) "
+                               "— retour en écoute",
+                               d=depuis_demarrage / 60)
             await vs.join(salon, listen_only=True, only_if_free=True)
         except Exception as e:  # noqa: BLE001 — jamais bloquant
             logger.warning("voice: veilleur de stream en erreur: {e!r}", e=e)
