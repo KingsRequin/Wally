@@ -2107,6 +2107,10 @@
       MEDIA_H = Math.max(80, zone[1] - CADRE_MARGE);
       cadre.style.setProperty("--rotateur-zone-l", zone[0] + "px");
       cadre.style.setProperty("--rotateur-zone-h", zone[1] + "px");
+      // La borne du média part avec : le cadre épouse désormais l'image, donc
+      // le CSS ne peut plus la borner par un pourcentage de son parent.
+      cadre.style.setProperty("--rotateur-media-l", MEDIA_L + "px");
+      cadre.style.setProperty("--rotateur-media-h", MEDIA_H + "px");
     }
     poserZone();
 

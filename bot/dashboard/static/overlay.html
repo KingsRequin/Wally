@@ -1652,9 +1652,17 @@
        parlaient pas. Le rectangle qu'on manipulait faisait trois fois et demie
        la surface du meme qui s'affichait. Les dimensions viennent maintenant de
        `WallyLayout.taille("meme")`, posées par `overlay.js`. */
+    /* 2026-08-26, demande de l'owner : le cadre ÉPOUSE le meme, il ne l'encadre
+       plus dans un rectangle imposé — « juste une bordure autour des memes ».
+       La zone de la table reste la BORNE, elle cesse d'être la taille : le
+       repère du panneau annonce toujours un rectangle vrai (celui que le meme
+       ne dépassera pas), et il n'y a plus de passe-partout autour d'un carré
+       posé sur une image en 16/9. `fit-content` fait tenir les deux. */
     .meme {
-      width: var(--meme-zone-l, 400px);
-      height: var(--meme-zone-h, 400px);
+      width: fit-content;
+      height: fit-content;
+      max-width: var(--meme-zone-l, 400px);
+      max-height: var(--meme-zone-h, 400px);
       box-sizing: border-box;
       display: flex;
       align-items: center;
@@ -1664,10 +1672,14 @@
       border: 1px solid var(--line);
       border-radius: var(--r-md);
     }
+    /* Borné par la ZONE, pas par `100 %` : le conteneur tient désormais sa
+       taille de l'image, et une image bornée à « 100 % de ce qu'elle mesure »
+       ne serait bornée par rien. Les 18 px retranchés sont le padding (8 × 2)
+       et la bordure (1 × 2), que `border-box` compte dans le maximum. */
     .meme img {
       display: block;
-      max-width: 100%;
-      max-height: 100%;
+      max-width: calc(var(--meme-zone-l, 400px) - 18px);
+      max-height: calc(var(--meme-zone-h, 400px) - 18px);
       width: auto; height: auto;
       object-fit: contain;
       border-radius: var(--r-sm);
@@ -1929,17 +1941,22 @@
        un overlay noir ça fait une dalle plus lumineuse que le reste de l'écran.
        Le liseré casse le contact entre ce blanc et la bordure orange. */
     .rotateur {
-      /* LA BOÎTE EST IMPOSÉE, elle n'épouse plus le média. Auparavant le cadre
-         prenait la taille du meme affiché : l'encombrement changeait à chaque
-         rotation, et le repère du panneau — qui doit bien annoncer UN rectangle
-         — ne pouvait qu'avoir tort. Les dimensions viennent de
-         `WallyLayout.taille("rotator")`, posées par `overlay.js` : le repère et
-         le rendu lisent le même chiffre.
-         Le prix, assumé : un meme très allongé ou très haut laisse du
-         passe-partout sur les côtés. C'est le fond sombre déjà là, et le cadre
-         cesse de sauter d'une taille à l'autre toutes les quelques secondes. */
-      width: var(--rotateur-zone-l, 400px);
-      height: var(--rotateur-zone-h, 400px);
+      /* LA BOÎTE ÉPOUSE LE MÉDIA, dans la limite de la zone (2026-08-26,
+         demande de l'owner). Elle a d'abord épousé le média, puis été imposée
+         parce que le repère du panneau — qui doit bien annoncer UN rectangle —
+         ne pouvait qu'avoir tort face à un cadre qui changeait à chaque
+         rotation ; le prix était du passe-partout sombre autour de tout meme
+         qui n'avait pas le format de la zone, et c'est ce que l'owner voit à
+         l'antenne.
+         Les deux tiennent si la zone cesse d'être la TAILLE pour devenir la
+         BORNE : le repère annonce le rectangle que le meme ne dépassera pas,
+         et le cadre s'arrête au bord de l'image. Les chiffres viennent
+         toujours de `WallyLayout.taille("rotator")` — repère et rendu lisent
+         le même. */
+      width: fit-content;
+      height: fit-content;
+      max-width: var(--rotateur-zone-l, 400px);
+      max-height: var(--rotateur-zone-h, 400px);
       box-sizing: border-box;
       display: flex;
       align-items: center;
@@ -1971,8 +1988,13 @@
        les étirer à la boîte coûte que coûte les ferait baver. */
     .rotateur img, .rotateur video {
       display: block;
-      max-width: 100%;
-      max-height: 100%;
+      /* Borné par la zone MOINS le cadre, pas par `100 %` : depuis que la
+         boîte épouse le média, « 100 % » vaudrait « 100 % de ce que je
+         mesure » — une borne qui ne borne rien, et le meme sortirait de la
+         source. `--rotateur-media-*` porte le même `zone − CADRE_MARGE` que
+         le JS applique à l'agrandissement : un seul chiffre pour les deux. */
+      max-width: var(--rotateur-media-l, 366px);
+      max-height: var(--rotateur-media-h, 366px);
       width: auto; height: auto;
       object-fit: contain;
       border-radius: var(--r-sm);
