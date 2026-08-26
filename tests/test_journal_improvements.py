@@ -271,8 +271,11 @@ async def test_journal_injects_stats_and_length_guidance(tmp_path):
     # Insert a peak
     await db_inst.insert_emotion_peak(now, "joy", 0.85, "Alice", "LOL", "ch1", "discord")
     # Insert yesterday's journal
-    from datetime import date, timedelta
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    from datetime import timedelta
+    # Hier SELON PARIS, comme le journal : `date.today()` suit l'horloge
+    # machine (UTC ici), et deux heures par nuit son « hier » est
+    # l'avant-veille parisienne. Même recette que plus bas dans ce fichier.
+    yesterday = (DailyJournal._today_date() - timedelta(days=1)).isoformat()
     await db_inst.insert_journal(yesterday, "Journal d'hier : tout était calme.", 6)
 
     config = MagicMock()

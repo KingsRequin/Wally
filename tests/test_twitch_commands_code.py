@@ -1,8 +1,13 @@
 # tests/test_twitch_commands_code.py
 import json
 import pytest
-from datetime import date
 from unittest.mock import MagicMock, AsyncMock, patch
+
+# La date de PARIS, comme le code testé — pas `aujourdhui()`, qui suit
+# l'horloge machine. L'hôte est en UTC : entre minuit et 02 h heure locale, les
+# deux divergent d'un jour et le test aurait échoué une nuit sur deux, sans
+# qu'aucune ligne de production n'ait bougé.
+from bot.core.temps import aujourdhui
 
 
 def make_bot(note_value=None):
@@ -58,7 +63,7 @@ async def test_code_no_code_set_shows_no_code_message():
 async def test_code_displays_code_with_reminder():
     """!code avec code défini → affiche le code + le RAPPEL."""
     from bot.twitch.commands.code import handle_code_command
-    today = str(date.today())
+    today = str(aujourdhui())
     saved = json.dumps({"code": "ABC123", "date": today})
     bot = make_bot(note_value=saved)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
@@ -118,14 +123,14 @@ async def test_code_resets_if_date_changed():
     bot.db.upsert_persistent_note.assert_awaited_once()
     saved = json.loads(bot.db.upsert_persistent_note.call_args.args[1])
     assert saved["code"] is None
-    assert saved["date"] == str(date.today())
+    assert saved["date"] == str(aujourdhui())
 
 
 @pytest.mark.asyncio
 async def test_code_loaded_from_db_on_first_access():
     """Au premier accès, le code est chargé depuis la DB."""
     from bot.twitch.commands.code import handle_code_command
-    today = str(date.today())
+    today = str(aujourdhui())
     saved = json.dumps({"code": "DBCODE", "date": today})
     bot = make_bot(note_value=saved)
     await handle_code_command(bot, "newchannel", "viewer1", "", [])
@@ -138,7 +143,7 @@ async def test_code_loaded_from_db_on_first_access():
 async def test_code_not_reloaded_from_db_on_second_call():
     """Au deuxième appel, la DB n'est plus consultée (cache mémoire)."""
     from bot.twitch.commands.code import handle_code_command
-    today = str(date.today())
+    today = str(aujourdhui())
     saved = json.dumps({"code": "CACHED", "date": today})
     bot = make_bot(note_value=saved)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
