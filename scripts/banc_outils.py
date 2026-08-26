@@ -51,6 +51,24 @@ itérations du client : un cas coûte ici trois à quatre allers-retours là où
 prod en fait un. Le CHOIX d'outil, lui, se lit dès le premier appel et reste
 mesuré juste.
 
+Ce que le banc a répondu, le 2026-08-26
+--------------------------------------
+Sur gpt-5.6-luna, 30 cas × 3 tours × 2 variantes :
+
+    COMPLET (24 outils)   100,0 %   demandes d'action 54/54   conversation 36/36
+    RÉDUIT  (10 outils)    98,9 %   demandes d'action 53/54   conversation 36/36
+
+L'hypothèse est RÉFUTÉE, et pas de justesse : le catalogue complet fait un
+sans-faute, et zéro outil n'est parti sur les trente-six conversations pures.
+Le seuil « 15-20 outils » des benchmarks publics ne se transpose PAS ici — sans
+doute parce que les vingt-quatre outils de Wally couvrent des domaines nettement
+séparés (Apex, overlay, musique, mémoire, web), là où les suites de test
+alignent des outils volontairement confusables.
+
+Conclusion pratique : ne pas engager de chantier de réduction du catalogue. Les
+8 400 tokens de specs coûtent du contexte, pas de la justesse. Si le sujet
+revient, relancer ce banc avant d'y croire — c'est précisément à ça qu'il sert.
+
 Usage :
     python3 scripts/banc_outils.py                    # les deux variantes, 2 tours
     python3 scripts/banc_outils.py --tours 3
@@ -211,15 +229,23 @@ def _poids(tools: list[dict]) -> int:
 # Un extrait de chat réel : sans lui, le prompt tomberait à ~5 000 tokens et le
 # banc mesurerait la surcharge d'outils dans des conditions que Wally ne connaît
 # jamais. Le volume de contexte fait partie du phénomène qu'on teste.
+#
+# ⚠️ Aucune QUESTION EN SUSPENS ici, et ce n'est pas un détail de rédaction.
+# Le premier jet en portait trois, dont « il est cb de kill le chef ce matin ? ».
+# Wally y répondait — correctement — en appelant `apex_legends`, et le banc
+# comptait onze « outil appelé à tort » sur des cas où le message testé était
+# « LUL » ou « coucou ». Onze faux positifs qui accusaient Wally d'un réflexe
+# qu'il n'a pas. Un prélude qui appelle une action fait de CHAQUE cas négatif un
+# cas positif déguisé.
 PRELUDE = [
     "damprod974: oui oui mais controle je priorise les bâtiments",
-    "toineleviking: dit moi il est cb de kill le chef ce matin ?",
     "semydoo: Yep en tout cas passe un bon stream",
     "clakernojutsu: bonjour à toi aussi aufaite",
-    "salah1005: mon petit chaton, comment va tes ventilateurs ?",
     "kingsrequin: la prochaine fois que tu m'appelles petit chevreuil je te débranche",
     "mks_zedd: t'es un amour quand tu veux LUL",
-    "malef__: wally c'est qui le petit chevreuil ?",
+    "toineleviking: ah ouais quand même, il l'a bien eu celui-là",
+    "salah1005: bon je retourne bosser, bon stream à tous",
+    "malef__: mdr le timing était parfait",
 ]
 
 

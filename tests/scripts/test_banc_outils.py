@@ -93,3 +93,21 @@ def test_verdict_distingue_les_quatre_issues():
 def test_un_outil_attendu_parmi_plusieurs_appels_compte_juste():
     """Wally enchaîne lecture puis affichage : le trouver dans la séquence suffit."""
     assert _verdict(_tour({"show_apex"}, ["apex_legends", "show_apex"])) == "juste"
+
+
+def test_le_prelude_ne_pose_aucune_question():
+    """Une question en suspens dans le prélude invalide TOUS les cas négatifs.
+
+    Payé une fois : le premier prélude portait « il est cb de kill le chef ce
+    matin ? ». Wally y répondait en appelant `apex_legends` — correctement — et
+    le banc comptait onze « outil appelé à tort » sur des cas où le message
+    testé était « LUL » ou « coucou ». Le verdict accusait Wally d'un réflexe
+    qu'il n'a pas.
+    """
+    from scripts.banc_outils import PRELUDE
+
+    fautives = [ligne for ligne in PRELUDE if "?" in ligne]
+    assert not fautives, (
+        f"Le prélude pose une question : {fautives}. Wally y répondra, et "
+        "chaque cas négatif comptera un faux appel qui n'en est pas un."
+    )
