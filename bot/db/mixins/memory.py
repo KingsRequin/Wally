@@ -6,6 +6,8 @@ from datetime import datetime
 import aiosqlite
 from loguru import logger
 
+from bot.core.surnoms import expurger
+
 
 class MemoryMixin:
     _conn: aiosqlite.Connection
@@ -432,7 +434,7 @@ class MemoryMixin:
             "INSERT INTO user_profiles(user_id, portrait, updated_at) VALUES(?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET "
             "portrait=excluded.portrait, updated_at=excluded.updated_at",
-            (user_id, portrait, datetime.utcnow().isoformat()),
+            (user_id, expurger(portrait), datetime.utcnow().isoformat()),
         )
 
     async def get_user_profile(self, user_id: str) -> str | None:

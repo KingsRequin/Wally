@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from bot.core.surnoms import REFUS, detecter
+from bot.core.surnoms import REFUS, detecter, expurger
 
 
 # ── ce qui doit être REFUSÉ (lignes réelles de la base) ────────────────
@@ -249,3 +249,75 @@ async def test_un_champ_manquant_rend_une_erreur_DITE():
 
     assert rendu["status"] == "error"
     assert db.ecrites == []
+
+
+# ── la PROSE relue vers le prompt ──────────────────────────────────────
+def test_expurger_retire_la_phrase_fautive_et_garde_le_reste():
+    """Phrase à phrase, jamais tout ou rien.
+
+    Un résumé de journée qui mentionne un surnom au milieu de dix autres
+    choses ne doit pas disparaître en entier : on perdrait la mémoire de la
+    journée pour une incise.
+    """
+    texte = (
+        "clakernojutsu a salué le retour de Wally après son absence. "
+        "Le surnom 'petit chevreuil' a provoqué une réaction de KingsRequin. "
+        "L'ambiance est restée bon enfant."
+    )
+    neuf = expurger(texte)
+
+    assert "chevreuil" not in neuf
+    assert "clakernojutsu a salué le retour" in neuf
+    assert "L'ambiance est restée bon enfant" in neuf
+
+
+def test_expurger_ne_touche_pas_un_texte_sain():
+    """L'identité stricte : rien à réécrire, rien de réécrit."""
+    texte = "Azraël stream le matin. Il joue Fuse et Seer."
+    assert expurger(texte) == texte
+
+
+def test_expurger_encaisse_le_vide():
+    assert expurger("") == ""
+    assert expurger(None) == ""
+
+
+@pytest.mark.asyncio
+async def test_la_passe_de_21h_ne_peut_pas_REINTRODUIRE_un_surnom(tmp_path):
+    """Le chat BRUT (`daily_log`) garde le surnom — c'est ce que les gens ont dit.
+
+    `_form_topics` et le résumé de session le relisent chaque soir. Sans garde
+    au point d'écriture, la passe de 21 h réécrirait le soir même ce que la
+    purge venait d'effacer, et personne ne le verrait avant le live suivant.
+    """
+    from bot.db.database import Database
+    from bot.db.schema_v2 import create_v2_tables
+
+    chemin = str(tmp_path / "p.db")
+    await create_v2_tables(chemin)
+    db = await Database.create(chemin)
+    try:
+        sale = ("Grosse ambiance ce soir. "
+                "Wally confirme que le surnom de KingsRequin est 'petit chevreuil'. "
+                "On a fini sur un sondage.")
+
+        await db.upsert_topic("soirée", sale, [], "Bonne soirée.")
+        await db.insert_session_analysis("s1", "twitch", "c1", sale)
+        await db.upsert_user_profile("twitch:1", sale)
+
+        # Deux fois : la seconde passe par la branche UPDATE d'`upsert_topic`,
+        # qui est un point d'écriture À PART — le test l'a attrapée à vide.
+        await db.upsert_topic("soirée", sale, [], "Bonne soirée.")
+
+        topics = await db.get_topics(limit=5)
+        assert "chevreuil" not in topics[0]["summary"]
+        assert "Grosse ambiance ce soir" in topics[0]["summary"]
+
+        resumes = await db.get_recent_session_summaries("twitch", "c1")
+        assert "chevreuil" not in resumes[0]["summary"]
+
+        portrait = await db.get_user_profile("twitch:1")
+        assert "chevreuil" not in portrait
+        assert "On a fini sur un sondage" in portrait
+    finally:
+        await db.close()

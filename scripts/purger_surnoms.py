@@ -50,14 +50,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bot.core.surnoms import SUJET_EXEMPT, detecter  # noqa: E402
+from bot.core.surnoms import PHRASES, SUJET_EXEMPT, detecter  # noqa: E402
 
 BASE = Path(__file__).resolve().parent.parent / "data" / "wally.db"
-
-# Une phrase se termine par un point, un point-virgule ou un retour à la ligne.
-# Les portraits sont rédigés en prose : découper plus fin couperait au milieu
-# d'une énumération et rendrait le texte incompréhensible.
-_PHRASE = re.compile(r"[^.;\n]+[.;\n]?")
 
 # Les gisements de PROSE relue vers le prompt : (table, clé, colonnes).
 # `topics` part dans les deux handlers (`get_topics(limit=5)`),
@@ -86,7 +81,7 @@ def _faiseur(expression: str):
 
 
 def _phrases_fautives(texte: str, fautif) -> list[str]:
-    return [p for p in _PHRASE.findall(texte or "") if p.strip() and fautif(p)]
+    return [p for p in PHRASES.findall(texte or "") if p.strip() and fautif(p)]
 
 
 def _nettoyer(texte: str, fautives: list[str]) -> str:

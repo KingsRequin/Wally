@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import aiosqlite
 from loguru import logger
 
+from bot.core.surnoms import expurger
+
 _TZ_DB = ZoneInfo("Europe/Paris")
 
 
@@ -145,8 +147,8 @@ class SocialMixin:
             await self.execute(
                 "INSERT INTO topics (name, summary, participants, opinion, "
                 "mention_count, last_seen_at, created_at) VALUES (?,?,?,?,?,?,?)",
-                (name, summary, json.dumps(participants, ensure_ascii=False),
-                 opinion, 1, now, now),
+                (name, expurger(summary), json.dumps(participants, ensure_ascii=False),
+                 expurger(opinion), 1, now, now),
             )
             return
         existing = json.loads(row["participants"] or "[]")
@@ -158,8 +160,8 @@ class SocialMixin:
         await self.execute(
             "UPDATE topics SET summary=?, participants=?, opinion=?, "
             "mention_count=mention_count+1, last_seen_at=? WHERE id=?",
-            (summary, json.dumps(list(merged.values()), ensure_ascii=False),
-             opinion, now, row["id"]),
+            (expurger(summary), json.dumps(list(merged.values()), ensure_ascii=False),
+             expurger(opinion), now, row["id"]),
         )
 
     async def get_topics(self, limit: int = 10) -> list[dict]:
@@ -415,7 +417,7 @@ class SocialMixin:
             "INSERT INTO session_analyses "
             "(session_id, platform, channel_id, summary, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (session_id, platform, channel_id, summary, str(time.time())),
+            (session_id, platform, channel_id, expurger(summary), str(time.time())),
         )
 
     async def get_recent_session_summaries(

@@ -92,6 +92,41 @@ def detecter(texte: str, user_id: str | None = None) -> str | None:
     return None
 
 
+# Une phrase se termine par un point, un point-virgule ou un retour à la ligne.
+# Portraits et résumés sont rédigés en prose : découper plus fin couperait au
+# milieu d'une énumération et rendrait le texte incompréhensible.
+PHRASES = re.compile(r"[^.;\n]+[.;\n]?")
+
+
+def expurger(texte: str | None) -> str:
+    """Rend `texte` sans les phrases qui enseignent un surnom.
+
+    `detecter()` tranche une écriture COURTE — un fait, une note. La prose
+    relue vers le prompt (portraits, topics, résumés de session) est écrite
+    d'un bloc par le LLM à partir du chat BRUT, qui garde le surnom pour
+    toujours : c'est ce que les gens ont dit, et on ne réécrit pas leurs
+    propos. Sans garde ici, la passe de 21 h réécrirait le soir même ce qu'une
+    purge vient d'effacer — et rien ne le signalerait avant le live suivant.
+
+    Phrase à phrase, et non tout ou rien : un résumé de journée qui mentionne
+    un surnom au milieu de dix autres choses doit perdre l'incise, pas la
+    journée.
+    """
+    if not texte:
+        return ""
+    fautives = [p for p in PHRASES.findall(texte) if p.strip() and detecter(p, None)]
+    if not fautives:
+        # L'identité stricte : un texte sain ressort tel quel, sans le
+        # recollage d'espaces ci-dessous qui le modifierait pour rien.
+        return texte
+    neuf = texte
+    for phrase in fautives:
+        neuf = neuf.replace(phrase, " ")
+    # Espaces et ponctuation orpheline laissés par le retrait.
+    neuf = re.sub(r"\s{2,}", " ", neuf)
+    return re.sub(r"\s+([,.;])", r"\1", neuf).strip()
+
+
 # Ce que Wally répond quand on lui DEMANDE d'adopter un surnom. Le refus
 # ORIENTE au lieu de claquer la porte : la personne qui propose « appelle-moi
 # Tempo » ne tente rien de louche, elle ignore juste la règle.
