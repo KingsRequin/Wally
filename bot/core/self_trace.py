@@ -156,11 +156,6 @@ class SelfTrace:
 _TRACE = SelfTrace()
 
 
-def active_self_trace() -> SelfTrace:
-    """La trace du processus."""
-    return _TRACE
-
-
 def reset_self_trace() -> None:
     """Vide la trace (tests)."""
     _TRACE._acts.clear()

@@ -138,11 +138,9 @@ class MemoryIngest:
         self,
         store: SQLiteFactStore,
         llm,
-        name_hint: str | None = None,
     ) -> None:
         self._store = store
         self._llm = llm
-        self._name_hint = name_hint
         self._extract_system = _load_prompt("memory_extract.md", _EXTRACT_FALLBACK)
         self._arbiter_system = _load_prompt("memory_arbiter.md", _ARBITER_FALLBACK)
         self.arbiter_calls = 0

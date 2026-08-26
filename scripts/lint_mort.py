@@ -77,6 +77,9 @@ _APPELES_PAR_UNE_LIB = (
     "do_GET", "do_POST", "log_message",   # http.server.BaseHTTPRequestHandler
     "row_factory",     # sqlite3 : posé, jamais relu par nous
     "should_exit",     # uvicorn
+    "__getattr__",     # PEP 562 : import paresseux de module, appelé par Python
+    "wants_opus",      # abstractmethod de `voice_recv.AudioSink` — la retirer
+                       # rendrait la classe non instanciable et couperait le vocal
 )
 
 # Même aveuglement, autre forme : une fonction DÉCORÉE est enregistrée auprès

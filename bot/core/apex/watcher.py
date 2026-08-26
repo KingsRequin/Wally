@@ -42,8 +42,6 @@ KILLS_KEY = "apex:kills_live"
 # 0,03 req/s — deux ordres de grandeur sous la limite.
 POLL_INTERVAL_LIVE_S = 30.0
 POLL_INTERVAL_IDLE_S = 60.0
-# Compat : d'anciens appels nommaient cet intervalle unique.
-POLL_INTERVAL_S = POLL_INTERVAL_LIVE_S
 
 _active: ApexWatcher | None = None
 

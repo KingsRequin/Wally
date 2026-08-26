@@ -106,9 +106,3 @@ def render_triplet(subject: str, predicate: str, object_: str) -> str:
     return " ".join(p for p in (sujet, verbe, objet) if p).strip()
 
 
-def is_valid_predicate(predicate: str) -> bool:
-    return predicate in PREDICATES
-
-
-def is_valid_category(category: str) -> bool:
-    return category in CATEGORIES
