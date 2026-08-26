@@ -465,9 +465,13 @@ envoie chercher un bug dans un mécanisme qui n'a jamais tourné.
 trust/love vont dans un bloc `--- Relation ---` séparé, hors budget.
 
 ### Memory Questions
-Après `memory.add()`, `_evaluate()` cherche des questions de suivi. 3 tentatives d'injection max,
-puis suppression 24 h. Les ids dans `resolves` peuvent être `str` ou `int` — les deux acceptés via
-`int(qid)`.
+Les questions de suivi sont écrites par la passe NOCTURNE, pas à l'ajout d'un souvenir :
+`MemoryConsolidator._apply_cleanup_verdict()` (`intelligence/journal.py`) appelle
+`insert_memory_question()`. 3 tentatives d'injection max, puis suppression 24 h. Les ids dans
+`resolves` peuvent être `str` ou `int` — les deux acceptés via `int(qid)`.
+
+⚠️ Ce paragraphe a longtemps dit « après `memory.add()`, `_evaluate()` cherche… » : cette
+fonction n'a jamais existé sous ce nom, et le déclencheur n'est pas l'ajout.
 
 ### Alias Cache
 Clé : `"nickname:{nickname_lower}"` → `canonical_uid`. Après chaque mutation admin :
@@ -510,8 +514,10 @@ Vaut pour chaque décision comportementale.
 **Filtre bot** : ignore les pseudos de bots connus + les chatters au badge `set_id == "bot"`, avant
 `append_prelude` / `fact_extractor`.
 
-**Stream awareness** : `_poll_stream_info()` interroge le live home toutes les 60 s, caché dans
-`_stream_info`. Injecté au prompt système quand `stream_live`.
+**Stream awareness** : `StreamWatcher` (`core/stream_watcher.py`) interroge le live home toutes
+les 60 s et alimente `bot._stream_info` par son `on_poll`. Injecté au prompt système quand
+`stream_live`. ⚠️ Il n'y a pas de `_poll_stream_info()` — ce nom, longtemps écrit ici, n'a jamais
+existé.
 
 **Helix : 200 ≠ publié** — le refus d'envoi est dans le CORPS de la réponse (`is_sent: false`),
 pas dans le statut HTTP. Toujours lire le corps.
