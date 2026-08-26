@@ -431,12 +431,21 @@ async def main() -> None:
             voice_transcript=voice_transcript,
         )
 
+        def _transition_du_stream(old: dict, new: dict) -> None:
+            """Les DEUX conséquences d'une bascule live↔offline.
+
+            Une `lambda` ne tient qu'une expression : l'enchaînement se faisait
+            par un tuple `(a(), b())`, construit pour être aussitôt jeté. mypy
+            le signalait — « ne retourne rien » — et le lecteur devait deviner
+            que cette virgule était un enchaînement, pas une valeur.
+            """
+            _on_stream_transition(old, new)
+            presence_stream.on_transition(old, new)
+
         stream_watcher = StreamWatcher(
             twitch_api,
             streamer_name=_streamer_name,
-            on_transition=lambda old, new: (
-                _on_stream_transition(old, new), presence_stream.on_transition(old, new)
-            ),
+            on_transition=_transition_du_stream,
             on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
             on_event=stream_feed.record,
         )
@@ -475,6 +484,17 @@ async def main() -> None:
                 if twitch_bot._stream_info.get("live") else None
             )
 
+            def _fin_de_partie_apex(bilan: dict) -> None:
+                """Ce qu'une fin de partie déclenche : l'écran, puis le pari.
+
+                Le bilan part TOUT SEUL à l'écran (choix de l'owner), et le
+                même bilan solde le pari en cours s'il y en a un. Le narrateur
+                est résolu au moment de l'appel : il naît dans le `setup_hook`
+                de Discord, donc APRÈS ce watcher.
+                """
+                _afficher_bilan_partie(discord_bot, bilan)
+                _solder_pari_sur_partie(twitch_bot, bilan)
+
             apex_watcher = ApexWatcher(
                 apex_api,
                 account=(_apex_conf.streamer_account, _apex_conf.streamer_platform),
@@ -488,11 +508,7 @@ async def main() -> None:
                 # Le bilan de fin de partie part TOUT SEUL à l'écran (choix de
                 # l'owner). Le narrateur est résolu au moment de l'appel : il
                 # naît dans le setup_hook de Discord, donc APRÈS ce watcher.
-                on_partie=lambda bilan: (
-                    _afficher_bilan_partie(discord_bot, bilan),
-                    # Le même bilan solde le pari en cours, s'il y en a un.
-                    _solder_pari_sur_partie(twitch_bot, bilan),
-                ),
+                on_partie=_fin_de_partie_apex,
             )
             apex_watcher.activate()
             _apex_task = asyncio.create_task(apex_watcher.run())

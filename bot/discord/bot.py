@@ -38,6 +38,19 @@ if TYPE_CHECKING:
     from bot.core.update_checker import UpdateChecker
     from bot.core.web_search import WebSearchService
     from bot.intelligence.actions.service import ActionService
+    # Sous TYPE_CHECKING : aucun import à l'exécution, donc aucun risque de
+    # cycle — et mypy connaît enfin les méthodes qu'on appelle sur eux.
+    # Typés `object` dans un premier temps, ils échangeaient des erreurs
+    # d'affectation contre des erreurs d'attribut : `object` n'a ni `join()`,
+    # ni `notify_activity()`.
+    from bot.discord.voice.feed import VoiceFeed
+    from bot.discord.voice.service import VoiceService
+    from bot.intelligence.cognitive_feed import CognitiveFeed
+    from bot.intelligence.cognitive_loop import CognitiveLoop
+    from bot.intelligence.gate import ResponseGate
+    from bot.intelligence.self_fix import SelfFix
+    from bot.intelligence.social_rhythm import SocialRhythm
+    from bot.intelligence.upgrade_registry import UpgradeRegistry
 
 from bot.discord.guild_sync import parse_guild_ids  # noqa: E402  (re-exporté pour compat)
 
@@ -126,14 +139,14 @@ class WallyDiscord(commands.Bot):
 
         # Gate V2 — optionnel, activé par response_gate.enabled dans config.
         # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
-        self.response_gate: object | None = None
-        self.voice_service: object | None = None   # câblé dans setup_hook
-        self.cognitive_loop: object | None = None  # CognitiveLoop V2
-        self.cognitive_feed: object | None = None  # CognitiveFeed (live SSE)
-        self.voice_feed: object | None = None      # VoiceFeed (live SSE debug vocal)
-        self.self_fix: object | None = None        # SelfFix V2 — câblé en Plan C
-        self.upgrade_registry: object | None = None  # UpgradeRegistry (Phase 6)
-        self.social_rhythm: object | None = None   # câblé dans setup_hook
+        self.response_gate: ResponseGate | None = None
+        self.voice_service: VoiceService | None = None   # câblé dans setup_hook
+        self.cognitive_loop: CognitiveLoop | None = None  # CognitiveLoop V2
+        self.cognitive_feed: CognitiveFeed | None = None  # CognitiveFeed (live SSE)
+        self.voice_feed: VoiceFeed | None = None      # VoiceFeed (live SSE debug vocal)
+        self.self_fix: SelfFix | None = None        # SelfFix V2 — câblé en Plan C
+        self.upgrade_registry: UpgradeRegistry | None = None  # UpgradeRegistry (Phase 6)
+        self.social_rhythm: SocialRhythm | None = None   # câblé dans setup_hook
         self._social_rhythm_db_path: str | None = None
         # Gate de sollicitation owner partagé (self-fix + DM cognitif) : un seul
         # fil de MP vers le créateur à la fois, libéré quand il répond en DM.
