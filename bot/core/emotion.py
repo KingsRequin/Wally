@@ -1189,15 +1189,25 @@ class EmotionEngine:
         return await asyncio.to_thread(self._analyze_sync, text, trust_score)
 
     def _analyze_sync(self, text: str, trust_score: float) -> dict[str, float]:
+        """Note l'humeur d'un message sans LLM : lexique anglais puis français.
+
+        Les deux moitiés sont gardées SÉPARÉMENT, et ce n'est pas un détail de
+        style : elles étaient sous un `try` unique, si bien qu'une panne de
+        `nrclex` — un lexique ANGLAIS — emportait aussi la détection des mots
+        FRANÇAIS, sur un bot qui parle français. Une moitié qui tombe ne doit
+        coûter que sa moitié.
+        """
+        deltas: dict[str, float] = {}
+        text_lower = text.lower()
+
         try:
             from nrclex import NRCLex  # local import — heavy at first call
 
             # v4 API: constructor loads the lexicon (no text arg); then
             # load_token_list avoids NLTK/textblob corpus dependency.
             nrc = NRCLex()
-            nrc.load_token_list(text.lower().split())
+            nrc.load_token_list(text_lower.split())
             scores = nrc.affect_frequencies
-            deltas: dict[str, float] = {}
 
             for emotion, nrc_keys in NRC_MAP.items():
                 if not nrc_keys:
@@ -1212,10 +1222,12 @@ class EmotionEngine:
                 else:
                     raw = min(raw * 0.3, MAX_DELTA_PER_MESSAGE)
                 deltas[emotion] = raw
+        except Exception as exc:
+            logger.warning("NRCLex analysis failed: {e!r}", e=exc)
 
-            # Supplement with French keyword detection (NRCLex is English-only)
-            # Merge hardcoded + learned words
-            text_lower = text.lower()
+        # Supplement with French keyword detection (NRCLex is English-only)
+        # Merge hardcoded + learned words
+        try:
             all_fr_words: dict[str, list[tuple[str, float]]] = {}
             for emotion in EMOTIONS:
                 all_fr_words[emotion] = list(FR_EMOTION_WORDS.get(emotion, [])) + list(self._learned_words.get(emotion, []))
@@ -1229,11 +1241,10 @@ class EmotionEngine:
                     # avoid double-amplifying.
                     combined = min(combined, MAX_DELTA_PER_MESSAGE)
                     deltas[emotion] = combined
-
-            return deltas
         except Exception as exc:
-            logger.warning("NRCLex analysis failed: {e!r}", e=exc)
-            return {}
+            logger.warning("Analyse des mots français échouée : {e!r}", e=exc)
+
+        return deltas
 
     def record_interaction(self) -> None:
         """Enregistre une interaction — fait baisser le boredom proportionnellement."""

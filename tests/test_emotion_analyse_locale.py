@@ -204,8 +204,26 @@ def test_la_casse_du_texte_est_sans_effet():
     assert engine._analyze_sync("QUEL CONNARD", 1.0) == engine._analyze_sync("quel connard", 1.0)
 
 
-def test_une_panne_de_l_analyseur_rend_un_dict_vide_sans_lever():
+def test_une_panne_du_lexique_anglais_ne_leve_pas():
     """Le pipeline d'un message appelle ceci en direct : une exception ici
     ferait tomber la réponse entière."""
     with patch.dict("sys.modules", {"nrclex": None}):
-        assert make_engine()._analyze_sync("quel connard", 1.0) == {}
+        make_engine()._analyze_sync("hello there", 1.0)
+
+
+def test_une_panne_du_lexique_anglais_ne_coute_pas_la_detection_francaise():
+    """`nrclex` porte l'ANGLAIS. Sa panne ne doit pas rendre Wally sourd au
+    français : les deux moitiés étaient sous un `try` unique."""
+    with patch.dict("sys.modules", {"nrclex": None}):
+        deltas = make_engine()._analyze_sync("quel connard", 1.0)
+
+    assert deltas.get("anger", 0.0) > 0
+
+
+def test_des_mots_appris_corrompus_ne_coutent_pas_l_analyse_anglaise():
+    """Symétrique : le fichier des mots appris est écrit par le bot en marche.
+    Une entrée malformée ne doit pas emporter la moitié qui, elle, va bien."""
+    engine = make_engine()
+    engine._learned_words["joy"] = "pas une liste de paires"  # type: ignore[assignment]
+
+    assert engine._analyze_sync("this is wonderful", 1.0).get("joy", 0.0) > 0
