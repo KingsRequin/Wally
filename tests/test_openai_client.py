@@ -399,3 +399,52 @@ def test_effort_vide_n_envoie_pas_de_reasoning():
     params = _client("")._params_raisonnement()
     assert "reasoning" not in params
     assert params["max_output_tokens"] == 8192
+
+
+# ── le comptage de jetons ne doit pas casser une génération ────────────
+#
+# `response.usage` est typé `CompletionUsage | None` par le SDK OpenAI, et le
+# code le lisait sans garde : `usage.prompt_tokens` sur un `usage` absent lève
+# un AttributeError EN PLEIN milieu d'une réponse déjà générée et payée. mypy
+# le signalait 20 fois ; ce n'était pas qu'une question de types.
+#
+# Deux API cohabitent, et le même code les traverse : Responses
+# (`input_tokens`/`output_tokens`) et Chat Completions
+# (`prompt_tokens`/`completion_tokens`).
+import pytest as _pytest
+
+from bot.core.llm.openai_client import compter_jetons
+
+
+class _Details:
+    def __init__(self, caches):
+        self.cached_tokens = caches
+
+
+def test_compter_jetons_lit_l_api_responses():
+    usage = type("U", (), {"input_tokens": 120, "output_tokens": 30,
+                           "input_tokens_details": _Details(50)})()
+    assert compter_jetons(usage) == (120, 30, 50)
+
+
+def test_compter_jetons_lit_l_api_chat_completions():
+    usage = type("U", (), {"prompt_tokens": 200, "completion_tokens": 45,
+                           "prompt_tokens_details": _Details(80)})()
+    assert compter_jetons(usage) == (200, 45, 80)
+
+
+def test_un_usage_absent_ne_leve_pas():
+    """Le cas que le type du SDK prévoit et que le code ignorait."""
+    assert compter_jetons(None) == (0, 0, 0)
+
+
+def test_un_usage_sans_detail_de_cache_compte_zero():
+    """`cached_tokens` est facultatif et varie d'un modèle à l'autre."""
+    usage = type("U", (), {"prompt_tokens": 10, "completion_tokens": 2,
+                           "prompt_tokens_details": None})()
+    assert compter_jetons(usage) == (10, 2, 0)
+
+
+def test_un_usage_incomplet_ne_leve_pas():
+    """Un objet qui ne porte AUCUN des deux jeux de noms."""
+    assert compter_jetons(object()) == (0, 0, 0)

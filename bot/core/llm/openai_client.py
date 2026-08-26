@@ -109,6 +109,37 @@ def _tools_for_responses_api(tools: list[dict]) -> list[dict]:
     return converted
 
 
+def compter_jetons(usage: object) -> tuple[int, int, int]:
+    """(entrée, sortie, cachés) depuis un `usage` de l'UNE ou l'AUTRE API.
+
+    Deux formes cohabitent et le même code les traverse : Responses rend
+    `input_tokens`/`output_tokens`, Chat Completions rend
+    `prompt_tokens`/`completion_tokens`. Les lire à la main aux dix endroits où
+    l'on compte finissait par diverger.
+
+    Surtout : le SDK type `response.usage` comme `CompletionUsage | None`, et le
+    code le lisait sans garde. Un `usage` absent — que le type prévoit — levait
+    un `AttributeError` en plein milieu d'une réponse DÉJÀ générée et payée.
+    Ici, l'absence coûte un comptage à zéro : la facture devient imprécise, la
+    réponse arrive quand même. C'est le bon sens de l'échange.
+
+    `cached_tokens` est facultatif et varie d'un modèle à l'autre : son absence
+    ne rend pas le comptage faux, seulement moins précis.
+    """
+    if usage is None:
+        return 0, 0, 0
+    entree = getattr(usage, "input_tokens", None)
+    if entree is None:
+        entree = getattr(usage, "prompt_tokens", 0)
+    sortie = getattr(usage, "output_tokens", None)
+    if sortie is None:
+        sortie = getattr(usage, "completion_tokens", 0)
+    details = (getattr(usage, "input_tokens_details", None)
+               or getattr(usage, "prompt_tokens_details", None))
+    caches = getattr(details, "cached_tokens", 0)
+    return int(entree or 0), int(sortie or 0), int(caches or 0)
+
+
 def estimate_cost(
     model: str, input_tokens: int, output_tokens: int,
     cached_input_tokens: int = 0,
@@ -305,22 +336,19 @@ class OpenAILLMClient(BaseLLMClient):
         response = await self._client.responses.create(**kwargs)
         text = response.output_text
         if response.usage:
-            try:
-                cached = response.usage.input_tokens_details.cached_tokens or 0
-            except (AttributeError, TypeError):
-                cached = 0
+            entree, sortie, cached = compter_jetons(response.usage)
             cost = estimate_cost(
-                self._model, response.usage.input_tokens, response.usage.output_tokens,
+                self._model, entree, sortie,
                 cached_input_tokens=cached,
             )
             logger.info(
                 "OpenAI {model} (Responses) — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
-                model=self._model, inp=response.usage.input_tokens,
-                out=response.usage.output_tokens, cost=cost, purpose=purpose,
+                model=self._model, inp=entree,
+                out=sortie, cost=cost, purpose=purpose,
             )
             await self._log_cost(
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
+                input_tokens=entree,
+                output_tokens=sortie,
                 cost=cost, purpose=purpose, user_id=user_id,
             )
         # Contrat de `BaseLLMClient.complete` : le texte, ou FALLBACK_RESPONSE.
@@ -405,23 +433,19 @@ class OpenAILLMClient(BaseLLMClient):
                     temperature=self._temperature,
                     max_completion_tokens=effective_max_tokens,
                 )
-                usage = response.usage
-                try:
-                    cached = usage.prompt_tokens_details.cached_tokens or 0
-                except (AttributeError, TypeError):
-                    cached = 0
+                entree, sortie, cached = compter_jetons(response.usage)
                 cost = estimate_cost(
-                    self._model, usage.prompt_tokens, usage.completion_tokens,
+                    self._model, entree, sortie,
                     cached_input_tokens=cached,
                 )
                 logger.info(
                     "OpenAI {model} — {inp}in/{out}out tokens, ${cost:.6f} [{purpose}]",
-                    model=self._model, inp=usage.prompt_tokens,
-                    out=usage.completion_tokens, cost=cost, purpose=purpose,
+                    model=self._model, inp=entree,
+                    out=sortie, cost=cost, purpose=purpose,
                 )
                 await self._log_cost(
-                    input_tokens=usage.prompt_tokens,
-                    output_tokens=usage.completion_tokens,
+                    input_tokens=entree,
+                    output_tokens=sortie,
                     cost=cost, purpose=purpose, user_id=user_id,
                 )
                 # `content` est None dès que le message porte un refus, un
@@ -642,16 +666,10 @@ class OpenAILLMClient(BaseLLMClient):
             total_cached = 0
 
             if response.usage:
-                total_input += response.usage.input_tokens
-                total_output += response.usage.output_tokens
-                try:
-                    total_cached += response.usage.input_tokens_details.cached_tokens or 0
-                # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
-                # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
-                # faux, seulement moins précis — refuser la réponse entière pour un
-                # champ d'appoint coûterait la génération elle-même.
-                except (AttributeError, TypeError):
-                    pass
+                entree, sortie, caches = compter_jetons(response.usage)
+                total_input += entree
+                total_output += sortie
+                total_cached += caches
 
             max_iterations = 3
             for _ in range(max_iterations):
@@ -675,16 +693,10 @@ class OpenAILLMClient(BaseLLMClient):
                 resp_kwargs["input"] = full_messages
                 response = await self._client.responses.create(**resp_kwargs)
                 if response.usage:
-                    total_input += response.usage.input_tokens
-                    total_output += response.usage.output_tokens
-                    try:
-                        total_cached += response.usage.input_tokens_details.cached_tokens or 0
-                    # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
-                    # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
-                    # faux, seulement moins précis — refuser la réponse entière pour un
-                    # champ d'appoint coûterait la génération elle-même.
-                    except (AttributeError, TypeError):
-                        pass
+                    entree, sortie, caches = compter_jetons(response.usage)
+                    total_input += entree
+                    total_output += sortie
+                    total_cached += caches
 
             text = response.output_text
             if not text:
@@ -755,17 +767,10 @@ class OpenAILLMClient(BaseLLMClient):
                     max_completion_tokens=self._max_tokens,
                 )
 
-                usage = response.usage
-                total_input += usage.prompt_tokens
-                total_output += usage.completion_tokens
-                try:
-                    total_cached += usage.prompt_tokens_details.cached_tokens or 0
-                # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
-                # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
-                # faux, seulement moins précis — refuser la réponse entière pour un
-                # champ d'appoint coûterait la génération elle-même.
-                except (AttributeError, TypeError):
-                    pass
+                entree, sortie, caches = compter_jetons(response.usage)
+                total_input += entree
+                total_output += sortie
+                total_cached += caches
 
                 msg = response.choices[0].message
 
@@ -795,17 +800,10 @@ class OpenAILLMClient(BaseLLMClient):
                         temperature=self._temperature,
                         max_completion_tokens=self._max_tokens,
                     )
-                    usage = response.usage
-                    total_input += usage.prompt_tokens
-                    total_output += usage.completion_tokens
-                    try:
-                        total_cached += usage.prompt_tokens_details.cached_tokens or 0
-                    # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
-                    # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
-                    # faux, seulement moins précis — refuser la réponse entière pour un
-                    # champ d'appoint coûterait la génération elle-même.
-                    except (AttributeError, TypeError):
-                        pass
+                    entree, sortie, caches = compter_jetons(response.usage)
+                    total_input += entree
+                    total_output += sortie
+                    total_cached += caches
                     msg = response.choices[0].message
 
                 cost = estimate_cost(self._model, total_input, total_output, cached_input_tokens=total_cached)
@@ -1000,24 +998,20 @@ class OpenAILLMClient(BaseLLMClient):
 
                     parsed = json.loads(choice.message.content)
 
-                    usage = response.usage
-                    try:
-                        cached = usage.prompt_tokens_details.cached_tokens or 0
-                    except (AttributeError, TypeError):
-                        cached = 0
+                    entree, sortie, cached = compter_jetons(response.usage)
                     cost = estimate_cost(
-                        self._model, usage.prompt_tokens, usage.completion_tokens,
+                        self._model, entree, sortie,
                         cached_input_tokens=cached,
                     )
                     logger.info(
                         "OpenAI {model} (Chat/structured) — {inp}in/{out}out tokens, "
                         "${cost:.6f} [{purpose}]",
-                        model=self._model, inp=usage.prompt_tokens,
-                        out=usage.completion_tokens, cost=cost, purpose=purpose,
+                        model=self._model, inp=entree,
+                        out=sortie, cost=cost, purpose=purpose,
                     )
                     await self._log_cost(
-                        input_tokens=usage.prompt_tokens,
-                        output_tokens=usage.completion_tokens,
+                        input_tokens=entree,
+                        output_tokens=sortie,
                         cost=cost, purpose=purpose, user_id=user_id,
                     )
 
