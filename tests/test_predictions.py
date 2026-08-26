@@ -204,3 +204,46 @@ async def test_un_pari_expire_est_classe_en_base():
     assert await s.current() is None
     assert s._db.rows[0]["outcome"] == "void"
     assert (await s.score())["total"] == 0     # un pari classé ne compte pas
+
+
+# ── l'expiration doit atteindre Wally, pas seulement le journal ────────
+@pytest.mark.asyncio
+async def test_un_pari_expire_est_DIT_a_Wally(monkeypatch):
+    """Classé sans suite au bout d'une heure — encore faut-il qu'il l'apprenne.
+
+    Le classement était correct et journalisé, mais il ne quittait pas les
+    logs : Wally continuait de croire qu'il avait un pari en cours, et pouvait
+    le défendre en direct des heures après que la base l'eut abandonné. C'est
+    la même classe de défaut que l'abandon MUET de `open()`, corrigé lui.
+
+    `self_trace` est le canal prévu pour ça : perception passive, aucun
+    `notify_*` — il le SAIT sans que ça le fasse parler.
+    """
+    actes: list[str] = []
+    monkeypatch.setattr("bot.core.self_trace.note_act", actes.append)
+
+    db = _FakeDB()
+    svc = PredictionService(db)
+    await svc.open("Azraël gagne cette partie")
+    # On recule la naissance du pari au-delà de la péremption.
+    db.rows[-1]["created_at"] = time.time() - _STALE_AFTER_S - 1
+
+    assert await svc.current() is None
+    assert any("expir" in a.lower() for a in actes), (
+        f"l'expiration n'a pas atteint la trace de ses actes : {actes}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_un_pari_VIVANT_ne_declare_aucun_acte(monkeypatch):
+    """Le pendant : rien à signaler tant que le pari court."""
+    actes: list[str] = []
+    monkeypatch.setattr("bot.core.self_trace.note_act", actes.append)
+
+    db = _FakeDB()
+    svc = PredictionService(db)
+    await svc.open("Azraël gagne cette partie")
+    actes.clear()
+
+    assert await svc.current() is not None
+    assert actes == []

@@ -84,6 +84,15 @@ class PredictionService:
                 (time.time(), row["id"]),
             )
             logger.info("Prédiction « {b} » expirée sans verdict", b=row["bet"])
+            # Et le DIRE à Wally, pas seulement au journal. Sans cette ligne il
+            # continuait de croire qu'il avait un pari en cours, et pouvait le
+            # défendre en direct des heures après que la base l'eut abandonné —
+            # même défaut que l'abandon muet de `open()`, corrigé lui.
+            # Import local : `self_trace` importe `overlay_feed`, qui importe
+            # ce module. Perception PASSIVE, aucun `notify_*` : il le sait,
+            # ça ne le fait pas parler.
+            from bot.core.self_trace import note_act
+            note_act(f"pari « {row['bet']} » expiré sans verdict, classé sans suite")
             return None
         return row
 
