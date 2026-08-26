@@ -211,7 +211,11 @@ class TwitchConfig:
     # 12,6 % d'entre elles — une sur huit, et surtout toutes celles de 7 à 12 s,
     # les seules où le viewer croit vraiment être ignoré. Descendre à 3 s en
     # déclencherait une sur deux, et le signal deviendrait du bruit.
-    # `0` éteint la fonction. Réglable à chaud : le bon seuil se constate en live.
+    # `0` éteint la fonction. Le bon seuil se constate en live, et se change sans
+    # rebuild : `config.yaml` est bind-monté, mais RIEN ne le relit en cours de
+    # route — il faut un `docker compose restart wally` (~15 s). « Hot-reload »
+    # dans ce projet veut dire `config.save()` depuis le dashboard, qui écrit
+    # l'objet en MÉMOIRE vers le fichier, jamais l'inverse.
     attente_seuil_s: float = 5.0
 
 
