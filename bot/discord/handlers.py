@@ -2119,6 +2119,26 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         # Motif du silence, affiné au fil des gardes traversées. Même parité que
         # Twitch : le silence est une décision, et il ne laissait aucune trace.
         _silence = "non interpellé"
+        # Se taire n'est pas ne rien voir. La description d'une image ne se
+        # faisait que dans `_post_process`, donc SEULEMENT quand Wally répondait :
+        # 23 faits en mémoire pour 230 messages avec image. D'une œuvre postée
+        # dans un salon où il n'a rien à dire, il ne gardait que « Untel a envoyé
+        # une image » — de quoi remercier la bonne personne, jamais de quoi dire
+        # ce qu'elle a fait. Les deux chemins s'excluent, il n'y a pas de double
+        # appel : `_post_process` ne tourne que sur une réponse.
+        if channel_allowed and _has_images:
+            _fire(_memoriser_image(
+                bot,
+                platform="discord",
+                user_id=user_id,
+                display_name=message.author.display_name,
+                image_urls=[
+                    a.url for a in message.attachments
+                    if a.content_type and a.content_type.startswith("image/")
+                ][:4],
+                caption=message.content or "",
+                origin=_channel_origin(message.channel),
+            ))
         # Passive emoji reaction on non-trigger messages (Discord only)
         if channel_allowed and random.random() < bot.config.discord.emoji_reaction_probability:
             curiosity = bot.emotion.get_state().get("curiosity", 0.0)
@@ -3126,6 +3146,56 @@ async def _respond(
             pass
 
 
+async def _memoriser_image(
+    bot: "WallyDiscord",
+    *,
+    platform: str,
+    user_id: str,
+    display_name: str,
+    image_urls: list[str],
+    caption: str = "",
+    origin: str = "",
+    analysis: str | None = None,
+) -> bool:
+    """Range en mémoire ce que MONTRE une image, attribué à qui l'a envoyée.
+
+    Le LLM principal est aveugle : sans ce passage par `VisionService`, il ne
+    reste de l'image que le marqueur « [a envoyé une image] ». Wally sait alors
+    QUI a posté, jamais QUOI — et ne peut ni en reparler, ni féliciter l'auteur
+    d'une œuvre dans #artworks.
+
+    Point d'écriture UNIQUE : appelé après une réponse (où l'analyse est déjà
+    calculée, donc zéro appel de plus) comme sur le chemin silencieux (où il
+    faut la calculer). Les deux sont exclusifs — `_post_process` ne tourne que
+    si Wally a répondu.
+    """
+    if not image_urls:
+        return False
+    try:
+        if not analysis:
+            vision = getattr(bot, "vision", None)
+            if vision is None or not vision.available:
+                return False
+            analysis = await vision.analyze(image_urls, caption=caption)
+        if not analysis:
+            return False
+        summary = " ".join(analysis.split())
+        if not summary:
+            # Une analyse blanche donnait « Rhao a envoyé une image : » — un fait
+            # creux qui occupe le budget mémoire sans rien apprendre.
+            return False
+        if len(summary) > 240:
+            summary = summary[:240].rstrip() + "…"
+        fact = f"{display_name} a envoyé une image : {summary}"
+        await bot.memory.add(platform, user_id, fact, username=display_name,
+                             origin=origin or None)
+        logger.info("Image décrite et mémorisée pour {u}", u=display_name)
+        return True
+    except Exception as e:  # noqa: BLE001 — décrire une image ne casse jamais un message
+        logger.warning("Image analysis (memory) failed: {e!r}", e=e)
+        return False
+
+
 async def _post_process(
     bot: "WallyDiscord",
     text: str,
@@ -3193,22 +3263,11 @@ async def _post_process(
         # VisionService. On réutilise l'analyse déjà calculée dans _respond si
         # disponible (zéro appel supplémentaire), sinon on la calcule ici.
         if image_urls:
-            try:
-                analysis = image_analysis
-                if not analysis:
-                    vision = getattr(bot, "vision", None)
-                    if vision is not None and vision.available:
-                        analysis = await vision.analyze(image_urls, caption=text or "")
-                if analysis:
-                    summary = " ".join(analysis.split())
-                    if len(summary) > 240:
-                        summary = summary[:240].rstrip() + "…"
-                    fact = f"{display_name} a envoyé une image : {summary}"
-                    await bot.memory.add(platform, user_id, fact, username=display_name,
-                                         origin=origin or None)
-                    logger.debug("Image analysis stored for {u}", u=display_name)
-            except Exception as e:
-                logger.warning("Image analysis (memory) failed: {e!r}", e=e)
+            await _memoriser_image(
+                bot, platform=platform, user_id=user_id, display_name=display_name,
+                image_urls=image_urls, caption=text or "", origin=origin,
+                analysis=image_analysis,
+            )
 
         anger = bot.emotion.get_state().get("anger", 0.0)
         if anger >= 0.8 and not _beloved:
