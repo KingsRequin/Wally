@@ -38,3 +38,46 @@ def strip_stage_directions(text: str) -> str:
     # Tout retirer voudrait dire que le message n'était QUE de la mise en scène :
     # mieux vaut le laisser passer que d'envoyer du vide.
     return cleaned or text.strip()
+
+
+# ── Liens markdown : justes sur Discord, illisibles sur Twitch ───────────────
+#
+# La convention de citation façon Perplexity — « colle son marqueur cliquable
+# juste après la phrase, ex. [¹](<url>), garde les chevrons » — vient de
+# `WebSearchService` et du recall RSS. Elle est juste sur Discord, qui rend le
+# markdown et masque l'aperçu grâce aux chevrons.
+#
+# Le chat Twitch est du TEXTE BRUT. Le viewer y lit
+# `[²](<https://steamstore-a.akamaihd.net/…>)` en toutes lettres, au milieu
+# d'une phrase déjà tronquée à 480 caractères. Constaté par l'owner le
+# 2026-08-26 sur les patch notes Apex.
+#
+# Le libellé est GARDÉ, l'URL jetée : dans « [le patch note](https://…) »,
+# l'information est dans le libellé et tout jeter effacerait le sujet de la
+# phrase. Un marqueur de citation, lui, n'est qu'un exposant : il part en
+# entier, avec l'espace qui le précède.
+_LIEN_MD = re.compile(r"[ \t]*\[([^\]\n]*)\]\(\s*<?\s*(?:https?|ftp)://[^\s)]*\s*>?\s*\)")
+# Les exposants Unicode que le projet emploie comme marqueurs (`⁰`…`⁹`).
+_EXPOSANTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+
+def retirer_liens_markdown(text: str | None) -> str:
+    """Rend `text` sans syntaxe de lien markdown, pour un chat en texte brut.
+
+    Une URL NUE est laissée intacte : c'est le seul lien qui marche sur Twitch,
+    et Wally y publie le planning comme ça. Seule la forme `[texte](url)` est
+    visée — des crochets sans lien derrière (grille de pendu, tableau de score)
+    ne sont pas touchés.
+    """
+    if not text:
+        return ""
+
+    def _remplacer(m: "re.Match[str]") -> str:
+        libelle = m.group(1).strip()
+        # Un marqueur de citation ne porte aucune information : il disparaît
+        # avec l'espace qui le précédait, sinon la phrase garde un blanc double.
+        if not libelle or all(c in _EXPOSANTS for c in libelle):
+            return ""
+        return f"{m.group(0)[: len(m.group(0)) - len(m.group(0).lstrip())]}{libelle}"
+
+    return _LIEN_MD.sub(_remplacer, text)

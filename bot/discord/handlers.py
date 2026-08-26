@@ -1730,14 +1730,20 @@ async def _rss_ancre_connaissance(bot) -> str:
     )
 
 
-async def _rss_knowledge_context(bot, text: str) -> str | None:
+async def _rss_knowledge_context(bot, text: str, *, citations: bool = True) -> str | None:
     """Recall RSS « knowledge » : si le message parle d'un sujet couvert par un
     flux knowledge (ex. Apex, le jeu du serveur), remonte les articles récents
-    pertinents (FTS BM25) et les présente avec des marqueurs de citation prêts à
-    coller — AVANT que le LLM ne songe à chercher sur le web.
+    pertinents (FTS BM25) — AVANT que le LLM ne songe à chercher sur le web.
 
     Réutilise la convention de web_search : `[¹](<url>)`, URL entre chevrons pour
     neutraliser l'aperçu de lien Discord. Retourne None si rien de pertinent.
+
+    `citations=False` pour un chat en TEXTE BRUT — Twitch. Le markdown n'y est
+    pas rendu : le viewer lit `[²](<https://steamstore-a.akamaihd.net/…>)` en
+    toutes lettres, au milieu d'une phrase déjà tronquée à 480 caractères.
+    Constaté par l'owner le 2026-08-26 sur les patch notes Apex. On ne demande
+    donc pas de marqueur, et on ne sert pas d'URL à coller — le contenu suffit,
+    c'est lui qu'on est venu chercher.
     """
     cfg = getattr(bot.config, "rss", None)
     if not cfg or not cfg.enabled:
@@ -1758,14 +1764,20 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
         return None
     if not articles:
         return None
+    consigne_citation = (
+        "Quand tu t'appuies sur l'une, colle son marqueur cliquable juste après "
+        "la phrase concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. "
+        "N'invente jamais d'URL ni de numéro :"
+        if citations else
+        "Ne colle AUCUN lien ni marqueur de source : ce chat affiche le texte "
+        "brut, une URL y est illisible. Dis l'info, c'est tout :"
+    )
     lines = [
         "Actus que tu CONNAIS DÉJÀ sur ce sujet — inutile de chercher sur le web, tu "
         "as l'info ci-dessous. Elles sont classées par PERTINENCE, pas par date : "
         "l'âge de chacune est indiqué, fie-toi à lui et pas à l'ordre. Pour un "
         "« dernier patch note », prends donc le plus récent du lot, et dis de quand il "
-        "date. Quand tu t'appuies sur l'une, colle son marqueur cliquable juste après "
-        "la phrase concernée, ex. « ... [¹](<url>) ». Garde les chevrons <>. N'invente "
-        "jamais d'URL ni de numéro :"
+        "date. " + consigne_citation
     ]
     # L'ANCRE de sa connaissance, et l'autorisation de conclure à l'absence.
     #
@@ -1778,14 +1790,15 @@ async def _rss_knowledge_context(bot, text: str) -> str | None:
     if ancre := await _rss_ancre_connaissance(bot):
         lines.append(ancre)
     for i, a in enumerate(articles, start=1):
-        sup = _RSS_SUPERSCRIPTS[i]
-        url = a.get("link") or ""
         title = a.get("title") or ""
         summary = a.get("summary") or ""
         # L'âge, explicitement : le bloc prétendait un classement chronologique que le
         # tri BM25 ne respecte pas, et n'affichait aucune date. Wally présentait donc
         # un patch de sept semaines comme « le dernier » sans pouvoir s'en apercevoir.
-        lines.append(f"[{sup}](<{url}>) {_rss_age(a)}{title} : {summary}")
+        # Le marqueur n'est servi que là où il est cliquable : tendre une URL à un
+        # modèle, c'est lui donner l'idée de la recopier.
+        marqueur = f"[{_RSS_SUPERSCRIPTS[i]}](<{a.get('link') or ''}>) " if citations else "· "
+        lines.append(f"{marqueur}{_rss_age(a)}{title} : {summary}")
     return "\n".join(lines)
 
 

@@ -23,7 +23,7 @@ from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.twitch_emotes import note_chat_emotes
 from bot.core.secret_guard import redact
 from bot.core.tirage import SacSansRemise
-from bot.core.text_clean import strip_stage_directions
+from bot.core.text_clean import retirer_liens_markdown, strip_stage_directions
 from bot.intelligence import pending_question, thread_sense
 from bot.discord.handlers import (
     _check_spontaneous_trigger, _NOTE_TOOLS, _third_party_mention_context,
@@ -350,6 +350,13 @@ async def _envoyer_reponse_twitch(
     # compris chez un invité : Wally pouvait le publier hors de portée de la
     # ceinture, et gâcher la partie pour tout le monde.
     texte = redact(texte)
+    # Même raison, même endroit : le chat Twitch est du TEXTE BRUT, et un
+    # `[²](<https://…>)` s'y lit en toutes lettres. La consigne de citation
+    # vient de `web_search` ET du recall RSS, et un modèle écrit du markdown
+    # même sans qu'on le lui demande — le prompt n'est pas un contrat. Les URL
+    # NUES survivent : c'est le seul lien qui marche ici, et Wally y publie le
+    # planning comme ça.
+    texte = retirer_liens_markdown(texte)
     if channel_name not in getattr(bot, "_channel_ids", {}):
         # Le mode « perdu » existait mais n'était atteignable que sur IRC : ce
         # chemin-ci rendait « helix » même quand l'API avait refusé le message.
@@ -1212,15 +1219,23 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
         mem_context = assemble_memory_context(memory_parts, max_tokens)
 
-        # Recall RSS knowledge (patch notes Apex) — HORS budget mémoire pour que les
-        # marqueurs de citation [¹](<url>) survivent à la troncature, comme côté
-        # Discord. Ce chemin en était privé : le mécanisme n'avait qu'un seul appelant
-        # alors que c'est ICI qu'on parle d'Apex, pendant les lives. Wally répondait
-        # « je sais pas », et il avait raison — il n'avait rien sous les yeux.
+        # Recall RSS knowledge (patch notes Apex) — HORS budget mémoire pour qu'il
+        # survive à la troncature, comme côté Discord. Ce chemin en était privé : le
+        # mécanisme n'avait qu'un seul appelant alors que c'est ICI qu'on parle
+        # d'Apex, pendant les lives. Wally répondait « je sais pas », et il avait
+        # raison — il n'avait rien sous les yeux.
+        #
+        # SANS les marqueurs de citation, eux : ils avaient été portés ici pour
+        # ressembler à Discord, sans vérifier que Twitch rend le markdown. Il ne le
+        # rend pas.
         try:
             from bot.discord.handlers import _rss_knowledge_context
 
-            if rss_block := await _rss_knowledge_context(bot, content or ""):
+            # `citations=False` : le chat Twitch est du texte brut, un
+            # marqueur markdown y sort en charabia.
+            if rss_block := await _rss_knowledge_context(
+                bot, content or "", citations=False
+            ):
                 mem_context = f"{mem_context}\n\n{rss_block}" if mem_context else rss_block
         except Exception as e:  # noqa: BLE001 — jamais bloquant pour la réponse
             logger.warning("rss_knowledge (twitch): injection ignorée: {!r}", e)
