@@ -1028,14 +1028,42 @@ class VoiceService:
 
     async def _on_stream_final(self, speaker_id: str, text: str, stt_ms: float) -> None:
         """Transcription finale (précise) → cerveau, comme un segment batch."""
-        user = self._stream_users.get(speaker_id)
+        user = self._stream_users.get(speaker_id) or self._membre_du_salon(speaker_id)
         if user is None:
-            # Arrivait en silence : un locuteur qui se reconnecte pendant sa
-            # transcription voyait sa phrase disparaître sans la moindre trace.
-            logger.debug("voice: transcription orpheline de {s} — « {t} »",
-                         s=speaker_id, t=text[:60])
+            # Une phrase jetée est une phrase que Wally n'a JAMAIS entendue :
+            # elle n'entre ni au fil vocal, ni au tampon de contexte écrit, et
+            # rien ne le dit à personne. Le repli ci-dessus rattrape le cas
+            # normal — `speaker_id` EST l'identifiant Discord du locuteur, donc
+            # le salon sait le nommer même si le suivi de flux l'a perdu (une
+            # reconnexion pendant la transcription suffit).
+            #
+            # ⚠️ La trace était en DEBUG, niveau qui n'existe pas en prod : zéro
+            # occurrence dans TOUS les journaux du dépôt, alors que le cas est
+            # présenté comme vécu. Un incident qu'on ne peut pas compter est un
+            # incident qu'on ne corrigera jamais.
+            logger.warning(
+                "voice: parole PERDUE — locuteur {s} introuvable, « {t} » jetée",
+                s=speaker_id, t=text[:60],
+            )
             return
         await self._dispatch_transcript(user, text, stt_ms)
+
+    def _membre_du_salon(self, speaker_id: str):
+        """Le membre du salon vocal portant cet id, ou None.
+
+        `speaker_id` vient de `str(user.id)` : c'est un identifiant Discord, que
+        le salon résout sans réseau.
+        """
+        if not self._channel:
+            return None
+        try:
+            cible = int(speaker_id)
+        except (TypeError, ValueError):
+            return None
+        for membre in self._channel.members:
+            if getattr(membre, "id", None) == cible:
+                return membre
+        return None
 
     # Un relevé par minute : assez pour reconstituer une soirée sans noyer le
     # journal. Un salon vraiment silencieux ne dit rien du tout (voir plus bas).
