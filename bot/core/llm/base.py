@@ -84,8 +84,13 @@ class BaseLLMClient(ABC):
         """
         return []
 
+    # `def` et non `async def` : une méthode qui rend un `AsyncGenerator` et
+    # qui est déclarée `async` est vue par mypy comme une COROUTINE rendant un
+    # générateur — deux niveaux d'attente au lieu d'un. Les implémentations,
+    # elles, sont bien `async def` avec des `yield` : c'est ce qui en fait des
+    # générateurs. L'appelant écrit `async for` dans les deux cas.
     @abstractmethod
-    async def complete_stream(
+    def complete_stream(
         self,
         system_prompt: str,
         messages: list[dict],

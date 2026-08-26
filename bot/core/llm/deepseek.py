@@ -327,7 +327,13 @@ class DeepSeekLLMClient(BaseLLMClient):
                     n=tentative + 1, m=_MAX_RETRIES, e=e, d=delai,
                 )
                 await asyncio.sleep(delai)
-        raise derniere  # pragma: no cover — la boucle sort toujours avant
+        # `derniere` est `Exception | None` : `raise None` lève un TypeError
+        # « exceptions must derive from BaseException », qui masquerait la vraie
+        # panne. Inatteignable tant que `_MAX_RETRIES >= 1` — mais une constante
+        # se change, et ce jour-là l'erreur doit rester lisible.
+        if derniere is None:  # pragma: no cover — la boucle sort toujours avant
+            raise RuntimeError("DeepSeek : aucune tentative n'a été faite")
+        raise derniere
 
     @staticmethod
     def _safe_parse_args(raw: str) -> dict:
@@ -609,6 +615,11 @@ class DeepSeekLLMClient(BaseLLMClient):
                     continue
                 logger.error("DeepSeek complete_structured() failed: {e!r}", e=e)
                 raise RuntimeError(f"DeepSeek structured output failed: {e}") from e
+        # Inatteignable : chaque tour rend, relance ou lève. Mais la méthode
+        # PROMET un dict — sans cette ligne, changer le nombre de tentatives
+        # lui ferait rendre `None`, et l'appelant planterait bien plus loin,
+        # sur un `.get()` incompréhensible.
+        raise RuntimeError("DeepSeek complete_structured : aucune tentative n'a abouti")
 
     async def complete_stream(
         self,
