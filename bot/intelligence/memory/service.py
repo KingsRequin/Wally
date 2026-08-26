@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from bot.config import Config
     from bot.core.llm import BaseLLMClient
+    from bot.db.database import Database
 
 _SUMMARIZE_SYSTEM = load_prompt(
     "memory_summarize_system",
@@ -40,7 +41,7 @@ class MemoryService:
         # Prelude buffer: channel_id → list[{author, content, timestamp}]
         self._prelude_windows: dict[str, list[dict]] = {}
         self._openai: Optional["BaseLLMClient"] = None
-        self._db: Optional[object] = None
+        self._db: Optional["Database"] = None
         # Strong refs pour les tâches fire-and-forget
         self._bg_tasks: set[asyncio.Task] = set()
         # Alias cache: {alias_uid: canonical_uid} pour la résolution des comptes liés
@@ -152,6 +153,39 @@ class MemoryService:
         Exposé pour construire un MemoryIngest (réconciliation S-P-O) au bootstrap.
         """
         return self._facts
+
+    async def get_pending_question_directive(self, platform: str, user_id: str) -> str:
+        """La directive de suivi pour cette personne, ou "" s'il n'y a rien.
+
+        Ce maillon a DISPARU le 2026-06-20 (`ad975eb3`, refactor de migration
+        mémoire V1→V2) sans que le message du commit le mentionne. Toute la
+        chaîne était restée : la passe nocturne crée les questions, la base les
+        classe par priorité, `get_pending_question()` respecte les 3 tentatives
+        et la temporisation de 24 h, le dashboard les affiche. Seule
+        l'injection au prompt manquait — donc Wally n'a plus jamais posé de
+        question de suivi, pendant plus de deux mois, sans que rien ne le dise.
+
+        La tentative est COMPTÉE ici et nulle part ailleurs : c'est ce compteur
+        qui rend une question mortelle. Sans lui, elle reviendrait chaque nuit
+        indéfiniment — 44 cas de plus de 30 jours l'ont déjà prouvé.
+        """
+        if self._db is None:
+            return ""
+        try:
+            uid = self._user_id(platform, user_id)
+            q = await self._db.get_pending_question(uid)
+            if not q:
+                return ""
+            await self._db.increment_question_attempts(q["id"])
+            return (
+                "\n--- Question en attente ---\n"
+                "Si l'occasion se présente naturellement dans la conversation, "
+                f"essaie de savoir : {q['question']}\n"
+                "Ne force pas — si le sujet ne vient pas, laisse tomber."
+            )
+        except Exception as exc:  # noqa: BLE001 — un bonus ne fait pas tomber un tour
+            logger.warning("Question en attente illisible : {e!r}", e=exc)
+            return ""
 
     async def add(self, platform: str, user_id: str, content: str,
                   category: str = "FAIT", username: str | None = None,

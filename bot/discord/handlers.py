@@ -2518,7 +2518,7 @@ async def _respond(
 
         # ── Assemble memory context with token budget ──────────────────
         max_tokens = bot.config.bot.memory_context_max_tokens
-        memory_parts: list[tuple[int, str]] = []
+        memory_parts: list[tuple[int, str, str]] = []
 
         # Priority 1: Semantic memories (already fetched)
         if mem_context:
@@ -2534,6 +2534,17 @@ async def _respond(
                 memory_parts.append((2, recall_block, "recall-session"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
             logger.warning("Mémoire : bloc « recall de session » ignoré : {e!r}", e=exc)
+
+        # Priorité 3 : la question de suivi en attente. Retirée par accident le
+        # 2026-06-20 (`ad975eb3`) — la place est restée VIDE entre 2 et 4
+        # pendant deux mois, et Wally n'a plus jamais posé de question.
+        try:
+            question_block = await bot.memory.get_pending_question_directive(
+                platform, user_id)
+            if question_block:
+                memory_parts.append((3, question_block, "question"))
+        except Exception as exc:  # noqa: BLE001 — un bonus ne fait pas tomber un tour
+            logger.warning("Mémoire : question en attente ignorée : {e!r}", e=exc)
 
         # Priority 4: Recent successful jokes for this channel
         try:
