@@ -150,21 +150,48 @@ class RSSMixin:
         return float(ts) if ts else None
 
     async def rss_derniere_synthese(self, *, max_age_seconds: float) -> dict | None:
-        """La section de SYNTHÈSE de patch la plus récente, ou None.
+        """La vue d'ensemble du DERNIER patch, ou None.
 
         Un patch note Steam arrive découpé — jusqu'à 39 sections pour un seul patch
         sur la base de prod. Il porte ses propres sections de vue d'ensemble (`INTRO`,
         `Designer's Notes — TL;DR`), mais leur titre ne contient aucun mot rare : BM25
         ne les distingue de rien, et « c'est quoi le dernier patch note ? » repartait
         avec LOBA, WEAPONS et Map Rotations — trois détails, aucune synthèse.
+
+        ⚠️ Chercher « la dernière section qui s'appelle INTRO » n'est PAS chercher
+        « la vue d'ensemble du dernier patch ». Seuls les gros patchs de saison
+        portent une INTRO ; les mises à jour intermédiaires — donc les plus
+        RÉCENTES — n'en ont pas, et ne pouvaient jamais remonter. Le 2026-08-26
+        l'owner constate que Wally sert toujours l'INTRO du 3 août alors que la
+        base contient la mise à jour du 25.
+
+        Donc en deux temps, dans cet ordre : le dernier patch d'abord, sa
+        meilleure section ensuite. Ce qui identifie « le même patch », c'est sa
+        DATE — Steam donne une seule date à l'article, et toutes ses sections
+        l'héritent. Plus sûr que le `gid` qui préfixe leur guid : la date vaut
+        aussi pour un flux knowledge qui ne serait pas découpé.
         """
         cutoff = time.time() - max_age_seconds
         row = await self.fetch_one(
+            "SELECT MAX(COALESCE(published_ts, fetched_at)) AS ts "
+            "FROM rss_articles WHERE role = 'knowledge' "
+            "AND COALESCE(published_ts, fetched_at) >= ?",
+            (cutoff,),
+        )
+        dernier = row["ts"] if row else None
+        if dernier is None:
+            return None
+        # `ORDER BY <condition> DESC` : SQLite rend 1 pour vrai, donc une
+        # section de synthèse passe devant, et la date tranche sinon.
+        row = await self.fetch_one(
             "SELECT * FROM rss_articles WHERE role = 'knowledge' "
             "AND COALESCE(published_ts, fetched_at) >= ? "
-            "AND (title LIKE '%INTRO%' OR title LIKE '%TL;DR%') "
-            "ORDER BY COALESCE(published_ts, fetched_at) DESC LIMIT 1",
-            (cutoff,),
+            "ORDER BY (title LIKE '%INTRO%' OR title LIKE '%TL;DR%') DESC, "
+            "COALESCE(published_ts, fetched_at) DESC, id ASC LIMIT 1",
+            # La minute de tolérance : un patch découpé porte la même date à la
+            # seconde près, mais rien ne le garantit d'un flux à l'autre, et un
+            # `=` strict ferait dépendre le résultat d'un arrondi.
+            (dernier - 60,),
         )
         return dict(row) if row else None
 
@@ -181,6 +208,12 @@ class RSSMixin:
         articles = await self.rss_search_knowledge(
             query, limit=limit, max_age_seconds=max_age_seconds
         )
+        # Rien de pertinent → rien du tout. La synthèse COMPLÈTE un recall, elle
+        # ne le déclenche pas : sans cette garde, « je mange une pizza » recevait
+        # un bloc « Actus que tu CONNAIS DÉJÀ sur ce sujet » suivi du dernier
+        # patch Apex. Du bruit dans le prompt à chaque message hors sujet.
+        if not articles:
+            return []
         synthese = await self.rss_derniere_synthese(max_age_seconds=max_age_seconds)
         if synthese and synthese["id"] not in {a["id"] for a in articles}:
             articles.append(synthese)

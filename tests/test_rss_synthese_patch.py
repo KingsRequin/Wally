@@ -72,14 +72,22 @@ async def test_la_synthese_nest_pas_dupliquee(tmp_path):
 
 @pytest.mark.asyncio
 async def test_la_synthese_la_plus_recente_gagne(tmp_path):
-    """Deux patchs dans la fenêtre : c'est la synthèse du plus récent qui compte."""
+    """Deux patchs dans la fenêtre : c'est la synthèse du plus récent qui compte.
+
+    La requête doit MATCHER : la synthèse complète un recall, elle ne le
+    déclenche pas. « nerf arme » ne touchait aucun de ces trois articles, et
+    le test ne tenait que parce que la synthèse s'ajoutait même à un résultat
+    vide — c'est-à-dire à CHAQUE message d'au moins quatre caractères, dont
+    « je mange une pizza ». Ce bruit permanent est ce que l'owner a fini par
+    voir : un patch de trois semaines présenté comme l'actualité.
+    """
     db = await _base(tmp_path)
     await _section(db, "vieux", "Overclocked Patch Notes — INTRO", jours=48)
     await _section(db, "recent", "Marked Patch Notes — INTRO", jours=6)
     await _section(db, "detail", "Marked Patch Notes — WEAPONS", jours=6)
 
     trouves = await db.rss_search_knowledge_avec_synthese(
-        "nerf arme", limit=2, max_age_seconds=90 * _JOUR
+        "weapons", limit=2, max_age_seconds=90 * _JOUR
     )
     syntheses = [a["title"] for a in trouves if "INTRO" in a["title"]]
     assert syntheses == ["Marked Patch Notes — INTRO"]
@@ -107,3 +115,61 @@ async def test_une_synthese_hors_fenetre_nest_pas_remontee(tmp_path):
         "loba", limit=3, max_age_seconds=90 * _JOUR
     )
     assert not any("Saison 20" in a["title"] for a in trouves)
+
+
+# ── mais « la synthèse » doit être celle du DERNIER patch ───────────────
+#
+# Constaté en prod le 2026-08-26 par l'owner : « les patch notes Apex ne sont
+# toujours pas donnés au plus récent ». La base contenait pourtant la mise à
+# jour du 25/08 — c'est le recall qui servait l'INTRO du 3 août.
+#
+# La cause : chercher « la dernière section qui s'appelle INTRO » n'est pas
+# chercher « la vue d'ensemble du dernier patch ». Seuls les gros patchs de
+# saison portent une section INTRO ; les mises à jour intermédiaires — donc
+# les PLUS RÉCENTES — n'en ont pas, et ne pouvaient jamais être remontées.
+@pytest.mark.asyncio
+async def test_la_synthese_suit_le_dernier_patch_meme_sans_section_INTRO(tmp_path):
+    db = await _base(tmp_path)
+    # Le gros patch de saison, trois semaines plus tôt : il a son INTRO.
+    await _section(db, "111#0", "Marked Patch Notes — INTRO", jours=23)
+    await _section(db, "111#1", "Marked Patch Notes — LOBA", jours=23)
+    # La mise à jour d'hier : une seule section, sans INTRO ni TL;DR. C'est la
+    # forme réelle de « Apex Legends: Latest Update 8/25/2026 » en production.
+    await _section(db, "222#0", "Apex Legends: Latest Update 8/25/2026", jours=1)
+
+    synthese = await db.rss_derniere_synthese(max_age_seconds=100 * _JOUR)
+
+    assert synthese is not None
+    assert "8/25/2026" in synthese["title"], (
+        f"le recall sert un patch périmé : {synthese['title']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_quand_le_dernier_patch_A_une_intro_c_est_elle_qu_on_prend(tmp_path):
+    """La vue d'ensemble reste préférée — dans le bon patch, cette fois."""
+    db = await _base(tmp_path)
+    await _section(db, "333#0", "Nouveau patch — WEAPONS", jours=1)
+    await _section(db, "333#1", "Nouveau patch — INTRO", jours=1)
+    await _section(db, "333#2", "Nouveau patch — Map Rotations", jours=1)
+
+    synthese = await db.rss_derniere_synthese(max_age_seconds=100 * _JOUR)
+
+    assert "INTRO" in synthese["title"]
+
+
+@pytest.mark.asyncio
+async def test_un_flux_sans_sections_rend_quand_meme_son_dernier_article(tmp_path):
+    """Un guid sans « # » n'est pas un patch découpé — on ne rend pas None.
+
+    Tous les flux `knowledge` ne viennent pas de Steam. Grouper par gid ne doit
+    pas faire disparaître la synthèse là où il n'y a rien à grouper.
+    """
+    db = await _base(tmp_path)
+    await _section(db, "https://exemple/vieux", "Vieil article", jours=30)
+    await _section(db, "https://exemple/neuf", "Article du jour", jours=1)
+
+    synthese = await db.rss_derniere_synthese(max_age_seconds=100 * _JOUR)
+
+    assert synthese is not None
+    assert synthese["title"] == "Article du jour"
