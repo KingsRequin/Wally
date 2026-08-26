@@ -1,4 +1,31 @@
 // public-ui/app.js — arcade theme
+
+// DÉCLARÉ AVANT LES IMPORTS, et c'est la seule chose qui compte ici : un
+// `let` reste en zone morte temporelle jusqu'à sa ligne, et les modules
+// d'onglets s'évaluent AVANT elle. Placé plus bas, `nomBot()` levait
+// « Cannot access 'NOM_BOT' before initialization » et cassait le site
+// entier — que ni `node --check` ni le lint JS ne voient.
+//
+// Le nom du bot vient de la CONFIG, jamais du HTML. Ce site sert aussi Cindy,
+// qui partage cette source et son API : avec « Wally » en dur, son propre site
+// public l'appelait Wally — titre, wordmark et pied de page compris — pendant
+// que son API répondait « Cindy ». Repli sur « Wally » tant que le status n'est
+// pas revenu : c'est le cas de très loin le plus fréquent, et un nom vide serait
+// pire qu'un nom par défaut.
+let NOM_BOT = 'Wally';
+
+export function nomBot() { return NOM_BOT; }
+
+/** Applique le nom partout où il s'affiche. Idempotent : rappelable. */
+function appliquerNom() {
+  document.title = NOM_BOT;
+  // Les emplacements se DÉCLARENT dans le HTML (`data-nom-bot`), ils ne sont
+  // pas listés ici : un nouvel endroit qui porte le nom se sert tout seul.
+  document.querySelectorAll('[data-nom-bot]').forEach((el) => {
+    el.textContent = el.dataset.nomBot === 'maj' ? NOM_BOT.toUpperCase() : NOM_BOT;
+  });
+}
+
 import { mount as mountStatus } from './tabs/status.js';
 import { mount as mountChat } from './tabs/chat.js';
 import { mount as mountGallery } from './tabs/gallery.js';
@@ -202,12 +229,17 @@ let OWNER_DISCORD_ID = '';
 async function loadOwnerId() {
   try {
     const r = await fetch('/api/public/status');
-    if (r.ok) { const d = await r.json(); OWNER_DISCORD_ID = String(d.owner_discord_id || ''); }
+    if (r.ok) {
+      const d = await r.json();
+      OWNER_DISCORD_ID = String(d.owner_discord_id || '');
+      if (d.bot_name) { NOM_BOT = String(d.bot_name); }
+    }
   } catch (err) {
     // Repli explicite : sans id d'owner, `renderAuth()` juste en dessous
     // n'affichera pas le bouton ADMIN. Le site reste utilisable.
     console.warn('id de l\'owner indisponible', err);
   }
+  appliquerNom();
   renderAuth();
 }
 

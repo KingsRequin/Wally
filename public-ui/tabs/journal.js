@@ -1,5 +1,6 @@
 // public-ui/tabs/journal.js — arcade
 import { parseInline, renderMarkdown } from '../markdown.js';
+import { nomBot } from '../app.js';
 
 let _container = null;
 
@@ -108,13 +109,13 @@ function buildHeader() {
   const head = document.createElement('div');
   const eyebrow = document.createElement('div');
   eyebrow.className = 'arc-eyebrow';
-  eyebrow.textContent = 'JOURNAL INTIME · WALLY';
+  eyebrow.textContent = `JOURNAL INTIME · ${nomBot().toUpperCase()}`;
   const h2 = document.createElement('h2');
   h2.className = 'arc-h2';
   h2.textContent = 'JOURNAL';
   const sub = document.createElement('div');
   sub.className = 'arc-sub';
-  sub.textContent = 'chaque soir à 21h, wally écrit sa journée.';
+  sub.textContent = `chaque soir à 21h, ${nomBot().toLowerCase()} écrit sa journée.`;
   head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
   return head;
 }

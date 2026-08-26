@@ -1,4 +1,5 @@
 // public-ui/tabs/gallery.js — arcade
+import { nomBot } from '../app.js';
 
 let _container = null;
 let _sort = 'date';
@@ -327,13 +328,13 @@ export function mount(el) {
   const head = document.createElement('div');
   const eyebrow = document.createElement('div');
   eyebrow.className = 'arc-eyebrow';
-  eyebrow.textContent = 'CRÉATIONS · WALLY';
+  eyebrow.textContent = `CRÉATIONS · ${nomBot().toUpperCase()}`;
   const h2 = document.createElement('h2');
   h2.className = 'arc-h2';
   h2.textContent = 'GALERIE';
   const sub = document.createElement('div');
   sub.className = 'arc-sub';
-  sub.textContent = 'les images générées par wally. votez pour vos préférées.';
+  sub.textContent = `les images générées par ${nomBot().toLowerCase()}. votez pour vos préférées.`;
   head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
   wrap.appendChild(head);
 

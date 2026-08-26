@@ -1,5 +1,5 @@
 // public-ui/tabs/status.js — arcade
-import { emotions, onEmotionUpdate, connectCognitiveSSE } from '../app.js';
+import { connectCognitiveSSE, emotions, nomBot, onEmotionUpdate } from '../app.js';
 
 let _pollInterval    = null;
 let _historyInterval = null;
@@ -265,7 +265,7 @@ async function openGoalModal() {
   const title = document.createElement('div');
   title.className = 'arc-stat-label';
   title.style.cssText = 'font-size:13px;color:var(--cyan);';
-  title.textContent = '🎯 DANS LA TÊTE DE WALLY';
+  title.textContent = `🎯 DANS LA TÊTE DE ${nomBot().toUpperCase()}`;
   const close = document.createElement('span');
   close.style.cssText = 'cursor:pointer;font-size:22px;color:var(--pink);';
   close.textContent = '✕';
@@ -290,13 +290,13 @@ function renderStatus(el, status, stream) {
   const head = document.createElement('div');
   const eyebrow = document.createElement('div');
   eyebrow.className = 'arc-eyebrow';
-  eyebrow.textContent = 'PANNEAU DE CONTRÔLE · WALLY';
+  eyebrow.textContent = `PANNEAU DE CONTRÔLE · ${nomBot().toUpperCase()}`;
   const h2 = document.createElement('h2');
   h2.className = 'arc-h2';
   h2.textContent = 'STATUT';
   const sub = document.createElement('div');
   sub.className = 'arc-sub';
-  sub.textContent = "bonjour. wally tourne, tout va bien. (pour l'instant.)";
+  sub.textContent = `bonjour. ${nomBot().toLowerCase()} tourne, tout va bien. (pour l'instant.)`;
   head.appendChild(eyebrow); head.appendChild(h2); head.appendChild(sub);
   el.appendChild(head);
 
