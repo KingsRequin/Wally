@@ -22,7 +22,15 @@ _PORTRAIT_PROMPT = load_prompt("user_portrait")
 # n'est lu par personne, et coûtait un appel LLM chaque nuit. Le 2026-08-24, le
 # modèle a rendu pour `wally:self` le portrait de KassandreYunikon, dont les
 # pensées de Wally parlaient beaucoup ce jour-là.
-_NAMESPACE_INTERNE = "wally:"
+#
+# `unknown:<pseudo>` relève du même raisonnement, pour une raison différente :
+# c'est la clé PROVISOIRE sous laquelle `fact_extractor` range ce qu'il apprend
+# d'un tiers qu'il ne sait pas encore rattacher à un compte. Elle est faite pour
+# disparaître — `_reconcile_orphan_facts` déplace ses faits vers l'uid canonique
+# dès que l'alias est résolu. Un portrait rangé là n'est jamais lu non plus, et
+# la base en portait cinq au 2026-08-26 (`azra`, `azrael`, `lilio___`,
+# `lilith`, `ausreal`), régénérés chaque nuit.
+_NAMESPACES_SANS_PORTRAIT = ("wally:", "unknown:")
 
 # ── Genre : lu dans les faits, jamais déduit du pseudo ────────────────────────
 # La consigne seule ne mordait pas. Le 2026-08-24, 58 des 126 portraits parlaient
@@ -80,7 +88,8 @@ class UserModeler:
         except Exception as e:  # noqa: BLE001 — non-fatal
             logger.warning("UserModeler : sélection des personnes échouée : {e!r}", e=e)
             return
-        user_ids = [u for u in user_ids if not u.startswith(_NAMESPACE_INTERNE)]
+        user_ids = [u for u in user_ids
+                    if not u.startswith(_NAMESPACES_SANS_PORTRAIT)]
         if not user_ids:
             logger.debug("UserModeler : aucune personne active à modéliser")
             return

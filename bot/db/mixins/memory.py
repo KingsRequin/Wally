@@ -443,6 +443,24 @@ class MemoryMixin:
         )
         return row["portrait"] if row else None
 
+    async def delete_user_profile(self, user_id: str) -> bool:
+        """Efface le portrait d'un uid. False s'il n'y en avait pas.
+
+        Sert au rattachement d'une identité : quand `unknown:<pseudo>` se
+        révèle être `discord:610…`, ses FAITS sont déplacés — mais son portrait
+        restait derrière, orphelin et régénéré chaque nuit.
+
+        Effacé et non déplacé : le compte canonique a déjà le sien, et
+        l'écraser avec celui d'une identité partielle serait une régression.
+        Celui-ci se régénérera la nuit suivante, à partir des faits reçus.
+        """
+        async with self._conn.execute(
+            "DELETE FROM user_profiles WHERE user_id=?", (user_id,)
+        ) as cursor:
+            supprimes = cursor.rowcount
+        await self._conn.commit()
+        return supprimes > 0
+
     async def get_users_with_recent_facts(self, since_iso: str) -> list[str]:
         """user_id distincts dont un fait actif a bougé depuis since_iso."""
         rows = await self.fetch_all(

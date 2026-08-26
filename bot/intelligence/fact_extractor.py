@@ -913,6 +913,16 @@ class FactExtractor:
             if store is None:
                 return
             moved = await store.reassign_user(f"unknown:{nickname}", canonical_uid)
+            # Le PORTRAIT part avec les faits, et même si aucun fait n'a bougé :
+            # il est bâti sur eux, donc il ne décrit plus rien dès qu'ils
+            # changent de clé. Laissé derrière, il restait orphelin — jamais lu,
+            # puisque `get_user_profile()` n'est appelé qu'avec l'uid canonique —
+            # et régénéré chaque nuit à un appel LLM pièce. Cinq traînaient ainsi
+            # au 2026-08-26.
+            if self._db is not None and await self._db.delete_user_profile(
+                f"unknown:{nickname}"
+            ):
+                logger.info("Portrait orphelin effacé : unknown:{nick}", nick=nickname)
             if not moved:
                 return
             logger.info(
