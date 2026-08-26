@@ -156,6 +156,35 @@ def reset_identity_after_test():
     identity._OWNER = ""
 
 
+def _threads_aiosqlite_en_daemon() -> None:
+    """Un test qui ÉCHOUE doit le DIRE, pas faire pendre la suite.
+
+    Vécu le 2026-08-26 : tout test asyncio ouvrant une `Database` et échouant
+    ne rendait jamais la main — pytest restait suspendu, sans afficher l'échec,
+    et la suite paraissait « lente » au lieu de « rouge ». Reproduit en huit
+    lignes : sur succès l'objet est collecté et sa connexion se ferme ; sur
+    échec, pytest garde le frame du test vivant pour son traceback, donc la
+    connexion aussi.
+
+    La cause est chez `aiosqlite`, qui crée son thread de travail SANS
+    `daemon=True` : l'interpréteur l'attend à la sortie, indéfiniment. On ne
+    corrige pas la lib, on rend ses threads démontables — ici seulement, pour
+    que l'échec sorte. Un test qui ferme proprement continue de fermer.
+    """
+    import aiosqlite.core
+
+    if getattr(aiosqlite.core.Connection, "_wally_daemon", False):
+        return
+    original = aiosqlite.core.Connection.__await__
+
+    def __await__(self):  # noqa: N807 — on remplace la méthode spéciale
+        self._thread.daemon = True
+        return original(self)
+
+    aiosqlite.core.Connection.__await__ = __await__
+    aiosqlite.core.Connection._wally_daemon = True
+
+
 def pytest_configure(config):
     """Plafonne la mémoire de la suite — un test qui fuit ne doit pas tuer la machine.
 
@@ -176,6 +205,8 @@ def pytest_configure(config):
     """
     import os
     import resource
+
+    _threads_aiosqlite_en_daemon()
 
     plafond_mo = int(os.environ.get("WALLY_TESTS_MEM_MAX_MB", "3072"))
     if plafond_mo <= 0:
