@@ -155,9 +155,22 @@ class MemoryService:
 
     async def add(self, platform: str, user_id: str, content: str,
                   category: str = "FAIT", username: str | None = None,
-                  source: str = "fact_extractor", origin: str | None = None,
+                  source: str = "memoire_directe", origin: str | None = None,
                   expires_at: "datetime | None" = None,
                   **_kw) -> None:
+        """Écrit un fait VERBATIM, sans passer par la réconciliation S-P-O.
+
+        ⚠️ `source` valait `"fact_extractor"` par défaut, et un seul appelant
+        sur douze le précisait. La colonne étiquetait donc « fact_extractor »
+        des faits venus de l'outil `save_user_memory`, du vocal, des images,
+        du chat web et des duels Apex — et un audit de la base a conclu que
+        « le fact_extractor n'écrit pas de S-P-O », sur 542 faits dont il
+        n'avait écrit qu'une poignée. Un défaut de mesure coûte plus cher
+        qu'un défaut de code : il envoie corriger au mauvais endroit.
+
+        Le défaut dit maintenant ce qu'il est — une écriture directe. Les
+        appelants qui savent d'où ils viennent le déclarent.
+        """
         if self._retrieval is None:
             logger.warning("MemoryService.add ignoré: backend V2 non initialisé")
             return

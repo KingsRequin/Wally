@@ -3178,7 +3178,7 @@ async def _memoriser_image(
             summary = summary[:240].rstrip() + "…"
         fact = f"{display_name} a envoyé une image : {summary}"
         await bot.memory.add(platform, user_id, fact, username=display_name,
-                             origin=origin or None)
+                             source="image", origin=origin or None)
         logger.info("Image décrite et mémorisée pour {u}", u=display_name)
         return True
     except Exception as e:  # noqa: BLE001 — décrire une image ne casse jamais un message
@@ -3246,7 +3246,7 @@ async def _post_process(
         if llm_deltas and llm_deltas.get("user_facts"):
             for _fact in llm_deltas["user_facts"]:
                 await bot.memory.add(platform, user_id, _fact, username=display_name,
-                                     origin=origin or None)
+                                     source="post_process", origin=origin or None)
 
         # Stocke une description visuelle VÉRIDIQUE en mémoire long-terme.
         # Le LLM principal/secondaire (DeepSeek) est aveugle → on s'appuie sur
