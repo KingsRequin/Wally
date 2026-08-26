@@ -10,7 +10,6 @@ from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
@@ -20,6 +19,8 @@ from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.identity import render_identity
 from bot.intelligence.memory.facts import FactStatus
 from bot.intelligence.prompts import load_prompt
+
+from bot.core.temps import PARIS
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -113,8 +114,7 @@ _FUNCTION_WORDS = frozenset(
     toutes fait faire""".split()
 )
 
-_TZ_JOURNAL = ZoneInfo("Europe/Paris")
-
+_TZ_JOURNAL = PARIS
 # APScheduler abandonne un déclenchement en retard de plus d'UNE seconde par
 # défaut. Trois de ces jobs tirent à la même seconde et sont lourds (appels LLM,
 # rendu matplotlib) : il suffisait que la boucle soit occupée à cet instant pour

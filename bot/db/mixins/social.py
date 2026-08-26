@@ -3,16 +3,15 @@ from __future__ import annotations
 import json
 import time
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 import aiosqlite
 from loguru import logger
 
 from bot.core.surnoms import expurger
 
-_TZ_DB = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
-
+_TZ_DB = PARIS
 def _base_name(label: str) -> str:
     """« Azraël (@._.azrael._.) » → « azraël ».
 

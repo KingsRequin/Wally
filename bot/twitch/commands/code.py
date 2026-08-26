@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 from typing import TYPE_CHECKING
 
 from loguru import logger
+
+from bot.core.temps import aujourdhui
 
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
@@ -31,7 +32,9 @@ async def handle_code_command(
     badges: list,
 ) -> None:
     """Gère la commande !code — définir ou afficher le code du jour."""
-    today = str(date.today())
+    # La date de PARIS, pas celle de l'horloge machine (l'hôte est en UTC) :
+    # le code du jour changeait à 01 h ou 02 h du matin heure locale.
+    today = str(aujourdhui())
     db_key = f"twitch_code:{channel_name}"
 
     if channel_name not in _daily_codes:

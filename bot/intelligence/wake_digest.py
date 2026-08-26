@@ -44,14 +44,14 @@ import time
 import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from bot.intelligence.identity import bot_name, render_identity
 
-_PARIS = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
+_PARIS = PARIS
 # Silence minimal (sans sollicitation) au-delà duquel la reprise est un « réveil ».
 MIN_SLEEP_SECONDS = 4 * 3600
 # On ne résume jamais plus loin que ça, même après une très longue absence.

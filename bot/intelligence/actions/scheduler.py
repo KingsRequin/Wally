@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
-TZ = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
+TZ = PARIS
 # Un rappel dû pendant un pic de charge était purement abandonné : APScheduler
 # tolère UNE seconde de retard par défaut. La tâche restait `active` avec un
 # `next_run_at` périmé, et une tâche `once` ne repartait jamais. Mieux vaut

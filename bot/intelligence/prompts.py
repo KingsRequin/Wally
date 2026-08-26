@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -16,6 +15,8 @@ from bot.core.voice_transcript import current_voice_transcript_block
 from bot.core.stream_watcher import current_stream_awareness
 from bot.core.system_info import cached_host_metrics, cached_weather
 from bot.intelligence.identity import render_identity
+
+from bot.core.temps import PARIS
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "persona", "prompts")
 
@@ -98,8 +99,7 @@ def marqueur_de_service(texte: str, marqueur: str) -> bool:
 
 _MEMORY_RECALL_DIRECTIVE = load_prompt("memory_recall_directive")
 
-_TZ = ZoneInfo("Europe/Paris")
-
+_TZ = PARIS
 _FRENCH_DAYS = [
     "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
 ]

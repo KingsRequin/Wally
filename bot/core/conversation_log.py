@@ -30,11 +30,12 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
-_PARIS = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
+
+_PARIS = PARIS
 _UNSAFE = re.compile(r"[^\w.\-]+")
 _MAX_FIELD = 8000  # troncature de sécurité par champ texte (évite les fichiers obèses)
 

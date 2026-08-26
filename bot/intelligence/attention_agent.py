@@ -6,6 +6,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from bot.core.temps import PARIS
+
 # Amorces d'introspection (Phase 2b) : tirées ~1 fois sur 3 en vagabondage pour
 # que Wally consacre une part de son repos à réfléchir à qui il est / ce qu'il
 # veut devenir / ce qui lui manque — au service du but North Star (libre arbitre,
@@ -192,9 +194,7 @@ class AttentionAgent:
         thoughts = await self._facts.search_by_category(
             FactCategory.THOUGHT, status=FactStatus.ACTIVE, limit=3
         )
-
-        from zoneinfo import ZoneInfo
-        hour = datetime.now(ZoneInfo("Europe/Paris")).hour
+        hour = datetime.now(PARIS).hour
         if 5 <= hour < 12:
             tod = "morning"
         elif 12 <= hour < 17:
@@ -406,8 +406,7 @@ class AttentionAgent:
         receptivity_score = 0.5
         if self._social_rhythm is not None:
             try:
-                from zoneinfo import ZoneInfo
-                _now = datetime.now(ZoneInfo("Europe/Paris"))
+                _now = datetime.now(PARIS)
                 receptivity_score = self._social_rhythm.receptivity(_now)
                 social_receptivity = self._social_rhythm.describe(_now)
             except Exception as e:  # noqa: BLE001 — jamais bloquant

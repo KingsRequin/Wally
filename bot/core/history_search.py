@@ -33,12 +33,12 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
-_PARIS = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
+_PARIS = PARIS
 # Segment de chemin des logs de MP — exclu de toute recherche (cf. docstring).
 _DM_SEGMENT = "dm"
 # Événements porteurs de texte conversationnel ; le reste du journal (décisions

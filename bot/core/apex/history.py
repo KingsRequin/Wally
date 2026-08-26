@@ -28,15 +28,15 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from loguru import logger
+
+from bot.core.temps import PARIS
 
 # Le fuseau dans lequel les gens vivent. « Aujourd'hui » et « ce mois-ci » se
 # découpent ici, pas en UTC — la machine tourne en UTC et un live du soir se
 # retrouverait à cheval sur deux jours.
-PARIS = ZoneInfo("Europe/Paris")
-
+PARIS = PARIS
 # Le plafond de vraisemblance est un TAUX, pas un nombre fixe. Deux relevés
 # peuvent être séparés de 30 secondes (la sonde du live) comme de deux semaines
 # (quelqu'un qui redemande ses stats) : « 300 kills maximum » rejetterait le

@@ -14,6 +14,8 @@ from loguru import logger
 from bot.dashboard.routes.chat_auth import decode_jwt, _jwt_secret_raw
 from bot.discord.handlers import _parse_react_tag
 
+from bot.core.temps import aujourdhui
+
 if TYPE_CHECKING:
     from bot.dashboard.state import AppState
 
@@ -125,7 +127,9 @@ async def ws_chat(ws: WebSocket):
     heartbeat_task = None
     try:
         # Send today's messages only
-        today = datetime.date.today().isoformat()
+        # Date de PARIS : l'hôte est en UTC, et l'historique « du jour »
+        # basculait donc une à deux heures trop tôt pour les gens du soir.
+        today = aujourdhui().isoformat()
         history = await state.db.load_chat_history_for_day(today)
         await _send_to(ws, {"type": "history", "messages": history})
 

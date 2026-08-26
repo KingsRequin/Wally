@@ -1,7 +1,7 @@
 {
   "max_silences": 113,
   "max_erreurs_types": 347,
-  "max_ruff": 76,
+  "max_ruff": 74,
   "max_js": 0,
   "max_logs_aveugles": 0,
   "max_code_mort_certain": 0,

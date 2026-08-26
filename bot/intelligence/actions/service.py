@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+
+from bot.core.temps import PARIS
 
 
-TZ = ZoneInfo("Europe/Paris")
-
+TZ = PARIS
 MAX_TASKS_PER_USER = 10
 MIN_INTERVAL_MINUTES = 5
 PAST_GRACE_SECONDS = 30

@@ -20,13 +20,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
-# L'application raisonne en Europe/Paris alors que l'hôte est en UTC.
-_FUSEAU = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
+# L'application raisonne en Europe/Paris alors que l'hôte est en UTC.
+_FUSEAU = PARIS
 #: Plafond par salon. Une journée très bavarde ne doit pas faire exploser la
 #: fenêtre du LLM ni le temps de lecture.
 _MAX_PAR_SALON = 2000

@@ -7,13 +7,14 @@ import re
 import time
 from collections import deque
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from bot.core.conversation_log import new_trace_id
 from bot.intelligence.identity import bot_name
 from bot.intelligence.social_rhythm import R_REF
+
+from bot.core.temps import PARIS
 
 TICK_ACTIVE = 30       # < 10 min depuis dernière activité : cognition de fond vive
 TICK_MODERATE = 120    # < 1h : il se détend, encore engagé
@@ -42,7 +43,7 @@ def _speak_pass_probability(receptivity: float) -> float:
 
 
 def _now_paris() -> datetime:
-    return datetime.now(ZoneInfo("Europe/Paris"))
+    return datetime.now(PARIS)
 
 # Après une réponse directe dans un canal, Wally ne relance pas de SPEAK proactif
 # avant ce délai : il a déjà eu son tour, un SPEAK ne ferait que récapituler /

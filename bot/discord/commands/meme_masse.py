@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Sequence
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
@@ -33,6 +32,7 @@ from loguru import logger
 
 from bot.core import meme_import
 from bot.core.memes import _EXTENSIONS_MEDIA
+from bot.core.temps import PARIS
 from bot.discord.commands.meme_cmd import (
     DOSSIER_MEMES,
     _MAX_CONTENU,
@@ -41,8 +41,7 @@ from bot.discord.commands.meme_cmd import (
     telecharger,
 )
 
-PARIS = ZoneInfo("Europe/Paris")
-
+PARIS = PARIS
 # L'application raisonne en Europe/Paris alors que l'hôte est en UTC : lire une
 # date en naïf ferait commencer « le 1er août » à 2 h du matin.
 _DUREE = re.compile(r"^(\d+)\s*([jhd])$", re.IGNORECASE)

@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot.core.temps import PARIS
+
 if TYPE_CHECKING:
     from bot.config import Config
     from bot.core.rss_feed import RSSFeedService
@@ -45,11 +47,10 @@ def make_scheduler() -> "AsyncIOScheduler":
     C'est ce scheduler-là qui porte les travaux du soir en production : le
     journal reçoit celui-ci, pas celui qu'il sait créer pour lui-même.
     """
-    from zoneinfo import ZoneInfo
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    return AsyncIOScheduler(timezone=ZoneInfo("Europe/Paris"))
+    return AsyncIOScheduler(timezone=PARIS)
 
 
 @dataclass

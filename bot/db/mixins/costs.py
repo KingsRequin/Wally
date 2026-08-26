@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import aiosqlite
 
-_TZ_COSTS = ZoneInfo("Europe/Paris")
+from bot.core.temps import PARIS
 
-
+_TZ_COSTS = PARIS
 class CostMixin:
     _conn: aiosqlite.Connection
 

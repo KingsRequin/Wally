@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from bot.core.overlay_layout import fusionner, layout_par_defaut
+
+from bot.core.temps import PARIS
 
 LAYOUT_KEY = "overlay:layout"
 
@@ -39,9 +40,7 @@ GRAINE_IMAGE_KEY = "overlay:layout:image_migre"
 
 # L'application raisonne en Europe/Paris ; l'hôte est en UTC. Un horodatage naïf
 # afficherait « publié à 19:14 » pour une publication de 21:14.
-_FUSEAU = ZoneInfo("Europe/Paris")
-
-
+_FUSEAU = PARIS
 async def charger_layout(db) -> dict:
     """Le layout rangé, complété par les défauts. Ne lève jamais.
 
