@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.core.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
@@ -2825,18 +2826,7 @@ async def _respond(
                     bot, args, requester=f"discord:{message.author.id}"
                 )
             if name == "save_persistent_note":
-                # `.get()` et non `args["title"]` : `required` au schéma ne garantit
-                # rien. Un champ omis levait un KeyError au milieu de
-                # `complete_with_tools` — le modèle n'obtenait aucun résultat pour
-                # son appel et annonçait quand même « c'est noté ».
-                titre = str(args.get("title") or "").strip()
-                contenu = str(args.get("content") or "").strip()
-                if not titre or not contenu:
-                    return json.dumps({"status": "error", "message": (
-                        "Il me faut un titre ET un contenu pour noter. Redemande-les."
-                    )})
-                await bot.db.upsert_persistent_note(titre, contenu)
-                return json.dumps({"status": "ok", "message": f"Note '{titre}' sauvegardée."})
+                return await run_save_note_tool(bot.db, args)
             if name == "delete_persistent_note":
                 titre = str(args.get("title") or "").strip()
                 if not titre:

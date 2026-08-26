@@ -7,6 +7,7 @@ from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
+from bot.core.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as detecter_surnom
 from bot.core.web_search import WEB_SEARCH_TOOL
 from bot.discord.voice.brain import generate_search_filler
@@ -356,21 +357,7 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             return await run_music_tool(bot, args, roles=None, pilotable=False)
 
         if name == "save_persistent_note":
-            a = json.loads(arguments or "{}")
-            # `.get()` et non `a["title"]` : le champ est `required` au schéma,
-            # ce qui ne garantit rien — un modèle qui l'omet levait un KeyError
-            # au milieu de `complete_with_tools`, le tour de parole partait sans
-            # résultat d'outil et Wally enchaînait sur un « c'est noté » qui
-            # n'avait rien noté. Exactement le défaut déjà payé sur `int()` dans
-            # `leave_voice`.
-            titre = str(a.get("title") or "").strip()
-            contenu = str(a.get("content") or "").strip()
-            if not titre or not contenu:
-                return json.dumps({"status": "error", "message": (
-                    "Il me faut un titre ET un contenu pour noter. Redemande-les."
-                )})
-            await bot.db.upsert_persistent_note(titre, contenu)
-            return json.dumps({"status": "ok", "message": f"Note '{titre}' sauvegardée."})
+            return await run_save_note_tool(bot.db, json.loads(arguments or "{}"))
 
         if name == "delete_persistent_note":
             a = json.loads(arguments or "{}")

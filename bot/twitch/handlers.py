@@ -14,6 +14,7 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 # Le duel Apex ne vit que sur la chaîne maison : son outil n'est offert que
 # par ce chemin, et son exécution reste ici plutôt que dans `discord/handlers`.
 from bot.intelligence.overlay_narrator import DUEL_TOOL_SPEC as _DUEL_TOOL
+from bot.core.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.audit_log import observe_event
@@ -760,18 +761,7 @@ def make_tool_executor(
             return await run_duel_tool(
                 bot, args, auteur=auteur_du_message(badges or []), maison=overlay)
         if name == "save_persistent_note":
-            # `.get()` et non `args["title"]` : `required` au schéma ne garantit
-            # rien. Un champ omis levait un KeyError au milieu de
-            # `complete_with_tools` — le modèle n'obtenait aucun résultat pour
-            # son appel et annonçait quand même « c'est noté ».
-            titre = str(args.get("title") or "").strip()
-            contenu = str(args.get("content") or "").strip()
-            if not titre or not contenu:
-                return json.dumps({"status": "error", "message": (
-                    "Il me faut un titre ET un contenu pour noter. Redemande-les."
-                )})
-            await bot.db.upsert_persistent_note(titre, contenu)
-            return json.dumps({"status": "ok", "message": f"Note '{titre}' sauvegardée."})
+            return await run_save_note_tool(bot.db, args)
         if name == "delete_persistent_note":
             titre = str(args.get("title") or "").strip()
             if not titre:
