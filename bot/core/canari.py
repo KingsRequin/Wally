@@ -183,23 +183,39 @@ async def verifier_invariants(
     if Path(chemin).exists():
         alertes += await _verifier_index(chemin)
         alertes += await _verifier_formats_de_date(chemin)
-    # La durée est journalisée parce qu'elle a menti : mesurée à 0,4 s sur
-    # l'hôte, la passe tenait 9 à 14 s dans le conteneur, de façon
-    # intermittente — sans qu'aucune ligne ne le dise. Un canari qui ne se
-    # chronomètre pas est exactement le genre de silence qu'il combat.
+    # Du temps ÉCOULÉ, pas du temps de travail — et la nuance est toute
+    # l'histoire de cette ligne. Mesurée à 0,4 s sur l'hôte, la passe affichait
+    # 9 à 18 s dans le conteneur, de façon intermittente et inexpliquée.
+    #
+    # Explication mesurée le 2026-08-26 sur 92 démarrages : depuis que le
+    # canari est LANCÉ SANS ÊTRE ATTENDU (`lancer_canari`), il partage la
+    # boucle asyncio avec le reste du boot. Il ne travaille pas plus longtemps,
+    # il attend son tour derrière les souscriptions EventSub — ~2 s chacune, en
+    # série. La corrélation est franche :
+    #
+    #     canari < 1 s   →  0,5 souscription EventSub en parallèle (64 boots)
+    #     canari > 10 s  →  9,5 souscriptions                      ( 4 boots)
+    #
+    # Les boots lents sont d'ailleurs groupés (six entre 00 h 36 et 01 h 12) :
+    # des rebuilds rapprochés laissent chacun des souscriptions mortes que le
+    # suivant doit nettoyer PUIS recréer.
+    #
+    # La ligne dit donc ce qu'elle mesure. Un chiffre sans unité de sens fait
+    # chercher une pathologie là où il n'y a qu'une file d'attente.
     duree = time.monotonic() - depart
 
     if alertes:
         logger.warning(
-            "🐤 Canari ({d:.1f} s) : {n} invariant(s) rompu(s) au démarrage — "
-            "le bot tourne, mais quelque chose ne fonctionnera pas comme prévu :",
+            "🐤 Canari ({d:.1f} s écoulées, en fond) : {n} invariant(s) rompu(s) au "
+            "démarrage — le bot tourne, mais quelque chose ne fonctionnera pas "
+            "comme prévu :",
             n=len(alertes), d=duree,
         )
         for a in alertes:
             logger.warning("🐤   · {a}", a=a)
     else:
-        logger.info("🐤 Canari ({d:.1f} s) : tous les invariants de démarrage "
-                    "sont tenus", d=duree)
+        logger.info("🐤 Canari ({d:.1f} s écoulées, en fond) : tous les invariants "
+                    "de démarrage sont tenus", d=duree)
     return alertes
 
 
