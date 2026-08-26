@@ -86,6 +86,25 @@ _KNOWN_BOTS: frozenset[str] = frozenset({
 })
 
 
+def libelle_chatter(login: str, display: str | None) -> str:
+    """« Malef (@malef__) » quand les deux diffèrent, « Malef » sinon.
+
+    Pendant Twitch de `_author_label` (Discord). Twitch sépare le `login`
+    — minuscules, immuable, celui des mentions — du pseudo AFFICHÉ, que la
+    personne choisit. Wally ne lisait que le login : il appelait les gens
+    « malef__ » ou « kingsrequin » là où Discord dit « Malef ».
+
+    La casse seule ne justifie pas la parenthèse : « KingsRequin » se suffit,
+    « KingsRequin (@kingsrequin) » n'apprend rien et alourdit chaque ligne du
+    contexte.
+    """
+    login = (login or "").strip()
+    display = (display or "").strip() or login
+    if not login:
+        return display
+    return f"{display} (@{login})" if display.lower() != login.lower() else display
+
+
 def is_ignored_chatter(author: str, ignored: list[str] | None) -> bool:
     """Vrai si ce compte ne doit pas être écouté.
 
@@ -734,6 +753,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     content: str = payload.message.text
     content_lower = content.lower()
     author: str = payload.chatter.name
+    # Le login sert aux MENTIONS et aux comparaisons (filtres, commandes, clés) ;
+    # le libellé sert à tout ce qu'un humain ou le LLM va LIRE. Même règle qu'à
+    # l'écrit sur Discord (`_author_label`) : « Malef (@malef__) » quand les deux
+    # diffèrent, « Malef » sinon.
+    author_display: str = getattr(payload, "chatter_display", "") or author
+    author_label: str = libelle_chatter(author, author_display)
     user_id: str = str(payload.chatter.id)
     # Normalisé en minuscules — cohérent avec les clés de _channel_ids
     channel_name: str = payload.broadcaster.name.lower()
@@ -818,7 +843,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             logger.debug("overlay: ancienneté spectateur indisponible: {e!r}", e=exc)
 
     # Persiste le login Twitch pour que le dashboard affiche un nom lisible
-    await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author)
+    await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author_display)
 
     # Flux passif du stream : pendant le live, les lignes du chat de la chaîne
     # home nourrissent le contexte d'ambiance de Wally — y compris quand il
@@ -831,7 +856,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         and (getattr(bot, "_stream_info", None) or {}).get("live")
     ):
         try:
-            _stream_feed.record_chat(author, content)
+            _stream_feed.record_chat(author_label, content)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.warning("StreamFeed: chat non enregistré : {e!r}", e=exc)
 
@@ -841,7 +866,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # dit « pas de live » alors que l'overlay, lui, doit réagir.
     if _overlay_on and channel_name not in bot._channel_ids:
         _t = asyncio.create_task(
-            _narrator.on_chat_message(author, content, days_since=_seen_days)
+            _narrator.on_chat_message(author_display, content, days_since=_seen_days)
         )
         _overlay_chat_tasks.add(_t)
         _t.add_done_callback(_overlay_chat_tasks.discard)
@@ -879,7 +904,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
-    bot.memory.append_prelude(channel_id, author, content)
+    bot.memory.append_prelude(channel_id, author_label, content)
     if getattr(bot, "cognitive_loop", None) is not None:
         try:
             # « Pertinent » = le message vise Wally (mention @nick ou nom déclencheur)
@@ -890,7 +915,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             )
             bot.cognitive_loop.notify_activity(
                 channel_id=channel_id,
-                author=author,
+                author=author_label,
                 content=content,
                 relevant=_relevant,
                 user_key=f"twitch:{user_id}",
@@ -902,7 +927,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             # silencieux », déjà vu sur le congé vocal.
             logger.warning("Cognition : notify_activity (twitch) en échec : {e!r}", e=exc)
     if getattr(bot, "fact_extractor", None) is not None:
-        bot.fact_extractor.record_message(channel_id, "twitch", user_id, author, content, is_reply=False,
+        bot.fact_extractor.record_message(channel_id, "twitch", user_id, author_label, content, is_reply=False,
                                           origin=f"Twitch/{channel_name}")
 
     # Reaction tracking: scan for positive reactions in Twitch window
@@ -913,7 +938,7 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     _trace = getattr(payload, "message_id", None) or new_trace_id("twitch")
     _clog(
         bot, channel_name, "message_in",
-        trace_id=_trace, author=author, author_id=user_id, content=content,
+        trace_id=_trace, author=author_label, author_id=user_id, content=content,
     )
 
     # Trigger check — calculé AVANT le spontané : les deux chemins ne doivent

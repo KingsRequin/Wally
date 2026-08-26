@@ -85,11 +85,19 @@ def make_bot(trigger_names=None, cooldown_seconds=10, trust=0.5):
 
 
 def make_payload(content="wally salut", author_name="streamer",
-                 author_id="111", channel="mychannel", badges=None):
+                 author_id="111", channel="mychannel", badges=None,
+                 author_display=None):
+    """⚠️ `chatter_display` DOIT être posé : sur un MagicMock nu, `getattr` rend
+    un sous-mock truthy au lieu du défaut, et le libellé de l'auteur devient un
+    objet Mock — ce qui ne casse pas ici mais vide le flux du stream ailleurs.
+    Par défaut il vaut le login : les tests qui ne s'y intéressent pas gardent
+    exactement le comportement d'avant le pseudo affiché.
+    """
     payload = MagicMock()
     payload.message.text = content
     payload.chatter.name = author_name
     payload.chatter.id = author_id
+    payload.chatter_display = author_display or author_name
     payload.badges = badges if badges is not None else []
     payload.broadcaster.name = channel
     return payload

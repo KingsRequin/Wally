@@ -26,16 +26,27 @@ class ChatMessageData:
 
     Attributes:
       chatter.id / chatter.name — chatter_user_id / chatter_user_login
+      chatter_display           — chatter_user_name (le pseudo AFFICHÉ)
       message.text              — message.text
       broadcaster.name          — broadcaster_user_login
       badges                    — list[_ChatBadge] from top-level "badges" array
+
+    Twitch distingue le `login` (minuscules, immuable, celui des mentions) du
+    `user_name` (ce que la personne a choisi d'afficher : casse, accents, autre
+    alphabet). Ce modèle ne lisait que le login, et Wally appelait donc les gens
+    « malef__ » ou « kingsrequin » là où Discord dit « Malef ». L'information
+    était pourtant DANS la charge utile reçue — jetée à la construction, pas
+    absente. Aucun appel d'API à faire pour la récupérer.
     """
 
-    __slots__ = "chatter", "message", "broadcaster", "message_id", "badges"
+    __slots__ = "chatter", "chatter_display", "message", "broadcaster", "message_id", "badges"
 
     def __init__(self, client, data: dict):
         self.chatter = client.client.create_user(
             int(data["chatter_user_id"]), data["chatter_user_login"]
+        )
+        self.chatter_display: str = (
+            data.get("chatter_user_name") or data["chatter_user_login"]
         )
         self.message = _ChatMessageText(data["message"])
         self.broadcaster = client.client.create_user(
