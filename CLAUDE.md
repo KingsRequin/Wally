@@ -41,6 +41,35 @@ comportement réel), et publier — commit + push + rebuild — dans la même fo
    « number of websocket transports limit exceeded ». Le coût de la recherche est négligeable
    face à celui d'une expérience ratée.
 
+0bis. **NE PAS ÉCRIRE DE CODE MORT — je suis le seul à en produire ici.**
+
+   Personne d'autre n'écrit dans ce dépôt : chaque ligne morte a été écrite par un agent, en
+   croyant bien faire. Le cliquet `lint_mort.py` compte le stock ; cette règle vise le GESTE qui
+   l'alimente. Les trois signatures, relevées sur les 96 survivants du 2026-08-26 :
+
+   · **La symétrie spéculative.** Un `reset_x()` parce qu'il existe un `set_x()`, un
+     `oublier_canal()` / `oublier_tout()` par paire, un `complete_stream()` déclaré dans
+     `base.py` et implémenté dans DeepSeek ET OpenAI — appelé nulle part. Écrire la moitié d'une
+     interface qu'on n'utilise pas coûte trois fichiers à maintenir et zéro fonctionnalité.
+     **N'écrire que le sens de lecture dont un appelant a besoin AUJOURD'HUI.**
+
+   · **Le bouton qui n'est branché sur rien.** Un champ de config, son entrée dans
+     `config.yaml`, sa route d'écriture, parfois son champ de saisie dans le dashboard — et
+     aucun lecteur. Huit trouvés le 2026-08-26, dont `thinking_budget_tokens` avec sa
+     validation 1000–128000 à l'écran. L'owner tourne un bouton, rien ne bouge, rien ne le dit.
+     **Un réglage s'écrit du CONSOMMATEUR vers l'UI, jamais l'inverse** : d'abord la ligne qui
+     le lit, ensuite seulement la config et l'écran. `tests/test_config_sans_bouton_mort.py`
+     le vérifie désormais à chaque suite.
+
+   · **La fonctionnalité qui n'existe que dans la doc.** Deux sections de ce fichier décrivaient
+     en détail du code absent — le « Spontaneous Memory Recall » et `ClaudeLLMClient`. Une doc
+     qui décrit une fonctionnalité inexistante coûte plus cher qu'une doc manquante : elle
+     envoie chercher un bug dans un mécanisme qui n'a jamais tourné. **Décrire ici ce qui EST,
+     jamais ce qui devrait être** ; le futur va dans `docs/plans/`.
+
+   Corollaire pratique : avant d'ajouter une fonction publique, une méthode, un champ de config
+   ou un attribut d'instance, nommer son appelant. S'il n'y en a pas encore, ne pas l'écrire.
+
 1. THE "STEP 0" RULE: Dead code accelerates context compaction. Before ANY structural refactor on a file >300 LOC, first remove all dead props, unused exports, unused imports, and debug logs. Commit this cleanup separately before starting the real work.
 
 2. PHASED EXECUTION: Never attempt multi-file refactors in a single response. Break work into explicit phases. Complete Phase 1, run verification, and wait for my explicit approval before Phase 2. Each phase must touch no more than 5 files.
@@ -708,12 +737,14 @@ recrée le client en place, sans redémarrage.
 **OpenAI Responses API** (o1/o3/o4/gpt-5) : quand `reasoning_effort` est posé, `max_output_tokens`
 est **omis** — sinon les petits modèles épuisent le budget en raisonnement et rendent du vide.
 
-**ClaudeLLMClient** :
-- Prompt caching : prompt système enveloppé de `cache_control: {"type": "ephemeral"}`
-- Thinking : `disabled` / `adaptive` (niveau d'effort) / `enabled` (budget_tokens fixe).
-  Température forcée à 1 quand actif. Les blocs thinking sont préservés dans les boucles de tool
-  use. **Incompatible avec `complete_structured()`** — thinking désactivé là.
-- Sortie structurée : `tool_choice` forcé, schéma en `input_schema` (pas de mode JSON natif)
+**⚠️ `ClaudeLLMClient` N'EXISTE PAS.** Cette section décrivait son prompt caching, son mode
+thinking et sa sortie structurée. `bot/core/llm/` contient `base.py`, `deepseek.py`,
+`openai_client.py`, `factory.py` — et rien d'autre. `SUPPORTED_TEXT_PROVIDERS` vaut
+`("deepseek", "openai")`.
+
+Le réglage `thinking_budget_tokens` qui allait avec avait un champ de saisie DANS LE DASHBOARD,
+avec sa validation 1000–128000, et n'était lu par aucun client. Retiré le 2026-08-26. Le mode
+thinking réellement branché est `thinking_type` + `thinking_effort`, passés à DeepSeek.
 
 Un appel qui RÉÉMET son entrée (passe de journal, réécriture) doit passer son propre `max_tokens`
 et lire `finish_reason`.

@@ -182,13 +182,6 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
                 cfg.llm.primary.thinking_effort = val
                 if hasattr(state.primary_llm, "thinking_effort"):
                     state.primary_llm.thinking_effort = val
-            if "thinking_budget_tokens" in p:
-                val = int(p["thinking_budget_tokens"])
-                if not (1000 <= val <= 128000):
-                    raise HTTPException(status_code=400, detail="thinking_budget_tokens must be 1000–128000")
-                cfg.llm.primary.thinking_budget_tokens = val
-                if hasattr(state.primary_llm, "thinking_budget_tokens"):
-                    state.primary_llm.thinking_budget_tokens = val
         if "secondary" in llm_data:
             s = llm_data["secondary"]
             if "provider" in s and s["provider"] != cfg.llm.secondary.provider:
@@ -245,11 +238,6 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             cfg.bot.dashboard_token = str(_brut).strip() if _brut else None
         if "trigger_names" in d:
             cfg.bot.trigger_names = list(d["trigger_names"])  # liste : remplacement intégral
-        if "cost_alert_threshold" in d:
-            val = float(d["cost_alert_threshold"])
-            if val <= 0:
-                raise HTTPException(status_code=400, detail="cost_alert_threshold must be > 0")
-            cfg.bot.cost_alert_threshold = val
         if "spontaneous_discord_enabled" in d:
             cfg.bot.spontaneous_discord_enabled = bool(d["spontaneous_discord_enabled"])
         if "spontaneous_twitch_enabled" in d:
@@ -260,8 +248,6 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             cfg.bot.spontaneous_passion_probability = float(d["spontaneous_passion_probability"])
         if "spontaneous_cooldown_seconds" in d:
             cfg.bot.spontaneous_cooldown_seconds = int(d["spontaneous_cooldown_seconds"])
-        if "notification_guild_id" in d:
-            cfg.bot.notification_guild_id = int(d["notification_guild_id"]) if d["notification_guild_id"] else None
         if "notification_channel_id" in d:
             cfg.bot.notification_channel_id = int(d["notification_channel_id"]) if d["notification_channel_id"] else None
 

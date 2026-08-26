@@ -21,7 +21,6 @@ def _make_state() -> AppState:
     db.create_setup_invite = AsyncMock()
     cfg = MagicMock()
     cfg.bot.dashboard_token = "testtoken"
-    cfg.bot.cost_alert_threshold = 0
     return AppState(
         config=cfg, db=db, emotion=emotion,
         memory=MagicMock(), persona=MagicMock(),

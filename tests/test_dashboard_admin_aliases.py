@@ -23,7 +23,6 @@ def _make_config():
         context_token_threshold=3000,
         journal_time="03:00",
         dashboard_token="testtoken",
-        cost_alert_threshold=25.0,
     )
     cfg.openai = OpenAIConfig(
         primary_model="gpt-5", secondary_model="gpt-5-mini",

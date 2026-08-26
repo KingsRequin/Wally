@@ -79,6 +79,19 @@ _APPELES_PAR_UNE_LIB = (
     "should_exit",     # uvicorn
 )
 
+# Même aveuglement, autre forme : une fonction DÉCORÉE est enregistrée auprès
+# d'un framework qui l'appellera par cette référence — jamais par son nom.
+# Routes FastAPI, boutons discord.ui, commandes slash : 155 des 246 signalements
+# du 2026-08-26 étaient de celles-là, soit près des deux tiers.
+_ENREGISTREES_PAR_UN_DECORATEUR = (
+    "@*router.get", "@*router.post", "@*router.put", "@*router.delete",
+    "@*router.patch", "@*router.websocket",
+    "@app.get", "@app.post", "@app.websocket", "@app.on_event",
+    "@discord.ui.button", "@discord.ui.select", "@ui.button",
+    "@app_commands.*", "@commands.*", "@tasks.loop",
+    "@pytest.fixture",
+)
+
 # Les deux niveaux et la clé de cliquet qui va avec.
 _NIVEAUX = (
     (100, "max_code_mort_certain", "certitudes"),
@@ -96,7 +109,8 @@ def recenser(confiance: int) -> list[str]:
     """
     resultat = subprocess.run(
         ["vulture", *_CIBLES, "--min-confidence", str(confiance),
-         "--ignore-names", ",".join(_APPELES_PAR_UNE_LIB)],
+         "--ignore-names", ",".join(_APPELES_PAR_UNE_LIB),
+         "--ignore-decorators", ",".join(_ENREGISTREES_PAR_UN_DECORATEUR)],
         cwd=_RACINE,
         capture_output=True,
         text=True,

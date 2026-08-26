@@ -29,7 +29,6 @@ apex:
 bot:
   context_token_threshold: 3000
   context_window_size: 20
-  cost_alert_threshold: 25.0
   creator_name: KingsRequin          # nom de ton créateur (cité dans certains prompts)
   dashboard_token: changeme          # ⚠️ mot de passe d'accès admin du dashboard — À CHANGER
   emotion_inertia_factor: 0.5
@@ -45,7 +44,6 @@ bot:
   memory_context_max_tokens: 800
   notification_channel_id: null      # ID du salon de notifications
   bedroom_channel_id: null            # ID du salon "chambre" — cible des rappels créés en vocal
-  notification_guild_id: null
   prelude_window_size: 15
   spontaneous_channel_speak_enabled: false
   spontaneous_cooldown_seconds: 300
@@ -221,7 +219,6 @@ llm:
     reasoning_effort: medium
     temperature: 0.8
     text_verbosity: medium
-    thinking_budget_tokens: 10000
     thinking_effort: medium
     thinking_type: disabled
   secondary:
@@ -231,7 +228,6 @@ llm:
     reasoning_effort: medium
     temperature: 0.8
     text_verbosity: medium
-    thinking_budget_tokens: 10000
     thinking_effort: medium
     thinking_type: disabled
 openai:

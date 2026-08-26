@@ -16,8 +16,6 @@ class BotConfig:
     dashboard_token: Optional[str] = None
     prelude_window_size: int = 15
     link_min_confidence: float = 0.75
-    cost_alert_threshold: float = 25.0
-    notification_guild_id: int | None = None
     notification_channel_id: int | None = None
     bedroom_channel_id: int | None = None   # #chambre-de-wally — cible des rappels créés en vocal
     # Salon vocal rejoint en écoute seule quand le stream démarre. None = jamais.
@@ -80,7 +78,6 @@ class LLMRoleConfig:
     reasoning_effort: str = "medium"      # OpenAI-specific, ignored by Claude
     text_verbosity: str = "medium"        # OpenAI-specific, ignored by Claude
     thinking_type: str = "disabled"       # Claude-specific: disabled/enabled/adaptive
-    thinking_budget_tokens: int = 10000   # Claude-specific: budget for type=enabled
     thinking_effort: str = "medium"       # Claude-specific: effort for type=adaptive (low/medium/high)
 
 

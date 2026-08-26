@@ -42,7 +42,7 @@ def _make_config():
     cfg.bot = BotConfig(
         trigger_names=["wally"], language_default="fr", context_window_size=20,
         context_token_threshold=3000, journal_time="03:00",
-        dashboard_token="testtoken", cost_alert_threshold=25.0,
+        dashboard_token="testtoken",
     )
     cfg.openai = OpenAIConfig(
         primary_model="gpt-5", secondary_model="gpt-5-mini",

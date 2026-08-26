@@ -776,11 +776,6 @@ async function renderConfigForm(cfg) {
           </select>
           <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
         </div>
-        <div id="thinking-budget-group" class="field-group" style="display:none">
-          <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
-          <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
-        </div>
       </div>
       <div class="field-group">
         <label class="field-label" for="cfg-max-tokens">Max output tokens</label>
@@ -959,11 +954,12 @@ function onProviderChange() {
 }
 
 function onThinkingTypeChange() {
+  // Le champ « budget tokens » a été retiré le 2026-08-26 : il pilotait un
+  // `ClaudeLLMClient` qui n'existe pas dans ce dépôt, et sa valeur n'était lue
+  // par aucun client. Seul `thinking_effort` (adaptive) est branché.
   const type = document.getElementById('cfg-thinking-type')?.value || 'disabled';
   const effortGroup = document.getElementById('thinking-effort-group');
-  const budgetGroup = document.getElementById('thinking-budget-group');
   if (effortGroup) effortGroup.style.display = type === 'adaptive' ? 'block' : 'none';
-  if (budgetGroup) budgetGroup.style.display = type === 'enabled' ? 'block' : 'none';
 }
 
 async function saveOpenAI() {
@@ -990,7 +986,6 @@ async function saveOpenAI() {
         model: primaryModel,
         thinking_type: document.getElementById('cfg-thinking-type')?.value || 'disabled',
         thinking_effort: document.getElementById('cfg-thinking-effort')?.value || 'medium',
-        thinking_budget_tokens: parseInt(document.getElementById('cfg-thinking-budget')?.value || '10000'),
       },
       secondary: { provider: secondaryProv, model: secondaryModel },
     },
@@ -3299,11 +3294,6 @@ async function _renderParametresLLM(panel) {
           ${THINKING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === (cfg.llm?.primary?.thinking_effort || 'medium') ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
         </select>
         <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
-      </div>
-      <div id="thinking-budget-group" class="field-group" style="display:none">
-        <label class="field-label" for="cfg-thinking-budget">Budget tokens thinking</label>
-        <input type="number" id="cfg-thinking-budget" min="1000" max="128000" step="1000" value="${cfg.llm?.primary?.thinking_budget_tokens || 10000}">
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Doit être inférieur à max_tokens. 10k = standard, 50k+ = problèmes complexes</p>
       </div>
     </div>
     <div class="field-group">
