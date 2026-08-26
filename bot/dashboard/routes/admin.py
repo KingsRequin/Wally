@@ -112,33 +112,33 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             state.primary_llm.max_tokens = int(d["max_tokens"])
             state.secondary_llm.max_tokens = int(d["max_tokens"])
         if "reasoning_effort" in d:
-            val = str(d["reasoning_effort"])
-            if val not in VALID_REASONING_EFFORTS:
+            reasoning_effort = str(d["reasoning_effort"])
+            if reasoning_effort not in VALID_REASONING_EFFORTS:
                 raise HTTPException(
                     status_code=400,
                     detail=f"reasoning_effort must be one of {VALID_REASONING_EFFORTS}",
                 )
-            cfg.openai.reasoning_effort = val
-            cfg.llm.primary.reasoning_effort = val
-            cfg.llm.secondary.reasoning_effort = val
+            cfg.openai.reasoning_effort = reasoning_effort
+            cfg.llm.primary.reasoning_effort = reasoning_effort
+            cfg.llm.secondary.reasoning_effort = reasoning_effort
             if hasattr(state.primary_llm, "reasoning_effort"):
-                state.primary_llm.reasoning_effort = val
+                state.primary_llm.reasoning_effort = reasoning_effort
             if hasattr(state.secondary_llm, "reasoning_effort"):
-                state.secondary_llm.reasoning_effort = val
+                state.secondary_llm.reasoning_effort = reasoning_effort
         if "text_verbosity" in d:
-            val = str(d["text_verbosity"])
-            if val not in VALID_TEXT_VERBOSITIES:
+            text_verbosity = str(d["text_verbosity"])
+            if text_verbosity not in VALID_TEXT_VERBOSITIES:
                 raise HTTPException(
                     status_code=400,
                     detail=f"text_verbosity must be one of {VALID_TEXT_VERBOSITIES}",
                 )
-            cfg.openai.text_verbosity = val
-            cfg.llm.primary.text_verbosity = val
-            cfg.llm.secondary.text_verbosity = val
+            cfg.openai.text_verbosity = text_verbosity
+            cfg.llm.primary.text_verbosity = text_verbosity
+            cfg.llm.secondary.text_verbosity = text_verbosity
             if hasattr(state.primary_llm, "text_verbosity"):
-                state.primary_llm.text_verbosity = val
+                state.primary_llm.text_verbosity = text_verbosity
             if hasattr(state.secondary_llm, "text_verbosity"):
-                state.secondary_llm.text_verbosity = val
+                state.secondary_llm.text_verbosity = text_verbosity
 
     if "llm" in body:
         llm_data = body["llm"]
@@ -169,19 +169,19 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
                 state.primary_llm.model = p["model"]
             # Claude thinking settings
             if "thinking_type" in p:
-                val = str(p["thinking_type"])
-                if val not in VALID_THINKING_TYPES:
+                thinking_type = str(p["thinking_type"])
+                if thinking_type not in VALID_THINKING_TYPES:
                     raise HTTPException(status_code=400, detail=f"thinking_type must be one of {VALID_THINKING_TYPES}")
-                cfg.llm.primary.thinking_type = val
+                cfg.llm.primary.thinking_type = thinking_type
                 if hasattr(state.primary_llm, "thinking_type"):
-                    state.primary_llm.thinking_type = val
+                    state.primary_llm.thinking_type = thinking_type
             if "thinking_effort" in p:
-                val = str(p["thinking_effort"])
-                if val not in VALID_THINKING_EFFORTS:
+                thinking_effort = str(p["thinking_effort"])
+                if thinking_effort not in VALID_THINKING_EFFORTS:
                     raise HTTPException(status_code=400, detail=f"thinking_effort must be one of {VALID_THINKING_EFFORTS}")
-                cfg.llm.primary.thinking_effort = val
+                cfg.llm.primary.thinking_effort = thinking_effort
                 if hasattr(state.primary_llm, "thinking_effort"):
-                    state.primary_llm.thinking_effort = val
+                    state.primary_llm.thinking_effort = thinking_effort
         if "secondary" in llm_data:
             s = llm_data["secondary"]
             if "provider" in s and s["provider"] != cfg.llm.secondary.provider:
@@ -269,25 +269,25 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             if "enabled" in sd:
                 spam.enabled = bool(sd["enabled"])
             if "max_messages" in sd:
-                val = int(sd["max_messages"])
-                if not (3 <= val <= 50):
+                max_messages = int(sd["max_messages"])
+                if not (3 <= max_messages <= 50):
                     raise HTTPException(400, "max_messages must be 3-50")
-                spam.max_messages = val
+                spam.max_messages = max_messages
             if "window_seconds" in sd:
-                val = int(sd["window_seconds"])
-                if not (30 <= val <= 600):
+                window_seconds = int(sd["window_seconds"])
+                if not (30 <= window_seconds <= 600):
                     raise HTTPException(400, "window_seconds must be 30-600")
-                spam.window_seconds = val
+                spam.window_seconds = window_seconds
             if "mute_minutes" in sd:
-                val = int(sd["mute_minutes"])
-                if not (1 <= val <= 60):
+                mute_minutes = int(sd["mute_minutes"])
+                if not (1 <= mute_minutes <= 60):
                     raise HTTPException(400, "mute_minutes must be 1-60")
-                spam.mute_minutes = val
+                spam.mute_minutes = mute_minutes
             if "spam_anger_delta" in sd:
-                val = float(sd["spam_anger_delta"])
-                if not (0.01 <= val <= 0.2):
+                spam_anger_delta = float(sd["spam_anger_delta"])
+                if not (0.01 <= spam_anger_delta <= 0.2):
                     raise HTTPException(400, "spam_anger_delta must be 0.01-0.2")
-                spam.spam_anger_delta = val
+                spam.spam_anger_delta = spam_anger_delta
             if "exempt_channels" in sd:
                 spam.exempt_channels = [int(c) for c in sd["exempt_channels"]]
 
@@ -340,22 +340,22 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
         if "model" in d:
             ig.model = str(d["model"])
         if "quality" in d:
-            val = str(d["quality"])
-            if val not in ("low", "medium", "high", "auto"):
+            quality = str(d["quality"])
+            if quality not in ("low", "medium", "high", "auto"):
                 raise HTTPException(400, "quality must be low/medium/high/auto")
-            ig.quality = val
+            ig.quality = quality
         if "size" in d:
-            val = str(d["size"])
-            if val not in ("1024x1024", "1024x1536", "1536x1024", "auto"):
+            size = str(d["size"])
+            if size not in ("1024x1024", "1024x1536", "1536x1024", "auto"):
                 raise HTTPException(400, "size must be 1024x1024/1024x1536/1536x1024/auto")
-            ig.size = val
+            ig.size = size
         if "background" in d:
             ig.background = str(d["background"])
         if "format" in d:
-            val = str(d["format"])
-            if val not in ("png", "jpeg", "webp"):
+            format = str(d["format"])
+            if format not in ("png", "jpeg", "webp"):
                 raise HTTPException(400, "format must be png/jpeg/webp")
-            ig.format = val
+            ig.format = format
         if "daily_limit" in d:
             ig.daily_limit = int(d["daily_limit"])
         if "per_user_limit" in d:
@@ -368,24 +368,24 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
         if "command" in d:
             oi.command = str(d["command"])
         if "display_duration" in d:
-            val = int(d["display_duration"])
-            if not (5 <= val <= 60):
+            display_duration = int(d["display_duration"])
+            if not (5 <= display_duration <= 60):
                 raise HTTPException(400, "display_duration must be 5-60")
-            oi.display_duration = val
+            oi.display_duration = display_duration
         if "animation_in" in d:
             oi.animation_in = str(d["animation_in"])
         if "animation_out" in d:
             oi.animation_out = str(d["animation_out"])
         if "animation_duration" in d:
-            val = float(d["animation_duration"])
-            if not (0.5 <= val <= 3.0):
+            animation_duration = float(d["animation_duration"])
+            if not (0.5 <= animation_duration <= 3.0):
                 raise HTTPException(400, "animation_duration must be 0.5-3.0")
-            oi.animation_duration = val
+            oi.animation_duration = animation_duration
         if "random_filter" in d:
-            val = str(d["random_filter"])
-            if val not in ("all", "top", "recent"):
+            random_filter = str(d["random_filter"])
+            if random_filter not in ("all", "top", "recent"):
                 raise HTTPException(400, "random_filter must be all/top/recent")
-            oi.random_filter = val
+            oi.random_filter = random_filter
         if "enabled" in d:
             oi.enabled = bool(d["enabled"])
 
@@ -400,15 +400,15 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
         if "language" in d:
             v.language = str(d["language"])
         if "auto_leave_minutes" in d:
-            val = int(d["auto_leave_minutes"])
-            if not (1 <= val <= 60):
+            auto_leave_minutes = int(d["auto_leave_minutes"])
+            if not (1 <= auto_leave_minutes <= 60):
                 raise HTTPException(400, "auto_leave_minutes must be 1-60")
-            v.auto_leave_minutes = val
+            v.auto_leave_minutes = auto_leave_minutes
         if "vad_aggressiveness" in d:
-            val = int(d["vad_aggressiveness"])
-            if not (0 <= val <= 3):
+            vad_aggressiveness = int(d["vad_aggressiveness"])
+            if not (0 <= vad_aggressiveness <= 3):
                 raise HTTPException(400, "vad_aggressiveness must be 0-3")
-            v.vad_aggressiveness = val
+            v.vad_aggressiveness = vad_aggressiveness
         # Hot-reload de la voix/seuils si le service vocal tourne (sinon pris au prochain boot).
         vs = getattr(request.app.state.wally, "voice_service", None)
         if vs is not None:
