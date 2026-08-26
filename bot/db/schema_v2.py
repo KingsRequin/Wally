@@ -232,6 +232,14 @@ async def _migrate_pending_upgrades(db: aiosqlite.Connection) -> None:
     existing = {row[1] for row in await cursor.fetchall()}
     if "capability" not in existing:
         await db.execute("ALTER TABLE pending_upgrades ADD COLUMN capability TEXT")
+    # `message_id` / `dm_channel_id` : le DM d'autorisation, relu au démarrage
+    # pour reprendre une demande dont l'attente est morte au rebuild. Elles
+    # figurent au schéma depuis l'origine, donc la base de prod les a — mais une
+    # base créée par une autre instance avant leur ajout ne les aurait pas, et
+    # `set_message` y échouerait à chaque demande, en silence.
+    for colonne in ("message_id", "dm_channel_id"):
+        if colonne not in existing:
+            await db.execute(f"ALTER TABLE pending_upgrades ADD COLUMN {colonne} TEXT")
 
 
 async def _migrate_rss_articles(db: aiosqlite.Connection) -> None:

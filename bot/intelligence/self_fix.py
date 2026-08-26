@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from loguru import logger
 
@@ -278,6 +278,133 @@ class SelfFix:
         finally:
             self._pending = False
 
+    async def reprendre_demandes_en_attente(self) -> int:
+        """Rattrape au démarrage les demandes dont l'attente est morte au rebuild.
+
+        `_await_reaction` est un `wait_for` EN MÉMOIRE. Tout redémarrage le perd,
+        et un self-fix se termine justement par un `docker_rebuild` : le cas est
+        structurel. Jusqu'ici rien ne relisait le message — cliquer ✅ après un
+        rebuild ne déclenchait plus rien, et la demande mourait en `abandoned` au
+        bout de 72 h sans que personne ne l'ait refusée. Deux fois la même
+        demande sur ce dépôt (#22 le 2026-08-17, #25 le 2026-08-25).
+
+        Deux cas : la réaction est déjà là — on conclut tout de suite ; ou pas
+        encore — on se remet à l'attendre pour le temps qu'il reste.
+        """
+        if self._registry is None or self._pending:
+            return 0
+        oid = self._owner_id()
+        if not oid:
+            return 0
+        try:
+            lignes = await self._registry.reprenables()
+        except Exception:  # noqa: BLE001 — un filet ne doit jamais casser le boot
+            logger.exception("self-fix: relecture des demandes en attente échouée")
+            return 0
+        if not lignes:
+            return 0
+        try:
+            owner = await self._bot.fetch_user(int(oid))
+            dm = await owner.create_dm()
+        except Exception:  # noqa: BLE001
+            logger.exception("self-fix: DM du créateur injoignable — reprise impossible")
+            return 0
+
+        repris = 0
+        for ligne in lignes:
+            try:
+                msg = await dm.fetch_message(int(ligne.message_id or 0))
+            except Exception as exc:  # noqa: BLE001 — message supprimé, DM purgé…
+                logger.warning(
+                    "self-fix: demande #{id} — DM introuvable, reprise abandonnée : {e!r}",
+                    id=ligne.id, e=exc,
+                )
+                continue
+            goal = (ligne.proposal or "").strip()
+            norm = goal.lower()
+            emoji = await self._reaction_du_createur(msg, oid)
+
+            if emoji is not None:
+                logger.info(
+                    "self-fix: demande #{id} — réaction {e} retrouvée après redémarrage",
+                    id=ligne.id, e=emoji,
+                )
+                self._pending = True
+                self._active_goal = goal
+                self._last_feed_pct = 0
+                try:
+                    await self._apres_decision(emoji, goal, norm, ligne.id, dm)
+                except Exception:  # noqa: BLE001
+                    logger.exception("self-fix: reprise de la demande #{} échouée", ligne.id)
+                finally:
+                    self._pending = False
+                    self._active_goal = None
+                repris += 1
+                continue
+
+            restant = self._temps_restant(ligne.created_at)
+            if restant <= 0:
+                continue  # `reconcile_stale` s'en charge
+            logger.info(
+                "self-fix: demande #{id} — attente reprise pour {h:.1f} h",
+                id=ligne.id, h=restant / 3600,
+            )
+            self._pending = True
+            self._active_goal = goal
+            if self._gate is not None:
+                self._gate.mark_sent()
+            asyncio.create_task(
+                self._reprendre_attente(msg, dm, goal, norm, ligne.id, restant)
+            )
+            # `_pending` n'autorise qu'une attente à la fois : les suivantes
+            # restent en base et seront reprises au prochain démarrage.
+            return repris + 1
+        return repris
+
+    async def _reprendre_attente(
+        self, msg, dm, goal: str, norm: str, upgrade_id: int, timeout: float
+    ) -> None:
+        """L'attente relancée en tâche de fond, qui rend `_pending` en sortant."""
+        try:
+            await self._attendre_et_conclure(msg, dm, goal, norm, upgrade_id, timeout)
+        except Exception:  # noqa: BLE001 — une tâche de fond ne remonte nulle part
+            logger.exception("self-fix: attente reprise de la demande #{} échouée", upgrade_id)
+        finally:
+            self._pending = False
+            self._active_goal = None
+
+    async def _reaction_du_createur(self, msg, owner_id: str) -> str | None:
+        """Le ✅ ou le ❌ posé par le CRÉATEUR sur ce message, ou None.
+
+        Wally pose lui-même les deux réactions pour offrir les boutons : leurs
+        compteurs ne disent donc rien, il faut regarder QUI a réagi. Si le
+        créateur a cliqué les deux, l'autorisation l'emporte — `msg.reactions`
+        suit l'ordre d'ajout, et le ✅ a été posé en premier.
+        """
+        for reaction in getattr(msg, "reactions", []):
+            emoji = str(reaction.emoji)
+            if emoji not in ("✅", "❌"):
+                continue
+            try:
+                async for user in reaction.users():
+                    if str(user.id) == owner_id:
+                        return emoji
+            except Exception as exc:  # noqa: BLE001 — une réaction illisible n'est pas un vote
+                logger.warning("self-fix: lecture des réactions échouée — {e!r}", e=exc)
+        return None
+
+    def _temps_restant(self, created_at: str) -> float:
+        """Ce qu'il reste de la fenêtre d'autorisation, en secondes (0 si écoulée).
+
+        `created_at` est écrit en UTC naïf par le registre.
+        """
+        try:
+            cree = datetime.fromisoformat(created_at).replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return 0.0
+        ecoule = datetime.now(timezone.utc).timestamp() - cree.timestamp()
+        return max(0.0, self._approval_timeout - ecoule)
+
     async def _run_upgrade(self, goal: str, norm: str, upgrade_id: int | None = None) -> None:
         oid = self._owner_id()
         if not oid:
@@ -301,13 +428,31 @@ class SelfFix:
         )
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
+        # Ranger le DM AVANT d'attendre : le message dit « prends ton temps », et
+        # l'attente ci-dessous ne survit pas au premier rebuild venu. Sans ce
+        # couple en base, un ✅ cliqué après un redémarrage ne déclenche plus
+        # rien et la demande meurt en `abandoned` sans que personne ne l'ait
+        # refusée — deux fois sur la même demande (#22, #25).
+        if self._registry is not None and upgrade_id is not None:
+            try:
+                await self._registry.set_message(upgrade_id, str(msg.id), str(dm.id))
+            except Exception:  # noqa: BLE001 — la reprise est un filet, pas le flux
+                logger.exception("self-fix: DM d'autorisation non rangé (reprise impossible)")
         self._remember_in_dm(dm, f"[demande de self-fix] {goal}")
         # Un fil de sollicitation owner est désormais ouvert.
         if self._gate is not None:
             self._gate.mark_sent()
 
+        await self._attendre_et_conclure(
+            msg, dm, goal, norm, upgrade_id, self._approval_timeout
+        )
+
+    async def _attendre_et_conclure(
+        self, msg, dm, goal: str, norm: str, upgrade_id: int | None, timeout: float
+    ) -> None:
+        """Attend la réaction du créateur, puis conclut. Partagé avec la reprise."""
         try:
-            emoji = await self._await_reaction(msg, timeout=self._approval_timeout)
+            emoji = await self._await_reaction(msg, timeout=timeout)
         except asyncio.TimeoutError:
             # Plus d'auto-refus : la demande n'est ni refusée ni blacklistée. Elle
             # est simplement mise de côté (re-proposable). Pas de message « j'abandonne ».
@@ -328,6 +473,12 @@ class SelfFix:
             if self._gate is not None:
                 self._gate.clear()
 
+        await self._apres_decision(emoji, goal, norm, upgrade_id, dm)
+
+    async def _apres_decision(
+        self, emoji: str, goal: str, norm: str, upgrade_id: int | None, dm
+    ) -> None:
+        """Ce que vaut la réaction du créateur — refus, ou tout le pipeline."""
         if emoji != "✅":
             await dm.send("❌ Ok, je laisse tomber. Je ne te le reproposerai pas.")
             self._declined.add(norm)

@@ -117,6 +117,12 @@ class UpgradeRow:
     # Renseignée à la livraison ; None pour tout ce qui n'est pas encore livré (et
     # pour les 14 livraisons antérieures au 2026-08-09, d'où le repli au rendu).
     capability: str | None = None
+    # Le DM d'autorisation posé au créateur, pour retrouver sa réaction APRÈS un
+    # redémarrage. Les deux colonnes existaient au schéma depuis l'origine et
+    # n'ont jamais été écrites (0 ligne sur 25) : l'attente vivait en mémoire, et
+    # tout rebuild la perdait sans que rien ne relise le message.
+    message_id: str | None = None
+    dm_channel_id: str | None = None
 
 
 class UpgradeRegistry:
@@ -147,6 +153,49 @@ class UpgradeRegistry:
                 (status, datetime.utcnow().isoformat(), upgrade_id),
             )
             await db.commit()
+
+    async def set_message(self, upgrade_id: int, message_id: str, dm_channel_id: str) -> None:
+        """Range le DM d'autorisation d'une demande, pour survivre à un rebuild.
+
+        Sans ce couple, la réaction du créateur n'est lisible que par le
+        `wait_for` en mémoire : le premier redémarrage venu, cliquer ✅ ne
+        déclenche plus rien et la demande meurt en `abandoned` au bout de 72 h,
+        sans que personne ne l'ait refusée. Vécu deux fois sur la même demande
+        (#22 le 2026-08-17, #25 le 2026-08-25).
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE pending_upgrades SET message_id = ?, dm_channel_id = ? WHERE id = ?",
+                (str(message_id), str(dm_channel_id), upgrade_id),
+            )
+            await db.commit()
+
+    async def reprenables(self) -> list[UpgradeRow]:
+        """Les demandes encore en attente dont on sait retrouver le DM.
+
+        Une demande REQUESTED sans `message_id` n'est pas reprenable — elle date
+        d'avant que le couple soit rangé, ou son DM n'a jamais pu partir.
+        `reconcile_stale` s'en charge à l'échéance.
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            cur = await db.execute(
+                """SELECT id, proposal, status, created_at, decided_at, capability,
+                          message_id, dm_channel_id
+                   FROM pending_upgrades
+                   WHERE status = ? AND message_id IS NOT NULL
+                   ORDER BY created_at""",
+                (REQUESTED,),
+            )
+            rows = await cur.fetchall()
+        # Lecture par POSITION, sans `row_factory` : le cliquet de code mort
+        # compte chaque assignation de cet attribut comme un soupçon, et en
+        # ajouter un cinquième site pour six colonnes n'en vaut pas le prix.
+        return [
+            UpgradeRow(id=r[0], proposal=r[1], status=r[2], created_at=r[3],
+                       decided_at=r[4], capability=r[5], message_id=r[6],
+                       dm_channel_id=r[7])
+            for r in rows
+        ]
 
     async def reconcile_stale(self, older_than_hours: float) -> int:
         """Passe en ABANDONED les demandes restées REQUESTED trop longtemps.

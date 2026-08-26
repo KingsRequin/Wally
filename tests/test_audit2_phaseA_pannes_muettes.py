@@ -137,11 +137,34 @@ def test_le_motif_de_blocage_nomme_le_refus():
 
 
 # ────────────────────────────── A2-11 ──────────────────────────────
-def test_le_fil_de_sollicitation_est_referme_dans_tous_les_cas():
-    from bot.intelligence import self_fix
+async def test_le_fil_de_sollicitation_est_referme_dans_tous_les_cas():
+    """Le gate owner se rouvre, que la réaction arrive ou qu'elle ne vienne pas.
 
-    src = inspect.getsource(self_fix.SelfFix._run_upgrade)
-    i_mark = src.index("self._gate.mark_sent()")
-    i_finally = src.index("finally:", i_mark)
-    i_clear = src.index("self._gate.clear()", i_finally)
-    assert i_mark < i_finally < i_clear
+    ⚠️ Ce test lisait le SOURCE de `_run_upgrade` et y cherchait un `finally:`
+    après `mark_sent()`. Il figeait donc la STRUCTURE : sortir l'attente dans sa
+    propre méthode — sans rien changer au comportement — le faisait tomber, et
+    ce `finally` avait justement été posé parce que le gate restait fermé 40
+    minutes après un refus. On guette l'état du gate, pas la mise en page.
+    """
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from bot.intelligence.self_fix import SelfFix
+
+    for issue in ("réaction reçue", "aucune réponse"):
+        gate = MagicMock()
+        sf = SelfFix(bridge=MagicMock(), bot=SimpleNamespace(memory=None), gate=gate)
+        sf._apres_decision = AsyncMock()
+        if issue == "réaction reçue":
+            sf._await_reaction = AsyncMock(return_value="❌")
+        else:
+            sf._await_reaction = AsyncMock(side_effect=asyncio.TimeoutError)
+            sf._set_status = AsyncMock()
+            sf._record_outcome = AsyncMock()
+
+        await sf._attendre_et_conclure(
+            SimpleNamespace(id=1), SimpleNamespace(id=2), "un but", "un but", 7, 1.0
+        )
+
+        assert gate.clear.call_count == 1, f"gate non rouvert — {issue}"

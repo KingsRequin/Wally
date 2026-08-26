@@ -466,7 +466,8 @@ class WallyDiscord(commands.Bot):
                 from bot.intelligence.upgrade_registry import UpgradeRegistry
                 _reg_db = self._v2_db_path or _os_auto.getenv("DB_PATH", "data/wally.db")
                 self.upgrade_registry = UpgradeRegistry(_reg_db)
-            self.self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry, gate=self.owner_gate)
+            _self_fix = SelfFix(_bridge, self, registry=self.upgrade_registry, gate=self.owner_gate)
+            self.self_fix = _self_fix
             # Réconciliation au démarrage : une demande laissée en REQUESTED par
             # un redémarrage pendant l'attente d'autorisation bloquait ce but —
             # et tout but lexicalement proche — définitivement (cf.
@@ -478,6 +479,16 @@ class WallyDiscord(commands.Bot):
                 )
             except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
                 logger.warning("Réconciliation des demandes d'auto-modif échouée: {e!r}", e=exc)
+            # Puis la REPRISE : `reconcile_stale` ne fait que nettoyer les
+            # demandes périmées ; celles encore dans leur fenêtre attendaient une
+            # réaction que plus personne n'écoutait depuis le redémarrage. On
+            # relit le DM — décision déjà prise, ou attente à reprendre.
+            try:
+                repris = await _self_fix.reprendre_demandes_en_attente()
+                if repris:
+                    logger.info("SelfFix: {n} demande(s) d'auto-modif reprise(s)", n=repris)
+            except Exception as exc:  # noqa: BLE001 — jamais bloquant au boot
+                logger.warning("Reprise des demandes d'auto-modif échouée: {e!r}", e=exc)
             _checker = getattr(self, "update_checker", None)
             if _checker is not None:
                 self.self_upgrade = SelfUpgrade(_checker, _bridge, self)
