@@ -271,7 +271,9 @@ class OpenAILLMClient(BaseLLMClient):
                 user_id=user_id,
             )
         except Exception as e:  # noqa: BLE001 — une compta ratée n'est pas fatale
-            logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
+            logger.warning(
+                "OpenAI : coût NON enregistré ({e!r}) — la facturation "
+                "s'arrête là si ça se répète", e=e)
 
     def _params_raisonnement(
         self, max_tokens: int | None = None, *, avec_plafond: bool = True
@@ -725,7 +727,9 @@ class OpenAILLMClient(BaseLLMClient):
                     user_id=user_id,
                 )
             except Exception as e:
-                logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
+                logger.warning(
+                    "OpenAI : coût NON enregistré ({e!r}) — la facturation "
+                    "s'arrête là si ça se répète", e=e)
             return text, tools_called
 
         except Exception as exc:
@@ -821,7 +825,9 @@ class OpenAILLMClient(BaseLLMClient):
                         user_id=user_id,
                     )
                 except Exception as e:
-                    logger.debug("OpenAI log_cost failed (non-fatal): {e!r}", e=e)
+                    logger.warning(
+                        "OpenAI : coût NON enregistré ({e!r}) — la facturation "
+                        "s'arrête là si ça se répète", e=e)
                 return msg.content.strip() if msg.content else FALLBACK_RESPONSE, tools_called
 
             except RateLimitError:

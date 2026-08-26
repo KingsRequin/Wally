@@ -362,7 +362,9 @@ class DeepSeekLLMClient(BaseLLMClient):
                 user_id=user_id,
             )
         except Exception as e:
-            logger.debug("DeepSeek log_cost failed (non-fatal): {e!r}", e=e)
+            logger.warning(
+                "DeepSeek : coût NON enregistré ({e!r}) — la facturation "
+                "s'arrête là si ça se répète", e=e)
 
     # ── Interface publique ────────────────────────────────────────────────────
 

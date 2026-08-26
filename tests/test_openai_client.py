@@ -448,3 +448,42 @@ def test_un_usage_sans_detail_de_cache_compte_zero():
 def test_un_usage_incomplet_ne_leve_pas():
     """Un objet qui ne porte AUCUN des deux jeux de noms."""
     assert compter_jetons(object()) == (0, 0, 0)
+
+
+@_pytest.mark.asyncio
+async def test_un_echec_d_enregistrement_de_cout_SE_VOIT():
+    """Une compta ratée n'est pas fatale, mais elle doit se dire.
+
+    Les quatre gestionnaires d'échec de `log_cost` journalisaient en DEBUG —
+    donc dans le vide, le niveau de prod étant plus haut. Si l'écriture des
+    coûts s'arrêtait (base verrouillée, disque plein, colonne manquante), la
+    facturation cesserait sans que rien ne l'annonce, et on ne s'en
+    apercevrait qu'en cherchant pourquoi le total ne bouge plus.
+
+    C'est la signature de défaut que ce dépôt combat : ça échoue, personne
+    n'est prévenu, ça vit des semaines.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from loguru import logger
+
+    from bot.core.llm.openai_client import OpenAILLMClient
+
+    client = OpenAILLMClient.__new__(OpenAILLMClient)
+    client._model = "gpt-test"
+    client._db = MagicMock()
+    client._db.log_cost = AsyncMock(side_effect=RuntimeError("base verrouillée"))
+
+    vues = []
+    sink = logger.add(lambda m: vues.append((m.record["level"].name,
+                                             m.record["message"])), level="INFO")
+    try:
+        await client._log_cost(input_tokens=10, output_tokens=2, cost=0.001,
+                               purpose="test", user_id=None)
+    finally:
+        logger.remove(sink)
+
+    niveaux = [n for n, _m in vues]
+    assert "WARNING" in niveaux, f"l'échec est resté invisible : {vues}"
+    # `{e!r}` et pas `{e}` : `RuntimeError('')` a un `str()` vide.
+    assert any("RuntimeError" in m for _n, m in vues)
