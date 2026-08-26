@@ -10,7 +10,6 @@ def _make_config():
     cfg.bot.context_window_size = 10
     cfg.bot.prelude_window_size = 5
     cfg.bot.context_token_threshold = 2000
-    cfg.bot.memory_search_min_score = 0.5
     return cfg
 
 

@@ -43,8 +43,6 @@ bot:
   link_min_confidence: 0.75
   love_decay_lambda: 0.1
   memory_context_max_tokens: 800
-  memory_recall_min_score: 0.75
-  memory_search_min_score: 0.5
   notification_channel_id: null      # ID du salon de notifications
   bedroom_channel_id: null            # ID du salon "chambre" — cible des rappels créés en vocal
   notification_guild_id: null
@@ -52,7 +50,6 @@ bot:
   spontaneous_channel_speak_enabled: false
   spontaneous_cooldown_seconds: 300
   spontaneous_discord_enabled: true
-  spontaneous_memory_probability: 0.2
   spontaneous_passion_probability: 0.15
   spontaneous_probability: 0.05
   spontaneous_twitch_enabled: false
@@ -128,7 +125,6 @@ emotions:
         joy: 1.0
         sadness: 1.0
     timezone: Europe/Paris
-    transition_minutes: 30
   curiosity:
     boredom_rise_per_hour: null
     decay_lambda: 1.5
@@ -330,9 +326,7 @@ voice:
   vad_aggressiveness: 2
 web_chat:
   cooldown_seconds: 10
-  history_limit: 50
   overlay_visible: false
-  random_avatar_chance: 0.05
 
 response_gate:
   enabled: true

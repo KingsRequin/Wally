@@ -47,7 +47,11 @@ def test_circadian_config_defaults():
     cfg = CircadianConfig()
     assert cfg.enabled is True
     assert cfg.timezone == "Europe/Paris"
-    assert cfg.transition_minutes == 30
+    # `transition_minutes` a été retiré le 2026-08-26 : le champ existait dans
+    # la dataclass ET dans config.yaml, mais AUCUNE ligne de code ne le lisait.
+    # Cette assertion était son seul « appelant » — un test qui défend un
+    # réglage mort le rend indéboulonnable, et l'owner croyait pouvoir régler
+    # une durée de transition qui ne faisait rien.
     assert "night" in cfg.periods
     assert "morning" in cfg.periods
     assert "afternoon" in cfg.periods

@@ -34,7 +34,6 @@ class BotConfig:
     spontaneous_probability: float = 0.05
     spontaneous_passion_probability: float = 0.15
     spontaneous_cooldown_seconds: int = 300
-    spontaneous_memory_probability: float = 0.2
     # Questions posées au chat que personne ne relève. La SEULE brèche laissée
     # dans la coupure ci-dessus : pas un monologue né de l'ennui, mais le besoin
     # réel d'une personne présente. Le `ResponseGate` garde le dernier mot.
@@ -43,8 +42,6 @@ class BotConfig:
     unanswered_question_enabled: bool = True
     unanswered_question_delay_seconds: int = 45
     unanswered_question_forget_seconds: int = 300
-    memory_recall_min_score: float = 0.75
-    memory_search_min_score: float = 0.5
     memory_context_max_tokens: int = 800
     love_decay_lambda: float = 0.1
     update_image: str = ""          # ex: "ghcr.io/user/wally-ai:latest" — vide = polling désactivé
@@ -269,7 +266,6 @@ class CircadianPeriod:
 class CircadianConfig:
     enabled: bool = True
     timezone: str = "Europe/Paris"
-    transition_minutes: int = 30
     periods: dict[str, CircadianPeriod] = field(default_factory=lambda: {
         "night": CircadianPeriod(hours=[0, 6], anger=1.3, curiosity=0.8, boredom=1.1),
         "morning": CircadianPeriod(hours=[6, 12], anger=0.9, joy=1.1, sadness=0.9, curiosity=1.2, boredom=0.9),
@@ -484,8 +480,6 @@ class RSSFeedsConfig:
 @dataclass
 class WebChatConfig:
     cooldown_seconds: int = 10
-    history_limit: int = 50
-    random_avatar_chance: float = 0.05
     overlay_visible: bool = True
 
 

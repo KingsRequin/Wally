@@ -9,7 +9,6 @@ def make_memory_config():
     config.bot.context_window_size = 20
     config.bot.prelude_window_size = 15
     config.bot.context_token_threshold = 3000
-    config.bot.memory_search_min_score = 0.5
     return config
 
 

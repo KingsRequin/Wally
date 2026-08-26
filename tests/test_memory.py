@@ -15,7 +15,6 @@ def make_config(window_size=5, token_threshold=100):
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
     config.bot.prelude_window_size = 15
-    config.bot.memory_search_min_score = 0.5
     return config
 
 
@@ -163,7 +162,6 @@ def make_config_prelude(window_size=5, token_threshold=100, prelude_size=3):
     config.bot.context_window_size = window_size
     config.bot.context_token_threshold = token_threshold
     config.bot.prelude_window_size = prelude_size
-    config.bot.memory_search_min_score = 0.5
     return config
 
 

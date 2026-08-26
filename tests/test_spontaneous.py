@@ -72,8 +72,6 @@ def _make_msg(content="je vais lancer une partie"):
 
 def make_bot_for_spontaneous():
     bot = MagicMock()
-    bot.config.bot.spontaneous_memory_probability = 0.2
-    bot.config.bot.memory_recall_min_score = 0.75
     bot.config.bot.spontaneous_cooldown_seconds = 300
     bot.config.bot.spontaneous_discord_enabled = True
     bot.config.bot.spontaneous_probability = 0.05

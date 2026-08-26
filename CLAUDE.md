@@ -417,11 +417,18 @@ tous été **RETIRÉS** — ne pas les réintroduire.
 `MemoryConsolidator` (passe de 21 h) : consolidation cross-session, formation des **topics** de la
 communauté. `UserModeler` produit le **portrait** par personne injecté au prompt.
 
-### Spontaneous Memory Recall
-Après un `_check_spontaneous_trigger()` qui rend None, une recherche FTS5 déclenche une réponse
-spontanée si score ≥ `memory_recall_min_score` (0.75) et `random.random() <
-spontaneous_memory_probability` (0.2). Limité : 1 requête / 60 s / canal via
-`_memory_check_cooldowns`.
+### Spontaneous Memory Recall — ❌ N'EXISTE PAS
+Cette section décrivait un rappel spontané de mémoire (recherche FTS5 après un
+`_check_spontaneous_trigger()` rendant None, seuils `memory_recall_min_score` et
+`spontaneous_memory_probability`). **Aucune de ces deux clés n'était lue par une seule ligne de
+code** — vérifié le 2026-08-26, elles sont retirées de `config.py` et de `config.yaml`.
+
+La prise de parole spontanée qui EXISTE est ailleurs et n'a rien à voir avec la mémoire :
+`spontaneous_probability`, `spontaneous_passion_probability` et `spontaneous_cooldown_seconds`,
+dans `handlers.py` des deux plateformes.
+
+⚠️ Une doc qui décrit une fonctionnalité absente coûte plus cher qu'une doc manquante : elle
+envoie chercher un bug dans un mécanisme qui n'a jamais tourné.
 
 ### Memory Context Budget
 `memory_context_max_tokens` (défaut 800). Ordre de priorité : (1) souvenirs sémantiques
