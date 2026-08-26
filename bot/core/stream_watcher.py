@@ -130,6 +130,9 @@ class StreamWatcher:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("StreamWatcher: poll en erreur : {e!r}", e=exc)
                 await asyncio.sleep(self._interval)
+        # L'arrêt demandé n'est pas une panne : `CancelledError` arrive quand le
+        # `gather` principal se replie. La journaliser ferait passer une extinction
+        # propre pour un incident, à chaque redémarrage.
         except asyncio.CancelledError:
             pass
 

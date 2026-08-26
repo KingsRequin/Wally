@@ -30,6 +30,10 @@ def _extract_json(raw: str) -> dict:
     # Try direct parse first
     try:
         return json.loads(raw)
+    # Première tentative sur trois : le modèle rend souvent son JSON enveloppé
+    # dans un bloc markdown, et l'échec ici n'est PAS une erreur — c'est le cas
+    # le plus fréquent. Les extractions suivantes prennent le relais, et c'est
+    # le bout de la chaîne qui décide s'il faut se plaindre.
     except json.JSONDecodeError:
         pass
     # Try extracting from ```json ... ``` blocks
@@ -915,6 +919,9 @@ class EmotionEngine:
                     (pair[0], float(pair[1])) for pair in data.get(emotion, [])
                 ]
             logger.info("Learned emotion words loaded from {p}", p=_LEARNED_WORDS_PATH)
+        # Premier démarrage : le fichier d'apprentissage n'existe pas encore, et
+        # c'est le cas NORMAL. Toute autre erreur est journalisée juste en dessous
+        # — seule l'absence est muette.
         except FileNotFoundError:
             pass  # premier démarrage — normal
         except Exception as exc:

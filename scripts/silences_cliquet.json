@@ -1,5 +1,5 @@
 {
-  "max_silences": 113,
+  "max_silences": 102,
   "max_erreurs_types": 347,
   "max_ruff": 74,
   "max_js": 0,

@@ -102,6 +102,9 @@ def _describe(path: Path) -> str:
             text = sidecar.read_text(encoding="utf-8", errors="replace").strip()
             if text:
                 return tronquer_description(text)
+        # Un sidecar illisible ou mal encodé ne vaut pas mieux qu'aucun sidecar :
+        # on retombe sur le nom du fichier, juste en dessous. C'est un REPLI, pas
+        # un silence — il y a toujours une description au bout.
         except (OSError, ValueError):
             pass
     return tronquer_description(path.stem.replace("-", " ").replace("_", " "))
@@ -191,6 +194,10 @@ class MemeLibrary:
                 if path.stat().st_size > _MAX_BYTES:
                     logger.debug("Meme ignoré (trop lourd) : {n}", n=path.name)
                     continue
+            # Un fichier illisible (permission, lien mort, disque) ne doit pas emporter
+            # la bibliothèque entière : on saute CE meme et on continue. Le dossier est
+            # relu à chaque tirage, l'owner y dépose des fichiers en direct — un état
+            # transitoire y est normal, pas exceptionnel.
             except OSError:
                 continue
             out.append({"name": path.name, "description": _describe(path)})

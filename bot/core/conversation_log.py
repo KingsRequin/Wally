@@ -96,6 +96,9 @@ class ConversationLogger:
         item = (_safe_segment(platform), _safe_segment(channel), record)
         try:
             self._queue.put_nowait(item)
+        # La perte est COMPTÉE, pas ignorée : `_dropped` est journalisé à l'arrêt
+        # (« ConversationLogger a droppé N events »). Journaliser ici, dans le
+        # chemin chaud d'un logger saturé, aggraverait la saturation qu'on signale.
         except asyncio.QueueFull:
             self._dropped += 1
 

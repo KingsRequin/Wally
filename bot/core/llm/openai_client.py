@@ -646,6 +646,10 @@ class OpenAILLMClient(BaseLLMClient):
                 total_output += response.usage.output_tokens
                 try:
                     total_cached += response.usage.input_tokens_details.cached_tokens or 0
+                # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
+                # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
+                # faux, seulement moins précis — refuser la réponse entière pour un
+                # champ d'appoint coûterait la génération elle-même.
                 except (AttributeError, TypeError):
                     pass
 
@@ -675,6 +679,10 @@ class OpenAILLMClient(BaseLLMClient):
                     total_output += response.usage.output_tokens
                     try:
                         total_cached += response.usage.input_tokens_details.cached_tokens or 0
+                    # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
+                    # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
+                    # faux, seulement moins précis — refuser la réponse entière pour un
+                    # champ d'appoint coûterait la génération elle-même.
                     except (AttributeError, TypeError):
                         pass
 
@@ -752,6 +760,10 @@ class OpenAILLMClient(BaseLLMClient):
                 total_output += usage.completion_tokens
                 try:
                     total_cached += usage.prompt_tokens_details.cached_tokens or 0
+                # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
+                # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
+                # faux, seulement moins précis — refuser la réponse entière pour un
+                # champ d'appoint coûterait la génération elle-même.
                 except (AttributeError, TypeError):
                     pass
 
@@ -788,6 +800,10 @@ class OpenAILLMClient(BaseLLMClient):
                     total_output += usage.completion_tokens
                     try:
                         total_cached += usage.prompt_tokens_details.cached_tokens or 0
+                    # Le détail des jetons CACHÉS est facultatif dans la réponse, et il
+                    # varie d'un modèle à l'autre. Son absence ne rend pas le comptage
+                    # faux, seulement moins précis — refuser la réponse entière pour un
+                    # champ d'appoint coûterait la génération elle-même.
                     except (AttributeError, TypeError):
                         pass
                     msg = response.choices[0].message

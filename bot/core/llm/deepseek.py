@@ -340,6 +340,10 @@ class DeepSeekLLMClient(BaseLLMClient):
             for suffix in ['"', '"}', '"}}', '}']:
                 try:
                     return json.loads(raw + suffix)
+                # Ce `continue` EST le mécanisme : on essaie plusieurs fermetures
+                # possibles (`"`, `"}`, `"}}`, `}`) sur un JSON tronqué, et l'échec de
+                # l'une n'est pas une erreur — c'est le tour suivant. L'abandon final,
+                # lui, est journalisé juste en dessous avec le texte brut.
                 except json.JSONDecodeError:
                     continue
             logger.warning("DeepSeek: impossible de réparer le JSON d'arguments: {raw!r}", raw=raw[:100])
