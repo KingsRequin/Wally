@@ -253,6 +253,37 @@ def _traced_executor(executor, jrnl: "_VoiceJournal"):
     return _wrap
 
 
+def droits_du_demandeur(
+    requester: dict, *, broadcaster_id: str, owner_discord_id: str
+) -> tuple[list[str], list[dict]]:
+    """Les rôles et badges de qui parle — dérivés de la config, pas de la liste.
+
+    `voice.requesters` dit QUI EST QUI : elle porte les identités croisées
+    (Discord, Twitch, Apex) des gens que Wally sait reconnaître à la voix. Elle
+    ne dit pas qui a le DROIT de quoi, et c'est la même liste qui déclare les
+    comptes Apex (`seed_known_accounts`) : y ajouter un joueur pour un duel lui
+    donnait le badge `broadcaster` — donc le contrôle du duel — et `admin` en
+    vocal, sans que rien ne le signale.
+
+    Le badge `broadcaster` dit « c'est sa chaîne », pas « il a le droit ».
+    L'emprunter pour dire le second mélange deux questions, et c'est ce mélange
+    qui rendait le droit contagieux : le créateur du bot commande Wally, il ne
+    possède pas la chaîne.
+    """
+    twitch_id = str(requester.get("twitch_id") or "")
+    discord_id = str(requester.get("discord_id") or "")
+    # Un champ vide ne vaut pas un champ égal : `"" == ""` est vrai, et un
+    # requester sans identifiant face à une config incomplète serait promu.
+    est_streamer = bool(twitch_id) and twitch_id == str(broadcaster_id or "")
+    est_createur = bool(discord_id) and discord_id == str(owner_discord_id or "")
+
+    roles = ["everyone"]
+    if est_streamer or est_createur:
+        roles += ["moderator", "admin"]
+    badges = [{"set_id": "broadcaster"}] if est_streamer else []
+    return roles, badges
+
+
 async def _answer(bot, text: str, *, requester: dict, speaker: str,
                   jrnl: Optional["_VoiceJournal"] = None) -> str:
     """La réponse de Wally à une demande orale, outils compris."""
@@ -263,6 +294,13 @@ async def _answer(bot, text: str, *, requester: dict, speaker: str,
         return ""
 
     tools = await build_chat_tools(twitch_bot)
+    roles, badges = droits_du_demandeur(
+        requester,
+        broadcaster_id=getattr(
+            getattr(twitch_bot, "twitch_api", None), "_broadcaster_id", "") or "",
+        owner_discord_id=getattr(
+            getattr(getattr(bot, "config", None), "bot", None), "owner_discord_id", "") or "",
+    )
     # `code_fix` n'est pas dans cette liste et ne doit pas y entrer : une phrase
     # mal transcrite ne modifiera pas le code du bot.
     executor = make_tool_executor(
@@ -271,12 +309,13 @@ async def _answer(bot, text: str, *, requester: dict, speaker: str,
         user_id=str(requester.get("discord_id") or ""),
         author=speaker,
         channel=str(requester.get("twitch_login") or ""),
-        # Les deux seuls demandeurs sont le streamer et le créateur du bot.
-        user_roles=["everyone", "moderator", "admin"],
-        # Même raison pour le duel : l'autorisation se lit sur un badge, que la
-        # voix ne porte pas. Elle est établie ICI, par la liste blanche des
-        # demandeurs de `voice.requesters` — jamais par ce que dit la phrase.
-        badges=[{"set_id": "broadcaster"}],
+        # L'autorisation se lit sur un badge, que la voix ne porte pas : elle
+        # est établie ICI, jamais par ce que dit la phrase. Mais elle se
+        # DÉRIVE de la config — cf. `droits_du_demandeur` — et non de la
+        # simple appartenance à `voice.requesters`, qui sert aussi à déclarer
+        # les comptes Apex.
+        user_roles=roles,
+        badges=badges,
     )
     if jrnl is not None:
         executor = _traced_executor(executor, jrnl)
