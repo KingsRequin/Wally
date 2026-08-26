@@ -1,6 +1,6 @@
 {
   "max_silences": 60,
-  "max_erreurs_types": 211,
+  "max_erreurs_types": 202,
   "max_ruff": 74,
   "max_js": 0,
   "max_logs_aveugles": 0,

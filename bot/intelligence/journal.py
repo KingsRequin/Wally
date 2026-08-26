@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING, TypeGuard
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
@@ -426,11 +426,18 @@ def _plausible_duplicate(a: str, b: str) -> bool:
     return len(_significant_words(a) & _significant_words(b)) >= 2
 
 
-def _entier(v) -> bool:
+def _entier(v: object) -> TypeGuard[int]:
     """Un entier VRAI : en Python `bool` est sous-classe de `int`, et `True`
     passe donc `isinstance(v, int)` — puis `facts[True]` désigne `facts[1]`.
     Au niveau module : la garde était imbriquée dans `_justified_deletions`, ce
-    qui l'a fait oublier sur le chemin de reformulation."""
+    qui l'a fait oublier sur le chemin de reformulation.
+
+    `TypeGuard[int]` et non `bool` : c'est ce qui APPREND au vérificateur que
+    passer cette garde restreint le type. Sans lui, `idx` restait `Any | None`
+    APRÈS le test, et les quatre lignes suivantes — deux comparaisons de bornes,
+    deux indexations — étaient signalées comme risquées alors que la garde les
+    protégeait déjà. Une garde qui ne dit pas qu'elle en est une force le
+    lecteur suivant à refaire le raisonnement."""
     return isinstance(v, int) and not isinstance(v, bool)
 
 
