@@ -206,6 +206,13 @@ class TwitchConfig:
     # différents sur chaque chaîne invitée, et rebuild pour un pseudo serait
     # absurde. Le défaut permet à un config.yaml antérieur de rester valide.
     ignored_users: list[str] = field(default_factory=list)
+    # Délai au-delà duquel Wally prévient qu'il arrive, faute de « Wally écrit… »
+    # sur Twitch. Mesuré sur 1 407 réponses de juillet-août 2026 : 5 s couvre
+    # 12,6 % d'entre elles — une sur huit, et surtout toutes celles de 7 à 12 s,
+    # les seules où le viewer croit vraiment être ignoré. Descendre à 3 s en
+    # déclencherait une sur deux, et le signal deviendrait du bruit.
+    # `0` éteint la fonction. Réglable à chaud : le bon seuil se constate en live.
+    attente_seuil_s: float = 5.0
 
 
 @dataclass

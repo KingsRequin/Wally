@@ -21,6 +21,7 @@ from bot.core.conversation_log import new_trace_id
 from bot.core.emote_wave import EmoteWaveDetector
 from bot.core.twitch_emotes import note_chat_emotes
 from bot.core.secret_guard import redact
+from bot.core.tirage import SacSansRemise
 from bot.core.text_clean import strip_stage_directions
 from bot.intelligence import pending_question, thread_sense
 from bot.discord.handlers import (
@@ -195,6 +196,127 @@ async def _scan_tally(bot, tally, text: str) -> None:
         narrator.show_counter(f"{row['label']} : {row['count']}")
         if narrator.is_counter_milestone(row["count"]):
             await narrator.on_counter_milestone(row["label"], row["count"])
+
+
+# ── Message d'attente ────────────────────────────────────────────────────
+#
+# Discord affiche « Wally écrit… » ; le chat Twitch n'a pas d'équivalent. Passé
+# quelques secondes, le viewer ne voit rien et conclut qu'il a été ignoré — puis
+# la réponse tombe dans un fil qui a déjà défilé. Une phrase brève, chaînée à son
+# message, dit « je suis là » sans rien promettre.
+
+# Deux messages d'attente par minute au maximum dans un même chat. Le garde est
+# par CANAL et non par personne, à dessein : c'est le chat qui se retrouverait
+# spammé si cinq questions lentes arrivaient ensemble, alors qu'une même personne
+# qui pose deux questions lentes mérite ses deux signaux.
+_ATTENTE_COOLDOWN_S = 30.0
+
+# {canal: monotonic du dernier message d'attente}
+_attente_derniere: dict[str, float] = {}
+
+# Les phrases, tirées sans remise pour qu'aucune ne revienne avant que les cent
+# soient passées. Un sac PAR CANAL : deux chats qui partagent le même sac se
+# renverraient l'écho, et le sans-remise perdrait tout son sens vu de chacun.
+_attente_sacs: dict[str, SacSansRemise] = {}
+
+
+def _phrase_attente(bot: "WallyTwitch", channel_name: str) -> str | None:
+    """La prochaine phrase d'attente, ou None si la fonction est éteinte.
+
+    La source est relue à chaque recharge du sac, donc un `/reload-persona`
+    prend effet sans redémarrage — et vider `ATTENTE.md` coupe la fonction.
+    """
+    persona = getattr(bot, "persona", None)
+    if persona is None:
+        return None
+    sac = _attente_sacs.get(channel_name)
+    if sac is None:
+        sac = SacSansRemise(lambda: list(getattr(persona, "attente_phrases", []) or []))
+        _attente_sacs[channel_name] = sac
+    return sac.tirer()
+
+
+async def _annoncer_attente(
+    bot: "WallyTwitch",
+    channel_name: str,
+    *,
+    author: str,
+    parent_msg_id: str | None,
+    seuil_s: float,
+    trace: str,
+) -> None:
+    """Attend le seuil, puis prévient — sauf si la réponse est arrivée avant.
+
+    « Sauf si » n'est pas testé ici : la tâche est annulée par l'appelant dès que
+    le LLM rend la main. Un drapeau partagé ferait double emploi avec
+    l'annulation, et divergerait d'elle au premier chemin d'erreur.
+    """
+    await asyncio.sleep(seuil_s)
+
+    maintenant = time.monotonic()
+    precedent = _attente_derniere.get(channel_name)
+    if precedent is not None and maintenant - precedent < _ATTENTE_COOLDOWN_S:
+        return
+    phrase = _phrase_attente(bot, channel_name)
+    if not phrase:
+        return
+    # Posé AVANT l'envoi : deux réponses lentes en parallèle franchiraient
+    # sinon le garde toutes les deux pendant que la première est en vol.
+    _attente_derniere[channel_name] = maintenant
+
+    mode = await _envoyer_reponse_twitch(
+        bot, channel_name, phrase, author=author, parent_msg_id=parent_msg_id,
+    )
+    # Journalisé comme un événement à part, jamais comme un `message_out` : ce
+    # n'est pas une réponse. Le compter comme telle fausserait les latences, les
+    # doublons et le taux de réponse de `audit_traces.py`.
+    _clog(bot, channel_name, "attente_envoyee",
+          trace_id=trace, content=phrase, target=author, send_mode=mode)
+    logger.info("Twitch: message d'attente envoyé à {a} sur {ch} ({mode})",
+                a=author, ch=channel_name, mode=mode)
+
+
+def _armer_attente(
+    bot: "WallyTwitch",
+    channel_name: str,
+    *,
+    author: str,
+    parent_msg_id: str | None,
+    trace: str,
+) -> asyncio.Task | None:
+    """Arme le message d'attente, ou None s'il n'y a pas lieu."""
+    try:
+        seuil = float(getattr(bot.config.twitch, "attente_seuil_s", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if seuil <= 0:
+        return None
+    return asyncio.create_task(_annoncer_attente(
+        bot, channel_name, author=author, parent_msg_id=parent_msg_id,
+        seuil_s=seuil, trace=trace,
+    ))
+
+
+async def _desarmer_attente(tache: asyncio.Task | None) -> None:
+    """Annule le message d'attente et ATTEND qu'il soit résolu.
+
+    L'attente compte autant que l'annulation. Sans elle, une phrase d'attente
+    partie à la même milliseconde que la réponse pourrait arriver APRÈS elle —
+    « deux secondes » publié derrière la réponse, ce qui est pire que le silence
+    qu'on cherchait à combler.
+    """
+    if tache is None:
+        return
+    tache.cancel()
+    try:
+        await tache
+    # Silence assumé : on vient d'annuler nous-même, et l'annulation réussie est
+    # le cas COURANT — 87 % des réponses arrivent avant le seuil. Journaliser
+    # ici reviendrait à tracer chaque réponse rapide.
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — un signal d'attente ne casse rien
+        logger.warning("Twitch: message d'attente en erreur : {e!r}", e=exc)
 
 
 async def _envoyer_reponse_twitch(
@@ -1195,22 +1317,33 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         )
 
         _llm_t0 = time.monotonic()
-        if tools:
-            reply, _tools_called = await bot.llm.complete_with_tools(
-                system_prompt, openai_messages, tools, _tool_executor,
-                purpose="twitch_response",
-                # L'ID numérique, comme partout ailleurs dans cette fonction
-                # (l. 176, 247…) : le login change, l'ID non, et deux formes de
-                # clé rendent les coûts inagrégeables.
-                user_id=f"twitch:{user_id}",
-            )
-        else:
-            reply = await bot.llm.complete(
-                system_prompt, openai_messages,
-                purpose="twitch_response",
-                user_id=f"twitch:{user_id}",
-            )
-            _tools_called = []
+        # Armé AVANT l'appel et désarmé dans le `finally` : le chemin d'erreur
+        # doit le couper lui aussi, sinon une panne LLM laisserait partir un
+        # « deux secondes » que rien ne suivrait jamais.
+        _attente = _armer_attente(
+            bot, channel_name, author=author,
+            parent_msg_id=getattr(payload, "message_id", None) or None,
+            trace=_trace,
+        )
+        try:
+            if tools:
+                reply, _tools_called = await bot.llm.complete_with_tools(
+                    system_prompt, openai_messages, tools, _tool_executor,
+                    purpose="twitch_response",
+                    # L'ID numérique, comme partout ailleurs dans cette fonction
+                    # (l. 176, 247…) : le login change, l'ID non, et deux formes de
+                    # clé rendent les coûts inagrégeables.
+                    user_id=f"twitch:{user_id}",
+                )
+            else:
+                reply = await bot.llm.complete(
+                    system_prompt, openai_messages,
+                    purpose="twitch_response",
+                    user_id=f"twitch:{user_id}",
+                )
+                _tools_called = []
+        finally:
+            await _desarmer_attente(_attente)
 
         _emo = bot.emotion.get_state()
         _dom = max(_emo, key=_emo.get) if _emo else None

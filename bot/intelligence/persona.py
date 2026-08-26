@@ -29,6 +29,7 @@ class PersonaService:
         self._emotion_directives: dict[str, str] = {}
         self._user_directives: dict[str, str] = {}
         self._event_directives: dict[str, str] = {}
+        self._attente_phrases: list[str] = []
         self.reload()
 
     def reload(self) -> None:
@@ -67,6 +68,47 @@ class PersonaService:
         self._user_directives = self._parse_users()
         self._event_directives = self._parse_events()
         self._fil_directives = self._parse_fil()
+        self._attente_phrases = self._parse_attente()
+
+    def _parse_attente(self) -> list[str]:
+        """Les phrases qu'il envoie quand une réponse Twitch tarde (ATTENTE.md).
+
+        Une LISTE et non un dict : les deux registres du fichier — `## normal` et
+        `## vanne` — sont mélangés dans un seul sac. Les séparer ici obligerait
+        le code à choisir un registre, donc à porter une décision de ton qui
+        appartient au fichier ; l'auteur dose en écrivant plus de l'un que de
+        l'autre.
+
+        Vider les deux sections éteint la fonction, sans rien casser : plus une
+        seule phrase disponible, plus un seul message d'attente.
+        """
+        return self._parse_liste("ATTENTE.md")
+
+    def _parse_liste(self, filename: str) -> list[str]:
+        """Les puces `- …` d'un fichier, toutes sections confondues.
+
+        Le préambule et les citations (`>`) sont ignorés — les consignes de
+        rédaction vivent dans le fichier, à côté des phrases qu'elles cadrent,
+        et ne doivent surtout pas finir dans le chat.
+        """
+        path = os.path.join(self._dir, filename)
+        try:
+            with open(path, encoding="utf-8") as f:
+                contenu = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: {f}", f=filename)
+            return []
+        except Exception as exc:
+            logger.warning("{f} read error: {e!r}", f=filename, e=exc)
+            return []
+
+        phrases = []
+        for ligne in contenu.splitlines():
+            ligne = ligne.strip()
+            if ligne.startswith("- ") and len(ligne) > 2:
+                phrases.append(ligne[2:].strip())
+        logger.info("{f} loaded: {n} phrases", f=filename, n=len(phrases))
+        return phrases
 
     def _parse_fil(self) -> dict[str, str]:
         """Parse FIL.md en un dict {seuil d'allers-retours: directive}.
@@ -187,6 +229,11 @@ class PersonaService:
     def event_directives(self) -> dict[str, str]:
         """Registre de ton par type d'événement du live (overlay)."""
         return self._event_directives
+
+    @property
+    def attente_phrases(self) -> list[str]:
+        """Phrases d'attente pour le chat Twitch (ATTENTE.md). Vide = fonction éteinte."""
+        return self._attente_phrases
 
     @property
     def fil_directives(self) -> dict[str, str]:

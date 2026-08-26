@@ -801,7 +801,8 @@ async def list_prompts(request: Request) -> dict:
     # acceptait déjà (`^[A-Z_]+\.md$`) : seule la lecture les ignorait.
     persona_files = ["SOUL.md", "IDENTITY.md", "VOICE.md", "EXEMPLES.md",
                      "EMOTIONS.md", "WEEKDAYS.md", "SECONDARIES.md", "COMPOSITES.md",
-                     "CAPABILITIES.md", "EVENTS.md", "USERS.md", "FIL.md"]
+                     "CAPABILITIES.md", "EVENTS.md", "USERS.md", "FIL.md",
+                     "ATTENTE.md"]
     persona = {}
     for fname in persona_files:
         p = persona_dir / fname
