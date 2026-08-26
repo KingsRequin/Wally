@@ -2,6 +2,8 @@ from __future__ import annotations
 import time
 from typing import Optional
 
+import sqlite3
+
 import aiosqlite
 from loguru import logger
 
@@ -456,6 +458,46 @@ CREATE INDEX IF NOT EXISTS idx_apex_points_lookup
 """
 
 
+# Ce que SQLite répond quand la colonne est DÉJÀ là. Le message vient de lui,
+# pas de nous : si une version le reformulait, `migrer()` se mettrait à crier
+# sur des bases parfaitement saines — un test l'ancre pour qu'on le sache.
+_DEJA_MIGRE = ("duplicate column name", "already exists")
+
+
+async def migrer(conn: "aiosqlite.Connection", sql: str) -> bool:
+    """Joue une migration idempotente. True si elle a mordu, False sinon.
+
+    Quinze migrations de ce fichier étaient écrites ainsi :
+
+        await migrer(conn, "ALTER TABLE x ADD COLUMN y ...")
+
+    Le silence est juste pour le cas visé — rejouer un `ADD COLUMN` sur une base
+    à jour lève forcément. Mais `OperationalError` couvre bien plus : table
+    absente, base verrouillée, disque plein, SQL fautif. Toutes ces pannes-là
+    passaient pour « colonne déjà présente », et la colonne manquait ensuite en
+    SILENCE — jusqu'à ce qu'une requête la demande, des semaines plus tard, dans
+    un tout autre morceau du code.
+
+    On ne se tait donc que sur le motif attendu. Le reste est journalisé, sans
+    lever : une migration ratée ne doit pas empêcher le bot de démarrer, elle
+    doit se VOIR.
+    """
+    try:
+        await conn.execute(sql)
+        await conn.commit()
+        return True
+    except sqlite3.Error as exc:
+        # `sqlite3.Error` et non `OperationalError` seulement : un
+        # `CREATE UNIQUE INDEX` sur une table qui porte déjà des doublons lève
+        # une `IntegrityError`, d'une autre branche de l'arbre. Les blocs
+        # d'origine attrapaient `Exception` — restreindre à `OperationalError`
+        # aurait fait CRASHER le boot sur ce cas précis, en croyant resserrer.
+        if any(motif in str(exc).lower() for motif in _DEJA_MIGRE):
+            return False
+        logger.warning("Migration refusée : {sql} — {e!r}", sql=sql[:90], e=exc)
+        return False
+
+
 class Database(
     CostMixin,
     EmotionMixin,
@@ -494,40 +536,16 @@ class Database(
         await conn.executescript(SCHEMA)
         await conn.commit()
         # Migration: ajouter username à memory_users si absent
-        try:
-            await conn.execute("ALTER TABLE memory_users ADD COLUMN username TEXT")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass  # colonne déjà présente
+        await migrer(conn, "ALTER TABLE memory_users ADD COLUMN username TEXT")
         # Migration: ajouter user_id à cost_log si absent
-        try:
-            await conn.execute("ALTER TABLE cost_log ADD COLUMN user_id TEXT")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass  # colonne déjà présente
+        await migrer(conn, "ALTER TABLE cost_log ADD COLUMN user_id TEXT")
         # Migration: index sur cost_log.timestamp
-        try:
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp)")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp)")
         # Migration: ajouter platform à daily_log si absent
-        try:
-            await conn.execute("ALTER TABLE daily_log ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "ALTER TABLE daily_log ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'")
         # Migration: add love columns to trust_scores
-        try:
-            await conn.execute("ALTER TABLE trust_scores ADD COLUMN love REAL DEFAULT 0.0")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
-        try:
-            await conn.execute("ALTER TABLE trust_scores ADD COLUMN love_updated_at REAL DEFAULT 0")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "ALTER TABLE trust_scores ADD COLUMN love REAL DEFAULT 0.0")
+        await migrer(conn, "ALTER TABLE trust_scores ADD COLUMN love_updated_at REAL DEFAULT 0")
         # Migration: add is_reply to session_messages if absent
         try:
             await conn.execute("ALTER TABLE session_messages ADD COLUMN is_reply INTEGER DEFAULT 0")
@@ -535,17 +553,9 @@ class Database(
         except Exception:
             pass  # Column already exists
         # Migration: add avatar_url to memory_users
-        try:
-            await conn.execute("ALTER TABLE memory_users ADD COLUMN avatar_url TEXT DEFAULT NULL")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "ALTER TABLE memory_users ADD COLUMN avatar_url TEXT DEFAULT NULL")
         # Migration: add memory_count to memory_users
-        try:
-            await conn.execute("ALTER TABLE memory_users ADD COLUMN memory_count INTEGER DEFAULT 0")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "ALTER TABLE memory_users ADD COLUMN memory_count INTEGER DEFAULT 0")
         # Nettoyage automatique des vieilles entrées daily_log au démarrage
         try:
             await conn.execute(
@@ -570,13 +580,7 @@ class Database(
         except aiosqlite.OperationalError:
             pass  # Column already exists → migration already applied
         # Migration: add last_attempt_at to memory_questions
-        try:
-            await conn.execute(
-                "ALTER TABLE memory_questions ADD COLUMN last_attempt_at REAL DEFAULT NULL"
-            )
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "ALTER TABLE memory_questions ADD COLUMN last_attempt_at REAL DEFAULT NULL")
         # Migration: add UNIQUE constraint on (user_id, question) for memory_questions
         try:
             await conn.execute(
@@ -587,17 +591,9 @@ class Database(
         except Exception:
             pass
         # Migration: add chart_path to journal_archive
-        try:
-            await conn.execute("ALTER TABLE journal_archive ADD COLUMN chart_path TEXT DEFAULT NULL")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass  # colonne déjà présente
+        await migrer(conn, "ALTER TABLE journal_archive ADD COLUMN chart_path TEXT DEFAULT NULL")
         # Topics remplace opinions — retire la table morte
-        try:
-            await conn.execute("DROP TABLE IF EXISTS opinions")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass
+        await migrer(conn, "DROP TABLE IF EXISTS opinions")
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 
