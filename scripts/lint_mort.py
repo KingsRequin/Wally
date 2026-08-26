@@ -25,7 +25,13 @@ Deux niveaux, parce que les signalements de vulture ne se valent pas :
   · confiance 60 — soupçons. Attributs posés dynamiquement, champs de dataclass
     lus par PyYAML, handlers appelés par un décorateur : vulture ne voit pas ces
     appelants-là et crie souvent à tort. Le compte sert de CLIQUET, pas de
-    verdict — on n'en ajoute pas, on ne prétend pas que les 326 sont morts.
+    verdict — on n'en ajoute pas, on ne prétend pas qu'ils sont tous morts.
+
+⚠️ Les points d'entrée appelés par une BIBLIOTHÈQUE (`on_message`, `event_*`,
+`do_GET`, `row_factory`…) sont désormais exclus — cf. `_APPELES_PAR_UNE_LIB`.
+Ils comptaient pour 72 des 321 signalements du 2026-08-26 sans qu'aucun puisse
+jamais être corrigé. Le cliquet a donc CHANGÉ DE DÉFINITION à cette date : les
+chiffres d'avant ne se comparent pas à ceux d'après.
 
 Le cliquet est la même mécanique que partout ailleurs dans `scripts/` : le
 compte actuel fait référence, un dépassement échoue, et `--maj` ne sert QU'APRÈS
@@ -52,6 +58,27 @@ _REFERENCE = _RACINE / "scripts" / "silences_cliquet.json"
 # pytest, et vulture signalerait la suite entière.
 _CIBLES = ["bot", "scripts"]
 
+# Ce que vulture ne PEUT pas voir appelé, et qu'il signale donc à tort.
+#
+# Ces noms sont des points d'entrée invoqués par NOM depuis une bibliothèque :
+# aucun appel n'apparaît dans notre code, et il n'en apparaîtra jamais. Les
+# compter, c'était noyer le vrai code mort dans du bruit — 72 signalements sur
+# 321 au 2026-08-26, soit près d'un quart. La leçon est celle du jour : une
+# mesure qui mélange bruit et signal envoie corriger au mauvais endroit.
+#
+# Le prix, assumé : une fonction VRAIMENT morte qui porterait un de ces noms
+# passerait inaperçue. C'est peu probable — ces noms sont imposés par les libs,
+# on n'en invente pas — et c'est moins cher qu'un compteur illisible.
+_APPELES_PAR_UNE_LIB = (
+    "on_*",            # discord.py : on_message, on_ready, on_member_join…
+    "event_*",         # twitchio : event_ready, event_error, event_eventsub_*
+    "setup_hook",      # discord.py
+    "cog_*",           # discord.py
+    "do_GET", "do_POST", "log_message",   # http.server.BaseHTTPRequestHandler
+    "row_factory",     # sqlite3 : posé, jamais relu par nous
+    "should_exit",     # uvicorn
+)
+
 # Les deux niveaux et la clé de cliquet qui va avec.
 _NIVEAUX = (
     (100, "max_code_mort_certain", "certitudes"),
@@ -68,7 +95,8 @@ def recenser(confiance: int) -> list[str]:
     dépendre de ce détail d'implémentation.
     """
     resultat = subprocess.run(
-        ["vulture", *_CIBLES, "--min-confidence", str(confiance)],
+        ["vulture", *_CIBLES, "--min-confidence", str(confiance),
+         "--ignore-names", ",".join(_APPELES_PAR_UNE_LIB)],
         cwd=_RACINE,
         capture_output=True,
         text=True,
