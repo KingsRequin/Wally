@@ -1024,6 +1024,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Capture passive : prelude AVANT d'ajouter le message courant
     prelude = bot.memory.get_prelude(channel_id)
     bot.memory.append_prelude(channel_id, author_label, content)
+    # `getattr` et non `bot.cognitive_loop` : la boucle cognitive vit sur le bot
+    # DISCORD et n'est jamais posée sur `WallyTwitch`. L'accès direct lèverait
+    # un AttributeError sur chaque message Twitch — vérifié le 2026-08-26 en
+    # tentant précisément ce remplacement.
     if getattr(bot, "cognitive_loop", None) is not None:
         try:
             # « Pertinent » = le message vise Wally (mention @nick ou nom déclencheur)

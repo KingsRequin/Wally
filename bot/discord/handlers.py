@@ -1404,6 +1404,13 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
             tools.append(_APEX_OVERLAY_TOOL)
     # DISCORD SEULEMENT : le vocal est un salon Discord, ces outils n'ont aucun
     # sens depuis un chat Twitch.
+    #
+    # `getattr` et non `bot.voice_service`, bien que l'attribut soit déclaré
+    # depuis `de0af7d0` : cette fonction doit tenir avec un bot dont AUCUN
+    # service n'est branché — c'est une propriété testée
+    # (`test_l_outil_est_offert_sur_les_deux_plateformes`), et elle sert au
+    # démarrage comme sur une instance minimale. mypy réclame l'accès direct ;
+    # l'architecture le refuse, et c'est elle qui a raison ici.
     _vs = getattr(bot, "voice_service", None)
     if _vs is not None:
         tools += VOICE_TOOLS
