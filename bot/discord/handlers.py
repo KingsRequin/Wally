@@ -1943,8 +1943,12 @@ async def _third_party_mention_context(
                                 break
                         parts.append(f"--- Souvenirs sur {display} ---\n{memories_text}")
                         processed += 1
-                except Exception:
-                    pass
+                # Un tiers illisible ne doit pas emporter les AUTRES : la boucle continue
+                # avec les suivants. Journalisé parce qu'ici on perd du CONTEXTE, pas un
+                # emoji — Wally répondra sans savoir ce qu'il sait de cette personne, et
+                # rien d'autre ne le dirait.
+                except Exception as exc:  # noqa: BLE001 — un tiers ne casse pas les autres
+                    logger.warning("Souvenirs d'un tiers illisibles ({u}) : {e!r}", u=third_raw_id, e=exc)
         else:
             # Fuzzy match against known usernames
             best_ratio = 0.0
@@ -2164,6 +2168,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                         bot, _conv_channel(message), "reaction",
                         trace_id=str(message.id), emoji=passive_emoji, passive=True,
                     )
+                # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                 except Exception:
                     pass
         # Spontaneous intervention
@@ -2891,6 +2899,10 @@ async def _respond(
                     try:
                         await message.add_reaction("🌐")
                         _reaction_emojis.add("🌐")
+                    # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                    # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                    # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                    # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                     except Exception:
                         pass
                 if name == "image_search":
@@ -2901,6 +2913,10 @@ async def _respond(
                     try:
                         await message.add_reaction("🌐")
                         _reaction_emojis.add("🌐")
+                    # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                    # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                    # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                    # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                     except Exception:
                         pass
                 return await scrape.scrape(args["url"])
@@ -2912,6 +2928,10 @@ async def _respond(
                     try:
                         await message.add_reaction("🔎")
                         _reaction_emojis.add("🔎")
+                    # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                    # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                    # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                    # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                     except Exception:
                         pass
                 return await history_search.search(
@@ -2927,6 +2947,10 @@ async def _respond(
                     try:
                         await message.add_reaction("🔫")
                         _reaction_emojis.add("🔫")
+                    # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                    # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                    # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                    # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                     except Exception:
                         pass
                 return await apex_api.execute(
@@ -2951,6 +2975,10 @@ async def _respond(
                     try:
                         await message.add_reaction("⏱️")
                         _reaction_emojis.add("⏱️")
+                    # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+                    # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+                    # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+                    # réponse déjà écrite pour un emoji absent serait le pire échange possible.
                     except Exception:
                         pass
                 user_roles = _resolve_discord_roles(message.author)
@@ -3079,17 +3107,29 @@ async def _respond(
 
         try:
             await message.remove_reaction("🔍", bot.user)
+        # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+        # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+        # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+        # réponse déjà écrite pour un emoji absent serait le pire échange possible.
         except Exception:
             pass
         for emoji in _reaction_emojis:
             try:
                 await message.remove_reaction(emoji, bot.user)
+            # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+            # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+            # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+            # réponse déjà écrite pour un emoji absent serait le pire échange possible.
             except Exception:
                 pass
 
         if react_emoji:
             try:
                 await message.add_reaction(react_emoji)
+            # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+            # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+            # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+            # réponse déjà écrite pour un emoji absent serait le pire échange possible.
             except Exception:
                 pass
 
@@ -3156,6 +3196,10 @@ async def _respond(
         logger.error("Error handling Discord message: {e!r}", e=e)
         try:
             await message.remove_reaction("🔍", bot.user)
+        # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+        # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+        # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+        # réponse déjà écrite pour un emoji absent serait le pire échange possible.
         except Exception:
             pass
 
@@ -3482,6 +3526,10 @@ async def _spontaneous_respond(
         if react_emoji:
             try:
                 await message.add_reaction(react_emoji)
+            # Une réaction est COSMÉTIQUE, et l'API Discord la refuse pour dix raisons
+            # qui ne nous regardent pas : message supprimé entre-temps, permissions du
+            # salon, emoji d'un serveur qu'on a quitté, rate limit. Faire tomber une
+            # réponse déjà écrite pour un emoji absent serait le pire échange possible.
             except Exception:
                 pass
 

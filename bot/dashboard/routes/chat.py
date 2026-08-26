@@ -77,6 +77,9 @@ async def _broadcast(data: dict) -> None:
     for ws in list(_clients):
         try:
             await ws.send_text(text)
+        # Le client est parti entre le moment où on l'a listé et l'envoi. Une
+        # socket morte n'est pas un incident : le `finally` du tour la retire de
+        # la liste juste après.
         except Exception:
             stale.append(ws)
     for ws in stale:
@@ -86,6 +89,8 @@ async def _broadcast(data: dict) -> None:
 async def _send_to(ws: WebSocket, data: dict) -> None:
     try:
         await ws.send_text(json.dumps(data))
+    # Même course que ci-dessus, sur le chemin structuré. Journaliser ferait
+    # une ligne par onglet fermé.
     except Exception:
         _clients.pop(ws, None)
 
@@ -141,6 +146,9 @@ async def ws_chat(ws: WebSocket):
             raw = await ws.receive_text()
             try:
                 data = json.loads(raw)
+            # Un client qui envoie du non-JSON : on ignore CE message et on continue
+            # d'écouter. Fermer la socket pour une trame malformée déconnecterait
+            # quelqu'un qui a juste un onglet bavard.
             except json.JSONDecodeError:
                 continue
 
@@ -216,6 +224,9 @@ async def ws_chat(ws: WebSocket):
             # Wally response (serialized)
             _fire(_wally_respond(state, sender_id, username, content))
 
+    # Fermeture normale d'un WebSocket. C'est le `except Exception` juste en
+    # dessous qui parle quand ce n'en est pas une — la distinction est le
+    # tout l'intérêt de ces deux lignes.
     except WebSocketDisconnect:
         pass
     except Exception as exc:
@@ -226,6 +237,9 @@ async def ws_chat(ws: WebSocket):
             heartbeat_task.cancel()
         try:
             await state.db.update_chat_disconnection(conn_id, msg_count_session)
+        # Ménage de fin dans un `finally` : la base peut déjà être fermée si le
+        # serveur se replie. Lever ici masquerait la vraie cause de l'arrêt par
+        # une erreur de comptabilité.
         except Exception:
             pass
         logger.info("WebChat disconnected: {u}", u=username)
@@ -236,6 +250,8 @@ async def _heartbeat(ws: WebSocket) -> None:
         while True:
             await asyncio.sleep(30)
             await ws.send_text(json.dumps({"type": "ping"}))
+    # Le heartbeat écrit dans une socket peut-être déjà close : c'est
+    # précisément ce qu'il sert à découvrir. Son échec EST sa réponse.
     except Exception:
         pass
 
@@ -430,6 +446,10 @@ async def _handle_imagine(state: "AppState", ws, user, prompt: str):
             "user_voted": False,
         })
 
+    # `ValueError` porte le refus lisible du générateur d'images (prompt
+    # rejeté, quota). Il n'est pas avalé : il part aux clients par
+    # `image_cancelled`, avec son texte — c'est l'utilisateur qui doit le
+    # lire, pas les logs.
     except ValueError as e:
         # Cancel the generating embed for all clients
         await _broadcast({"type": "image_cancelled", "id": msg_id, "error": str(e)})

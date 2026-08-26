@@ -47,6 +47,12 @@ def broadcast_event(data: dict) -> None:
     for q in list(_log_queues):
         try:
             q.put_nowait(data)
+        # Perte assumée, et le silence est OBLIGATOIRE ici : ce chemin est
+        # alimenté par le sink loguru. Y journaliser rappellerait le sink, qui
+        # retrouverait la file pleine, qui journaliserait — une récursion, sur le
+        # chemin le plus chaud du process.
+        # Ce qu'on perd est l'AFFICHAGE d'une ligne dans le panneau Logs. La
+        # source de vérité est `app.log`, qui l'a déjà écrite.
         except asyncio.QueueFull:
             pass
 
@@ -73,6 +79,12 @@ def _log_sink(message) -> None:
         for q in list(_log_queues):
             try:
                 q.put_nowait(entry)
+            # Perte assumée, et le silence est OBLIGATOIRE ici : ce chemin est
+            # alimenté par le sink loguru. Y journaliser rappellerait le sink, qui
+            # retrouverait la file pleine, qui journaliserait — une récursion, sur le
+            # chemin le plus chaud du process.
+            # Ce qu'on perd est l'AFFICHAGE d'une ligne dans le panneau Logs. La
+            # source de vérité est `app.log`, qui l'a déjà écrite.
             except asyncio.QueueFull:
                 pass  # Queue pleine — log drop silencieux (haute fréquence)
 
@@ -136,6 +148,9 @@ async def sse_emotions(request: Request):
                 tick += 1
                 if tick % 3 == 0:  # keepalive toutes les 15s
                     yield ": keepalive\n\n"
+        # Le client a fermé son onglet, ou le serveur se replie. Une fin de flux
+        # SSE n'est pas une panne : la journaliser ferait une ligne à chaque
+        # rechargement du dashboard et à chaque redémarrage de l'overlay.
         except (asyncio.CancelledError, GeneratorExit):
             pass
 
@@ -195,6 +210,9 @@ async def sse_overlay(request: Request):
                 # et un tunnel qui coupe toutes les ~100 s pendant tout le live.
                 if tick % 15 == 0:
                     yield ": keepalive\n\n"
+        # Le client a fermé son onglet, ou le serveur se replie. Une fin de flux
+        # SSE n'est pas une panne : la journaliser ferait une ligne à chaque
+        # rechargement du dashboard et à chaque redémarrage de l'overlay.
         except (asyncio.CancelledError, GeneratorExit):
             pass
 
@@ -231,8 +249,14 @@ async def sse_overlay_feed(request: Request):
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30)
                     yield f"data: {json.dumps(event)}\n\n"
+                # Le délai EST le mécanisme, pas un incident : sans octet pendant ~100 s,
+                # le tunnel Cloudflare coupe la connexion. On profite du silence pour
+                # envoyer un keepalive, et la boucle repart.
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
+        # Le client a fermé son onglet, ou le serveur se replie. Une fin de flux
+        # SSE n'est pas une panne : la journaliser ferait une ligne à chaque
+        # rechargement du dashboard et à chaque redémarrage de l'overlay.
         except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:
@@ -308,13 +332,22 @@ async def sse_logs(request: Request):
                 try:
                     msg = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"data: {json.dumps(msg)}\n\n"
+                # Le délai EST le mécanisme, pas un incident : sans octet pendant ~100 s,
+                # le tunnel Cloudflare coupe la connexion. On profite du silence pour
+                # envoyer un keepalive, et la boucle repart.
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
+        # Le client a fermé son onglet, ou le serveur se replie. Une fin de flux
+        # SSE n'est pas une panne : la journaliser ferait une ligne à chaque
+        # rechargement du dashboard et à chaque redémarrage de l'overlay.
         except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:
             try:
                 _log_queues.remove(queue)
+            # Déjà retirée : le générateur peut être fermé deux fois (client parti +
+            # repli du serveur). `remove()` sur une liste qui ne contient plus la file
+            # lève `ValueError` — c'est le signe que le ménage est fait, pas une panne.
             except ValueError:
                 pass
 
@@ -341,13 +374,22 @@ async def sse_actions(request: Request):
                 try:
                     msg = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"data: {json.dumps(msg)}\n\n"
+                # Le délai EST le mécanisme, pas un incident : sans octet pendant ~100 s,
+                # le tunnel Cloudflare coupe la connexion. On profite du silence pour
+                # envoyer un keepalive, et la boucle repart.
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
+        # Le client a fermé son onglet, ou le serveur se replie. Une fin de flux
+        # SSE n'est pas une panne : la journaliser ferait une ligne à chaque
+        # rechargement du dashboard et à chaque redémarrage de l'overlay.
         except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:
             try:
                 _action_queues.remove(queue)
+            # Déjà retirée : le générateur peut être fermé deux fois (client parti +
+            # repli du serveur). `remove()` sur une liste qui ne contient plus la file
+            # lève `ValueError` — c'est le signe que le ménage est fait, pas une panne.
             except ValueError:
                 pass
 
