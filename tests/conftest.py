@@ -63,6 +63,26 @@ def isolate_secret_guard():
 
 
 @pytest.fixture(autouse=True)
+def isolate_processed_message_ids():
+    """Vide le cache anti-rejeu des messages Discord entre deux tests.
+
+    `bot.discord.handlers._processed_message_ids` est un dict de MODULE, et sa
+    seule purge est un TTL de 120 secondes de temps RÉEL. Deux tests qui posent
+    `message.id = 1` — le premier venu, personne ne se coordonne sur des ids
+    factices — et le second voit son message sauté en silence
+    (« Duplicate on_message event »), donc `append_message` jamais appelé.
+
+    La suite ne passait que par chance de chronologie : `-n 4 --dist loadfile`
+    répartit les fichiers sur quatre process, et en séquentiel les 145 s de la
+    suite dépassent parfois le TTL. Vu rouge sous `-n 0`, que mutmut impose.
+    """
+    from bot.discord.handlers import _processed_message_ids
+    _processed_message_ids.clear()
+    yield
+    _processed_message_ids.clear()
+
+
+@pytest.fixture(autouse=True)
 def isolate_thread_sense():
     """Vide la mesure du fil entre deux tests.
 
