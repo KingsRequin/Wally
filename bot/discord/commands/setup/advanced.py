@@ -13,19 +13,19 @@ if TYPE_CHECKING:
 # ── Tab Avancé : Bot Général ──────────────────────────────────────────────────
 
 class BotGeneralModal(discord.ui.Modal, title="Paramètres généraux du bot"):
-    language_default = discord.ui.TextInput(
+    language_default: discord.ui.TextInput = discord.ui.TextInput(
         label="Langue par défaut (ex: fr, en)", max_length=5
     )
-    context_window_size = discord.ui.TextInput(
+    context_window_size: discord.ui.TextInput = discord.ui.TextInput(
         label="Taille contexte (nb messages, ≥1)", max_length=5
     )
-    context_token_threshold = discord.ui.TextInput(
+    context_token_threshold: discord.ui.TextInput = discord.ui.TextInput(
         label="Seuil tokens contexte (≥1)", max_length=6
     )
-    journal_time = discord.ui.TextInput(
+    journal_time: discord.ui.TextInput = discord.ui.TextInput(
         label="Heure journal (HH:MM)", max_length=5
     )
-    prelude_window_size = discord.ui.TextInput(
+    prelude_window_size: discord.ui.TextInput = discord.ui.TextInput(
         label="Taille prélude (≥1)", max_length=5
     )
 
@@ -69,7 +69,7 @@ class BotGeneralModal(discord.ui.Modal, title="Paramètres généraux du bot"):
 
 
 class JournalChannelModal(discord.ui.Modal, title="Channel du journal"):
-    channel_id = discord.ui.TextInput(
+    channel_id: discord.ui.TextInput = discord.ui.TextInput(
         label="ID du channel Discord (vide pour désactiver)",
         required=False,
         max_length=20,
@@ -119,10 +119,10 @@ class BotGeneralView(discord.ui.View):
 # ── Tab Avancé : Discord ──────────────────────────────────────────────────────
 
 class DiscordParamsModal(discord.ui.Modal, title="Paramètres Discord"):
-    anger_trigger_threshold = discord.ui.TextInput(
+    anger_trigger_threshold: discord.ui.TextInput = discord.ui.TextInput(
         label="Seuil déclencheur colère (≥1)", max_length=3
     )
-    timeout_minutes = discord.ui.TextInput(
+    timeout_minutes: discord.ui.TextInput = discord.ui.TextInput(
         label="Durée timeout en minutes (≥1)", max_length=4
     )
 
@@ -153,7 +153,7 @@ class DiscordParamsModal(discord.ui.Modal, title="Paramètres Discord"):
 
 
 class EditChannelListModal(discord.ui.Modal, title="Modifier la liste de channels"):
-    channel_ids = discord.ui.TextInput(
+    channel_ids: discord.ui.TextInput = discord.ui.TextInput(
         label="IDs des channels (séparés par des virgules)",
         style=discord.TextStyle.paragraph,
         required=False,
@@ -228,11 +228,11 @@ class DiscordView(discord.ui.View):
 # ── Tab Avancé : Twitch Config ────────────────────────────────────────────────
 
 class TwitchConfigModal(discord.ui.Modal, title="Configuration Twitch"):
-    channels = discord.ui.TextInput(
+    channels: discord.ui.TextInput = discord.ui.TextInput(
         label="Channels Twitch (séparés par des virgules)",
         max_length=200,
     )
-    cooldown_seconds = discord.ui.TextInput(
+    cooldown_seconds: discord.ui.TextInput = discord.ui.TextInput(
         label="Cooldown par utilisateur (secondes, ≥0)",
         max_length=5,
     )
@@ -278,15 +278,15 @@ _TEXT_VERBOSITIES = ["low", "medium", "high"]
 
 
 class OpenAIParamsModal(discord.ui.Modal, title="Paramètres OpenAI"):
-    reasoning_effort = discord.ui.TextInput(
+    reasoning_effort: discord.ui.TextInput = discord.ui.TextInput(
         label="Reasoning effort (none/minimal/low/medium/high/xhigh)",
         max_length=7,
     )
-    text_verbosity = discord.ui.TextInput(
+    text_verbosity: discord.ui.TextInput = discord.ui.TextInput(
         label="Verbosité réponses (low/medium/high)",
         max_length=6,
     )
-    max_tokens = discord.ui.TextInput(
+    max_tokens: discord.ui.TextInput = discord.ui.TextInput(
         label="Max output tokens (≥1)", max_length=6
     )
 
@@ -338,15 +338,15 @@ class OpenAIParamsView(discord.ui.View):
 # ── Tab Avancé : Decay émotions ───────────────────────────────────────────────
 
 class DecayModal(discord.ui.Modal, title="Decay des émotions (λ)"):
-    anger = discord.ui.TextInput(label="anger decay_lambda (0 < x < 1)", max_length=6)
-    joy = discord.ui.TextInput(label="joy decay_lambda (0 < x < 1)", max_length=6)
-    sadness = discord.ui.TextInput(label="sadness decay_lambda (0 < x < 1)", max_length=6)
-    curiosity = discord.ui.TextInput(label="curiosity decay_lambda (0 < x < 1)", max_length=6)
+    anger: discord.ui.TextInput = discord.ui.TextInput(label="anger decay_lambda (0 < x < 1)", max_length=6)
+    joy: discord.ui.TextInput = discord.ui.TextInput(label="joy decay_lambda (0 < x < 1)", max_length=6)
+    sadness: discord.ui.TextInput = discord.ui.TextInput(label="sadness decay_lambda (0 < x < 1)", max_length=6)
+    curiosity: discord.ui.TextInput = discord.ui.TextInput(label="curiosity decay_lambda (0 < x < 1)", max_length=6)
     # PAS `boredom decay_lambda` : `_apply_decay` saute l'ennui (il ne décroît
     # pas, il MONTE avec l'inactivité). Ce champ était éditable et sans le
     # moindre effet — l'owner croyait régler quelque chose. C'est la vitesse de
     # montée qui gouverne, comme le dashboard l'expose déjà.
-    boredom = discord.ui.TextInput(label="ennui : montée par heure (0 < x < 1)", max_length=6)
+    boredom: discord.ui.TextInput = discord.ui.TextInput(label="ennui : montée par heure (0 < x < 1)", max_length=6)
 
     def __init__(self, bot: "WallyDiscord"):
         super().__init__()

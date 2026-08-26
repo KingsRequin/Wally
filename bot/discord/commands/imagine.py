@@ -81,7 +81,7 @@ class EditTitleButton(discord.ui.Button):
 
 
 class EditTitleModal(discord.ui.Modal):
-    new_title = discord.ui.TextInput(
+    new_title: discord.ui.TextInput = discord.ui.TextInput(
         label="Nouveau titre",
         placeholder="Titre de l'image...",
         max_length=100,

@@ -19,7 +19,7 @@ _EMOTIONS = ["anger", "joy", "sadness", "curiosity", "boredom"]
 
 
 class EditEmotionModal(discord.ui.Modal, title="Modifier une emotion"):
-    value = discord.ui.TextInput(
+    value: discord.ui.TextInput = discord.ui.TextInput(
         label="Nouvelle valeur (0.0 - 1.0)",
         placeholder="0.5",
         max_length=4,
@@ -110,7 +110,7 @@ class MoodView(discord.ui.View):
 # ── Tab: Twitch Events ────────────────────────────────────────────────────────
 
 class EditEventMessageModal(discord.ui.Modal, title="Modifier le message"):
-    message = discord.ui.TextInput(
+    message: discord.ui.TextInput = discord.ui.TextInput(
         label="Message (supports {username}, {amount}, etc.)",
         style=discord.TextStyle.paragraph,
         max_length=500,
@@ -192,7 +192,7 @@ class TwitchEventsView(discord.ui.View):
 # ── Tab: Trigger Names ────────────────────────────────────────────────────────
 
 class AddTriggerModal(discord.ui.Modal, title="Ajouter un nom declencheur"):
-    name = discord.ui.TextInput(label="Nouveau nom", max_length=50)
+    name: discord.ui.TextInput = discord.ui.TextInput(label="Nouveau nom", max_length=50)
 
     def __init__(self, bot: "WallyDiscord"):
         super().__init__()

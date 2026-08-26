@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 # ── Tab .env ──────────────────────────────────────────────────────────────────
 
 class EnvOpenAIModal(discord.ui.Modal, title="Variables OpenAI"):
-    openai_api_key = discord.ui.TextInput(
+    openai_api_key: discord.ui.TextInput = discord.ui.TextInput(
         label="OPENAI_API_KEY",
         placeholder="sk-proj-...",
         max_length=200,
@@ -40,12 +40,12 @@ class EnvOpenAIModal(discord.ui.Modal, title="Variables OpenAI"):
 
 
 class EnvDiscordModal(discord.ui.Modal, title="Variables Discord"):
-    discord_token = discord.ui.TextInput(
+    discord_token: discord.ui.TextInput = discord.ui.TextInput(
         label="DISCORD_TOKEN",
         placeholder="MTxx...",
         max_length=200,
     )
-    discord_guild_id = discord.ui.TextInput(
+    discord_guild_id: discord.ui.TextInput = discord.ui.TextInput(
         label="DISCORD_GUILD_ID",
         placeholder="1063150486137606256",
         max_length=20,
@@ -70,11 +70,11 @@ class EnvDiscordModal(discord.ui.Modal, title="Variables Discord"):
 
 
 class EnvTwitchIdModal(discord.ui.Modal, title="Twitch — Identité"):
-    twitch_client_id = discord.ui.TextInput(label="TWITCH_CLIENT_ID", max_length=50)
-    twitch_client_secret = discord.ui.TextInput(label="TWITCH_CLIENT_SECRET", max_length=50)
-    twitch_broadcaster_id = discord.ui.TextInput(label="TWITCH_BROADCASTER_ID", max_length=20)
-    twitch_bot_id = discord.ui.TextInput(label="TWITCH_BOT_ID", max_length=20)
-    twitch_bot_nick = discord.ui.TextInput(label="TWITCH_BOT_NICK", max_length=50)
+    twitch_client_id: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_CLIENT_ID", max_length=50)
+    twitch_client_secret: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_CLIENT_SECRET", max_length=50)
+    twitch_broadcaster_id: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_BROADCASTER_ID", max_length=20)
+    twitch_bot_id: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_BOT_ID", max_length=20)
+    twitch_bot_nick: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_BOT_NICK", max_length=50)
 
     def __init__(self, values: dict[str, str]):
         super().__init__()
@@ -101,10 +101,10 @@ class EnvTwitchIdModal(discord.ui.Modal, title="Twitch — Identité"):
 
 
 class EnvTwitchTokensModal(discord.ui.Modal, title="Twitch — Tokens"):
-    bot_access_token = discord.ui.TextInput(label="BOT_ACCESS_TOKEN", max_length=200)
-    bot_refresh_token = discord.ui.TextInput(label="BOT_REFRESH_TOKEN", max_length=200)
-    streamer_access_token = discord.ui.TextInput(label="STREAMER_ACCESS_TOKEN", max_length=200)
-    streamer_refresh_token = discord.ui.TextInput(label="STREAMER_REFRESH_TOKEN", max_length=200)
+    bot_access_token: discord.ui.TextInput = discord.ui.TextInput(label="BOT_ACCESS_TOKEN", max_length=200)
+    bot_refresh_token: discord.ui.TextInput = discord.ui.TextInput(label="BOT_REFRESH_TOKEN", max_length=200)
+    streamer_access_token: discord.ui.TextInput = discord.ui.TextInput(label="STREAMER_ACCESS_TOKEN", max_length=200)
+    streamer_refresh_token: discord.ui.TextInput = discord.ui.TextInput(label="STREAMER_REFRESH_TOKEN", max_length=200)
 
     def __init__(self, values: dict[str, str]):
         super().__init__()

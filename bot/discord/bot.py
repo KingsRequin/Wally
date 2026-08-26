@@ -23,6 +23,21 @@ if TYPE_CHECKING:
     from bot.core.language import LanguageDetector
     from bot.intelligence.persona import PersonaService
     from bot.core.music import MusicService
+    # Services CÂBLÉS APRÈS construction, par `main.py`. Sans ces types,
+    # chaque attribut était inféré `None` : mypy refusait ensuite toute
+    # affectation réelle (10 erreurs `[assignment]`) et ignorait les attributs
+    # jamais déclarés (12 erreurs `[attr-defined]` côté `main.py`). Dix
+    # `# type: ignore` avaient été posés pour faire taire le symptôme.
+    from bot.core.apex.client import ApexAPI
+    from bot.core.conversation_log import ConversationLogger
+    from bot.core.history_search import HistorySearch
+    from bot.core.predictions import PredictionService
+    from bot.core.quotes import QuoteService
+    from bot.core.scrape import ScrapeService
+    from bot.core.tally import TallyService
+    from bot.core.update_checker import UpdateChecker
+    from bot.core.web_search import WebSearchService
+    from bot.intelligence.actions.service import ActionService
 
 from bot.discord.guild_sync import parse_guild_ids  # noqa: E402  (re-exporté pour compat)
 
@@ -89,22 +104,36 @@ class WallyDiscord(commands.Bot):
         # Déclarée ici pour que « pas branché » reste un état lisible : c'est la
         # garde `getattr(bot, "music", None)` de handlers.py qui décide d'offrir
         # l'outil, et elle s'est tue pendant des semaines faute de ce câblage.
-        self.music: "MusicService | None" = None  # set by main.py after construction
+        self.music: MusicService | None = None  # set by main.py after construction
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
-        self.dashboard_state = None  # type: ignore[assignment]
+        self.dashboard_state: object | None = None
         self.reaction_tracker = None  # set by main.py after construction
+        # Posés par `main.py` après construction. Déclarés ICI pour que le type
+        # existe : sans déclaration, mypy refuse l'accès (`[attr-defined]`) et
+        # personne ne sait, en lisant cette classe, ce qu'elle porte vraiment.
+        self.web_search: WebSearchService | None = None
+        self.scrape: ScrapeService | None = None
+        self.apex_api: ApexAPI | None = None
+        self.conv_log: ConversationLogger | None = None
+        self.history_search: HistorySearch | None = None
+        self.predictions: PredictionService | None = None
+        self.quotes: QuoteService | None = None
+        self.tally: TallyService | None = None
+        self.update_checker: UpdateChecker | None = None
+        self.action_service: ActionService | None = None
+        self._twitch_bot: object | None = None
 
         # Gate V2 — optionnel, activé par response_gate.enabled dans config.
         # L'initialisation réelle est async (create_v2_tables) → faite dans setup_hook.
-        self.response_gate = None   # type: ignore[assignment]
-        self.voice_service = None   # type: ignore[assignment]  # VoiceService — câblé dans setup_hook
-        self.cognitive_loop = None  # type: ignore[assignment]  # CognitiveLoop V2
-        self.cognitive_feed = None  # type: ignore[assignment]  # CognitiveFeed (live SSE)
-        self.voice_feed = None      # type: ignore[assignment]  # VoiceFeed (live SSE debug vocal)
-        self.self_fix = None        # type: ignore[assignment]  # SelfFix V2 — câblé en Plan C
-        self.upgrade_registry = None  # type: ignore[assignment]  # UpgradeRegistry (Phase 6)
-        self.social_rhythm = None   # type: ignore[assignment]  # SocialRhythm — câblé dans setup_hook
+        self.response_gate: object | None = None
+        self.voice_service: object | None = None   # câblé dans setup_hook
+        self.cognitive_loop: object | None = None  # CognitiveLoop V2
+        self.cognitive_feed: object | None = None  # CognitiveFeed (live SSE)
+        self.voice_feed: object | None = None      # VoiceFeed (live SSE debug vocal)
+        self.self_fix: object | None = None        # SelfFix V2 — câblé en Plan C
+        self.upgrade_registry: object | None = None  # UpgradeRegistry (Phase 6)
+        self.social_rhythm: object | None = None   # câblé dans setup_hook
         self._social_rhythm_db_path: str | None = None
         # Gate de sollicitation owner partagé (self-fix + DM cognitif) : un seul
         # fil de MP vers le créateur à la fois, libéré quand il répond en DM.
