@@ -1473,8 +1473,18 @@ async def _post_process(
                 await bot.db.update_trust_score(platform, user_id, 0.01)
 
         if llm_deltas and llm_deltas.get("user_facts"):
-            await bot.memory.add(platform, user_id, "\n".join(llm_deltas["user_facts"]), username=username,
-                                 origin=f"Twitch/{conv_channel}" if conv_channel else None)
+            # UN fait par enregistrement, comme côté Discord. Le `"\n".join()`
+            # d'avant rangeait N faits dans une seule ligne : aucun d'eux ne
+            # pouvait alors être écrasé individuellement — une correction de
+            # l'intéressé ne remplaçait rien, elle s'ajoutait à côté —, la
+            # recherche FTS remontait le bloc entier (donc N−1 faits hors
+            # sujet dans le budget de contexte), et la dédup comparait des
+            # blocs. Relevé en base le 2026-08-26 : 147 blocs Twitch pour
+            # ≈346 faits, contre 0 côté Discord.
+            for _fait in llm_deltas["user_facts"]:
+                await bot.memory.add(platform, user_id, _fait, username=username,
+                                     source="post_process",
+                                     origin=f"Twitch/{conv_channel}" if conv_channel else None)
         if trace_id:
             _clog(
                 bot, conv_channel, "post_process",
