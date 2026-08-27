@@ -49,13 +49,31 @@ sera rejeté en bloc et ton travail sera perdu.
    `update` doit rester bien plus court que `delete`. Si tu n'as rien supprimé,
    tu n'as très probablement rien à reformuler non plus.
 
-4. **Questions** — informations incomplètes à clarifier, UNIQUEMENT si :
-   - L'info manquante est **concrète, importante et impossible à déduire**
-   - La question n'existe PAS déjà dans les questions en attente (même reformulée)
-   - Le sujet n'est PAS trivial (pas de questions sur des GIFs, mèmes, blagues, registre de langue)
-   - L'info n'est PAS déjà présente dans un autre souvenir du même utilisateur
+4. **Questions** — ce que tu aimerais savoir de plus sur cette personne.
 
-La MAJORITÉ des souvenirs ne nécessitent PAS de questions. Sois très conservateur.
+   Les trois consignes ci-dessus te demandent de la retenue, et elles ont
+   raison : une suppression détruit une information pour toujours. **Une
+   question, non.** Elle est proposée à {{BOT_NAME}} trois fois au plus, il ne la
+   pose que si la conversation s'y prête, et elle disparaît d'elle-même après
+   24 h. Le coût d'une question inutile est donc presque nul — celui d'une
+   suppression à tort est définitif. Ne leur applique pas la même prudence.
+
+   Une bonne question part d'un souvenir INCOMPLET et demande la pièce qui
+   manque :
+   - « joue à Apex tous les soirs » → depuis quand ? avec qui ?
+   - « a un nouveau travail » → lequel ?
+   - « n'aime pas le froid » → rien à demander, le fait est entier.
+
+   Quatre garde-fous, eux, restent absolus :
+   - l'info manquante est **concrète** et impossible à déduire du reste ;
+   - la question n'est PAS déjà dans les questions en attente, même reformulée ;
+   - le sujet n'est pas trivial — ni GIF, ni mème, ni blague, ni tournure de
+     phrase ;
+   - la réponse n'est PAS déjà dans un autre souvenir de la même personne.
+
+   Zéro question reste une réponse valable si la liste ne s'y prête pas. Mais
+   sur une liste de vingt souvenirs qui parlent d'une vraie personne, il y a
+   souvent **une ou deux** choses qu'on aimerait sincèrement savoir. Vise ça.
 
 Retourne un JSON valide :
 {"delete": [{"index": 0, "duplicate_of": 5}, {"index": 3, "duplicate_of": 5}], "update": [{"index": 2, "new_text": "..."}], "questions": [{"question": "...", "priority": "high|medium|low"}]}
