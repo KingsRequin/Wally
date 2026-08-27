@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS cost_log (
     output_tokens INTEGER NOT NULL,
     cost_usd REAL NOT NULL,
     purpose TEXT,
-    user_id TEXT
+    user_id TEXT,
+    cached_input_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS timeout_log (
@@ -539,6 +540,14 @@ class Database(
         await migrer(conn, "ALTER TABLE memory_users ADD COLUMN username TEXT")
         # Migration: ajouter user_id à cost_log si absent
         await migrer(conn, "ALTER TABLE cost_log ADD COLUMN user_id TEXT")
+        # Migration: le nombre de jetons d'entrée SERVIS PAR LE CACHE du provider.
+        # Il était calculé à chaque appel (`compter_jetons`, `_deepseek_cost`),
+        # servait à estimer le coût… puis jeté. On facturait donc juste sans
+        # jamais pouvoir répondre à « quelle part du prompt est mise en cache ? »
+        # — la seule mesure qui dit ce que coûterait de faire VARIER le préfixe
+        # (définitions d'outils comprises, elles sont en tête).
+        await migrer(conn, "ALTER TABLE cost_log "
+                           "ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0")
         # Migration: index sur cost_log.timestamp
         await migrer(conn, "CREATE INDEX IF NOT EXISTS idx_cost_log_ts ON cost_log(timestamp)")
         # Migration: ajouter platform à daily_log si absent

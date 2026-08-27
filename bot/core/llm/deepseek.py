@@ -359,6 +359,10 @@ class DeepSeekLLMClient(BaseLLMClient):
         try:
             usage = response.usage
             model = response.model or self._model
+            # `prompt_cache_hit_tokens` est déjà lu par `_deepseek_cost` pour
+            # facturer au bon tarif, et perdu aussitôt. On le garde : c'est la
+            # seule façon de savoir ce que coûterait de faire varier le préfixe
+            # du prompt. Absent chez un vieux modèle ou un mock → 0, comme là-bas.
             await self._db.log_cost(
                 model=model,
                 input_tokens=usage.prompt_tokens,
@@ -366,6 +370,7 @@ class DeepSeekLLMClient(BaseLLMClient):
                 cost_usd=_deepseek_cost(model, usage),
                 purpose=purpose,
                 user_id=user_id,
+                cached_input_tokens=int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0),
             )
         except Exception as e:
             logger.warning(

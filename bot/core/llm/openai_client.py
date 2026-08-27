@@ -250,7 +250,7 @@ class OpenAILLMClient(BaseLLMClient):
 
     async def _log_cost(
         self, *, input_tokens: int, output_tokens: int, cost: float,
-        purpose: str, user_id: str | None,
+        purpose: str, user_id: str | None, cached_input_tokens: int = 0,
     ) -> None:
         """Écrit le coût en base. Jamais bloquant.
 
@@ -269,6 +269,7 @@ class OpenAILLMClient(BaseLLMClient):
                 cost_usd=cost,
                 purpose=purpose,
                 user_id=user_id,
+                cached_input_tokens=cached_input_tokens,
             )
         except Exception as e:  # noqa: BLE001 — une compta ratée n'est pas fatale
             logger.warning(
@@ -352,6 +353,7 @@ class OpenAILLMClient(BaseLLMClient):
                 input_tokens=entree,
                 output_tokens=sortie,
                 cost=cost, purpose=purpose, user_id=user_id,
+                cached_input_tokens=cached,
             )
         # Contrat de `BaseLLMClient.complete` : le texte, ou FALLBACK_RESPONSE.
         # Le chemin Chat Completions avait été corrigé, celui-ci non — alors que
@@ -449,6 +451,7 @@ class OpenAILLMClient(BaseLLMClient):
                     input_tokens=entree,
                     output_tokens=sortie,
                     cost=cost, purpose=purpose, user_id=user_id,
+                    cached_input_tokens=cached,
                 )
                 # `content` est None dès que le message porte un refus, un
                 # filtrage de contenu ou des `tool_calls` : l'AttributeError
@@ -725,6 +728,7 @@ class OpenAILLMClient(BaseLLMClient):
                     cost_usd=cost,
                     purpose=purpose,
                     user_id=user_id,
+                    cached_input_tokens=total_cached,
                 )
             except Exception as e:
                 logger.warning(
@@ -823,6 +827,7 @@ class OpenAILLMClient(BaseLLMClient):
                         cost_usd=cost,
                         purpose=purpose,
                         user_id=user_id,
+                        cached_input_tokens=total_cached,
                     )
                 except Exception as e:
                     logger.warning(
@@ -936,6 +941,7 @@ class OpenAILLMClient(BaseLLMClient):
                             input_tokens=response.usage.input_tokens,
                             output_tokens=response.usage.output_tokens,
                             cost=cost, purpose=purpose, user_id=user_id,
+                            cached_input_tokens=cached,
                         )
 
                     return parsed
@@ -1019,6 +1025,7 @@ class OpenAILLMClient(BaseLLMClient):
                         input_tokens=entree,
                         output_tokens=sortie,
                         cost=cost, purpose=purpose, user_id=user_id,
+                        cached_input_tokens=cached,
                     )
 
                     return parsed

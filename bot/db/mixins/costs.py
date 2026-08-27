@@ -26,12 +26,24 @@ class CostMixin:
         cost_usd: float,
         purpose: str = "",
         user_id: str | None = None,
+        *,
+        cached_input_tokens: int = 0,
     ):
+        """`cached_input_tokens` est COMPRIS dans `input_tokens`, jamais en plus.
+
+        Les deux providers l'exposent (`prompt_cache_hit_tokens` chez DeepSeek,
+        `input_tokens_details.cached_tokens` chez OpenAI) et les deux le
+        calculaient déjà pour estimer le coût — sans jamais le garder. Le
+        paramètre est keyword-only : passé en positionnel il se glisserait
+        derrière `user_id`, où trois appels de test placent déjà autre chose.
+        """
         await self.execute(
             "INSERT INTO cost_log "
-            "(timestamp, model, input_tokens, output_tokens, cost_usd, purpose, user_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (time.time(), model, input_tokens, output_tokens, cost_usd, purpose, user_id),
+            "(timestamp, model, input_tokens, output_tokens, cost_usd, purpose, "
+            "user_id, cached_input_tokens) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), model, input_tokens, output_tokens, cost_usd, purpose,
+             user_id, cached_input_tokens),
         )
 
     async def get_cost_since(self, since_timestamp: float) -> float:
