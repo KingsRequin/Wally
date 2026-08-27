@@ -586,14 +586,16 @@ LAST_CLIP_TOOL_SPEC = {
     "function": {
         "name": "show_clip",
         "description": (
-            "Affiche un clip de la chaîne sur l'overlay : le dernier, le plus "
-            "vu, ou celui qui correspond à un titre. Peut aussi montrer le "
-            "PODIUM des clips les plus vus (`top`). La vidéo est MUETTE et reste "
-            "à l'écran le temps du clip. Tu n'as pas vu ce clip — l'outil te rend "
-            "son titre et qui l'a créé, commente à partir de ça et n'invente pas "
-            "ce qu'il contient. N'affirme jamais l'avoir lancé sans appeler cet "
-            "outil, et ne décrète pas non plus que c'est impossible sans l'avoir "
-            "appelé : c'est lui qui sait si l'overlay répond."
+            "Retrouve un clip de la chaîne : le dernier, le plus vu, ou celui "
+            "qui correspond à un titre. Peut aussi rendre le PODIUM des plus "
+            "vus (`top`). Marche AUSSI hors live et depuis Discord — sans "
+            "écran il te rend le titre, le clippeur et le LIEN Twitch, que tu "
+            "donnes tel quel. Pendant un live, la vidéo part EN PLUS sur "
+            "l'overlay ; l'outil te dit lequel des deux a eu lieu. Tu n'as pas "
+            "vu ce clip : commente son titre et son auteur, n'invente jamais "
+            "ce qu'il contient. N'affirme pas l'avoir lancé sans appeler cet "
+            "outil, et ne décrète surtout pas que c'est impossible sans l'avoir "
+            "appelé — « on n'est pas en live » n'est plus une raison de refuser."
         ),
         "parameters": {
             "type": "object",

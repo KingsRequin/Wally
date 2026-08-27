@@ -517,9 +517,17 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
         # même appel rafraîchit le cache dont se sert le refus d'exécution.
         tools.append(await _spec_overlay_pour(_overlay_narrator(bot)))
         tools.append(_OVERLAY_CANCEL_TOOL)
-        tools.append(_LAST_CLIP_TOOL)
         if getattr(bot, "apex_api", None) is not None:
             tools.append(_APEX_OVERLAY_TOOL)
+    # Le clip a QUITTÉ le bloc ci-dessus : il ne dépend plus d'un overlay
+    # branché. Hors live, c'est justement le moment où on parle des clips
+    # passés — « je peux pas lancer de clip, on est pas en live » était un
+    # refus pour une demande qui n'exigeait pas d'écran. Même arbitrage que
+    # `show_planning` : ce qui rend un LIEN s'offre sans condition d'écran.
+    # Chaîne MAISON seulement : les clips sont ceux d'Azraël, et les proposer
+    # chez un invité ferait répondre à côté de la chaîne où on est.
+    if overlay and getattr(bot, "twitch_api", None) is not None:
+        tools.append(_LAST_CLIP_TOOL)
     # Le duel suit le runner et non l'overlay : annuler ou remettre les
     # compteurs à zéro reste possible sans écran, et `score` sait rendre les
     # chiffres en texte. Mais jamais depuis une chaîne INVITÉE — le duel

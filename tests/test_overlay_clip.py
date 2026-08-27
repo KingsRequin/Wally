@@ -207,9 +207,20 @@ async def test_l_outil_avoue_qu_il_n_y_a_aucun_clip():
 
 
 @pytest.mark.asyncio
-async def test_l_outil_signale_l_absence_de_live():
+async def test_hors_live_l_outil_ne_refuse_plus_il_retombe_sur_le_texte():
+    """Ce test EXIGEAIT `status == "offline"` — c'est-à-dire le refus lui-même.
+
+    Il figeait le défaut relevé dans les traces : « je peux pas lancer de clip,
+    on est pas en live » à quelqu'un qui voulait juste savoir lequel c'était.
+    Depuis le 2026-08-27, l'absence d'écran fait basculer sur `_clip_sans_ecran`,
+    qui interroge l'API directement. Ici aucune API n'est branchée, donc le
+    repli le dit — mais il ne dit plus « pas de live ».
+
+    Le chemin nominal du repli est couvert par `tests/test_clip_sans_ecran.py`.
+    """
     out = json.loads(await run_last_clip_tool(_bot(None, active=False), {}))
-    assert out["status"] == "offline"
+    assert out["status"] == "unavailable"
+    assert "live" not in out["message"]
 
 
 @pytest.mark.asyncio

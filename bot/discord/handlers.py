@@ -617,12 +617,86 @@ def run_planning_tool(bot, args: dict, *, overlay: bool = True) -> str:
     })
 
 
-async def run_last_clip_tool(bot, args: dict) -> str:
-    """Exécute `show_clip` et rend un compte rendu HONNÊTE."""
-    narrator = _overlay_narrator(bot)
-    if narrator is None:
+def _clip_en_texte(clip: dict, quoi: str) -> str:
+    """Un clip rendu SANS écran : titre, clippeur, lien Twitch.
+
+    C'est le repli quand l'overlay n'est pas là — hors live, ou depuis Discord
+    qui n'en a jamais eu. Le lien vient du champ `url` de Helix ; on ne le
+    fabrique pas à partir du slug, Twitch le donne déjà.
+    """
+    titre = clip.get("title") or "sans titre"
+    clippeur = clip.get("creator_name") or "un anonyme"
+    return json.dumps({"status": "texte", "message": (
+        f"{quoi} : « {titre} », clippé par {clippeur} "
+        f"({int(clip.get('view_count') or 0)} vues). "
+        f"Donne ce lien tel quel : {clip.get('url') or ''} — il n'y a pas "
+        "d'écran là, donc ne dis PAS que tu l'as affiché. Tu ne l'as pas vu "
+        "non plus : commente le titre, jamais le contenu."
+    )})
+
+
+async def _clip_sans_ecran(bot, args: dict) -> str:
+    """`show_clip` quand aucun overlay ne peut le jouer.
+
+    Les trois modes utiles survivent sans écran parce que l'API sait déjà tout
+    faire seule (`get_last_clip`, `find_clip`, `get_top_clips`) : le narrateur
+    n'était qu'un intermédiaire. Seul l'affichage vidéo se perd.
+    """
+    from bot.core.follow_tool import api_twitch
+
+    api = api_twitch(bot)
+    if api is None:
         return json.dumps({"status": "unavailable",
-                           "message": "L'overlay n'est pas branché en ce moment."})
+                           "message": "Je n'ai pas accès aux clips en ce moment."})
+    mode = str(args.get("mode") or "dernier").strip().lower()
+    auteur = str(args.get("author") or "").strip()[:40] or None
+    try:
+        if mode == "top":
+            clips = await api.get_top_clips(days=30, first=min(int(args.get("count") or 5), 5))
+            if not clips:
+                return json.dumps({"status": "nothing", "message": (
+                    "Aucun clip à classer. Dis-le, n'invente pas de podium.")})
+            lignes = " · ".join(
+                f"« {c.get('title')} » par {c.get('creator_name')} "
+                f"({int(c.get('view_count') or 0)} vues)" for c in clips)
+            return json.dumps({"status": "texte", "message": (
+                f"Podium des plus vus : {lignes}. Pas d'écran ici — ne dis pas "
+                "que tu l'as affiché.")})
+        if mode == "titre":
+            clip = await api.find_clip(str(args.get("query") or "").strip()[:80], days=30)
+            quoi = "Le clip qui colle le mieux"
+        elif mode == "plus_vu":
+            tops = await api.get_top_clips(days=30, first=1)
+            clip, quoi = (tops[0] if tops else None), "Le clip le plus vu du mois"
+        else:
+            clip = await api.get_last_clip(days=30, creator=auteur)
+            quoi = "Le dernier clip"
+    except Exception as exc:  # noqa: BLE001 — un clip raté ne casse pas la réponse
+        logger.warning("show_clip sans écran a échoué : {e!r}", e=exc)
+        return json.dumps({"status": "error", "message": "La recherche a échoué."})
+    if clip:
+        return _clip_en_texte(clip, quoi)
+    if auteur:
+        # Les deux vides ne se disent pas pareil, ici comme sur le chemin écran.
+        return json.dumps({"status": "nothing", "message": (
+            f"Aucun clip récent clippé par {auteur} sur la chaîne. Dis-le, "
+            "n'en invente pas un et ne le mets pas sur le dos d'un autre.")})
+    return json.dumps({"status": "nothing", "message": (
+        "Aucun clip récent sur la chaîne. Dis-le, n'en invente pas un.")})
+
+
+async def run_last_clip_tool(bot, args: dict) -> str:
+    """Exécute `show_clip` et rend un compte rendu HONNÊTE.
+
+    Deux chemins, et c'est l'ÉCRAN qui tranche, pas la plateforme : overlay
+    actif → la vidéo part dessus ; sinon → le clip revient en texte avec son
+    lien. Jusqu'au 2026-08-27 le second n'existait pas, et « je peux pas lancer
+    de clip, on est pas en live » répondait à des gens qui voulaient juste
+    savoir lequel c'était.
+    """
+    narrator = _overlay_narrator(bot)
+    if narrator is None or not narrator.is_active():
+        return await _clip_sans_ecran(bot, args)
     auteur = str(args.get("author") or "").strip()[:40] or None
     mode = str(args.get("mode") or "dernier").strip().lower()
     try:
@@ -650,10 +724,6 @@ async def run_last_clip_tool(bot, args: dict) -> str:
         return json.dumps({"status": "ok", "message": (
             f"{quoi} : « {shown['title']} », clippé par {shown['author']}. "
             "Tu ne l'as pas vu — ne raconte pas ce qu'il contient."
-        )})
-    if not narrator.is_active():
-        return json.dumps({"status": "offline", "message": (
-            "Rien lancé : il n'y a pas de live en cours. Dis-le simplement."
         )})
     if auteur:
         # Distinguer les deux vides : « la chaîne n'a aucun clip » ferait dire
@@ -1405,9 +1475,12 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         # même appel rafraîchit le cache dont se sert le refus d'exécution.
         tools.append(await _spec_overlay_pour(_overlay_narrator(bot)))
         tools.append(_OVERLAY_CANCEL_TOOL)
-        tools.append(_LAST_CLIP_TOOL)
         if getattr(bot, "apex_api", None) is not None:
             tools.append(_APEX_OVERLAY_TOOL)
+    # Hors du bloc overlay, comme côté Twitch : depuis Discord il n'y a JAMAIS
+    # d'écran, et c'est pourtant là qu'on demande le plus les clips passés.
+    if api_twitch(bot) is not None:
+        tools.append(_LAST_CLIP_TOOL)
     # DISCORD SEULEMENT : le vocal est un salon Discord, ces outils n'ont aucun
     # sens depuis un chat Twitch.
     #
