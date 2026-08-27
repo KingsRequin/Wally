@@ -1340,18 +1340,26 @@ class OverlayNarrator:
         Sans registre connu — type absent d'`EVENTS.md`, persona indisponible —
         le socle seul suffit : jamais pire que le comportement d'avant.
         """
+        from bot.intelligence.identity import render_identity
+
+        # `_EVENT_SYSTEM` est chargé au NIVEAU MODULE, donc avant
+        # `set_identity()` : il porte encore ses sentinelles `{{BOT_NAME}}`.
+        # `_condense()` les rend déjà de son côté ; ces quatre retours-ci ne le
+        # faisaient pas, et partaient tels quels au modèle — sur Cindy, le
+        # prompt de son propre overlay n'aurait jamais dit « Cindy ».
+        socle = render_identity(_EVENT_SYSTEM)
         persona = getattr(self, "_persona", None)
         if persona is None or not kind:
-            return _EVENT_SYSTEM
+            return socle
         try:
             directive = (persona.event_directives or {}).get(kind, "")
         except Exception as exc:  # noqa: BLE001 — un registre absent ne bloque rien
             logger.debug("Overlay: registre d'événement illisible ({k}) : {e!r}",
                          k=kind, e=exc)
-            return _EVENT_SYSTEM
+            return socle
         if not directive:
-            return _EVENT_SYSTEM
-        return f"{_EVENT_SYSTEM}\n\n## Ce qui vient de se passer\n{directive}"
+            return socle
+        return f"{socle}\n\n## Ce qui vient de se passer\n{directive}"
 
     async def on_overheard(self, line: str) -> Optional[str]:
         """Réagit à une phrase ENTENDUE en vocal pendant le live.

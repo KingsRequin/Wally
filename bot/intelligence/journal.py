@@ -766,7 +766,13 @@ class DailyJournal:
             pending_block = "\n\nQuestions déjà en attente (ne pas recréer) :\n" + "\n".join(
                 f"- {q['question']}" for q in pending
             )
-        system = _CLEANUP_SYSTEM.replace(
+        # `render_identity` comme les autres prompts de ce fichier (journal,
+        # synthèse narrative, passe vocale) : chargé au NIVEAU MODULE, donc
+        # avant `set_identity()`, `_CLEANUP_SYSTEM` porte encore ses sentinelles
+        # `{{BOT_NAME}}`. Sans ce rendu elles partaient telles quelles au
+        # modèle — trois fois par appel — et sur Cindy le prompt n'aurait
+        # jamais dit « Cindy ».
+        system = render_identity(_CLEANUP_SYSTEM).replace(
             "{date}", datetime.now(_TZ_JOURNAL).strftime("%d/%m/%Y")
         )
 

@@ -84,7 +84,10 @@ async def test_une_bribe_de_conversation_a_son_propre_cadrage():
     n._condense = _condense
     await n.on_overheard("Azraël (vocal) : euh je sais pas")
 
-    assert seen["system"] is not _EVENT_SYSTEM
+    # `!=` et non `is not` : le socle passe désormais par `render_identity()`,
+    # qui rend une NOUVELLE chaîne. C'est le contenu du cadrage qui compte ici,
+    # pas l'identité de l'objet Python.
+    assert seen["system"] != _EVENT_SYSTEM
     # Le cadrage doit NIER l'événement, pas l'énumérer comme une liste de choix.
     assert "pas un événement" in seen["system"].lower()
 
@@ -104,7 +107,10 @@ async def test_les_vrais_evenements_gardent_leur_cadrage():
     n._condense = _condense
     await n.on_stream_event("Un raid de 42 personnes arrive de chez Untel")
 
-    assert seen["system"] is _EVENT_SYSTEM
+    # Même raison : `render_identity()` remplace les sentinelles `{{BOT_NAME}}`
+    # et rend une nouvelle chaîne. Sans sentinelle à rendre le texte est
+    # identique, mais l'objet ne l'est plus.
+    assert seen["system"] == _EVENT_SYSTEM.replace("{{BOT_NAME}}", "Wally")
     n._feed.say.assert_called_once()
 
 
