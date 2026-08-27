@@ -638,9 +638,14 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
     occupe = narrator.game_already_running(widget, **extra)
     if occupe:
         return json.dumps({"status": "busy", "message": occupe})
+    # Le motif vient de l'endroit qui a refusé, pas d'une phrase écrite ici :
+    # une seule sait ce qui manque, et une phrase générique disait la contrainte
+    # de la ROUE devant un pendu sans mot. Lu juste après l'appel, sans `await`
+    # entre les deux — c'est ce que promet `dernier_refus_widget`.
+    motif = narrator.dernier_refus_widget()
     return json.dumps({"status": "rejected", "message": (
-        f"Rien affiché : '{widget}' est inconnu ou il manque des données "
-        "(la roue veut au moins 2 options, un sondage une question)."
+        f"Rien affiché : {motif}" if motif
+        else f"Rien affiché : '{widget}' n'a pas pu s'afficher."
     )})
 
 

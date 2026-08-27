@@ -1537,6 +1537,37 @@ class OverlayNarrator:
     # attendre une lecture SQLite. L'enum, lui, est filtré à chaud.
     _WIDGETS_DISPO_TTL_S = 60.0
 
+    # Motif du DERNIER refus de `show_widget`, lu par l'appelant juste après
+    # l'appel. Il était générique — « widget inconnu ou données manquantes (la
+    # roue veut au moins 2 options, un sondage une question) » — et partait tel
+    # quel au modèle, qui le reformulait à l'oral : Wally annonçait au chat la
+    # contrainte de la ROUE devant un pendu sans mot, un bingo sans cases ou une
+    # comparaison sans chiffres. Onze refus ainsi libellés du 6 au 11 août.
+    # Le seul endroit qui sait ce qui manque est celui qui refuse.
+    _refus_motif: str = ""
+    # Le widget visé, pour le LOG seulement : trois refus sur vingt-deux le
+    # journalisaient, les dix-neuf autres passaient sans une ligne.
+    _refus_cible: str = ""
+
+    def _refuser(self, motif: str) -> Optional[dict]:
+        """Note POURQUOI rien ne s'affiche, journalise, et rend le refus.
+
+        Typée comme le retour de `show_widget` — dont elle EST le cas d'échec —
+        et pas `-> None` : c'est ce qui permet d'écrire `return self._refuser(…)`
+        à la place des `return None` d'avant, sans toucher au contrat.
+        """
+        logger.info("Overlay: '{w}' refusé — {m}", w=self._refus_cible, m=motif)
+        self._refus_motif = motif
+        return None
+
+    def dernier_refus_widget(self) -> str:
+        """Le motif du dernier refus. Vide si le dernier appel a abouti.
+
+        À lire JUSTE APRÈS `show_widget` : c'est un état d'instance que le
+        prochain appel écrase. Aucun `await` ne s'intercale chez l'appelant.
+        """
+        return self._refus_motif
+
     async def rafraichir_widgets_disponibles(self) -> frozenset:
         """Relit ce qu'au moins une scène affiche. Appelée là où l'on est déjà
         en asynchrone — la construction des outils, avant chaque décision."""
@@ -1584,7 +1615,9 @@ class OverlayNarrator:
         Retourne les paramètres publiés — dont le tirage — pour que l'appelant
         SACHE ce qui s'affiche : « lance un dé » doit pouvoir répondre le
         résultat, pas « c'est à l'écran ». None si le widget est inconnu, hors
-        live, ou si les données manquent : rien n'est alors publié.
+        live, ou si les données manquent : rien n'est alors publié — et
+        `dernier_refus_widget()` dit alors LEQUEL des cas, en une phrase que
+        l'appelant peut rendre telle quelle.
 
         `sollicite` dit qu'un HUMAIN a demandé ce qui s'affiche. Il ne concerne
         que les quatre jeux qui durent, et son défaut est `False` : un chemin
@@ -1593,17 +1626,21 @@ class OverlayNarrator:
         modèle.
         """
         widget = (widget or "").strip()
-        if widget not in self._DIRECT_WIDGETS or not self._live():
-            return None
+        # Chaque appel repart d'un refus vierge : le motif rendu ne doit
+        # jamais être celui de l'appel précédent.
+        self._refus_motif, self._refus_cible = "", widget
+        if widget not in self._DIRECT_WIDGETS:
+            return self._refuser(
+                f"« {widget} » n'est pas un widget que tu sais afficher.")
+        if not self._live():
+            return self._refuser("il n'y a pas de live en cours.")
 
         # Masqué sur TOUTES les scènes : on refuse ICI et pas seulement dans
         # l'enum. Une action différée — un rappel programmé, une initiative
         # cognitive — ne repasse pas par la construction des outils, et
         # annoncerait « c'est à l'écran » devant un écran où rien n'apparaît.
         if not self._widget_affichable(widget):
-            logger.info("Overlay: '{w}' refusé — masqué sur toutes les scènes",
-                        w=widget)
-            return None
+            return self._refuser("il est masqué sur toutes les scènes de l'overlay.")
 
         # Une partie qui DURE ne s'écrase pas en silence. Le garde est ici, au
         # point de passage unique de tout ce que Wally décide d'afficher : quel
@@ -1613,9 +1650,7 @@ class OverlayNarrator:
         # qui oublierait de le faire n'annoncera au moins pas un succès.
         occupe = self.game_already_running(widget, **extra)
         if occupe is not None:
-            logger.info("Overlay: '{w}' refusé — une partie du même type tourne déjà",
-                        w=widget)
-            return None
+            return self._refuser("une partie du même type tourne déjà.")
 
         # Et une partie qui dure ne s'ouvre pas toute seule. Même endroit, même
         # raison : c'est le seul point que TOUS les chemins traversent. Wally
@@ -1623,8 +1658,7 @@ class OverlayNarrator:
         # et sur la conduite de la partie une fois ouverte : cocher, remontrer,
         # annuler. Il n'a plus celle de la commencer.
         if not sollicite and ouverture_de_partie(widget, **extra) is not None:
-            logger.info("Overlay: '{w}' refusé — personne ne l'a demandé", w=widget)
-            return None
+            return self._refuser("personne ne l'a demandé.")
 
         params: dict = {}
         if widget == "coinflip":
@@ -1655,7 +1689,7 @@ class OverlayNarrator:
         elif widget == "wheel":
             options = [str(o).strip()[:24] for o in (extra.get("options") or []) if str(o).strip()]
             if len(options) < 2:
-                return None  # une roue à une case n'a aucun intérêt
+                return self._refuser("la roue veut au moins 2 options (paramètre `options`).")
             options = options[:8]
             # L'index gagnant est décidé ici : Wally peut donc le forcer.
             try:
@@ -1680,7 +1714,7 @@ class OverlayNarrator:
             try:
                 seconds = int(brut)
             except (TypeError, ValueError):
-                return None
+                return self._refuser("le compte à rebours veut une durée en secondes (paramètre `seconds`).")
             seconds = max(1, min(600, seconds))
             # `duration` explicite : sans elle, `OverlayFeed` posait son défaut de
             # 10 s et un compte à rebours de 2 minutes disparaissait de l'écran
@@ -1698,14 +1732,14 @@ class OverlayNarrator:
             try:
                 percent = float(brut)
             except (TypeError, ValueError):
-                return None
+                return self._refuser("la jauge veut un remplissage de 0 à 100 (paramètre `percent`).")
             params = {"percent": max(0.0, min(100.0, percent)),
                       "label": ecourter(str(extra.get("label") or comment), 40)}
 
         elif widget == "pinned":
             text = str(extra.get("text") or "").strip()
             if not text:
-                return None
+                return self._refuser("il n'y a aucun message à mettre en avant (paramètre `text`).")
             params = {"author": str(extra.get("author") or "")[:24],
                       "text": ecourter(text, 160)}
 
@@ -1719,7 +1753,7 @@ class OverlayNarrator:
             except (TypeError, ValueError):
                 seconds = _POLL_DEFAULT_S
             if not self.start_poll(question, options, seconds=seconds):
-                return None
+                return self._refuser("le sondage veut une question et au moins 2 options (paramètres `question` et `options`).")
             # start_poll a déjà publié le widget ; le commentaire ferait doublon
             # avec la question affichée.
             return {"widget": "poll", "question": question, "options": options,
@@ -1728,7 +1762,7 @@ class OverlayNarrator:
         elif widget == "talkers":
             shown = self.show_talkers()
             if shown is None:
-                return None
+                return self._refuser("personne n'a encore assez parlé pour qu'un podium ait un sens.")
             return shown
 
         elif widget == "goal":
@@ -1736,7 +1770,7 @@ class OverlayNarrator:
             # attend un pourcentage donné à la main.
             if not self.open_goal(str(extra.get("label") or comment or ""),
                                   extra.get("target"), str(extra.get("kind") or "")):
-                return None
+                return self._refuser("l'objectif veut un nombre à atteindre et ce qu'on compte (paramètres `target` et `kind`).")
             # `open_goal` vraie ⇒ l'objectif est posé. Relu dans une variable
             # plutôt que déréférencé : l'attribut est `Optional`, et c'est le
             # genre de garantie qui saute au premier refactor.
@@ -1750,12 +1784,12 @@ class OverlayNarrator:
                 # nouvelle partie : relancer effaçait les lettres déjà trouvées.
                 # Même geste que le bingo, qu'on peut redemander à volonté.
                 if not self._hangman:
-                    return None
+                    return self._refuser("aucune partie de pendu ne tourne — pour en lancer une, donne le mot dans `word`.")
                 self._publish_hangman()
                 return {"widget": "hangman", "letters": _compte_lettres(
                     self._hangman["word"])}
             if not self.start_hangman(mot, str(extra.get("hint") or comment or "")):
-                return None
+                return self._refuser("le mot du pendu doit faire 3 à 16 lettres (paramètre `word`).")
             return {"widget": "hangman", "letters": _compte_lettres(
                 self._fold(mot))}
 
@@ -1772,7 +1806,7 @@ class OverlayNarrator:
             # sa description — c'est elle qui lui permet de commenter juste.
             library = self._memes
             if library is None:
-                return None
+                return self._refuser("la réserve de memes n'est pas branchée.")
             # `about` SEUL, jamais `comment` en repli. La description de l'outil
             # promet « omets-le pour un tirage au hasard » — or `comment` est la
             # réplique de Wally, toujours remplie. Chaque affichage était donc
@@ -1782,7 +1816,7 @@ class OverlayNarrator:
             # de ce qu'on s'apprête à dire.
             chosen = library.pick(str(extra.get("about") or ""))
             if chosen is None:
-                return None
+                return self._refuser("aucun meme ne correspond (paramètre `about`), ou la réserve est vide.")
             # Seule l'image part à l'écran. La description reste dans le retour,
             # donc au prompt : elle existe pour que Wally commente juste, pas
             # pour être lue. En légende, elle doublait ce qu'il allait dire et
@@ -1808,7 +1842,7 @@ class OverlayNarrator:
             cells = [str(c).strip()[:34] for c in (extra.get("cells") or []) if str(c).strip()]
             if cells:
                 if not self.start_bingo(cells):
-                    return None
+                    return self._refuser("la grille de bingo veut au moins 2 pronostics courts (paramètre `cells`).")
                 # Les cases telles que la grille les a RANGÉES (tronquées,
                 # nettoyées), pas celles qu'on lui a passées.
                 ouverte = self._bingo or {}
@@ -1816,7 +1850,7 @@ class OverlayNarrator:
             if extra.get("check") is not None:
                 checked = self.check_bingo(extra.get("check"))
                 if checked is None:
-                    return None
+                    return self._refuser("cette case de bingo est introuvable ou déjà cochée (paramètre `check`).")
                 return checked
             # Ni cases ni coche : on redemande simplement la grille. Elle ne
             # reste pas à l'écran, et sans ça on ne pouvait pas la revoir.
@@ -1827,23 +1861,23 @@ class OverlayNarrator:
             # avant d'appeler, on se contente de les mettre en forme.
             lines = [str(l).strip()[:34] for l in (extra.get("lines") or []) if str(l).strip()]
             if not lines:
-                return None
+                return self._refuser("les stats veulent 1 à 4 lignes déjà rédigées (paramètre `lines`).")
             params = {"player": str(extra.get("player") or "")[:24],
                       "lines": lines[:4]}
 
         elif widget == "versus":
             gauche, droite = extra.get("left_value"), extra.get("right_value")
             if gauche is None or droite is None:
-                return None      # sans chiffres, il n'y a rien à comparer
+                return self._refuser("la comparaison veut les deux chiffres (paramètres `left_value` et `right_value`).")
             try:
                 left_value = float(gauche)
                 right_value = float(droite)
             except (TypeError, ValueError):
-                return None
+                return self._refuser("les deux chiffres de la comparaison doivent être des nombres (`left_value`, `right_value`).")
             left_name = str(extra.get("left_name") or "").strip()[:14]
             right_name = str(extra.get("right_name") or "").strip()[:14]
             if not left_name or not right_name:
-                return None
+                return self._refuser("la comparaison veut les deux noms (paramètres `left_name` et `right_name`).")
             params = {
                 "label": ecourter(str(extra.get("label") or comment), 24),
                 "left_name": left_name, "left_value": left_value,
@@ -1873,7 +1907,7 @@ class OverlayNarrator:
         elif widget == "uptime":
             label = self._uptime_label()
             if not label:
-                return None  # pas de live daté : rien à afficher
+                return self._refuser("aucun live daté : la durée du stream est inconnue.")
             params = {"text": label}
             widget = "counter"  # même rendu, données calculées ici
 
