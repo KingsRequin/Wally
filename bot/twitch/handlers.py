@@ -35,6 +35,7 @@ from bot.discord.handlers import (
     _consume_open_question, _note_open_question,
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
+    _PRESENCE_TOOL, run_presence_tool, _presence_service,
 )
 from bot.core.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
@@ -479,6 +480,10 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
         tools.append(_PREDICT_TOOL)
     if getattr(bot, "quotes", None) is not None:
         tools.append(_QUOTE_TOOL)
+    # Lecture seule sur le Discord de la communauté : rien d'engageant, donc
+    # offert même depuis une chaîne invitée, comme le planning et la musique.
+    if _presence_service(bot) is not None:
+        tools.append(_PRESENCE_TOOL)
     # `overlay=False` depuis une chaîne INVITÉE : l'overlay appartient au stream
     # maison. Sans ce garde, le chat d'un invité pouvait faire afficher bulles,
     # clips et panneaux Apex chez Azraël.
@@ -740,6 +745,8 @@ def make_tool_executor(
         args = json.loads(arguments)
         if name == "quote":
             return await run_quote_tool(bot, args)
+        if name == "who_is_online":
+            return run_presence_tool(bot, args)
         if name == "follow_date":
             return await run_follow_tool(bot, args, platform=platform,
                                          user_id=user_id, author=author)

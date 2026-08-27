@@ -291,6 +291,66 @@ async def run_predict_tool(bot, args: dict) -> str:
         return json.dumps({"status": "error", "message": "L'opération a échoué."})
 
 
+# Assez haut pour qu'une absence de la liste VEUILLE dire quelque chose : à 8,
+# le défaut de `roster()`, Wally aurait pris une troncature pour un départ.
+_PRESENCE_LIMITE = 25
+
+_PRESENCE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "who_is_online",
+        "description": (
+            "Qui est connecté sur le Discord de la communauté, à l'instant : "
+            "leur statut (en ligne, absent, ne pas déranger) et ce qu'ils font "
+            "s'ils le partagent. Appelle-le quand on te demande qui est là, si "
+            "quelqu'un est connecté, ou avant de proposer de déranger "
+            "quelqu'un. Ne DEVINE jamais une présence de mémoire : quelqu'un "
+            "qui a écrit il y a une heure peut être parti depuis."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+def _presence_service(bot):
+    """Le service de présence, vu depuis l'une OU l'autre plateforme.
+
+    `WallyDiscord` le porte ; `WallyTwitch` ne l'atteint que par `discord_bot`,
+    comme il atteint déjà `voice_service` pour `say_in_voice`.
+    """
+    return (getattr(bot, "presence", None)
+            or getattr(getattr(bot, "discord_bot", None), "presence", None))
+
+
+def run_presence_tool(bot, args: dict) -> str:
+    """Qui est en ligne. Lecture seule, jamais bloquant.
+
+    `PresenceService` alimentait déjà `AttentionContext` — donc la COGNITION
+    voyait les statuts, mais pas le chemin de RÉPONSE. D'où « je peux pas voir
+    qui est en ligne, connecté, idle, tout ça » relevé dans les traces, dit par
+    un bot qui recevait l'information à chaque tick.
+
+    Le plafond est celui de `roster()` mais relevé : à 8, une absence de la
+    liste ne prouvait rien, et Wally aurait conclu « il est pas là » d'une
+    troncature. On dit explicitement quand la liste est coupée.
+    """
+    service = _presence_service(bot)
+    if service is None or not service.enabled:
+        return json.dumps({"status": "unavailable", "message": (
+            "Je ne vois pas les présences du serveur en ce moment.")})
+    lignes = service.roster(limit=_PRESENCE_LIMITE)
+    if not lignes:
+        return json.dumps({"status": "nothing", "message": (
+            "Personne de connecté sur le serveur, ou je ne vois rien. "
+            "Ne nomme personne.")})
+    tronque = len(lignes) >= _PRESENCE_LIMITE
+    fin = (" La liste est COUPÉE : ne conclus pas que quelqu'un est absent "
+           "parce qu'il n'y figure pas." if tronque else
+           " C'est la liste COMPLÈTE : qui n'y est pas est hors ligne.")
+    return json.dumps({"status": "ok", "message": (
+        "Connectés à l'instant — " + " · ".join(lignes) + "." + fin)})
+
+
 _QUOTE_TOOL = {
     "type": "function",
     "function": {
@@ -1450,6 +1510,8 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         tools.append(_PREDICT_TOOL)
     if getattr(bot, "quotes", None) is not None:
         tools.append(_QUOTE_TOOL)
+    if _presence_service(bot) is not None:
+        tools.append(_PRESENCE_TOOL)
     # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
     # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
@@ -2922,6 +2984,8 @@ async def _respond(
             args = json.loads(arguments)
             if name == "quote":
                 return await run_quote_tool(bot, args)
+            if name == "who_is_online":
+                return run_presence_tool(bot, args)
             if name == "follow_date":
                 return await run_follow_tool(
                     bot, args, platform="discord", user_id=str(message.author.id),
