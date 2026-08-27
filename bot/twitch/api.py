@@ -358,6 +358,7 @@ class TwitchAPI:
     # Emotes
     # ------------------------------------------------------------------
 
+    FOLLOWERS_URL = "https://api.twitch.tv/helix/channels/followers"
     EMOTES_GLOBAL_URL = "https://api.twitch.tv/helix/chat/emotes/global"
     EMOTES_USER_URL = "https://api.twitch.tv/helix/chat/emotes/user"
 
@@ -402,6 +403,36 @@ class TwitchAPI:
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.warning("Twitch {u} a échoué : {e!r}", u=url, e=exc)
         return None
+
+    async def get_follow_date(self, user_id: str) -> Optional[dict]:
+        """GET /helix/channels/followers — depuis quand `user_id` suit la maison.
+
+        Trois retours DISTINCTS, parce que les trois se disent différemment :
+
+          `None` → l'API n'a pas répondu   ................ « j'arrive pas à vérifier »
+          `{}`   → la personne ne suit pas ................ « tu me suis même pas »
+          `{"followed_at": "<ISO 8601 UTC>"}` ............. « depuis mars »
+
+        Les confondre donnerait le pire des cas : annoncer à quelqu'un qui suit
+        depuis deux ans qu'il ne suit pas, parce que Helix a eu un 500.
+
+        Le scope `moderator:read:followers` est sur le token du BOT et exige
+        qu'il soit modérateur de la chaîne. Ce n'est pas une hypothèse :
+        l'EventSub `channel.follow v2` a la même exigence et tourne déjà.
+        """
+        data = await self._get_json(
+            self.FOLLOWERS_URL,
+            {"broadcaster_id": self._broadcaster_id, "user_id": str(user_id)},
+        )
+        if data is None:
+            return None
+        entrees = data.get("data") or []
+        if not entrees:
+            return {}
+        quand = str(entrees[0].get("followed_at") or "")
+        # Un `followed_at` vide serait un « il suit » sans date : indéfendable à
+        # l'oral. On retombe sur « ne suit pas », le seul repli honnête.
+        return {"followed_at": quand} if quand else {}
 
     async def get_global_emotes(self) -> Optional[list[str]]:
         """Les emotes globales Twitch, utilisables par TOUT LE MONDE. None si échec.

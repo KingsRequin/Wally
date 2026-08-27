@@ -36,6 +36,7 @@ from bot.discord.handlers import (
     _TALLY_TOOLS, run_tally_tool, _PREDICT_TOOL, run_predict_tool,
     _QUOTE_TOOL, run_quote_tool,
 )
+from bot.core.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
@@ -505,6 +506,10 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # à l'exécution, c'est elle qui permet de charrier celui qui essaie.
     if overlay and getattr(bot, "twitch_api", None) is not None:
         tools.append(PREDICTION_TOOL)
+        # L'ancienneté d'un viewer, chaîne MAISON seulement : le scope
+        # `moderator:read:followers` ne vaut que là, et « depuis quand tu me
+        # suis » chez un invité parlerait de SA chaîne, pas de celle-ci.
+        tools.append(FOLLOW_TOOL)
     if overlay and _overlay_narrator(bot) is not None:
         # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
         # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
@@ -727,6 +732,9 @@ def make_tool_executor(
         args = json.loads(arguments)
         if name == "quote":
             return await run_quote_tool(bot, args)
+        if name == "follow_date":
+            return await run_follow_tool(bot, args, platform=platform,
+                                         user_id=user_id, author=author)
         if name == "predict":
             return await run_predict_tool(bot, args)
         if name in ("start_counting", "stop_counting", "list_counters"):

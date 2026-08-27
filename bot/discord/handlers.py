@@ -18,6 +18,7 @@ from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.core.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
@@ -1379,6 +1380,11 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         tools.append(_PREDICT_TOOL)
     if getattr(bot, "quotes", None) is not None:
         tools.append(_QUOTE_TOOL)
+    # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
+    # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —
+    # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
+    if api_twitch(bot) is not None:
+        tools.append(FOLLOW_TOOL)
     # Le planning est offert INCONDITIONNELLEMENT : il rend un lien, pas un
     # affichage. Le conditionner à l'overlay priverait Wally de réponse hors
     # live — le moment où on demande justement quand est le prochain stream.
@@ -2843,6 +2849,10 @@ async def _respond(
             args = json.loads(arguments)
             if name == "quote":
                 return await run_quote_tool(bot, args)
+            if name == "follow_date":
+                return await run_follow_tool(
+                    bot, args, platform="discord", user_id=str(message.author.id),
+                    author=str(message.author.display_name))
             if name == "predict":
                 return await run_predict_tool(bot, args)
             if name in ("start_counting", "stop_counting", "list_counters"):
