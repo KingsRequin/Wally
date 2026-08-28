@@ -79,6 +79,17 @@ _BOTS = {
 # que l'extraction voie des échanges, pas des phrases isolées.
 _LOT = 25
 
+# L'origine part au PROMPT, telle quelle : `_format_fact` ajoute « [origine] »
+# derrière chaque souvenir. Les autres valent « Twitch/azrael_ttv » ou
+# « Discord #chambe-de-wally » — des LIEUX. Un « phantombot_chat:2026-03-25 »
+# aurait mis dans la bouche de Wally le nom d'un bot qu'il ne connaît pas, à
+# côté d'une date que `_fact_freshness` dit déjà en clair.
+#
+# Le lieu est le même que celui des faits vivants — c'est le chat d'Azraël. Le
+# suffixe garde la trace de l'import, pour pouvoir tout retrouver ou tout
+# annuler : `origin = 'Twitch/azrael_ttv (archive)'`.
+_ORIGINE = "Twitch/azrael_ttv (archive)"
+
 
 def _dump_du_jour() -> str:
     """Le dump SQL le plus récent de PhantomBot (il en écrit un par jour)."""
@@ -230,7 +241,7 @@ async def main() -> int:
                 try:
                     ecrits += await extracteur._extract_facts(
                         lot, "twitch", f"phantombot:{date}",
-                        origin=f"phantombot_chat:{date}", quand=quand,
+                        origin=_ORIGINE, quand=quand,
                     )
                 # Un lot qui échoue ne doit PAS emporter le reste de l'archive.
                 # Vécu le 2026-08-28 : une réponse vide de DeepSeek (« JSON vide
