@@ -290,6 +290,11 @@ async function restartTwitchContainer() {
 // Chaque phase remplace un couple `pane`/`sub` par un vrai rendu.
 
 const ROUTES = {
+  'cockpit': {
+    titre: 'Cockpit',
+    sous: '',
+    pane: 'admin-cockpit',
+  },
   'cerveau/personnes': {
     titre: 'Personnes',
     sous: 'Tout le monde que Wally connaît, sur les deux plateformes.',
@@ -359,7 +364,7 @@ const ROUTES_PARAM = [
   ['cerveau/personnes/', 'cerveau/fiche'],
 ];
 
-const ROUTE_DEFAUT = 'cerveau/personnes';
+const ROUTE_DEFAUT = 'cockpit';
 
 // Les anciens hash — `#admin-memoire`, et les quatre noms d'onglets déjà
 // redirigés avant la refonte. Un signet posé il y a six mois doit continuer de
@@ -438,6 +443,9 @@ function _appliquerRoute(route, param) {
   if (sous) { sous.textContent = def.sous || ''; sous.hidden = !def.sous; }
   if (tete) tete.hidden = false;
 
+  if (currentRoute && ROUTES[currentRoute]) {
+    noterPageRecente(currentRoute, ROUTES[currentRoute].titre);
+  }
   currentRoute = route;
 
   // Le sommaire appartient à la page, pas à la coquille : une page sans
@@ -450,7 +458,8 @@ function _appliquerRoute(route, param) {
   // prochain clic n'importe où déclencherait une fusion.
   if (def.pane !== 'admin-memoire' && _memLinkMode) cancelLinkMode();
 
-  if (def.pane === 'admin-personnes') renderPersonnes();
+  if (def.pane === 'admin-cockpit') renderCockpit();
+  else if (def.pane === 'admin-personnes') renderPersonnes();
   else if (def.pane === 'admin-personnalite') renderPersonnalite();
   else if (def.pane === 'admin-modeles') renderModeles();
   else if (def.pane === 'admin-medias') renderMedias();
@@ -927,15 +936,6 @@ function currentModel(cfg, role) {
     || '';
 }
 
-// ── Admin config ──────────────────────────────────────────────────────────────
-
-async function loadConfig() {
-  const r = await apiFetch('/api/admin/config');
-  if (!r || !r.ok) return;
-  const cfg = await r.json();
-  renderConfigForm(cfg);
-}
-
 async function loadOpenAIModels() {
   const r = await apiFetch('/api/admin/openai/models');
   if (!r || !r.ok) return [];
@@ -948,207 +948,6 @@ async function loadClaudeModels() {
   if (!r || !r.ok) return [];
   const { models } = await r.json();
   return models;
-}
-
-async function renderConfigForm(cfg) {
-  const container = document.getElementById('config-form-container');
-  const [models, claudeModels] = await Promise.all([loadOpenAIModels(), loadClaudeModels()]);
-
-  const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-  const TEXT_VERBOSITIES = ['low', 'medium', 'high'];
-  const THINKING_TYPES = ['disabled', 'enabled', 'adaptive'];
-  const THINKING_EFFORTS = ['low', 'medium', 'high', 'max'];
-
-  container.innerHTML = `
-    <!-- Émotions (force + reset) -->
-    <div class="card config-section">
-      <div class="config-section-title">ÉMOTIONS</div>
-      <div id="gauges-admin-inline" role="group" aria-label="Controle des emotions"></div>
-      <div class="mt-4">
-        <button class="btn btn-danger" onclick="resetEmotions()">RESET À NEUTRE (0.5)</button>
-      </div>
-    </div>
-
-    <!-- LLM Providers -->
-    <div class="card config-section">
-      <div class="config-section-title">LLM — MODÈLES</div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-primary-provider">Provider principal</label>
-        <select id="cfg-primary-provider" onchange="onProviderChange()">
-        ${providerOptions(cfg, 'primary')}
-        </select>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-primary-model">Modèle principal</label>
-        <select id="cfg-primary-model">
-          ${modelOptions(models, currentModel(cfg, 'primary'))}
-        </select>
-        <select id="cfg-primary-model-claude" style="display:none">
-          ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.primary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
-        <select id="cfg-secondary-provider" onchange="onProviderChange()">
-        ${providerOptions(cfg, 'secondary')}
-        </select>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
-        <select id="cfg-secondary-model">
-          ${modelOptions(models, currentModel(cfg, 'secondary'))}
-        </select>
-        <select id="cfg-secondary-model-claude" style="display:none">
-          ${claudeModels.map(m => `<option value="${m}" ${m === (cfg.llm?.secondary?.model || '') ? 'selected' : ''}>${m}</option>`).join('')}
-        </select>
-      </div>
-      <div id="openai-specific-settings">
-        <div class="field-group">
-          <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
-          <select id="cfg-reasoning-effort">
-            ${REASONING_EFFORTS.map(e => `<option value="${e}" ${e === cfg.openai.reasoning_effort ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
-          <select id="cfg-text-verbosity">
-            ${TEXT_VERBOSITIES.map(v => `<option value="${v}" ${v === cfg.openai.text_verbosity ? 'selected' : ''}>${v.toUpperCase()}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div id="claude-specific-settings" style="display:none">
-        <div class="field-group">
-          <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:var(--text-muted)">Claude only</span></label>
-          <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
-            ${THINKING_TYPES.map(t => `<option value="${t}" ${t === (cfg.llm?.primary?.thinking_type || 'disabled') ? 'selected' : ''}>${t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)'}</option>`).join('')}
-          </select>
-        </div>
-        <div id="thinking-effort-group" class="field-group" style="display:none">
-          <label class="field-label" for="cfg-thinking-effort">Niveau d'effort thinking</label>
-          <select id="cfg-thinking-effort">
-            ${THINKING_EFFORTS.map(e => `<option value="${e}" ${e === (cfg.llm?.primary?.thinking_effort || 'medium') ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('')}
-          </select>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
-        </div>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-max-tokens">Max output tokens</label>
-        <input type="number" id="cfg-max-tokens" min="100" max="32000" value="${cfg.openai.max_tokens}">
-      </div>
-      <button class="btn btn-success" onclick="saveOpenAI()">💾 SAUVEGARDER</button>
-      <p id="llm-restart-notice" style="display:none;font-size:0.75rem;color:#f59e0b;margin-top:8px">⚠️ Changement de provider — redémarrage requis pour prendre effet.</p>
-    </div>
-
-    <!-- Émotions — lambdas (boredom exclu : monte avec l'inactivité, pas de decay) -->
-    <div class="card config-section">
-      <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
-      ${Object.entries(cfg.emotions).filter(([name]) => name !== 'boredom').map(([name, ec]) => {
-        const lam = ec.decay_lambda;
-        const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
-        const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
-        return `
-        <div class="field-group" style="display:flex;align-items:center;gap:12px">
-          <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'}; min-width:100px">${name.toUpperCase()} λ</label>
-          <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this, '${name}')">
-          <span id="decay-time-${name}" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
-        </div>`;
-      }).join('')}
-
-      <!-- Boredom rise config -->
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:12px">
-          <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'}; min-width:100px">BOREDOM ↑/h</label>
-          <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2}" style="width:90px" oninput="updateBoredomTime(this)">
-          <span id="boredom-time-info" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${(() => { const r = cfg.emotions.boredom?.boredom_rise_per_hour ?? 1.2; if (r <= 0) return '∞'; const h = 1/r; return h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; })()}</strong></span>
-        </div>
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
-      </div>
-
-      <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
-    </div>
-
-    <!-- Bot général -->
-    <div class="card config-section">
-      <div class="config-section-title">BOT GÉNÉRAL</div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-lang">Langue par défaut</label>
-        <input type="text" id="cfg-lang" value="${cfg.bot.language_default}">
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-journal-time">Heure journal (HH:MM)</label>
-        <input type="text" id="cfg-journal-time" value="${cfg.bot.journal_time}">
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-ctx-size">Taille fenêtre contexte</label>
-        <input type="number" id="cfg-ctx-size" value="${cfg.bot.context_window_size}">
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-triggers">Triggers (séparés par virgule)</label>
-        <input type="text" id="cfg-triggers" value="${(cfg.bot.trigger_names || []).join(', ')}">
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-cost-threshold">Seuil d'alerte coûts ($)</label>
-        <input type="number" id="cfg-cost-threshold" min="1" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold || 25}">
-      </div>
-      <div class="field-group">
-        <label class="field-label">Notifications Discord</label>
-        <select id="cfg-notif-channel" style="width:100%">
-          <option value="">Désactivé</option>
-        </select>
-        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
-      </div>
-      <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
-    </div>
-
-    <!-- Anti-spam Discord -->
-    <div class="card config-section">
-      <div class="config-section-title">ANTI-SPAM DISCORD</div>
-      <div class="field-group" style="display:flex;align-items:center;gap:12px">
-        <label class="field-label" style="margin:0" for="cfg-spam-enabled">Activé</label>
-        <input type="checkbox" id="cfg-spam-enabled" ${(cfg.discord.spam_detection || {}).enabled !== false ? 'checked' : ''}>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-spam-max">Messages max</label>
-        <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Nombre de messages avant déclenchement</p>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
-        <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Période de temps pour compter les messages</p>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
-        <input type="number" id="cfg-spam-mute" min="1" max="60" value="${(cfg.discord.spam_detection || {}).mute_minutes || 5}">
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
-        <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
-        <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
-      </div>
-      <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
-    </div>
-
-  `;
-
-  // Build emotion sliders inline
-  buildGauges('gauges-admin-inline', true);
-  // Update with current values if available
-  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
-    updateEmotionGauges(currentEmotions);
-  }
-
-  // Initialize provider UI state
-  onProviderChange();
-
-  // Load notification channels into the select
-  loadNotificationChannels(cfg);
 }
 
 async function loadNotificationChannels(cfg) {
@@ -2221,6 +2020,211 @@ function escJs(str) {
       .replace(/"/g, '\\"')
       .replace(/\r?\n/g, '\\n')
   );
+}
+
+// ── Cockpit ─────────────────────────────────────────────────────────────────
+//
+// L'écran d'arrivée. Il répond à trois questions et à rien d'autre : est-ce que
+// ça tourne, qu'est-ce qui a cassé, qu'est-ce que je dois décider. Aucun
+// réglage ici — tout renvoie ailleurs, avec le filtre déjà posé.
+
+const _COCKPIT_COULEURS = {
+  echec: 'var(--danger)',
+  erreur: 'var(--warning)',
+  fusion: 'var(--accent)',
+  question: 'var(--cognitive)',
+};
+
+const _COCKPIT_LIBELLES = {
+  echec: 'tâche en échec',
+  erreur: 'erreur répétée',
+  fusion: 'identités à rattacher',
+  question: 'question en attente',
+};
+
+// Les trois derniers endroits visités. Purement local — c'est une commodité de
+// navigation, elle n'a rien à faire côté serveur.
+const _COCKPIT_CLE_RECENTES = 'wally_pages_recentes';
+
+function renderCockpit() {
+  const el = document.getElementById('tab-admin-cockpit');
+  if (!el) return;
+  if (!document.getElementById('cockpit-tuiles')) {
+    el.innerHTML = '<div class="cockpit-tuiles" id="cockpit-tuiles"></div>'
+      + '<div class="cockpit-colonnes">'
+      + '<div class="page-section" id="cockpit-decisions"></div>'
+      + '<div class="page-section" id="cockpit-humeur"></div>'
+      + '</div>'
+      + '<div class="page-section" id="cockpit-reprendre"></div>';
+    el.addEventListener('click', function (ev) {
+      const a = ev.target.closest('[data-cible]');
+      if (a) location.hash = a.dataset.cible;
+    });
+  }
+  viderSommaire();
+  _majSalutation();
+  chargerCockpit();
+  _rendreReprendre();
+}
+
+/** « Bonsoir » à 19 h, « Bonjour » à 9 h. Le titre du cockpit s'adresse à
+ *  quelqu'un : le figer à une heure de la journée le rendrait faux les trois
+ *  quarts du temps. */
+function _majSalutation() {
+  const h = new Date().getHours();
+  const mot = h < 6 ? 'Bonne nuit' : h < 18 ? 'Bonjour' : 'Bonsoir';
+  const titre = document.getElementById('page-title');
+  if (titre) titre.textContent = mot + '. Voilà où en est Wally.';
+}
+
+async function chargerCockpit() {
+  const tuiles = document.getElementById('cockpit-tuiles');
+  const decisions = document.getElementById('cockpit-decisions');
+  if (!tuiles || !decisions) return;
+
+  const [rd, rc] = await Promise.all([
+    apiFetch('/api/admin/decisions'),
+    apiFetch('/api/admin/connexions'),
+  ]);
+  if (!rd || !rd.ok) {
+    decisions.innerHTML = '<div class="page-section-titre">Ce qui demande une décision</div>'
+      + '<div class="page-section-sous">État illisible pour le moment.</div>';
+    return;
+  }
+  const d = await rd.json();
+  const cnx = (rc && rc.ok) ? await rc.json() : {};
+
+  const sous = document.getElementById('page-sub');
+  if (sous) {
+    sous.textContent = 'En ligne depuis ' + _cockpitDuree(d.uptime_seconds) + '.';
+    sous.hidden = false;
+  }
+
+  tuiles.innerHTML =
+      _cockpitTuile('Discord', (cnx.discord || {}).pret, 'connecté', 'coupé',
+                    (cnx.discord || {}).nom || 'non configuré')
+    + _cockpitTuile('Twitch', (cnx.twitch || {}).pret, 'connecté', 'coupé',
+                    (cnx.twitch || {}).nom || 'non configuré')
+    + _cockpitTuile('Overlay', d.overlay_visible, 'visible', 'masqué',
+                    'ce que voient les viewers')
+    + _cockpitTuileErreurs(d.erreurs_du_jour);
+
+  _rendreDecisions(decisions, d);
+  await chargerEmotions();
+  _rendreHumeurCockpit();
+}
+
+function _cockpitTuile(nom, ok, siOui, siNon, sous) {
+  return '<div class="cockpit-tuile">'
+    + '<div class="cockpit-tuile-label">' + escHtml(nom) + '</div>'
+    + '<div class="cockpit-tuile-valeur ' + (ok ? 'vert' : 'ambre') + '">'
+    + (ok ? siOui : siNon) + '</div>'
+    + '<div class="cockpit-tuile-sous">' + escHtml(sous) + '</div></div>';
+}
+
+function _cockpitTuileErreurs(n) {
+  const nb = Number(n) || 0;
+  return '<div class="cockpit-tuile' + (nb ? ' alerte' : '') + '">'
+    + '<div class="cockpit-tuile-label">Erreurs du jour</div>'
+    + '<div class="cockpit-tuile-valeur ' + (nb ? 'rouge' : 'vert') + '">' + nb + '</div>'
+    + '<div class="cockpit-tuile-sous">'
+    + (nb ? 'dans le journal d\'aujourd\'hui' : 'rien à signaler') + '</div></div>';
+}
+
+function _rendreDecisions(boite, d) {
+  const items = d.items || [];
+  const reste = (d.total || 0) - items.length;
+  boite.innerHTML = '<div class="page-section-titre">Ce qui demande une décision</div>'
+    + '<div class="page-section-sous">'
+    + (items.length
+        ? (d.total === items.length ? d.total + ' chose(s) attendent quelqu\'un.'
+                                    : items.length + ' sur ' + d.total + ' — les plus urgentes.')
+        : 'Rien n\'attend personne.')
+    + '</div>'
+    + items.map(function (i) {
+        return '<div class="cockpit-item" data-cible="' + escAttr(i.cible) + '" '
+          + 'role="button" tabindex="0">'
+          + '<span class="cockpit-barre" style="background:'
+          + (_COCKPIT_COULEURS[i.type] || 'var(--border-accent)') + '"></span>'
+          + '<div class="cockpit-item-txt"><div class="cockpit-item-titre">'
+          + escHtml(i.titre) + '</div>'
+          + '<div class="cockpit-item-detail">'
+          + escHtml(_COCKPIT_LIBELLES[i.type] || i.type) + ' · '
+          + escHtml(i.detail) + '</div></div>'
+          + '<span class="cockpit-ouvrir">Ouvrir</span></div>';
+      }).join('')
+    + (reste > 0 ? '<div class="page-section-sous">+ ' + reste + ' autre(s).</div>' : '');
+}
+
+/** L'état émotionnel RÉEL, lu au serveur.
+ *
+ *  `currentEmotions` n'était alimenté par AUCUN appel : les deux seuls sites
+ *  qui appelaient `updateEmotionGauges` lui repassaient la variable vide.
+ *  Résultat, les jauges du panel affichaient 0.00 pour tout depuis toujours,
+ *  pendant que Wally tournait à joy 0.78 — la mesure existait, l'écran mentait.
+ */
+async function chargerEmotions() {
+  const r = await apiFetch('/api/admin/emotions');
+  if (!r || !r.ok) return false;
+  updateEmotionGauges(await r.json());
+  return true;
+}
+
+function _rendreHumeurCockpit() {
+  const boite = document.getElementById('cockpit-humeur');
+  if (!boite) return;
+  boite.innerHTML = '<div class="page-section-titre">Humeur actuelle</div>'
+    + '<div class="page-section-sous">Réglable dans '
+    + '<a href="#/cerveau/personnalite">Personnalité</a>.</div>'
+    + EMOTIONS.map(function (e) {
+        const v = Number((currentEmotions || {})[e]) || 0;
+        return '<div class="cockpit-emotion">'
+          + '<span class="cockpit-emotion-nom" style="color:' + EMOTION_COLORS[e] + '">'
+          + escHtml(e) + '</span>'
+          + '<span class="cockpit-emotion-piste"><span style="width:'
+          + Math.round(Math.max(0, Math.min(1, v)) * 100) + '%;background:'
+          + EMOTION_COLORS[e] + '"></span></span>'
+          + '<span class="cockpit-emotion-val">' + v.toFixed(2) + '</span></div>';
+      }).join('');
+}
+
+/** Retient la page qu'on vient de quitter. Appelée par le routeur. */
+function noterPageRecente(route, titre) {
+  if (!route || route === 'cockpit') return;
+  let liste = [];
+  try {
+    liste = JSON.parse(localStorage.getItem(_COCKPIT_CLE_RECENTES) || '[]');
+  // Une valeur illisible (autre onglet, autre version) ne doit pas casser la
+  // navigation pour une commodité d'affichage.
+  } catch (e) { liste = []; }
+  liste = liste.filter(function (x) { return x && x.route !== route; });
+  liste.unshift({ route: route, titre: titre });
+  try {
+    localStorage.setItem(_COCKPIT_CLE_RECENTES, JSON.stringify(liste.slice(0, 3)));
+  } catch (e) { /* quota ou mode privé : le cockpit s'en passe */ }
+}
+
+function _rendreReprendre() {
+  const boite = document.getElementById('cockpit-reprendre');
+  if (!boite) return;
+  let liste = [];
+  try {
+    liste = JSON.parse(localStorage.getItem(_COCKPIT_CLE_RECENTES) || '[]');
+  } catch (e) { liste = []; }
+  if (!liste.length) { boite.innerHTML = ''; return; }
+  boite.innerHTML = '<div class="page-section-titre">Reprendre</div>'
+    + '<div class="journal-puces">' + liste.map(function (x) {
+        return '<button class="puce" data-cible="#/' + escAttr(x.route) + '">'
+          + escHtml(x.titre || x.route) + '</button>';
+      }).join('') + '</div>';
+}
+
+function _cockpitDuree(secondes) {
+  const s = Math.max(0, Number(secondes) || 0);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h >= 24) return Math.floor(h / 24) + ' j ' + (h % 24) + ' h';
+  return h ? h + ' h ' + String(m).padStart(2, '0') : m + ' min';
 }
 
 // ── Cerveau › Mémoire commune ───────────────────────────────────────────────
@@ -3984,11 +3988,10 @@ async function _renderParametresEmotions(panel) {
 
   panel.appendChild(wrapper);
 
-  // Build emotion sliders
+  // Les curseurs, puis l'état RÉEL par-dessus. Sans le second appel, ils
+  // restaient tous à zéro — `currentEmotions` n'était rempli par personne.
   buildGauges('gauges-parametres-inline', true);
-  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
-    updateEmotionGauges(currentEmotions);
-  }
+  await chargerEmotions();
 }
 
 /** Les réglages de l'ADAPTATEUR Discord — langue par défaut, heure du journal,

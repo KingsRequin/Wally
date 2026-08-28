@@ -67,7 +67,7 @@ pas pour la sidebar.
 |---|---|---|
 | ✅ `GET /api/admin/person/{identite}` | Fiche agrégée : groupe d'identités, mémoires de TOUTES, alias, notes qui la mentionnent, compte Apex, trust/love (le plus haut du groupe), écoute | 4 |
 | ✅ `GET /api/admin/journal/erreurs` | Lignes ERROR regroupées : message, compteur, dernière occurrence, plus le compte par niveau | 2 |
-| `GET /api/admin/decisions` | File « demande une décision » du cockpit : tâches en échec, chevauchements de scène, identités à rattacher, questions en attente — type, libellé, cible de navigation | 8 |
+| ✅ `GET /api/admin/decisions` | File du cockpit : tâches en échec, erreurs répétées, identités à rattacher, questions en attente — type, libellé, **cible de navigation filtrée** | 8 |
 
 Pas d'API de rôles (arbitrage ci-dessus). La fusion d'identités s'expose depuis
 ce que fait déjà `scripts/rattacher_identites_inconnues.py`.
@@ -86,7 +86,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 5 | ✅ Personnalité + Modèles & coûts | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ Prompts absorbés, `GET /couts` rend visible ce que `cost_log` enregistrait sans lecteur |
 | 6 | ✅ Médias & sons, Connexions, Voix | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ les deux « Vocal » fusionnés, `GET /connexions` rend des FAITS et pas un voyant |
 | 7 | ✅ Mémoire commune | `routes/memory.py`, `app.js`, `style.css`, `smoke_front.py`, tests | ✅ 13 sujets et leur OPINION enfin visibles ; plus un seul sous-onglet dans le panel |
-| 8 | Cockpit + API décisions | nouveau `routes/decisions.py`, `app.js`, tests | Chaque item ouvre sa page déjà filtrée |
+| 8 | ✅ Cockpit + API décisions | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ 11 décisions rassemblées, chacune ouvre sa page DÉJÀ filtrée |
 | 9 | Scène & overlays — chrome seule | `overlay_admin.js`, `app.js` | Canevas, liste et inspecteur intacts |
 | 10 | Mobile + responsive | `style.css`, `index.html`, `app.js` | Barre du bas, scène en lecture seule |
 
@@ -106,6 +106,10 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   dessiner. La « latence médiane » devient « latence moyenne » : `AppState`
   tient une moyenne sur les 50 dernières réponses, l'annoncer autrement serait
   faux.
+- **Pas de « chevauchements de scène » dans la file de décisions.** Aucune
+  détection de chevauchement n'existe : `overlay_layout.py` décrit et valide un
+  placement, il ne compare pas deux éléments entre eux. L'écrire serait une
+  fonctionnalité. La file rend les quatre autres types, qui eux existent.
 - **Pas de « Doublons détectés » ni de « Purge des entrées mortes »**
   (écran 04). Les deux visaient la mémoire communautaire, qui **n'existe pas** :
   `/memory/global` rend une liste vide et refuse toute écriture en 501 depuis

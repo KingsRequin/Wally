@@ -49,6 +49,7 @@ _RACINE = pathlib.Path(__file__).resolve().parent.parent
 # « Mémoire commune » et « Voix » nomment aussi des titres et des pilules à
 # l'intérieur des panneaux, et un clic par texte visait un `<h2>` caché.
 ONGLETS = [
+    ("Cockpit", "cockpit"),
     ("Personnes", "cerveau/personnes"),
     ("Mémoire commune", "cerveau/memoire"),
     ("Personnalité", "cerveau/personnalite"),
@@ -205,10 +206,65 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_personnalite_et_couts(page, rap, erreurs)
     _verifier_live_et_connexions(page, rap, erreurs)
     _verifier_memoire_commune(page, rap, erreurs)
+    _verifier_cockpit(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_cockpit(page, rap: Rapport, erreurs: list[str]) -> None:
+    """L'écran d'arrivée. Quatre choses attendaient quelqu'un dans ce bot, une
+    par page : une tâche qui échoue, une erreur qui se répète, deux identités à
+    rattacher, une question à poser. On ne les voyait qu'en allant les chercher.
+    """
+    print("\n── Cockpit ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cockpit"]').click()
+    page.wait_for_timeout(2500)
+
+    tuiles = page.locator("#cockpit-tuiles .cockpit-tuile").count()
+    rap.dire(tuiles == 4, "les quatre tuiles d'état sont là", f"{tuiles} tuile(s)")
+
+    emotions = page.locator("#cockpit-humeur .cockpit-emotion").count()
+    rap.dire(emotions == 5, "les cinq émotions sont rendues", f"{emotions} barre(s)")
+
+    # Et elles doivent porter l'état RÉEL. `currentEmotions` n'était alimenté
+    # par aucun appel : les jauges affichaient 0.00 partout depuis toujours,
+    # pendant que Wally tournait à joy 0.78. Cinq zéros exacts sont le
+    # symptôme, pas une humeur.
+    valeurs = page.evaluate(
+        "Array.from(document.querySelectorAll('#cockpit-humeur .cockpit-emotion-val'))"
+        ".map(e => parseFloat(e.textContent))")
+    rap.dire(any(v > 0 for v in valeurs),
+             "les émotions portent l'état réel du serveur",
+             " · ".join(f"{v:.2f}" for v in valeurs))
+
+    # Chaque item porte sa CIBLE, filtre compris : c'est ce qui fait la
+    # différence entre « il y a un problème » et « voilà où le régler ».
+    cibles = page.evaluate(
+        "Array.from(document.querySelectorAll('#cockpit-decisions [data-cible]'))"
+        ".map(e => e.dataset.cible)")
+    rap.dire(all(c.startswith("#/") for c in cibles),
+             "chaque décision porte une cible de navigation",
+             f"{len(cibles)} item(s)")
+
+    if cibles:
+        page.locator("#cockpit-decisions [data-cible]").first.click()
+        page.wait_for_timeout(1200)
+        vu = page.evaluate("location.hash")
+        rap.dire(vu == cibles[0], "cliquer ouvre la page déjà filtrée",
+                 f"{vu} (attendu {cibles[0]})")
+        page.locator('.sidebar-item[data-route="cockpit"]').click()
+        page.wait_for_timeout(1200)
+
+    # « Reprendre » se remplit des pages quittées : au moins une, puisqu'on
+    # vient d'en parcourir dix.
+    reprendre = page.locator("#cockpit-reprendre .puce").count()
+    rap.dire(reprendre > 0, "« Reprendre » retient les pages quittées",
+             f"{reprendre} puce(s)")
+
+    rap.dire(not erreurs, "aucune erreur JS sur le Cockpit", " · ".join(erreurs[:2]))
 
 
 def _verifier_memoire_commune(page, rap: Rapport, erreurs: list[str]) -> None:

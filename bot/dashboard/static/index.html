@@ -15,7 +15,7 @@
        feuille est servie à l'overlay, qui les JOUE en direct.
        Déclarée AVANT `style.css`, qui doit l'emporter. -->
   <link rel="stylesheet" href="/static/animate.min.css">
-  <link rel="stylesheet" href="/static/style.css?v=18">
+  <link rel="stylesheet" href="/static/style.css?v=19">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -34,6 +34,10 @@
     <div class="sidebar-logo">W <span class="sidebar-logo-sub">Admin</span></div>
 
     <nav class="sidebar-nav" id="nav-admin">
+
+      <a class="sidebar-item" data-route="cockpit" href="#/cockpit">
+        <span>Cockpit</span>
+      </a>
 
       <div class="sidebar-group">Cerveau</div>
       <a class="sidebar-item" data-route="cerveau/personnes" href="#/cerveau/personnes">
@@ -119,6 +123,9 @@
         </header>
 
 
+        <!-- COCKPIT — l'écran d'arrivée. -->
+        <div class="tab-content active" id="tab-admin-cockpit"></div>
+
         <!-- CERVEAU › PERSONNES — l'annuaire, et la fiche d'une personne.
              Deux panneaux distincts : la liste garde son état (recherche,
              filtres, position de défilement) pendant qu'on ouvre une fiche. -->
@@ -132,7 +139,7 @@
         <div class="tab-content" id="tab-admin-actions"></div>
 
         <!-- CERVEAU › PERSONNALITÉ et MODÈLES & COÛTS -->
-        <div class="tab-content active" id="tab-admin-personnalite"></div>
+        <div class="tab-content" id="tab-admin-personnalite"></div>
         <div class="tab-content" id="tab-admin-modeles"></div>
 
         <!-- LIVE › MÉDIAS & SONS, VOIX -->
@@ -178,7 +185,7 @@
 <!-- Toast Container -->
 <div id="toast-container" aria-live="assertive"></div>
 
-<script src="/static/app.js?v=15"></script>
+<script src="/static/app.js?v=16"></script>
 <!-- La mise en scène de l'overlay. `overlay_layout.js` d'abord : il porte les
      neuf ancrages, dont `overlay_admin.js` se sert pour placer ses rectangles. -->
 <script src="/static/overlay_layout.js?v=2"></script>

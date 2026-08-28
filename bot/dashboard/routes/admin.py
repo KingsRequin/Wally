@@ -18,6 +18,8 @@ from loguru import logger
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
 from bot.core.llm import SUPPORTED_TEXT_PROVIDERS
 from bot.core.overlay_feed import payload_image_galerie
+from bot.dashboard.routes.memory import memory_dashboard
+from bot.dashboard.routes.sse import journal_erreurs
 
 router = APIRouter()
 
@@ -880,6 +882,83 @@ async def restart_container(request: Request) -> dict:
 
     logger.info("Container restart dispatched via host bridge")
     return {"ok": True, "message": "Redémarrage déclenché via le pont hôte."}
+
+
+# ── Cockpit ──────────────────────────────────────────────────────────────────
+
+# Le rouge passe devant l'ambre, qui passe devant le violet, qui passe devant le
+# bleu. Un ordre, pas une décoration : ce qui est CASSÉ se lit avant ce qui
+# attend une réponse.
+_RANG_DECISION = {"echec": 0, "erreur": 1, "fusion": 2, "question": 3}
+
+
+@router.get("/decisions")
+async def file_de_decisions(request: Request, max_items: int = 12) -> dict:
+    """Ce qui demande une décision, toutes sources confondues.
+
+    Quatre choses attendent quelqu'un dans ce bot, et chacune vivait sur une
+    page différente : une tâche qui échoue, une erreur qui se répète, deux
+    identités qui semblent désigner la même personne, une question que Wally
+    aimerait poser. On ne les voyait que si on allait les chercher — donc
+    jamais, sauf le jour où ça se remarque autrement.
+
+    Chaque item porte sa CIBLE : un hash complet, filtre compris, pour que
+    cliquer ouvre la page déjà réglée sur ce dont il s'agit.
+    """
+    max_items = max(1, min(int(max_items), 50))
+    etat = request.app.state.wally
+    db = etat.db
+    items: list[dict] = []
+
+    for t in await db.list_action_tasks() or []:
+        if not t.get("last_error"):
+            continue
+        items.append({
+            "type": "echec",
+            "titre": t.get("description") or f"tâche #{t.get('id')}",
+            "detail": str(t["last_error"])[:160],
+            "cible": "#/live/automatisations?vue=echec",
+        })
+
+    for lien in await db.list_link_proposals(status="pending") or []:
+        items.append({
+            "type": "fusion",
+            "titre": f"{lien.get('alias_username') or lien.get('alias_id')} "
+                     f"→ {lien.get('canonical_id')}",
+            "detail": "deux identités semblent désigner la même personne",
+            "cible": "#/cerveau/personnes",
+        })
+
+    questions = (await memory_dashboard(request)).get("pending_questions", [])
+    for q in questions:
+        items.append({
+            "type": "question",
+            "titre": q.get("question") or "",
+            "detail": "à " + str(q.get("username") or q.get("user_id") or "quelqu'un")
+                      + " · priorité " + str(q.get("priority") or "basse"),
+            "cible": "#/cerveau/memoire",
+        })
+
+    erreurs = await journal_erreurs(request, max_groupes=5)
+    for g in erreurs.get("groupes", []):
+        if g["fois"] < 2:
+            continue          # une erreur unique n'appelle pas encore de décision
+        items.append({
+            "type": "erreur",
+            "titre": g["message"][:160],
+            "detail": f"{g['fois']} fois · dernière à {g['derniere']} · {g['source']}",
+            "cible": "#/systeme/journal?niveau=error",
+        })
+
+    items.sort(key=lambda i: _RANG_DECISION.get(i["type"], 9))
+    niveaux = erreurs.get("niveaux", {})
+    return {
+        "items": items[:max_items],
+        "total": len(items),
+        "erreurs_du_jour": int(niveaux.get("ERROR", 0)) + int(niveaux.get("CRITICAL", 0)),
+        "uptime_seconds": time.time() - etat.start_time,
+        "overlay_visible": bool(etat.overlay_visible),
+    }
 
 
 # ── Connexions ───────────────────────────────────────────────────────────────
