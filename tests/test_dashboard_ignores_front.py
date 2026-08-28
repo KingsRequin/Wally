@@ -29,13 +29,18 @@ def source() -> str:
 
 
 @pytest.mark.parametrize("morceau", [
-    'data-subtab="ignores"',                 # la pastille
-    'id="memoire-sub-ignores"',              # le panneau qui la reçoit
-    "subtab === 'ignores'",                  # la branche du sélecteur
-    "function renderIgnoresTab",             # la fonction de rendu
+    "['pers-ignores', 'Personnes ignorées']",                  # l'ancre du sommaire
+    'id="pers-ignores"',                                       # le conteneur
+    "renderIgnoresTab(document.getElementById('pers-ignores'))",   # l'appel
+    "function renderIgnoresTab",                               # la fonction de rendu
 ])
-def test_le_sous_onglet_est_cable(source, morceau):
-    assert morceau in source
+def test_la_section_est_cablee(source, morceau):
+    assert morceau in source, f"chaînon manquant du câblage : {morceau}"
+
+
+def test_lancien_sous_onglet_ne_survit_pas(source):
+    assert "memoire-sub-ignores" not in source
+    assert 'data-subtab="ignores"' not in source
 
 
 def test_les_classes_css_posees_par_le_panneau_existent(source):
@@ -102,31 +107,33 @@ def test_les_routes_appelees_par_le_panneau_existent():
             f"{url} appelée par app.js, aucune route montée derrière"
 
 
-def test_le_smoke_test_parcourt_le_nouveau_sous_onglet():
-    """Un panneau hors du parcours du smoke test peut mourir sans un bruit —
-    les sous-onglets de Mémoire y ont manqué jusqu'ici."""
+def test_le_smoke_test_parcourt_les_pages_qui_ont_absorbe_les_sous_onglets():
+    """Un panneau hors du parcours du smoke test peut mourir sans un bruit.
+
+    Les six sous-onglets de Mémoire ont été absorbés le 2026-08-28 : quatre
+    dans Mémoire commune (sujets, questions, notes, dans sa tête), deux dans
+    Personnes (comptes Apex, ignorés). Ce sont ces DEUX pages qui doivent
+    désormais être parcourues — vérifier les anciens ids reviendrait à exiger
+    un état de l'interface qui n'existe plus.
+    """
     smoke = SMOKE.read_text(encoding="utf-8")
-    assert '("Ignorés", "memoire-sub-ignores")' in smoke
-    # Et ses voisins avec lui : c'est la famille entière qui n'était pas vue.
-    #
-    # `memoire-sub-users` a quitté cette liste le 2026-08-28 : il est devenu la
-    # page Personnes, que `_verifier_personnes` parcourt à part — annuaire,
-    # filtres, ouverture d'une fiche et rechargement. Le panneau n'est donc pas
-    # sorti du parcours, il a changé de nom et de porte d'entrée.
-    for ident in ("memoire-sub-global", "memoire-sub-notes",
-                  "memoire-sub-apex", "memoire-sub-self", "memoire-sub-dashboard"):
+    for parcours in ("_verifier_personnes", "_verifier_memoire_commune"):
+        assert parcours in smoke, f"{parcours} absent du parcours du smoke test"
+    for ident in ("pers-ignores", "pers-apex", "mc-notes", "mc-tete", "mc-questions"):
         assert ident in smoke, f"{ident} hors du parcours du smoke test"
-    assert "_verifier_personnes" in smoke, (
-        "la page Personnes a remplacé l'onglet Utilisateurs et doit être "
-        "parcourue, sinon l'annuaire peut mourir sans un bruit"
-    )
 
 
 def test_les_ids_du_smoke_test_existent_vraiment(source):
     """Un id attendu par le smoke test mais absent du JS le ferait échouer en
     annonçant un panneau mort qui n'a jamais existé sous ce nom."""
-    attendus = set(re.findall(r'\("[^"]+", "(memoire-sub-[a-z]+)"\)',
+    attendus = set(re.findall(r'"((?:pers|mc)-[a-z-]+)"',
                               SMOKE.read_text(encoding="utf-8")))
     assert attendus, "aucun id relevé — le test ne prouverait rien"
     for ident in attendus:
-        assert f'id="{ident}"' in source, f"{ident} attendu par le smoke test, absent d'app.js"
+        # Le nom, pas la forme `id="…"` : une section peut être DÉCLARÉE dans
+        # une table (`_MC_SECTIONS`) et son conteneur généré à partir d'elle.
+        # Exiger le littéral obligerait à écrire l'id deux fois, ce qui est
+        # exactement la duplication que la table supprime.
+        assert f"'{ident}'" in source or f'id="{ident}"' in source, (
+            f"{ident} attendu par le smoke test, absent d'app.js"
+        )

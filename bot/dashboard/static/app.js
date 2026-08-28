@@ -308,7 +308,7 @@ const ROUTES = {
   'cerveau/memoire': {
     titre: 'Mémoire commune',
     sous: 'Ce que Wally sait du groupe plutôt que d\'une personne.',
-    pane: 'admin-memoire', sub: 'global',
+    pane: 'admin-memoire',
   },
   'cerveau/personnalite': {
     titre: 'Personnalité',
@@ -416,17 +416,6 @@ function _analyserHash() {
   return { route: ROUTE_DEFAUT, param: '', requete: '', canonique: false };
 }
 
-/** Pose le sous-onglet de l'ancien panneau AVANT son rendu.
- *
- *  Il n'en reste qu'un : « Mémoire commune », qui garde sa barre de pilules
- *  jusqu'à sa phase. `renderMemoireTab` lit la variable de module pour choisir
- *  quoi monter — la poser après le rendu n'aurait aucun effet visible.
- */
-function _poserSousOnglet(pane, sub) {
-  if (!sub) return;
-  if (pane === 'admin-memoire') _memoireSubTab = sub;
-}
-
 function _appliquerRoute(route, param) {
   const def = ROUTES[route];
   if (!def) return;
@@ -461,8 +450,6 @@ function _appliquerRoute(route, param) {
   // prochain clic n'importe où déclencherait une fusion.
   if (def.pane !== 'admin-memoire' && _memLinkMode) cancelLinkMode();
 
-  _poserSousOnglet(def.pane, def.sub);
-
   if (def.pane === 'admin-personnes') renderPersonnes();
   else if (def.pane === 'admin-personnalite') renderPersonnalite();
   else if (def.pane === 'admin-modeles') renderModeles();
@@ -470,7 +457,7 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-connexions') renderConnexions();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
-  else if (def.pane === 'admin-memoire') renderMemoireTab();
+  else if (def.pane === 'admin-memoire') renderMemoireCommune();
   else if (def.pane === 'admin-prompts') renderPromptsTab();
   else if (def.pane === 'admin-scene') renderSceneTab();
 
@@ -2236,6 +2223,161 @@ function escJs(str) {
   );
 }
 
+// ── Cerveau › Mémoire commune ───────────────────────────────────────────────
+//
+// Ce que Wally sait du GROUPE, plutôt que d'une personne.
+//
+// L'ancien onglet « Mémoire communautaire » lisait `/memory/global`, qui rend
+// une liste VIDE et refuse toute écriture en 501 depuis la refonte V2 : un
+// panneau mort, qui invitait à ajouter un souvenir aussitôt rejeté.
+//
+// La matière existe, elle n'était exposée nulle part : les SUJETS formés par
+// la passe nocturne, chacun avec l'opinion que Wally s'en fait.
+
+const _MC_SECTIONS = [
+  ['mc-sujets', 'Sujets de la communauté'],
+  ['mc-questions', 'Questions de Wally'],
+  ['mc-notes', 'Notes du bot'],
+  ['mc-tete', 'Dans sa tête'],
+];
+
+let _mcVues = [];   // les sections montrées ; vide = toutes
+
+function renderMemoireCommune() {
+  const el = document.getElementById('tab-admin-memoire');
+  if (!el) return;
+
+  if (!document.getElementById('mc-sujets')) {
+    el.innerHTML = '<div class="journal-puces" id="mc-puces"></div>'
+      + _MC_SECTIONS.map(function (s) {
+          return '<div class="page-section" id="' + s[0] + '"></div>';
+        }).join('');
+    el.querySelector('#mc-puces').addEventListener('click', function (ev) {
+      const b = ev.target.closest('[data-mc]');
+      if (!b) return;
+      const cle = b.dataset.mc;
+      if (!cle) _mcVues = [];
+      else {
+        const i = _mcVues.indexOf(cle);
+        if (i === -1) _mcVues.push(cle);
+        else _mcVues.splice(i, 1);
+      }
+      _majVuesMC();
+    });
+  }
+
+  _majVuesMC();
+  poserSommaire('cerveau/memoire', _MC_SECTIONS, '');
+  chargerMemoireCommune();
+  loadNotesTab(document.getElementById('mc-notes'));
+  renderWallySelfTab(document.getElementById('mc-tete'));
+}
+
+/** Les puces montrent ou cachent des SECTIONS. Les entrées sont de natures
+ *  différentes — un sujet, une question, une note — et un filtre qui les
+ *  mélangerait dans une seule liste perdrait ce qui les distingue. */
+function _majVuesMC() {
+  const puces = document.getElementById('mc-puces');
+  if (puces) {
+    puces.innerHTML = '<button class="puce' + (_mcVues.length ? '' : ' active')
+      + '" data-mc="">Tout</button>'
+      + _MC_SECTIONS.map(function (s) {
+          const actif = _mcVues.indexOf(s[0]) !== -1;
+          return '<button class="puce' + (actif ? ' active' : '') + '" data-mc="'
+            + s[0] + '">' + escHtml(s[1]) + '</button>';
+        }).join('');
+  }
+  _MC_SECTIONS.forEach(function (s) {
+    const boite = document.getElementById(s[0]);
+    if (boite) boite.hidden = _mcVues.length > 0 && _mcVues.indexOf(s[0]) === -1;
+  });
+}
+
+async function chargerMemoireCommune() {
+  const sujets = document.getElementById('mc-sujets');
+  const questions = document.getElementById('mc-questions');
+  if (!sujets || !questions) return;
+
+  const r = await apiFetch('/api/admin/memoire-commune');
+  if (!r || !r.ok) {
+    sujets.innerHTML = '<div class="page-section-titre">Sujets de la communauté</div>'
+      + '<div class="page-section-sous">Mémoire illisible pour le moment.</div>';
+    return;
+  }
+  const d = await r.json();
+  _rendreSujets(sujets, d.sujets || []);
+  _rendreQuestions(questions, d.questions || []);
+}
+
+function _rendreSujets(boite, liste) {
+  boite.innerHTML = '<div class="page-section-titre">Sujets de la communauté</div>'
+    + '<div class="page-section-sous">'
+    + (liste.length
+        ? liste.length + ' sujet(s) formé(s) par la passe nocturne. L\'opinion est '
+          + 'celle de Wally, pas un résumé.'
+        : 'Aucun sujet formé. La passe de 21 h les construit à partir des '
+          + 'conversations du jour.')
+    + '</div>'
+    + liste.map(function (t) {
+        const gens = (t.participants || [])
+          .map(function (p) { return p && p.name; }).filter(Boolean);
+        // Les participants se répètent (même personne, plusieurs identités) :
+        // les dédoublonner évite « KingsRequin · KingsRequin · KingsRequin ».
+        const uniques = gens.filter(function (n, i) { return gens.indexOf(n) === i; });
+        return '<div class="mc-sujet">'
+          + '<div class="mc-sujet-tete"><strong>' + escHtml(t.name) + '</strong>'
+          + '<span class="mc-sujet-meta">' + Number(t.mention_count) + ' mention(s) · '
+          + escHtml(apexDepuis(t.last_seen_at)) + '</span></div>'
+          + (t.summary ? '<p class="mc-sujet-resume">' + escHtml(t.summary) + '</p>' : '')
+          + (t.opinion ? '<p class="mc-sujet-avis">« ' + escHtml(t.opinion) + ' »</p>' : '')
+          + (uniques.length
+            ? '<div class="fiche-puces">' + uniques.slice(0, 8).map(function (n) {
+                return '<span class="fiche-puce">' + escHtml(n) + '</span>';
+              }).join('') + '</div>'
+            : '')
+          + '</div>';
+      }).join('');
+}
+
+function _rendreQuestions(boite, liste) {
+  boite.innerHTML = '<div class="page-section-titre">Questions de Wally</div>'
+    + '<div class="page-section-sous">'
+    + (liste.length
+        ? 'Ce qu\'il aimerait demander. Elles sont posées d\'elles-mêmes, au fil '
+          + 'des conversations — trois tentatives, puis abandon au bout de 24 h.'
+        : 'Aucune question en attente.')
+    + '</div>'
+    + liste.map(function (q) {
+        return '<div class="mc-question" id="mem-q-' + Number(q.id) + '">'
+          + '<div class="mc-question-txt"><span id="mem-q-text-' + Number(q.id)
+          + '">' + escHtml(q.question || '') + '</span>'
+          + '<div class="fiche-memoire-meta">'
+          + escHtml(q.username || q.user_id || 'personne précise')
+          + ' · priorité ' + escHtml(q.priority || 'basse')
+          + ' · ' + Number(q.attempts || 0) + ' tentative(s)</div></div>'
+          + '<div class="fiche-memoire-actions">'
+          + '<button class="lien-doux" data-mcq="editer" data-arg="' + Number(q.id)
+          + '">Modifier</button>'
+          + '<button class="lien-doux" data-mcq="resoudre" data-arg="' + Number(q.id)
+          + '">Répondue</button>'
+          + '<button class="lien-danger" data-mcq="supprimer" data-arg="' + Number(q.id)
+          + '">Oublier</button>'
+          + '</div></div>';
+      }).join('');
+
+  if (!boite.dataset.cable) {
+    boite.dataset.cable = '1';
+    boite.addEventListener('click', function (ev) {
+      const b = ev.target.closest('[data-mcq]');
+      if (!b) return;
+      const id = Number(b.dataset.arg);
+      if (b.dataset.mcq === 'editer') editMemQuestion(id);
+      else if (b.dataset.mcq === 'resoudre') resolveMemQuestion(id);
+      else if (b.dataset.mcq === 'supprimer') deleteMemQuestion(id);
+    });
+  }
+}
+
 // ── Live › Médias & sons ────────────────────────────────────────────────────
 //
 // Ce que Wally MONTRE et ce qu'il FAIT ENTENDRE, au même endroit : les deux
@@ -2564,6 +2706,8 @@ function _rendreCourbeCouts(boite, jours) {
 const _PERS_SECTIONS = [
   ['pers-annuaire', 'Annuaire'],
   ['pers-fusions', 'Fusions à valider'],
+  ['pers-apex', 'Lier un compte Apex'],
+  ['pers-ignores', 'Personnes ignorées'],
 ];
 
 // Les filtres se DÉCRIVENT, ils ne s'écrivent pas trois fois. Ajouter une
@@ -2639,7 +2783,9 @@ function renderPersonnes() {
         </div>
         <div class="liste" id="pers-liste"></div>
       </div>
-      <div class="page-section" id="pers-fusions"></div>`;
+      <div class="page-section" id="pers-fusions"></div>
+      <div class="page-section" id="pers-apex"></div>
+      <div class="page-section" id="pers-ignores"></div>`;
 
     el.querySelector('#pers-tris').innerHTML = _PERS_TRIS.map(function (t) {
       return '<button data-tri="' + t[0] + '">' + t[1] + '</button>';
@@ -2650,6 +2796,10 @@ function renderPersonnes() {
   _persLireHash();
   poserSommaire('cerveau/personnes', _PERS_SECTIONS, '');
   chargerPersonnes();
+  // « Comptes Apex » et « Ignorés » étaient deux onglets. Ce sont deux
+  // FILTRES de l'annuaire — et leurs formulaires, deux sections de cette page.
+  renderApexProfilesTab(document.getElementById('pers-apex'));
+  renderIgnoresTab(document.getElementById('pers-ignores'));
 }
 
 function _cablerPersonnes(el) {
@@ -3380,144 +3530,6 @@ async function oublierToutDe(userId, displayName) {
   }
 }
 
-// ── Global memory (dedicated tab) ─────────────────────────────────────────────
-
-function renderGlobalMemoryTab(targetEl) {
-  const el = targetEl || document.getElementById('tab-global-memory') || document.getElementById('memoire-sub-global');
-  if (!el) return;
-  el.innerHTML = `
-    <div style="max-width:800px;margin:0 auto;padding:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-        <div>
-          <h2 style="margin:0;font-size:1.3rem">Mémoire communautaire</h2>
-          <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted)">
-            Faits sur le serveur et la communauté, retrouvés par pertinence sémantique.
-            Seuls les faits pertinents au message en cours sont injectés.
-          </p>
-        </div>
-        <span id="global-mem-count" class="badge" style="font-size:0.75rem;padding:4px 10px"></span>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:20px">
-        <input type="text" id="add-global-memory-input" placeholder="Ajouter une connaissance globale…"
-               style="flex:1" onkeydown="if(event.key==='Enter') submitAddGlobalMemory()">
-        <button class="btn btn-success" onclick="submitAddGlobalMemory()" style="white-space:nowrap">Ajouter</button>
-      </div>
-      <div id="global-memory-list"></div>
-    </div>
-  `;
-  loadGlobalMemories();
-}
-
-async function loadGlobalMemories() {
-  const r = await apiFetch('/api/admin/memory/global');
-  if (!r || !r.ok) return;
-  const { memories } = await r.json();
-  const countEl = document.getElementById('global-mem-count');
-  if (countEl) countEl.textContent = memories.length + ' souvenir' + (memories.length !== 1 ? 's' : '');
-  const listEl = document.getElementById('global-memory-list');
-  if (!listEl) return;
-  if (memories.length === 0) {
-    listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px 0;font-size:0.9rem">Aucune memoire globale pour l\'instant.<br>Ajoute des liens, regles ou infos communaute ci-dessus.</div>';
-    return;
-  }
-  listEl.innerHTML = memories.map(m => {
-    const dateStr = m.updated_at || m.created_at;
-    const dateFmt = dateStr
-      ? new Date(dateStr).toLocaleString('fr', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
-      : '';
-    return `
-      <div class="mem-entry" id="mem-entry-${escAttr(m.id)}" style="margin-bottom:8px">
-        <div class="mem-entry-content">
-          <div class="mem-entry-meta">
-            <span class="mem-entry-platform" style="background:var(--accent);color:#fff;border-color:var(--accent)">Global</span>
-            ${dateFmt ? '<span class="mem-entry-date">' + dateFmt + '</span>' : ''}
-          </div>
-          <span class="mem-entry-text" id="mem-text-${escAttr(m.id)}">${escHtml(m.memory)}</span>
-        </div>
-        <div class="mem-entry-actions">
-          <button class="mem-entry-edit" onclick="startEditGlobalMemory('${escJs(m.id)}')">&#9998;</button>
-          <button class="mem-entry-delete" onclick="deleteGlobalMemory('${escJs(m.id)}')">&#10005;</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-async function submitAddGlobalMemory() {
-  const input = document.getElementById('add-global-memory-input');
-  const content = input?.value.trim();
-  if (!content) { toast('Contenu requis', 'error'); return; }
-  const r = await apiFetch('/api/admin/memory/global', {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  });
-  if (r && r.ok) {
-    toast('Memoire globale ajoutee', 'success');
-    input.value = '';
-    await loadGlobalMemories();
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur', 'error');
-  }
-}
-
-function startEditGlobalMemory(memoryId) {
-  const textEl = document.getElementById('mem-text-' + memoryId);
-  if (!textEl) return;
-  const current = textEl.textContent;
-  const entry = document.getElementById('mem-entry-' + memoryId);
-  if (!entry) return;
-  const contentDiv = entry.querySelector('.mem-entry-content');
-  const actionsDiv = entry.querySelector('.mem-entry-actions');
-  if (actionsDiv) actionsDiv.style.display = 'none';
-  const metaHtml = contentDiv.querySelector('.mem-entry-meta')?.outerHTML || '';
-  contentDiv.innerHTML = metaHtml
-    + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
-    + '<input type="text" id="edit-global-memory-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
-    + ' style="flex:1;font-size:0.8rem" onkeydown="if(event.key===\'Enter\') submitEditGlobalMemory(\'' + escJs(memoryId) + '\'); if(event.key===\'Escape\') loadGlobalMemories();">'
-    + '<button onclick="submitEditGlobalMemory(\'' + escJs(memoryId) + '\')" class="btn btn-success" style="font-size:0.68rem;padding:2px 8px">OK</button>'
-    + '<button onclick="loadGlobalMemories()" class="btn" style="font-size:0.68rem;padding:2px 8px">\u2717</button>'
-    + '</div>';
-  document.getElementById('edit-global-memory-input-' + memoryId)?.focus();
-}
-
-async function submitEditGlobalMemory(memoryId) {
-  const input = document.getElementById('edit-global-memory-input-' + memoryId);
-  const content = input?.value.trim();
-  if (!content) { toast('Contenu requis', 'error'); return; }
-  const r = await apiFetch(
-    '/api/admin/memory/global/' + encodeURIComponent(memoryId),
-    { method: 'PUT', body: JSON.stringify({ content }) }
-  );
-  if (r && r.ok) {
-    toast('Memoire globale modifiee', 'success');
-    await loadGlobalMemories();
-  } else {
-    const err = r ? await r.json().catch(() => ({})) : {};
-    toast(err.detail || 'Erreur', 'error');
-    await loadGlobalMemories();
-  }
-}
-
-async function deleteGlobalMemory(memoryId) {
-  const r = await apiFetch(
-    '/api/admin/memory/global/' + encodeURIComponent(memoryId),
-    { method: 'DELETE' }
-  );
-  if (r && r.ok) {
-    document.getElementById('mem-entry-' + memoryId)?.remove();
-    const countEl = document.getElementById('global-mem-count');
-    if (countEl) {
-      const n = (parseInt(countEl.textContent) || 1) - 1;
-      countEl.textContent = n + ' souvenir' + (n !== 1 ? 's' : '');
-    }
-    toast('Memoire globale supprimee', 'success');
-  } else {
-    toast('Erreur suppression', 'error');
-  }
-}
-
-// ── Liaisons de comptes (fonctions utilitaires conservées) ─────────────────────
-
 async function analyzeLinks() {
   const r = await apiFetch('/api/admin/links/analyze', { method: 'POST' });
   if (r && r.ok) {
@@ -3746,91 +3758,6 @@ function formatDuration(seconds) {
 
 // ── Memory Dashboard ────────────────────────────────────────────────────────
 
-async function loadMemoryDashboard() {
-  const el = document.getElementById('tab-admin-memory-dash');
-  if (!el) return;
-
-  const r = await apiFetch('/api/admin/memory/dashboard');
-  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
-  const data = await r.json();
-
-  const qs = data.question_stats || {};
-  const pending = data.pending_questions || [];
-  const userCounts = data.user_memory_counts || [];
-
-  // All user-provided data is escaped via escHtml() before injection
-  let questionsHtml = '';
-  if (pending.length === 0) {
-    questionsHtml = '<p style="color:var(--text-secondary);padding:8px">Aucune question en attente</p>';
-  } else {
-    questionsHtml = '<div class="mem-dash-questions">';
-    for (const q of pending) {
-      const name = escHtml(q.username || q.user_id);
-      const prioColor = q.priority === 'high' ? '#FF4D4D' : q.priority === 'medium' ? '#FFD700' : '#00E5A0';
-      const qId = parseInt(q.id, 10);
-      questionsHtml += `
-        <div class="mem-dash-q-row" id="mem-q-${qId}">
-          <div class="mem-dash-q-info">
-            <span class="mem-dash-q-prio" style="background:${prioColor}"></span>
-            <strong>${name}</strong>
-            <span style="color:var(--text-secondary);margin-left:8px">tentative ${parseInt(q.attempts, 10)}/3</span>
-          </div>
-          <div class="mem-dash-q-memory">${escHtml(q.memory_text)}</div>
-          <div class="mem-dash-q-question" id="mem-q-text-${qId}">${escHtml(q.question)}</div>
-          <div class="mem-dash-q-actions">
-            <button class="btn btn-sm" onclick="resolveMemQuestion(${qId})">Résoudre</button>
-            <button class="btn btn-sm btn-outline" onclick="editMemQuestion(${qId})">Modifier</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteMemQuestion(${qId})">Supprimer</button>
-          </div>
-        </div>`;
-    }
-    questionsHtml += '</div>';
-  }
-
-  let barsHtml = '';
-  if (userCounts.length > 0) {
-    const maxCount = userCounts[0].count || 1;
-    for (const u of userCounts) {
-      const pct = Math.round(u.count / maxCount * 100);
-      const platIcon = u.platform === 'discord' ? '🟣' : u.platform === 'twitch' ? '🟪' : '🌐';
-      barsHtml += `
-        <div class="mem-dash-bar-row">
-          <span class="mem-dash-bar-label">${platIcon} ${escHtml(u.username)}</span>
-          <div class="mem-dash-bar-track"><div class="mem-dash-bar-fill" style="width:${pct}%"></div></div>
-          <span class="mem-dash-bar-count">${parseInt(u.count, 10)}</span>
-        </div>`;
-    }
-  } else {
-    barsHtml = '<p style="color:var(--text-secondary);padding:8px">Aucune donnée</p>';
-  }
-
-  // KPI values are integers from the backend, safe to inject
-  el.innerHTML = `
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-      <div class="card">
-        <div class="card-title">QUESTIONS EN ATTENTE</div>
-        <div class="card-value" id="kpi-q-pending" style="color:#FFD700">${parseInt(qs.pending, 10) || 0}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">QUESTIONS RESOLUES</div>
-        <div class="card-value" id="kpi-q-resolved" style="color:#00E5A0">${parseInt(qs.resolved, 10) || 0}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">TOTAL QUESTIONS</div>
-        <div class="card-value" id="kpi-q-total">${parseInt(qs.total, 10) || 0}</div>
-      </div>
-    </div>
-    <div class="card mb-6">
-      <div class="card-title">QUESTIONS A POSER</div>
-      ${questionsHtml}
-    </div>
-    <div class="card">
-      <div class="card-title">SOUVENIRS PAR UTILISATEUR (TOP 20)</div>
-      <div class="mem-dash-bars">${barsHtml}</div>
-    </div>
-  `;
-}
-
 function _removeQuestionRow(id, action) {
   const row = document.getElementById('mem-q-' + id);
   if (row) {
@@ -3860,7 +3787,7 @@ async function resolveMemQuestion(id) {
     toast('Question marquée comme résolue');
   } else {
     toast('Erreur lors de la résolution', 'error');
-    loadMemoryDashboard();
+    chargerMemoireCommune();
   }
 }
 
@@ -3894,7 +3821,7 @@ async function deleteMemQuestion(id) {
     toast('Question supprimée');
   } else {
     toast('Erreur lors de la suppression', 'error');
-    loadMemoryDashboard();
+    chargerMemoireCommune();
   }
 }
 
@@ -4786,69 +4713,6 @@ function _fmtNum(n) {
 
 // ── Merged Mémoire Tab (Users + Global + Dashboard) ──────────────────────────
 
-let _memoireSubTab = 'global';
-
-function renderMemoireTab() {
-  const el = document.getElementById('tab-admin-memoire');
-  if (!el) return;
-
-  // Only build structure once
-  if (!el.querySelector('.mem-subnav')) {
-    el.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
-        <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
-        <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
-        <button class="mem-subnav-pill" data-subtab="apex" onclick="switchMemoireSubTab('apex')">Comptes Apex</button>
-        <button class="mem-subnav-pill" data-subtab="self" onclick="switchMemoireSubTab('self')">Dans la tête de Wally</button>
-        <button class="mem-subnav-pill" data-subtab="ignores" onclick="switchMemoireSubTab('ignores')">Ignorés</button>
-      </div>
-      <div class="mem-subnav-content active" id="memoire-sub-global"></div>
-      <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
-      <div class="mem-subnav-content" id="memoire-sub-notes"></div>
-      <div class="mem-subnav-content" id="memoire-sub-apex"></div>
-      <div class="mem-subnav-content" id="memoire-sub-self"></div>
-      <div class="mem-subnav-content" id="memoire-sub-ignores"></div>
-    `;
-  }
-
-  switchMemoireSubTab(_memoireSubTab);
-}
-
-function switchMemoireSubTab(subtab) {
-  _memoireSubTab = subtab;
-  const el = document.getElementById('tab-admin-memoire');
-  if (!el) return;
-
-  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
-  });
-  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const panel = document.getElementById('memoire-sub-' + subtab);
-  if (panel) panel.classList.add('active');
-
-  if (subtab === 'global') {
-    if (panel.children.length === 0) renderGlobalMemoryTab(panel);
-  } else if (subtab === 'dashboard') {
-    if (panel && panel.children.length === 0) {
-      panel.id = 'tab-admin-memory-dash';
-      loadMemoryDashboard().then(function() {
-        panel.id = 'memoire-sub-dashboard';
-      });
-    }
-  } else if (subtab === 'notes') {
-    if (panel) loadNotesTab(panel);
-  } else if (subtab === 'apex') {
-    if (panel) renderApexProfilesTab(panel);
-  } else if (subtab === 'self') {
-    if (panel) renderWallySelfTab(panel);
-  } else if (subtab === 'ignores') {
-    // Rechargé à CHAQUE visite, sans garde sur le contenu : on y vient après
-    // avoir banni quelqu'un ailleurs, et un panneau mis en cache annoncerait
-    // qu'il est encore écouté.
-    if (panel) renderIgnoresTab(panel);
-  }
-}
 
 // L'annuaire des gens que Wally connaît, chargé une fois pour toute la page.
 // Il n'a rien d'Apex — il est né dans ce formulaire, il sert aussi au panneau
@@ -5211,7 +5075,10 @@ async function ecrireIgnoresTwitch(liste) {
 }
 
 function rechargerIgnores() {
-  renderIgnoresTab(document.getElementById('memoire-sub-ignores'));
+  renderIgnoresTab(document.getElementById('pers-ignores'));
+  // La liste de l'annuaire porte le filtre « Ignorés » : la laisser en arrière
+  // afficherait « écouté » sur quelqu'un qu'on vient de faire taire.
+  if (currentRoute === 'cerveau/personnes') chargerPersonnes();
 }
 
 function blocSocle() {
@@ -5498,7 +5365,7 @@ async function submitApexLink() {
     ref.value = '';
     who.value = '';
     who.dataset.identity = '';
-    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+    renderApexProfilesTab(document.getElementById('pers-apex'));
   } else {
     const err = r ? await r.json().catch(function() { return {}; }) : {};
     toast(err.detail || 'Liaison impossible', 'error');
@@ -5649,7 +5516,7 @@ async function apexForgetName(uid, name) {
   );
   if (r && r.ok) {
     toast('Pseudo oublié', 'success');
-    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+    renderApexProfilesTab(document.getElementById('pers-apex'));
   } else {
     const err = r ? await r.json().catch(function() { return {}; }) : {};
     toast(err.detail || 'Suppression impossible', 'error');
@@ -5667,7 +5534,7 @@ async function apexForgetProfile(uid, name, hasOwner) {
     { method: 'DELETE' });
   if (r && r.ok) {
     toast('Profil retiré du registre', 'success');
-    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+    renderApexProfilesTab(document.getElementById('pers-apex'));
   } else {
     toast('Suppression impossible', 'error');
   }
@@ -5680,7 +5547,7 @@ async function apexUnlink(identity, name) {
     { method: 'DELETE' });
   if (r && r.ok) {
     toast('Compte délié', 'success');
-    renderApexProfilesTab(document.getElementById('memoire-sub-apex'));
+    renderApexProfilesTab(document.getElementById('pers-apex'));
   } else {
     toast('Déliage impossible', 'error');
   }
@@ -5776,7 +5643,7 @@ async function saveNewNote() {
   });
   if (r && r.ok) {
     toast('Note enregistrée');
-    const panel = document.getElementById('memoire-sub-notes');
+    const panel = document.getElementById('mc-notes');
     if (panel) loadNotesTab(panel);
   } else {
     toast('Erreur lors de l\'enregistrement', 'error');
@@ -5814,7 +5681,7 @@ async function deleteNote(id) {
     toast('Note supprimée');
   } else {
     toast('Erreur lors de la suppression', 'error');
-    const panel = document.getElementById('memoire-sub-notes');
+    const panel = document.getElementById('mc-notes');
     if (panel) loadNotesTab(panel);
   }
 }

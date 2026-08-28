@@ -39,7 +39,7 @@ def routes(js: str) -> dict[str, dict[str, str]]:
     for cle, corps in re.findall(r"^  '([^']+)': \{$(.*?)^  \},$", bloc.group(1),
                                  re.S | re.M):
         champs = {}
-        for nom in ("titre", "pane", "sub", "parent"):
+        for nom in ("titre", "pane", "parent"):
             m = re.search(nom + r": '((?:[^'\\]|\\.)*)'", corps)
             if m:
                 champs[nom] = m.group(1)

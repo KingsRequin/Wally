@@ -1807,6 +1807,77 @@ select option, .neo-select option {
   color: var(--text-primary);
 }
 
+/* ── Mémoire commune ──────────────────────────────────────────── */
+
+.mc-sujet {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 9px;
+}
+
+.mc-sujet-tete {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+}
+
+.mc-sujet-tete strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.mc-sujet-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.mc-sujet-resume {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-body);
+}
+
+/* L'opinion est ce que Wally PENSE du sujet, pas un résumé. Le violet est
+ * l'accent de la cognition dans tout le panel — il dit d'où ça vient. */
+.mc-sujet-avis {
+  margin: 0 0 8px;
+  padding-left: 11px;
+  border-left: 2px solid var(--cognitive);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--cognitive);
+}
+
+.mc-question {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--bg-surface);
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 9px;
+  padding: 13px 15px;
+  margin-bottom: 8px;
+}
+
+.mc-question-txt {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
 .log-filters, .log-controls {
   display: flex;
   gap: 6px;

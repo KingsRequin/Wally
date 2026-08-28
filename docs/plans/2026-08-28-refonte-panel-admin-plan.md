@@ -85,7 +85,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 4 | ✅ API personne agrégée + Personnes + fiche | nouveau `routes/person.py`, `routes/memory.py`, `app.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ une requête rend toute la fiche, 528 personnes chargées (contre 200 avant), fiche partageable |
 | 5 | ✅ Personnalité + Modèles & coûts | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ Prompts absorbés, `GET /couts` rend visible ce que `cost_log` enregistrait sans lecteur |
 | 6 | ✅ Médias & sons, Connexions, Voix | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ les deux « Vocal » fusionnés, `GET /connexions` rend des FAITS et pas un voyant |
-| 7 | Mémoire commune | `app.js`, tests | Questions de Wally + doublons |
+| 7 | ✅ Mémoire commune | `routes/memory.py`, `app.js`, `style.css`, `smoke_front.py`, tests | ✅ 13 sujets et leur OPINION enfin visibles ; plus un seul sous-onglet dans le panel |
 | 8 | Cockpit + API décisions | nouveau `routes/decisions.py`, `app.js`, tests | Chaque item ouvre sa page déjà filtrée |
 | 9 | Scène & overlays — chrome seule | `overlay_admin.js`, `app.js` | Canevas, liste et inspecteur intacts |
 | 10 | Mobile + responsive | `style.css`, `index.html`, `app.js` | Barre du bas, scène en lecture seule |
@@ -106,6 +106,16 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   dessiner. La « latence médiane » devient « latence moyenne » : `AppState`
   tient une moyenne sur les 50 dernières réponses, l'annoncer autrement serait
   faux.
+- **Pas de « Doublons détectés » ni de « Purge des entrées mortes »**
+  (écran 04). Les deux visaient la mémoire communautaire, qui **n'existe pas** :
+  `/memory/global` rend une liste vide et refuse toute écriture en 501 depuis
+  la refonte V2. Il n'y a donc rien à dédoublonner ni à purger là. La page rend
+  ce qui EXISTE — les sujets formés la nuit, les questions, les notes, et ce
+  qu'il a en tête.
+- **Pas d'« Autoriser » / « Répondre à sa place » sur les questions.** Les
+  questions sont posées d'elles-mêmes au fil des conversations (trois
+  tentatives, puis abandon à 24 h) : rien n'autorise ni ne bloque. Les gestes
+  réels sont modifier, marquer répondue, oublier.
 - **Pas de compte de souscriptions EventSub sur la carte Twitch** (écran 12).
   Le seul moyen de le connaître est un appel à l'API Twitch
   (`count_active_subscriptions`), et un endpoint de panneau n'a pas à taper une

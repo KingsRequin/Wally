@@ -758,6 +758,39 @@ async def scan_web_chat(request: Request):
     return {"status": "ok", "messages_scanned": len(msg_dicts), "facts_stored": total_stored}
 
 
+# ── GET /memoire-commune — ce que Wally sait du GROUPE ───────────────────────
+
+@router.get("/memoire-commune")
+async def memoire_commune(request: Request, limite_sujets: int = 20):
+    """Tout ce qui n'appartient à personne en particulier, en une requête.
+
+    L'ancien onglet « Mémoire communautaire » lisait `/memory/global`, qui rend
+    une liste VIDE et refuse toute écriture en 501 depuis la refonte V2 : un
+    panneau mort, qui invitait à ajouter un souvenir aussitôt rejeté.
+
+    Ce que Wally sait du groupe vit ailleurs, et n'était exposé nulle part :
+
+    · les **sujets** formés par la passe nocturne (`topics`), chacun avec son
+      résumé, ses participants et **l'opinion de Wally** — la matière la plus
+      intéressante du lot, et la seule qui dise ce qu'il en PENSE ;
+    · les **questions** qu'il aimerait poser (`memory_questions`) ;
+    · les **notes** persistantes, qui n'appartiennent à personne par
+      construction — la table n'a pas de colonne d'utilisateur.
+
+    « Dans sa tête » (buts, désirs, pensées) garde sa route `/memory/self` :
+    c'est le fact store qu'elle interroge, pas ces trois tables-ci.
+    """
+    limite_sujets = max(1, min(int(limite_sujets), 100))
+    db = request.app.state.wally.db
+    questions = await memory_dashboard(request)
+    return {
+        "sujets": await db.get_topics(limite_sujets),
+        "questions": questions.get("pending_questions", []),
+        "stats_questions": questions.get("question_stats", {}),
+        "notes": await db.get_persistent_notes(),
+    }
+
+
 # ── GET /memory/dashboard — vue d'ensemble mémoire ───────────────────────────
 
 @router.get("/memory/dashboard")

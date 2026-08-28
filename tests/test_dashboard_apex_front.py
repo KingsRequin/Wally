@@ -1,9 +1,14 @@
-"""Le sous-onglet « Comptes Apex » est-il branché de bout en bout ?
+"""Le registre « Comptes Apex » est-il branché de bout en bout ?
 
-Un onglet se câble à QUATRE endroits d'`app.js` : la pastille, le panneau qui
-la reçoit, la branche du sélecteur, et la fonction de rendu. En rater un donne
-une pastille qui ne fait rien — sans erreur, sans trace, et personne ne le voit
-tant qu'on ne clique pas dessus.
+Il était un sous-onglet de Mémoire ; depuis la refonte du 2026-08-28, c'est une
+SECTION de la page Personnes — « Comptes Apex » y est devenu un filtre de
+l'annuaire, et son formulaire de liaison une section ancrée au sommaire.
+
+Le câblage a changé de forme, pas de nature : une section se déclare à trois
+endroits — le conteneur dans le HTML de la page, l'ancre du sommaire, et
+l'appel qui la remplit. En rater un donne un écran nu ou une ancre qui ne mène
+nulle part : sans erreur, sans trace, et personne ne le voit tant qu'on ne
+descend pas jusque-là.
 
 Le second test compare les URL appelées par le front aux routes réellement
 déclarées : une route renommée d'un côté et pas de l'autre passe tous les tests
@@ -26,13 +31,20 @@ def source() -> str:
 
 
 @pytest.mark.parametrize("morceau", [
-    'data-subtab="apex"',                    # la pastille
-    'id="memoire-sub-apex"',                 # le panneau qui la reçoit
-    "subtab === 'apex'",                     # la branche du sélecteur
-    "function renderApexProfilesTab",        # la fonction de rendu
+    "['pers-apex', 'Lier un compte Apex']",                    # l'ancre du sommaire
+    'id="pers-apex"',                                          # le conteneur
+    "renderApexProfilesTab(document.getElementById('pers-apex'))",  # l'appel
+    "function renderApexProfilesTab",                          # la fonction de rendu
 ])
-def test_le_sous_onglet_est_cable(source, morceau):
-    assert morceau in source
+def test_la_section_est_cablee(source, morceau):
+    assert morceau in source, f"chaînon manquant du câblage : {morceau}"
+
+
+def test_lancien_sous_onglet_ne_survit_pas(source):
+    """Deux chemins vers le même registre, c'est deux écrans à tenir en phase —
+    et celui qu'on oublie affiche un état périmé sans le dire."""
+    assert "memoire-sub-apex" not in source
+    assert 'data-subtab="apex"' not in source
 
 
 def test_les_classes_css_du_registre_existent(source):

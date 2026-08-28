@@ -67,21 +67,11 @@ ONGLETS = [
 #
 # Mémoire manquait entièrement à ce parcours — sept panneaux, dont ceux qui
 # portent les gens et leur mémoire, montaient sans qu'aucun outil ne le vérifie.
-# Le premier terme est la PAGE par laquelle on arrive sur l'ancien panneau —
-# la refonte se fait par étapes, ces sous-onglets vivent encore derrière leur
-# nouvelle route. Ils disparaîtront panneau par panneau, chacun avec sa phase.
-SOUS_ONGLETS = [
-    # « Utilisateurs » a disparu : c'est devenu la page Personnes, vérifiée à
-    # part. Les six autres attendent encore leur phase.
-    ("cerveau/memoire", [
-        ("Mémoire communautaire", "memoire-sub-global"),
-        ("Questions", "memoire-sub-dashboard"),
-        ("Notes du bot", "memoire-sub-notes"),
-        ("Comptes Apex", "memoire-sub-apex"),
-        ("Dans la tête de Wally", "memoire-sub-self"),
-        ("Ignorés", "memoire-sub-ignores"),
-    ]),
-]
+# VIDE, et c'est le point d'arrivée de la refonte : plus un seul sous-onglet
+# dans le panel. Tout ce qui en était un est devenu une page, une section ou un
+# filtre. La liste reste pour que la boucle du parcours n'ait pas à disparaître
+# avec — et pour qu'un sous-onglet qui reviendrait se signale ici.
+SOUS_ONGLETS: list[tuple[str, list[tuple[str, str]]]] = []
 
 # Un panneau qui rend moins que ça n'a rien monté : même vide de données, il
 # porte son titre et ses libellés.
@@ -214,10 +204,48 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_personnes(page, rap, erreurs)
     _verifier_personnalite_et_couts(page, rap, erreurs)
     _verifier_live_et_connexions(page, rap, erreurs)
+    _verifier_memoire_commune(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_memoire_commune(page, rap: Rapport, erreurs: list[str]) -> None:
+    """L'ancien onglet « Mémoire communautaire » lisait `/memory/global`, qui
+    rend une liste VIDE et refuse toute écriture en 501 : un panneau mort qui
+    invitait à ajouter un souvenir aussitôt rejeté. La matière existait
+    ailleurs — les sujets formés la nuit — et n'était exposée nulle part."""
+    print("\n── Cerveau › Mémoire commune ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cerveau/memoire"]').click()
+    page.wait_for_timeout(2500)
+
+    sujets = page.locator("#mc-sujets .mc-sujet").count()
+    rap.dire(sujets > 0, "les sujets de la communauté sont rendus",
+             f"{sujets} sujet(s)")
+    # L'opinion est la matière la plus intéressante du lot : c'est la seule qui
+    # dise ce que Wally PENSE du sujet, et elle n'a jamais été affichée.
+    avis = page.locator("#mc-sujets .mc-sujet-avis").count()
+    rap.dire(avis > 0, "l'opinion de Wally est visible", f"{avis} avis")
+
+    for ident, libelle in (("mc-questions", "les questions"),
+                           ("mc-notes", "les notes du bot"),
+                           ("mc-tete", "dans sa tête")):
+        n = _attendre_contenu(page, ident)
+        rap.dire(n >= _CONTENU_MIN, f"Mémoire commune → {libelle}", f"{n} car.")
+
+    # Les puces montrent ou cachent des sections entières.
+    page.locator('#mc-puces [data-mc="mc-notes"]').click()
+    page.wait_for_timeout(400)
+    cache = page.locator("#mc-sujets").is_hidden()
+    rap.dire(cache, "une puce filtre bien les sections",
+             "sujets masqués" if cache else "sujets toujours visibles")
+    page.locator('#mc-puces [data-mc=""]').click()
+    page.wait_for_timeout(300)
+
+    rap.dire(not erreurs, "aucune erreur JS sur Mémoire commune",
+             " · ".join(erreurs[:2]))
 
 
 def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None:
@@ -370,6 +398,16 @@ def _verifier_personnes(page, rap: Rapport, erreurs: list[str]) -> None:
     page.wait_for_timeout(400)
     corps = _attendre_contenu(page, "fiche-corps")
     rap.dire(corps > 0, "l'onglet « Comptes liés » rend du contenu", f"{corps} car.")
+
+    # Les deux anciens sous-onglets absorbés par cette page : « Comptes Apex »
+    # et « Ignorés » sont devenus des filtres de l'annuaire, leurs formulaires
+    # des sections. Hors du parcours, ils pourraient mourir sans un bruit.
+    page.locator('.sidebar-item[data-route="cerveau/personnes"]').click()
+    page.wait_for_timeout(1500)
+    for ident, libelle in (("pers-apex", "lier un compte Apex"),
+                           ("pers-ignores", "personnes ignorées")):
+        n = _attendre_contenu(page, ident)
+        rap.dire(n >= _CONTENU_MIN, f"Personnes → {libelle}", f"{n} car.")
 
     rap.dire(not erreurs, "aucune erreur JS sur Personnes", " · ".join(erreurs[:2]))
 
