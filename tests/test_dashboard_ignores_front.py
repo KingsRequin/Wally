@@ -64,7 +64,12 @@ def test_lancien_panneau_twitch_ne_survit_pas_en_double(source):
     assert "ignored-users-section" not in source
     assert "renderIgnoredUsers" not in source
     # …mais l'ancien emplacement doit RENVOYER au nouveau, sinon on le cherche.
-    assert "Mémoire → Ignorés" in source
+    # Le nouveau, depuis la refonte, est la page Personnes et son filtre.
+    assert "Personnes</strong>, filtre « Ignorés »" in source
+    assert "Mémoire → Ignorés" not in source, (
+        "ce chemin n'existe plus : l'onglet Mémoire n'a plus de sous-onglet "
+        "Utilisateurs, et « Ignorés » est devenu un filtre de Personnes"
+    )
 
 
 def test_les_routes_appelees_par_le_panneau_existent():

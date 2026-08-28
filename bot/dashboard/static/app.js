@@ -67,8 +67,6 @@ let currentFatigue     = {};
 let currentSecondaries = [];
 
 // ── Tab sub-navigation state ──────────────────────────────────────
-let _parametresSubTab = 'emotions';
-let _systemeSubTab    = 'twitch';
 
 // Panneaux dont le rendu est en cours. `panel.children.length > 0` ne suffit
 // pas : ces fonctions attendent `/api/admin/config` AVANT d'écrire, donc deux
@@ -330,12 +328,12 @@ const ROUTES = {
   'live/voix': {
     titre: 'Voix',
     sous: 'Ce que Wally entend, et ce qu\'il répond à l\'oral.',
-    pane: 'admin-voice',
+    pane: 'admin-voix',
   },
   'live/medias': {
     titre: 'Médias & sons',
-    sous: 'Images, galerie, et sons déclenchés par le chat.',
-    pane: 'admin-parametres', sub: 'images',
+    sous: 'Ce que Wally montre et ce qu\'il fait entendre.',
+    pane: 'admin-medias',
   },
   'live/automatisations': {
     titre: 'Automatisations',
@@ -350,7 +348,7 @@ const ROUTES = {
   'systeme/connexions': {
     titre: 'Connexions',
     sous: 'Discord, Twitch, et l\'état des jetons.',
-    pane: 'admin-systeme', sub: 'twitch',
+    pane: 'admin-connexions',
   },
 };
 
@@ -377,7 +375,7 @@ const ROUTES_LEGACY = {
   'admin-systeme':     'systeme/journal',
   'admin-logs':        'systeme/journal',
   'admin-twitch':      'systeme/connexions',
-  'admin-overlay':     'live/scene',
+  'admin-overlay':     'live/medias',
   'admin-voice':       'live/voix',
 };
 
@@ -420,14 +418,13 @@ function _analyserHash() {
 
 /** Pose le sous-onglet de l'ancien panneau AVANT son rendu.
  *
- *  `renderParametresTab` et ses voisins lisent la variable de module pour
- *  choisir quoi monter : la poser après le rendu n'aurait aucun effet visible.
+ *  Il n'en reste qu'un : « Mémoire commune », qui garde sa barre de pilules
+ *  jusqu'à sa phase. `renderMemoireTab` lit la variable de module pour choisir
+ *  quoi monter — la poser après le rendu n'aurait aucun effet visible.
  */
 function _poserSousOnglet(pane, sub) {
   if (!sub) return;
-  if (pane === 'admin-parametres') _parametresSubTab = sub;
-  else if (pane === 'admin-memoire') _memoireSubTab = sub;
-  else if (pane === 'admin-systeme') _systemeSubTab = sub;
+  if (pane === 'admin-memoire') _memoireSubTab = sub;
 }
 
 function _appliquerRoute(route, param) {
@@ -466,20 +463,20 @@ function _appliquerRoute(route, param) {
 
   _poserSousOnglet(def.pane, def.sub);
 
-  if (def.pane === 'admin-parametres') renderParametresTab();
-  else if (def.pane === 'admin-personnes') renderPersonnes();
+  if (def.pane === 'admin-personnes') renderPersonnes();
   else if (def.pane === 'admin-personnalite') renderPersonnalite();
   else if (def.pane === 'admin-modeles') renderModeles();
+  else if (def.pane === 'admin-medias') renderMedias();
+  else if (def.pane === 'admin-connexions') renderConnexions();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
-  else if (def.pane === 'admin-systeme') renderSystemeTab();
   else if (def.pane === 'admin-memoire') renderMemoireTab();
   else if (def.pane === 'admin-prompts') renderPromptsTab();
   else if (def.pane === 'admin-scene') renderSceneTab();
 
   // Les deux flux SSE de page : ouverts sur leur page, fermés partout ailleurs.
   if (def.pane === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
-  if (def.pane === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
+  if (def.pane === 'admin-voix') { renderVoix(); startVoiceSSE(); } else { stopVoiceSSE(); }
 
   pollLinksBadge();
 }
@@ -1472,9 +1469,10 @@ let voiceSSE = null;
 let _voiceEvents = [];
 const MAX_VOICE_EVENTS = 400;
 
-function renderVoiceTab() {
-  const el = document.getElementById('tab-admin-voice');
-  if (el.querySelector('#voice-stream')) return;  // déjà rendu
+function renderVoiceTab(cible) {
+  // La cible est passée par la page Voix, qui l'héberge en section.
+  const el = cible || document.getElementById('tab-admin-voice');
+  if (!el || el.querySelector('#voice-stream')) return;  // déjà rendu
   el.innerHTML = `
     <div class="voice-debug">
       <div class="voice-toolbar">
@@ -2236,6 +2234,184 @@ function escJs(str) {
       .replace(/"/g, '\\"')
       .replace(/\r?\n/g, '\\n')
   );
+}
+
+// ── Live › Médias & sons ────────────────────────────────────────────────────
+//
+// Ce que Wally MONTRE et ce qu'il FAIT ENTENDRE, au même endroit : les deux
+// overlays et leurs URL OBS, la génération d'images, la galerie, et les sons
+// que le chat déclenche. C'était réparti entre Paramètres › Images et
+// Système › Overlay, deux sections qui ne se voyaient pas.
+
+const _MEDIAS_SECTIONS = [
+  ['medias-overlays', 'Overlays'],
+  ['medias-images', 'Génération d\'images'],
+  ['medias-galerie', 'Galerie'],
+];
+
+function renderMedias() {
+  const el = document.getElementById('tab-admin-medias');
+  if (!el) return;
+
+  if (!document.getElementById('medias-overlays')) {
+    el.innerHTML = '<div class="page-section" id="medias-overlays"></div>'
+      + '<div class="page-section" id="medias-images">'
+      + '<div class="page-section-titre">Génération d\'images</div>'
+      + '<div id="medias-images-corps"></div></div>'
+      + '<div class="page-section" id="medias-galerie"></div>';
+  }
+
+  _renderPanelOnce(document.getElementById('medias-overlays'), _renderSystemeOverlay);
+  _renderPanelOnce(document.getElementById('medias-images-corps'), _renderParametresImages);
+  poserSommaire('live/medias', _MEDIAS_SECTIONS, '');
+  chargerGalerie();
+}
+
+/** La galerie en vignettes. La dernière case porte le reste, pour ne pas
+ *  charger trois cents images dans un panneau de réglages. */
+const _GALERIE_MAX = 23;
+
+async function chargerGalerie() {
+  const boite = document.getElementById('medias-galerie');
+  if (!boite) return;
+  const r = await apiFetch('/api/public/gallery?limit=200');
+  if (!r || !r.ok) {
+    boite.innerHTML = '<div class="page-section-titre">Galerie</div>'
+      + '<div class="page-section-sous">Galerie illisible pour le moment.</div>';
+    return;
+  }
+  const d = await r.json();
+  const images = d.images || d || [];
+  const montrees = images.slice(0, _GALERIE_MAX);
+  const reste = images.length - montrees.length;
+
+  boite.innerHTML = '<div class="page-section-titre">Galerie</div>'
+    + '<div class="page-section-sous">'
+    + (images.length ? images.length + ' image(s) générée(s).'
+                     : 'Aucune image générée pour l\'instant.') + '</div>'
+    + (images.length
+      ? '<div class="galerie">' + montrees.map(function (i) {
+          return '<a class="galerie-case" href="/api/public/gallery/'
+            + encodeURIComponent(i.id) + '/image" target="_blank" rel="noopener">'
+            + '<img src="/api/public/gallery/' + encodeURIComponent(i.id)
+            + '/image" alt="' + escAttr(i.title || '') + '" loading="lazy"></a>';
+        }).join('')
+        + (reste > 0 ? '<span class="galerie-case galerie-reste">+' + reste + '</span>' : '')
+        + '</div>'
+      : '');
+}
+
+// ── Live › Voix ─────────────────────────────────────────────────────────────
+//
+// Les deux « Vocal » fusionnés : les réglages vivaient dans Paramètres, le
+// suivi en direct dans un onglet à part. On réglait donc la voix sans voir ce
+// qu'elle entendait, et on regardait ce qu'elle entendait sans pouvoir y
+// toucher.
+
+const _VOIX_SECTIONS = [
+  ['voix-reglages', 'Réglages'],
+  ['voix-suivi', 'Suivi en direct'],
+];
+
+function renderVoix() {
+  const el = document.getElementById('tab-admin-voix');
+  if (!el) return;
+
+  if (!document.getElementById('voix-reglages')) {
+    el.innerHTML = '<div class="page-section" id="voix-reglages">'
+      + '<div class="page-section-titre">Réglages</div>'
+      + '<div id="voix-reglages-corps"></div></div>'
+      + '<div class="page-section" id="voix-suivi">'
+      + '<div class="page-section-titre">Suivi en direct</div>'
+      + '<div class="page-section-sous">Ce que Wally entend, et ce qu\'il répond. '
+      + 'Le flux ne garde rien : il montre la session en cours.</div>'
+      + '<div id="voix-suivi-corps"></div></div>';
+  }
+
+  _renderPanelOnce(document.getElementById('voix-reglages-corps'), _renderParametresVoice);
+  renderVoiceTab(document.getElementById('voix-suivi-corps'));
+  poserSommaire('live/voix', _VOIX_SECTIONS, '');
+}
+
+// ── Système › Connexions ────────────────────────────────────────────────────
+//
+// « Connecté » ne suffit pas : un bot Discord prêt sur zéro serveur et un
+// EventSub vivant sans souscription ont le même voyant vert. Chaque adaptateur
+// rend donc ses faits.
+
+const _CNX_SECTIONS = [
+  ['cnx-adaptateurs', 'Adaptateurs'],
+  ['cnx-twitch', 'Comptes et chaînes Twitch'],
+  ['cnx-discord', 'Réglages Discord'],
+];
+
+function renderConnexions() {
+  const el = document.getElementById('tab-admin-connexions');
+  if (!el) return;
+
+  if (!document.getElementById('cnx-adaptateurs')) {
+    el.innerHTML = '<div class="page-section" id="cnx-adaptateurs"></div>'
+      + '<div class="page-section" id="cnx-twitch">'
+      + '<div class="page-section-titre">Comptes et chaînes Twitch</div>'
+      + '<div id="cnx-twitch-corps"></div></div>'
+      + '<div class="page-section" id="cnx-discord">'
+      + '<div class="page-section-titre">Réglages Discord</div>'
+      + '<div id="cnx-discord-corps"></div></div>';
+  }
+
+  chargerConnexions();
+  _renderSystemeTwitch(document.getElementById('cnx-twitch-corps'));
+  _renderPanelOnce(document.getElementById('cnx-discord-corps'), _renderReglagesDiscord);
+  poserSommaire('systeme/connexions', _CNX_SECTIONS, '');
+}
+
+async function chargerConnexions() {
+  const boite = document.getElementById('cnx-adaptateurs');
+  if (!boite) return;
+  // Délégation posée UNE fois : `chargerConnexions` réécrit les cartes après
+  // chaque bascule, et un écouteur par rendu finirait par arrêter le bot trois
+  // fois pour un clic.
+  if (!boite.dataset.cable) {
+    boite.dataset.cable = '1';
+    boite.addEventListener('click', async function (ev) {
+      const b = ev.target.closest('[data-cnx]');
+      if (!b) return;
+      b.disabled = true;
+      await toggleBotAdapter(b.dataset.cnx);
+      await chargerConnexions();
+    });
+  }
+  const r = await apiFetch('/api/admin/connexions');
+  if (!r || !r.ok) {
+    boite.innerHTML = '<div class="page-section-titre">Adaptateurs</div>'
+      + '<div class="page-section-sous">État illisible pour le moment.</div>';
+    return;
+  }
+  const d = await r.json();
+  boite.innerHTML = '<div class="page-section-titre">Adaptateurs</div>'
+    + '<div class="cnx-cartes">'
+    + _cnxCarte('Discord', d.discord, 'discord')
+    + _cnxCarte('Twitch', d.twitch, 'twitch')
+    + '</div>';
+}
+
+function _cnxCarte(nom, a, cle) {
+  if (!a || !a.configure) {
+    return '<div class="cnx-carte"><div class="cnx-carte-tete">'
+      + '<span class="cnx-point"></span><strong>' + escHtml(nom) + '</strong>'
+      + '</div><div class="page-section-sous">Non configuré.</div></div>';
+  }
+  const pret = !!a.pret;
+  return '<div class="cnx-carte"><div class="cnx-carte-tete">'
+    + '<span class="cnx-point' + (pret ? ' on' : '') + '"></span>'
+    + '<strong>' + escHtml(nom) + '</strong>'
+    + '<span class="cnx-nom">' + escHtml(a.nom || '—') + '</span>'
+    + '<button class="btn" data-cnx="' + cle + '">'
+    + (pret ? 'Stop' : 'Start') + '</button></div>'
+    + '<div class="cnx-faits">' + (a.faits || []).map(function (f) {
+        return '<div class="cnx-fait"><span>' + escHtml(f[0]) + '</span>'
+          + '<b>' + escHtml(f[1]) + '</b></div>';
+      }).join('') + '</div></div>';
 }
 
 // ── Cerveau › Personnalité ──────────────────────────────────────────────────
@@ -3725,36 +3901,6 @@ async function deleteMemQuestion(id) {
 // ── Paramètres Tab (Émotions · LLM · Images) ─────────────────────────────────
 
 
-function renderParametresTab() {
-  const el = document.getElementById('tab-admin-parametres');
-  if (!el) return;
-
-  if (!el.querySelector('.mem-subnav')) {
-    el.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="emotions" onclick="switchParametresSubTab('emotions')">Émotions</button>
-        <button class="mem-subnav-pill" data-subtab="llm" onclick="switchParametresSubTab('llm')">LLM</button>
-        <button class="mem-subnav-pill" data-subtab="images" onclick="switchParametresSubTab('images')">Images</button>
-        <button class="mem-subnav-pill" data-subtab="vocal" onclick="switchParametresSubTab('vocal')">Vocal</button>
-      </div>
-      <div class="mem-subnav-content active" id="parametres-sub-emotions"></div>
-      <div class="mem-subnav-content" id="parametres-sub-llm"></div>
-      <div class="mem-subnav-content" id="parametres-sub-images"></div>
-      <div class="mem-subnav-content" id="parametres-sub-vocal"></div>
-    `;
-  }
-
-  switchParametresSubTab(_parametresSubTab);
-}
-
-// Une ligne de formulaire du panneau Paramètres : le libellé et son champ.
-//
-// Elle était recopiée à l'identique dans trois des quatre rendus de sous-onglet
-// — et PAS dans le quatrième. `_renderParametresVoice` l'appelait quand même,
-// depuis sa propre portée : `ReferenceError` à la première ligne construite,
-// après le `panel.innerHTML = ''`. Résultat en prod : Paramètres → Vocal
-// s'ouvrait sur un panneau VIDE, sans un mot dans la console de l'utilisateur.
-// Une seule définition, au niveau du module, retire la question.
 function makeFormRow(labelText, inputEl) {
   const row = document.createElement('div');
   row.className = 'form-row';
@@ -3765,40 +3911,6 @@ function makeFormRow(labelText, inputEl) {
   return row;
 }
 
-function switchParametresSubTab(subtab) {
-  _parametresSubTab = subtab;
-  const el = document.getElementById('tab-admin-parametres');
-  if (!el) return;
-
-  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
-  });
-  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const panel = document.getElementById('parametres-sub-' + subtab);
-  if (panel) panel.classList.add('active');
-
-  if (subtab === 'emotions') {
-    _renderPanelOnce(panel, _renderParametresEmotions);
-  } else if (subtab === 'llm') {
-    _renderPanelOnce(panel, _renderParametresLLM);
-  } else if (subtab === 'images') {
-    _renderPanelOnce(panel, _renderParametresImages);
-  } else if (subtab === 'vocal') {
-    // Passe par la garde comme ses trois voisins : `_renderParametresVoice`
-    // vide le panneau, PUIS attend `/api/admin/config`, PUIS écrit. Deux appels
-    // rapprochés (double-clic sur la pilule, route rejouée) franchissaient
-    // tous deux le vidage avant qu'aucun n'ait écrit → formulaire vocal en
-    // double. `saveVoiceConfigParams` lisant par `getElementById`, qui ne rend
-    // que le PREMIER, un réglage saisi dans la seconde copie était sauvegardé
-    // depuis la première. Exactement le bug corrigé pour « Paramètres ».
-    _renderPanelOnce(panel, _renderParametresVoice);
-  }
-}
-
-// Ce que chaque voix sait faire des émotions. Sans cette mention, on choisit
-// une voix « plus jolie » et Wally devient monocorde sans qu'on comprenne
-// pourquoi — hors MAI, seules Henri et Denise supportent des styles
-// (doc Azure, vérifiée le 2026-08-07). Les voix MAI sont facturées en tokens.
 const _VOICE_OPTIONS = [
   ['fr-FR-Marc:MAI-Voice-2', '18 styles · facturée en tokens'],
   ['fr-FR-Soleil:MAI-Voice-2', '18 styles · facturée en tokens'],
@@ -3943,10 +4055,30 @@ async function _renderParametresEmotions(panel) {
   `;
   wrapper.appendChild(lambdaCard);
 
-  // ⚠️ TRANSITOIRE — « Bot général » et « Anti-spam » ne relèvent pas de la
-  // personnalité : ils règlent l'adaptateur Discord. Ils partent vers la page
-  // Connexions en phase 6 (cf. docs/plans/2026-08-28-refonte-panel-admin-plan.md).
-  // Les laisser ici en attendant vaut mieux que de les rendre inatteignables.
+  panel.appendChild(wrapper);
+
+  // Build emotion sliders
+  buildGauges('gauges-parametres-inline', true);
+  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
+    updateEmotionGauges(currentEmotions);
+  }
+}
+
+/** Les réglages de l'ADAPTATEUR Discord — langue par défaut, heure du journal,
+ *  fenêtre de contexte, salon de notification, anti-spam.
+ *
+ *  Ils vivaient dans le panneau « Émotions », où ils n'avaient rien à faire :
+ *  la vitesse à laquelle la colère retombe et le nombre de messages avant un
+ *  mute sont deux sujets sans rapport. La refonte les range sous Connexions,
+ *  avec le reste de ce qui concerne les plateformes.
+ */
+async function _renderReglagesDiscord(panel) {
+  if (!panel) return;
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+
+  const wrapper = document.createElement('div');
   const botCard = document.createElement('div');
   botCard.className = 'card config-section';
   botCard.innerHTML = `
@@ -4017,14 +4149,7 @@ async function _renderParametresEmotions(panel) {
     <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
   `;
   wrapper.appendChild(spamCard);
-
   panel.appendChild(wrapper);
-
-  // Build emotion sliders
-  buildGauges('gauges-parametres-inline', true);
-  if (currentEmotions && Object.keys(currentEmotions).length > 0) {
-    updateEmotionGauges(currentEmotions);
-  }
   loadNotificationChannels(cfg);
 }
 
@@ -4210,43 +4335,6 @@ async function saveImageGenConfigParams() {
 // ── Système Tab (Logs · Twitch · Overlay · Instances) ────────────────────────
 
 
-function renderSystemeTab() {
-  const el = document.getElementById('tab-admin-systeme');
-  if (!el) return;
-
-  if (!el.querySelector('.mem-subnav')) {
-    el.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
-        <button class="mem-subnav-pill" data-subtab="overlay" onclick="switchSystemeSubTab('overlay')">Overlay</button>
-      </div>
-      <div class="mem-subnav-content active" id="systeme-sub-twitch"></div>
-      <div class="mem-subnav-content" id="systeme-sub-overlay"></div>
-    `;
-  }
-
-  switchSystemeSubTab(_systemeSubTab);
-}
-
-function switchSystemeSubTab(subtab) {
-  _systemeSubTab = subtab;
-  const el = document.getElementById('tab-admin-systeme');
-  if (!el) return;
-
-  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
-  });
-  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const panel = document.getElementById('systeme-sub-' + subtab);
-  if (panel) panel.classList.add('active');
-
-  if (subtab === 'twitch') {
-    _renderSystemeTwitch(panel);
-  } else if (subtab === 'overlay') {
-    _renderPanelOnce(panel, _renderSystemeOverlay);
-  }
-}
-
 async function _renderSystemeTwitch(panel) {
   if (!panel) return;
   panel.innerHTML = '<p style="color:var(--text-muted);padding:16px">Chargement...</p>';
@@ -4327,7 +4415,7 @@ async function _renderSystemeTwitch(panel) {
     + '<div id="guest-channel-error" style="color:var(--c-offline);font-size:0.85em;margin-top:6px;display:none"></div>'
     + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">Le broadcaster doit avoir autorisé le bot (scope channel:bot) pour que Wally puisse parler.</p>'
     + '<p style="color:var(--text-muted);font-size:0.8em;margin-top:10px">'
-    + 'Les comptes que Wally ignore se règlent dans <strong>Mémoire → Ignorés</strong>,'
+    + 'Les comptes que Wally ignore se règlent dans <strong>Personnes</strong>, filtre « Ignorés »,'
     + ' avec ceux de Discord et la liste des bots déjà couverts d\'office.</p>'
     + '</div>';
 

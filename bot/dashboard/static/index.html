@@ -15,7 +15,7 @@
        feuille est servie à l'overlay, qui les JOUE en direct.
        Déclarée AVANT `style.css`, qui doit l'emporter. -->
   <link rel="stylesheet" href="/static/animate.min.css">
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -118,8 +118,6 @@
           <p class="page-sub" id="page-sub"></p>
         </header>
 
-        <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
-        <div class="tab-content active" id="tab-admin-parametres"></div>
 
         <!-- CERVEAU › PERSONNES — l'annuaire, et la fiche d'une personne.
              Deux panneaux distincts : la liste garde son état (recherche,
@@ -134,8 +132,12 @@
         <div class="tab-content" id="tab-admin-actions"></div>
 
         <!-- CERVEAU › PERSONNALITÉ et MODÈLES & COÛTS -->
-        <div class="tab-content" id="tab-admin-personnalite"></div>
+        <div class="tab-content active" id="tab-admin-personnalite"></div>
         <div class="tab-content" id="tab-admin-modeles"></div>
+
+        <!-- LIVE › MÉDIAS & SONS, VOIX -->
+        <div class="tab-content" id="tab-admin-medias"></div>
+        <div class="tab-content" id="tab-admin-voix"></div>
 
         <!-- ADMIN MISE EN SCENE TAB (overlay_admin.js le remplit entièrement) -->
         <div class="tab-content" id="tab-admin-scene"></div>
@@ -144,11 +146,8 @@
              trois barres d'onglets qu'elle portait sont devenues des filtres. -->
         <div class="tab-content" id="tab-admin-journal"></div>
 
-        <!-- ADMIN SYSTEME TAB (Connexions · Overlay) -->
-        <div class="tab-content" id="tab-admin-systeme"></div>
-
-        <!-- ADMIN VOCAL TAB (suivi/debug STT + réponses) -->
-        <div class="tab-content" id="tab-admin-voice"></div>
+        <!-- SYSTÈME › CONNEXIONS -->
+        <div class="tab-content" id="tab-admin-connexions"></div>
 
       </div>
 
@@ -179,7 +178,7 @@
 <!-- Toast Container -->
 <div id="toast-container" aria-live="assertive"></div>
 
-<script src="/static/app.js?v=14"></script>
+<script src="/static/app.js?v=15"></script>
 <!-- La mise en scène de l'overlay. `overlay_layout.js` d'abord : il porte les
      neuf ancrages, dont `overlay_admin.js` se sert pour placer ses rectangles. -->
 <script src="/static/overlay_layout.js?v=2"></script>

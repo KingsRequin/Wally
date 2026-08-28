@@ -151,8 +151,25 @@ def test_le_sous_onglet_vocal_passe_par_la_garde_anti_double_montage():
     `saveVoiceConfigParams` lit par `getElementById`, qui ne rend que le
     premier — un réglage saisi dans la seconde copie partait depuis la
     première."""
+    import re
     from pathlib import Path
 
     source = Path("bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    assert "_renderPanelOnce(panel, _renderParametresVoice)" in source
-    assert "\n    _renderParametresVoice(panel);" not in source
+
+    # L'INVARIANT, pas le site d'appel : `_renderParametresVoice` est CONFIÉE à
+    # la garde, jamais appelée directement. La version d'avant assertait la
+    # ligne exacte `_renderPanelOnce(panel, _renderParametresVoice)` — elle a
+    # cassé le jour où la page Voix a hébergé le panneau ailleurs, sans que
+    # l'invariant bouge d'un pouce. Asserter une ligne d'implémentation fige le
+    # code, pas la propriété.
+    directs = [
+        l.strip() for l in source.splitlines()
+        if "_renderParametresVoice(" in l and "function _renderParametresVoice(" not in l
+    ]
+    assert not directs, (
+        "`_renderParametresVoice` est appelée directement : deux appels "
+        f"rapprochés monteraient deux formulaires — {directs}"
+    )
+    confiee = re.search(
+        r"_renderPanelOnce\([^;]*?,\s*_renderParametresVoice\s*\)", source, re.S)
+    assert confiee, "`_renderParametresVoice` n'est plus confiée à `_renderPanelOnce`"

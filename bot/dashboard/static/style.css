@@ -1697,6 +1697,116 @@ select option, .neo-select option {
   white-space: nowrap;
 }
 
+/* ── Galerie ──────────────────────────────────────────────────── */
+
+.galerie {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.galerie-case {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.galerie-case img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* La dernière case porte le reste : charger trois cents images dans un panneau
+ * de réglages coûterait plus que ce qu'on y cherche. */
+.galerie-reste {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-accent);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Connexions ───────────────────────────────────────────────── */
+
+.cnx-cartes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 13px;
+}
+
+.cnx-carte {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 16px 18px;
+}
+
+.cnx-carte-tete {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+
+.cnx-carte-tete strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.cnx-point {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-offline);
+  flex: none;
+}
+.cnx-point.on { background: var(--c-online); }
+
+.cnx-nom {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.cnx-faits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cnx-fait {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--bg-sunken);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.cnx-fait b {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 .log-filters, .log-controls {
   display: flex;
   gap: 6px;

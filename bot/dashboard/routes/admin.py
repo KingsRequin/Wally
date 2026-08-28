@@ -882,6 +882,86 @@ async def restart_container(request: Request) -> dict:
     return {"ok": True, "message": "Redémarrage déclenché via le pont hôte."}
 
 
+# ── Connexions ───────────────────────────────────────────────────────────────
+
+@router.get("/connexions")
+async def etat_connexions(request: Request) -> dict:
+    """L'état réel des deux adaptateurs, avec de quoi diagnostiquer.
+
+    « Connecté » ne suffit pas : un bot Discord prêt sur zéro serveur et un
+    EventSub vivant sans souscription ont le même voyant vert. Chaque
+    adaptateur rend donc ses FAITS — serveurs, salons, souscriptions, emotes —
+    et le panneau les montre en clair.
+
+    Tout est lu en mémoire, avec des `getattr` prudents : une ligne absente vaut
+    mieux qu'un chiffre inventé, et l'objet bot n'a pas la même forme selon
+    qu'il est en cours de démarrage, arrêté, ou absent de la config.
+    """
+    etat = request.app.state.wally
+    discord_bot = etat.discord_bot
+    twitch_bot = etat.twitch_bot
+
+    discord: dict = {"configure": discord_bot is not None, "faits": []}
+    if discord_bot is not None:
+        pret = bool(discord_bot.is_ready()) and not discord_bot.is_closed()
+        discord["pret"] = pret
+        discord["nom"] = str(getattr(discord_bot, "user", "") or "") or None
+        serveurs = list(getattr(discord_bot, "guilds", []) or [])
+        salons = sum(len(getattr(g, "text_channels", []) or []) for g in serveurs)
+        discord["faits"] = [
+            ("Serveurs", str(len(serveurs))),
+            ("Salons texte", str(salons)),
+        ]
+        arbre = getattr(discord_bot, "tree", None)
+        if arbre is not None:
+            try:
+                discord["faits"].append(
+                    ("Commandes /", str(len(arbre.get_commands()))))
+            # `get_commands()` n'existe que sur l'arbre de discord.py ; un
+            # double de test n'en a pas, et le panneau ne doit pas tomber pour ça.
+            except (AttributeError, TypeError) as exc:
+                logger.debug("Connexions : arbre de commandes illisible ({e!r})", e=exc)
+        latence = getattr(discord_bot, "latency", None)
+        if isinstance(latence, (int, float)) and latence == latence:  # NaN avant connexion
+            discord["faits"].append(("Latence", f"{round(latence * 1000)} ms"))
+
+    twitch: dict = {"configure": twitch_bot is not None, "faits": []}
+    if twitch_bot is not None:
+        twitch["pret"] = getattr(twitch_bot, "_eventsub_client", None) is not None
+        twitch["nom"] = getattr(twitch_bot, "nick", None) or None
+        invitees = list(getattr(etat.config.twitch, "guest_channels", []) or [])
+        twitch["faits"] = [("Chaînes invitées", str(len(invitees)))]
+        # Pas le NOMBRE de souscriptions EventSub : le seul moyen de le connaître
+        # est un appel à Twitch (`count_active_subscriptions`), et un endpoint de
+        # panneau n'a pas à taper une API tierce à chaque ouverture de page. Ce
+        # qu'on sait en mémoire, en revanche, c'est si le client existe et si
+        # l'IRC répond — les deux voies par lesquelles Wally devient muet.
+        twitch["faits"].append(
+            ("EventSub", "actif" if twitch["pret"] else "absent"))
+        irc = getattr(twitch_bot, "_irc_vivante", None)
+        if callable(irc):
+            try:
+                twitch["faits"].append(("IRC", "vivant" if irc() else "muet"))
+            # `_irc_vivante` lit l'état d'une connexion twitchio : un double de
+            # test ou un bot à demi démarré peut lever, et la carte Discord ne
+            # doit pas partir avec.
+            except Exception as exc:  # noqa: BLE001 — diagnostic best-effort
+                logger.debug("Connexions : état IRC illisible ({e!r})", e=exc)
+        try:
+            from bot.core.twitch_emotes import active_emote_registry
+
+            registre = active_emote_registry()
+            twitch["faits"].append(
+                ("Emotes utilisables", str(len(getattr(registre, "_verified", []) or []))))
+        # Le registre est un singleton de module : absent en test, il ne doit
+        # pas emporter la carte Discord avec lui.
+        except (ImportError, AttributeError) as exc:
+            logger.debug("Connexions : registre d'emotes illisible ({e!r})", e=exc)
+        twitch["invitees"] = invitees
+
+    return {"discord": discord, "twitch": twitch}
+
+
 # ── Coûts LLM ────────────────────────────────────────────────────────────────
 
 @router.get("/couts")

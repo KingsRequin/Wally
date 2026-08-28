@@ -71,12 +71,6 @@ ONGLETS = [
 # la refonte se fait par étapes, ces sous-onglets vivent encore derrière leur
 # nouvelle route. Ils disparaîtront panneau par panneau, chacun avec sa phase.
 SOUS_ONGLETS = [
-    # Émotions et LLM ont quitté ce sous-onglet : ils sont devenus Personnalité
-    # et Modèles & coûts, vérifiés à part. Images et Vocal attendent la phase 6.
-    ("live/medias", [
-        ("Images", "parametres-sub-images"),
-        ("Vocal", "parametres-sub-vocal"),
-    ]),
     # « Utilisateurs » a disparu : c'est devenu la page Personnes, vérifiée à
     # part. Les six autres attendent encore leur phase.
     ("cerveau/memoire", [
@@ -86,10 +80,6 @@ SOUS_ONGLETS = [
         ("Comptes Apex", "memoire-sub-apex"),
         ("Dans la tête de Wally", "memoire-sub-self"),
         ("Ignorés", "memoire-sub-ignores"),
-    ]),
-    ("systeme/connexions", [
-        ("Twitch", "systeme-sub-twitch"),
-        ("Overlay", "systeme-sub-overlay"),
     ]),
 ]
 
@@ -223,10 +213,61 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_automatisations(page, rap, erreurs)
     _verifier_personnes(page, rap, erreurs)
     _verifier_personnalite_et_couts(page, rap, erreurs)
+    _verifier_live_et_connexions(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None:
+    """Médias & sons, Voix et Connexions. Trois pages composées d'anciens
+    panneaux : c'est justement là qu'un rendu peut se perdre en silence, parce
+    que la fonction existe et que sa cible a changé de nom."""
+    print("\n── Live › Médias, Voix · Système › Connexions ──")
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="live/medias"]').click()
+    page.wait_for_timeout(2500)
+    for ident, libelle in (("medias-overlays", "les overlays"),
+                           ("medias-images-corps", "la génération d'images")):
+        n = _attendre_contenu(page, ident)
+        rap.dire(n >= _CONTENU_MIN, f"Médias → {libelle}", f"{n} car.")
+    # La galerie se compte en VIGNETTES : mesurer son texte donnerait une
+    # trentaine de caractères (le titre) sur une grille pleine d'images, et
+    # crierait au panneau mort. Un smoke test qui crie à tort finit ignoré.
+    vignettes = page.locator("#medias-galerie .galerie-case").count()
+    rap.dire(vignettes > 0, "Médias → la galerie", f"{vignettes} vignette(s)")
+    # L'atelier des sons vit DANS le panneau overlay : il a déjà disparu une
+    # fois d'un déplacement de section.
+    sons = page.locator("#atelier-sons").count()
+    rap.dire(sons == 1, "l'atelier des sons a suivi", f"{sons} conteneur(s)")
+    rap.dire(not erreurs, "aucune erreur JS sur Médias & sons", " · ".join(erreurs[:2]))
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="live/voix"]').click()
+    page.wait_for_timeout(2500)
+    for ident, libelle in (("voix-reglages-corps", "les réglages"),
+                           ("voix-suivi-corps", "le suivi en direct")):
+        n = _attendre_contenu(page, ident)
+        rap.dire(n >= _CONTENU_MIN, f"Voix → {libelle}", f"{n} car.")
+    rap.dire(not erreurs, "aucune erreur JS sur Voix", " · ".join(erreurs[:2]))
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="systeme/connexions"]').click()
+    page.wait_for_timeout(2500)
+    cartes = page.locator("#cnx-adaptateurs .cnx-carte").count()
+    rap.dire(cartes == 2, "les deux adaptateurs ont leur carte", f"{cartes} carte(s)")
+    # « Connecté » ne suffit pas : un bot prêt sur zéro serveur a le même
+    # voyant vert. Chaque carte doit porter ses FAITS.
+    faits = page.locator("#cnx-adaptateurs .cnx-fait").count()
+    rap.dire(faits >= 3, "les cartes portent des faits, pas qu'un voyant",
+             f"{faits} fait(s)")
+    for ident, libelle in (("cnx-twitch-corps", "les comptes Twitch"),
+                           ("cnx-discord-corps", "les réglages Discord")):
+        n = _attendre_contenu(page, ident)
+        rap.dire(n >= _CONTENU_MIN, f"Connexions → {libelle}", f"{n} car.")
+    rap.dire(not erreurs, "aucune erreur JS sur Connexions", " · ".join(erreurs[:2]))
 
 
 def _verifier_personnalite_et_couts(page, rap: Rapport, erreurs: list[str]) -> None:
