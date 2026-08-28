@@ -468,46 +468,30 @@ body {
 
 .rail-encart + .rail-encart { margin-top: 10px; }
 
-/* Sous 1100 px le sommaire passe au-dessus, en rangée de puces. Même DOM :
- * dupliquer les ancres dans un second nœud, c'est deux rendus à tenir en phase
- * pour une seule source de vérité. */
+/* Sous 1100 px, le sommaire disparaît.
+ *
+ * Il a d'abord été remonté en rangée de puces, `order: -1`. Vu à l'écran sur
+ * 390 px : les ancres se retrouvaient AU-DESSUS du titre de la page, avant
+ * même qu'on sache de quelle page il s'agit. Les descendre sous le contenu
+ * n'aurait pas mieux valu — un sommaire qu'on atteint après avoir tout lu ne
+ * sert plus à rien.
+ *
+ * Un sommaire d'ancres est une commodité de GRAND écran : il évite un
+ * défilement qu'on fait de toute façon au doigt. La rangée de puces qui compte
+ * sur mobile est celle des PAGES du thème (`.theme-puces`), qui remplace la
+ * sidebar — en afficher deux l'une sous l'autre n'apprendrait rien. */
 @media (max-width: 1100px) {
-  .page-body { flex-direction: column; }
-
-  .page-rail {
-    order: -1;
-    width: auto;
-    align-self: stretch;
-    margin: 0;
-    padding: 18px 0 0;
-    border-left: none;
-    position: static;
+  /* `align-items: stretch`, et c'est TOUT le sujet : en `column`, `align-items`
+   * gouverne la LARGEUR. Le `flex-start` hérité du bureau — indispensable là-bas
+   * pour que le sommaire collant ait sa propre hauteur — faisait ici grandir la
+   * colonne de contenu jusqu'à son enfant le plus large. La page débordait de
+   * 85 px, et le titre lui-même sortait de l'écran. */
+  .page-body {
+    flex-direction: column;
+    align-items: stretch;
   }
-
-  .rail-titre { display: none; }
-
-  .rail-ancres {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
-
-  .rail-ancre {
-    border-left: none;
-    padding: 6px 10px;
-    border-radius: 20px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    font-size: 11.5px;
-  }
-
-  .rail-ancre.active {
-    background: var(--bg-select-2);
-    border-color: var(--accent-border);
-  }
-
-  .rail-encart { display: none; }
+  .page-main { width: 100%; min-width: 0; }
+  .page-rail { display: none !important; }
 }
 
 
@@ -4028,72 +4012,106 @@ button:focus-visible {
   }
 }
 
+/* ── Navigation mobile ────────────────────────────────────────── */
+/*
+ * Masquées par défaut : elles ne s'affichent que sous 768 px, où la sidebar
+ * disparaît. Les déclarer ici et non dans la media query évite d'y répéter
+ * quarante lignes de style pour un simple `display`.
+ */
+
+.barre-bas {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border-subtle);
+  /* La marge basse laisse la place à la barre d'accueil de l'iPhone. */
+  padding: 9px 6px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+.barre-bas-item {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  text-decoration: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  /* Cible tactile : jamais moins de 44 px de haut. */
+  min-height: 44px;
+  transition: color 0.12s ease;
+}
+
+.barre-bas-item svg { width: 19px; height: 19px; flex: none; }
+.barre-bas-item span { font-size: 10.5px; }
+.barre-bas-item.active { color: var(--accent-light); font-weight: 600; }
+
+.barre-bas-pastille {
+  position: absolute;
+  top: 0;
+  right: 50%;
+  margin-right: -20px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* Les pages du thème courant. Scrollable, parce que « Live » en compte quatre
+ * et que quatre libellés ne tiennent pas sur 390 px. */
+.theme-puces {
+  display: none;
+  gap: 6px;
+  margin-top: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.theme-puces::-webkit-scrollbar { display: none; }
+
+.theme-puce {
+  flex: none;
+  padding: 7px 12px;
+  border-radius: 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.theme-puce.active {
+  color: var(--accent-light);
+  background: var(--bg-select-2);
+  border-color: var(--accent-border);
+  font-weight: 600;
+}
+
 /* ── Responsive ───────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
-  .app-wrapper {
-    flex-direction: column !important;
-  }
+  /* La sidebar disparaît : la navigation passe par la barre du BAS, quatre
+   * destinations au lieu de onze. Sur 390 px de large, une liste de onze
+   * entrées ne se lit pas — et les libellés seuls, sans icône, ne se
+   * distinguent pas au pouce. */
+  .sidebar { display: none !important; }
 
-  .sidebar {
-    width: 100% !important;
-    flex-direction: row !important;
-    padding: 0 !important;
-    order: 1;
-    border-right: none !important;
-    border-top: 1px solid var(--border);
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    z-index: 100;
-    height: auto !important;
-    min-height: 56px;
-    justify-content: space-evenly !important;
-    overflow: hidden !important;
-    padding-bottom: env(safe-area-inset-bottom, 0) !important;
-  }
+  .app-wrapper { flex-direction: column !important; }
 
-  .sidebar-logo { display: none !important; }
+  .barre-bas { display: flex; }
 
-  .sidebar-nav {
-    flex-direction: row !important;
-    gap: 0 !important;
-    width: auto !important;
-    flex-shrink: 0;
-    padding: 0 !important;
-  }
+  /* La rangée de puces remplace la sidebar : les pages du thème courant,
+   * scrollables horizontalement sous le titre. */
+  .theme-puces { display: flex; }
 
-  .sidebar-item {
-    padding: 8px 12px !important;
-    min-width: 44px;
-    min-height: 44px;
-    justify-content: center;
-    flex-shrink: 0;
-    white-space: nowrap;
-    border-left: none !important;
-  }
-
-  .sidebar-mode-btn span {
-    display: none !important;
-  }
-
-  /* La sidebar mobile définitive (barre du bas à 4 destinations) arrive en
-   * phase 10. En attendant : les libellés RESTENT visibles. Les masquer était
-   * bon tant qu'une icône les doublait — la refonte a retiré les icônes, et
-   * cacher le span rendrait des boutons vides. */
-  .sidebar-group { display: none !important; }
-
-  .sidebar-divider { display: none !important; }
-  .sidebar-spacer { display: none !important; }
-
-  .sidebar-mode-btn {
-    margin: 0 !important;
-    padding: 8px 12px !important;
-    min-width: 44px;
-    min-height: 44px;
-    flex-shrink: 0;
-    flex-direction: column;
-  }
 
   .main-content {
     padding: 16px !important;
@@ -4158,6 +4176,119 @@ button:focus-visible {
   }
 
   .mem-modal-actions { flex-wrap: wrap; }
+
+  /* ── Les listes deviennent des cartes empilées ──────────────────
+   *
+   * Une grille de quatre colonnes sur 390 px donne quatre colonnes de 90 px :
+   * un pseudo y tient sur trois lignes et les chiffres se touchent. Chaque
+   * ligne passe donc en carte, avec sa cible tactile et son chevron.
+   */
+  .liste-ligne,
+  .pers-ligne,
+  .auto-ligne,
+  .mod-ligne {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px !important;
+    padding: 14px !important;
+    min-height: 44px;
+  }
+
+  /* L'identité prend toute la largeur ; les chiffres se rangent dessous, en
+   * ligne. En grille de quatre colonnes sur 390 px, un pseudo tient sur trois
+   * lignes et les valeurs se touchent. */
+  .pers-qui,
+  .auto-ligne > div:first-child,
+  .mod-usage { flex: 1 0 100%; }
+
+  /* Les en-têtes de colonnes n'ont plus de colonnes à nommer. */
+  .liste-tete { display: none !important; }
+
+  /* La deuxième moitié de la ligne se range à droite, en petit. */
+  .pers-trust, .pers-love, .pers-apex,
+  .auto-quand, .auto-qui,
+  .mod-modele, .mod-nb, .mod-cout {
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .pastille { justify-self: auto; }
+
+  .pers-avatar { width: 38px; height: 38px; font-size: 15px; }
+
+  /* Un chevron dit que la ligne s'ouvre. Au bureau, le survol le disait. */
+  .pers-ligne::after {
+    content: '›';
+    margin-left: auto;
+    color: var(--text-faint);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* ── Rien ne doit déborder en largeur ──────────────────────────
+   * Une page qui glisse de côté au doigt est une page qu'on ne lit pas. */
+  .control-bar {
+    height: auto !important;
+    flex-wrap: wrap;
+    gap: 8px !important;
+    padding: 10px 14px !important;
+    margin: 0 -16px !important;
+  }
+  .control-bar-spacer { display: none; }
+  .control-bar-build { flex: 1 0 100%; order: 9; }
+
+  /* Un segmented plus large que l'écran se fait défiler, il ne se coupe pas. */
+  .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .segmented::-webkit-scrollbar { display: none; }
+
+  .champ-recherche { min-width: 0 !important; }
+  .auto-barre, .journal-filtres { gap: 8px !important; }
+
+  .cockpit-colonnes { grid-template-columns: 1fr !important; }
+  .cockpit-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
+  .fiche-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
+  .cnx-cartes { grid-template-columns: 1fr !important; }
+  .galerie { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important; }
+
+  .page-title { font-size: 20px !important; }
+  .fiche-onglets { gap: 14px !important; }
+  .fiche-tete { gap: 12px !important; }
+
+  /* Le flux du journal occupe ce qui reste, barre du bas déduite. */
+  .log-stream {
+    height: calc(100vh - 300px) !important;
+    min-height: 200px;
+  }
+
+  /* ── La scène est en LECTURE SEULE au doigt ─────────────────────
+   *
+   * Placer un widget au pixel demande une souris : au doigt, on déplacerait
+   * ce qu'on voulait seulement regarder, en direct, sur ce que voient les
+   * viewers. On garde l'aperçu et les interrupteurs, on retire la prise.
+   */
+  #tab-admin-scene::before {
+    content: 'Le placement se règle au bureau. Ici, on regarde.';
+    display: block;
+    background: rgba(255, 176, 32, 0.07);
+    border: 1px solid rgba(255, 176, 32, 0.28);
+    color: var(--warning-text);
+    border-radius: 9px;
+    padding: 11px 13px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  #tab-admin-scene .overlay-canvas,
+  #tab-admin-scene canvas,
+  #tab-admin-scene [data-cadre] {
+    pointer-events: none !important;
+  }
 }
 
 @media (max-width: 480px) {

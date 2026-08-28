@@ -88,7 +88,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 7 | ✅ Mémoire commune | `routes/memory.py`, `app.js`, `style.css`, `smoke_front.py`, tests | ✅ 13 sujets et leur OPINION enfin visibles ; plus un seul sous-onglet dans le panel |
 | 8 | ✅ Cockpit + API décisions | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ 11 décisions rassemblées, chacune ouvre sa page DÉJÀ filtrée |
 | 9 | Scène & overlays — chrome seule | `overlay_admin.js`, `app.js` | Canevas, liste et inspecteur intacts |
-| 10 | Mobile + responsive | `style.css`, `index.html`, `app.js` | Barre du bas, scène en lecture seule |
+| 10 | ✅ Mobile + responsive | `style.css`, `index.html`, `app.js`, `smoke_front.py` | ✅ barre du bas à 4 destinations, listes en cartes, scène en lecture seule, zéro débordement |
 
 ## Écarts assumés par rapport à la maquette
 
@@ -136,10 +136,12 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   pas de compteur.
 - **La tuile « Rang Apex » affiche le compte lié, pas un rang.** Le rang exige
   un appel à l'API Apex, qu'un endpoint de panneau n'a pas à faire.
-- **Sous 1100 px, le sommaire passe AU-DESSUS du titre**, pas sous le
-  sous-titre. Même DOM, bascule purement CSS : dupliquer les ancres dans un
-  second nœud, c'est deux rendus à tenir en phase pour une seule source de
-  vérité. À revoir en phase 10 avec le reste du mobile.
+- **Sous 1100 px, le sommaire d'ancres DISPARAÎT** au lieu de passer en rangée
+  de puces sous le sous-titre. Remonté avec `order: -1`, il se retrouvait
+  au-dessus du titre — avant même qu'on sache de quelle page il s'agit ; et le
+  descendre sous le contenu donne un sommaire qu'on atteint après avoir tout
+  lu. Un sommaire d'ancres est une commodité de GRAND écran. La rangée de puces
+  qui compte sur mobile est celle des PAGES du thème, qui remplace la sidebar.
 
 ## Pièges connus de la zone
 

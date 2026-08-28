@@ -207,10 +207,72 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_live_et_connexions(page, rap, erreurs)
     _verifier_memoire_commune(page, rap, erreurs)
     _verifier_cockpit(page, rap, erreurs)
+    _verifier_mobile(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
+    """390 px de large : la sidebar disparaît, la barre du bas prend le relais.
+
+    Le mobile est le seul endroit du panel qu'on ne regarde jamais en
+    travaillant — c'est donc celui qui peut mourir le plus longtemps sans que
+    personne le voie.
+    """
+    print("\n── Mobile (390 px) ──")
+    del erreurs[:]
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.locator('.barre-bas-item[data-theme="cerveau"]').click()
+    page.wait_for_timeout(2000)
+
+    rap.dire(page.locator("#sidebar").is_hidden(),
+             "la sidebar disparaît sous 780 px")
+    rap.dire(page.locator("#barre-bas").is_visible(),
+             "la barre du bas prend le relais")
+
+    dest = page.locator(".barre-bas-item").count()
+    rap.dire(dest == 4, "quatre destinations, pas onze", f"{dest}")
+
+    # Les puces sont DÉRIVÉES de la sidebar : une seconde liste écrite à la
+    # main divergerait au premier ajout, et personne ne le verrait puisqu'elle
+    # ne s'affiche que sur mobile.
+    puces = page.locator("#theme-puces .theme-puce").all_inner_texts()
+    rap.dire(puces == ["Personnes", "Mémoire commune", "Personnalité",
+                       "Modèles & coûts"],
+             "les pages du thème sont en puces", " · ".join(puces))
+
+    actif = page.locator(".barre-bas-item.active").get_attribute("data-theme")
+    rap.dire(actif == "cerveau", "la destination courante est allumée", str(actif))
+
+    # Cible tactile : jamais moins de 44 px de haut, sinon on vise à côté.
+    trop_petit = page.evaluate(
+        "Array.from(document.querySelectorAll('.barre-bas-item, #theme-puces a'))"
+        ".filter(e => e.getBoundingClientRect().height < 30).length")
+    rap.dire(trop_petit == 0, "les cibles tactiles sont assez hautes",
+             f"{trop_petit} trop petite(s)")
+
+    # Rien ne doit déborder horizontalement : une page qui glisse de côté sur
+    # mobile est une page qu'on ne peut pas lire.
+    page.locator('.barre-bas-item[data-theme="cockpit"]').click()
+    page.wait_for_timeout(1800)
+    # `documentElement.scrollWidth` ne voit RIEN : la colonne de contenu a son
+    # propre `overflow`, et c'est elle qui glisse. Il faut mesurer chaque
+    # conteneur défilable, sur plusieurs pages — le débordement vient d'un
+    # segmented ou d'une barre d'outils, pas de la coquille.
+    for route in ("cerveau/personnes", "systeme/journal", "live/automatisations",
+                  "cockpit"):
+        page.evaluate(f"location.hash = '#/{route}'")
+        page.wait_for_timeout(1500)
+        large = page.evaluate(
+            "(() => {const m = document.querySelector('.main-content');"
+            "return m ? m.scrollWidth - m.clientWidth : 0;})()")
+        rap.dire(large <= 1, f"{route} ne déborde pas en largeur",
+                 f"{large} px de trop")
+
+    rap.dire(not erreurs, "aucune erreur JS en mobile", " · ".join(erreurs[:2]))
+    page.set_viewport_size({"width": 1600, "height": 1000})
 
 
 def _verifier_cockpit(page, rap: Rapport, erreurs: list[str]) -> None:

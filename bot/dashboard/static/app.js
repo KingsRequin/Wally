@@ -386,6 +386,17 @@ const ROUTES_LEGACY = {
 
 // La route affichée. `null` tant que rien n'est monté, pour que le premier
 // rendu passe la garde d'égalité de `_surChangementDeHash`.
+/** Le thème d'une route : le premier segment, sauf le cockpit qui est seul.
+ *
+ *  Sert à la barre du bas mobile (quatre destinations, pas onze) et à la
+ *  rangée de puces qui remplace la sidebar sous 780 px.
+ */
+function themeDe(route) {
+  if (!route) return '';
+  const i = route.indexOf('/');
+  return i === -1 ? route : route.slice(0, i);
+}
+
 let currentRoute = null;
 // Le paramètre de la route courante — l'identité, sur une fiche personne.
 let currentParam = '';
@@ -435,6 +446,8 @@ function _appliquerRoute(route, param) {
   });
   const pane = document.getElementById('tab-' + def.pane);
   if (pane) pane.classList.add('active');
+
+  _majNavigationMobile(surligne);
 
   const tete = document.getElementById('page-head');
   const titre = document.getElementById('page-title');
@@ -530,6 +543,53 @@ function poserSommaire(route, sections, encartHtml) {
   _majAncreActive();
 }
 
+/** La barre du bas et la rangée de puces, pour le mobile.
+ *
+ *  Les puces sont DÉRIVÉES de la sidebar : elle porte déjà l'ordre et les
+ *  libellés des onze pages. Les réécrire ici en donnerait une seconde liste,
+ *  qui divergerait au premier ajout — et personne ne le verrait, puisqu'elle
+ *  ne s'affiche que sous 780 px.
+ */
+function _majNavigationMobile(route) {
+  const theme = themeDe(route);
+
+  document.querySelectorAll('.barre-bas-item').forEach(function (a) {
+    a.classList.toggle('active', a.dataset.theme === theme);
+  });
+
+  const puces = document.getElementById('theme-puces');
+  if (!puces) return;
+  const voisines = Array.from(document.querySelectorAll('.sidebar-item'))
+    .filter(function (a) { return themeDe(a.dataset.route) === theme; });
+  // Une seule page dans le thème (le cockpit) : pas de rangée à afficher.
+  puces.innerHTML = voisines.length > 1
+    ? voisines.map(function (a) {
+        const r = a.dataset.route;
+        return '<a class="theme-puce' + (r === route ? ' active' : '')
+          + '" href="#/' + escAttr(r) + '">'
+          + escHtml((a.querySelector('span') || a).textContent.trim()) + '</a>';
+      }).join('')
+    : '';
+}
+
+/** La pastille d'alerte de « Système » sur la barre du bas.
+ *
+ *  Elle ne s'affiche QUE sur une mesure : absente, elle ne veut pas dire « zéro
+ *  erreur », elle veut dire « pas encore mesuré ». D'où l'appel unique au
+ *  démarrage, pour qu'elle soit juste dès la première seconde.
+ */
+function majBadgeSysteme(n) {
+  const el = document.getElementById('badge-systeme');
+  if (!el) return;
+  el.hidden = !n;
+}
+
+async function chargerBadgeSysteme() {
+  const r = await apiFetch('/api/admin/decisions?max_items=1');
+  if (!r || !r.ok) return;
+  majBadgeSysteme((await r.json()).erreurs_du_jour);
+}
+
 function viderSommaire() {
   const rail = document.getElementById('page-rail');
   if (!rail) return;
@@ -592,6 +652,7 @@ function enterAdmin() {
   // perdues au démarrage — et ça, quelle que soit la page d'arrivée.
   _construireJournal();
   startLogSSE();
+  chargerBadgeSysteme();
   routerVersHash();
 }
 
@@ -2108,6 +2169,7 @@ async function chargerCockpit() {
     + _cockpitTuile('Overlay', d.overlay_visible, 'visible', 'masqué',
                     'ce que voient les viewers')
     + _cockpitTuileErreurs(d.erreurs_du_jour);
+  majBadgeSysteme(d.erreurs_du_jour);
 
   _rendreDecisions(decisions, d);
   await chargerEmotions();
