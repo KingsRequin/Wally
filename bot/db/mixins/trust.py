@@ -90,11 +90,11 @@ class TrustMixin:
 
     async def get_love_score(self, platform: str, user_id: str, decay_lambda: float = 0.1) -> float:
         """Retourne le love score avec lazy decay applique."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT love, love_updated_at FROM trust_scores WHERE user_id=? AND platform=?",
             (user_id, platform),
-        )
-        row = await cursor.fetchone()
+        ) as cursor:
+            row = await cursor.fetchone()
         if not row or row["love"] is None:
             return 0.0
         love = float(row["love"])

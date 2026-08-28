@@ -31,7 +31,7 @@ from bot.discord.voice.brain import (
 from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import resolve_style
-from bot.discord.voice.sink import WallyAudioSink
+from bot.discord.voice.sink import _MAX_FRAMES_PAR_SECONDE, WallyAudioSink
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
 
 
@@ -1114,7 +1114,7 @@ class VoiceService:
                 if loop.time() < prochain_pouls:
                     continue
                 prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
-                frames, enonces, par_locuteur = sink.pouls()
+                frames, enonces, par_locuteur, jetees = sink.pouls()
                 transcriptions = self._transcriptions_abouties
                 self._transcriptions_abouties = 0
                 # Des énoncés découpés mais aucun transcrit : Wally est sourd, et
@@ -1123,8 +1123,23 @@ class VoiceService:
                 # Rien reçu ET rien produit : personne ne parlait. On se tait —
                 # une ligne par minute de silence, toute la nuit, ferait de ce
                 # relevé un bruit qu'on apprend à ne plus lire.
-                if not frames and not enonces:
+                if not frames and not enonces and not jetees:
                     continue
+
+                # Un locuteur au-delà de son débit physique n'est pas un
+                # bavard : c'est un flux qui s'emballe. Le dire nommément, et
+                # tout de suite — c'est resté vingt minutes invisible le
+                # 2026-08-28, le temps de saturer le CPU et de faire échouer
+                # toutes les écritures en base.
+                if jetees:
+                    pire = max(jetees.items(), key=lambda kv: kv[1])
+                    logger.warning(
+                        "voice: DÉBIT ANORMAL — {n} frame(s) jetée(s) sur {d:.0f} s, "
+                        "surtout {qui} ({p}). Au-delà de {max}/s ce n'est plus de "
+                        "la voix : on jette pour ne pas saturer le CPU.",
+                        n=sum(jetees.values()), d=self._POULS_INTERVALLE_S,
+                        qui=self._nom_locuteur(pire[0]), p=pire[1],
+                        max=_MAX_FRAMES_PAR_SECONDE)
                 # Le DÉTAIL par locuteur, parce que le total ne dit pas d'où
                 # vient le flot : un premier relevé a montré soixante et une
                 # fois le temps réel en audio reçu, ce qu'aucun nombre de

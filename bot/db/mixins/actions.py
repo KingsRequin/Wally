@@ -33,7 +33,7 @@ class ActionMixin:
         updated_at: str,
         next_run_at: str | None,
     ) -> int:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             """INSERT INTO action_tasks
                (action_type, description, creator_id, creator_platform,
                 target_channel, target_platform, payload,
@@ -46,9 +46,9 @@ class ActionMixin:
                 schedule_type, schedule_spec, max_executions,
                 status, created_at, updated_at, next_run_at,
             ),
-        )
-        await self._conn.commit()
-        return cursor.lastrowid
+        ) as cursor:
+            await self._conn.commit()
+            return cursor.lastrowid
 
     async def get_action_task(self, task_id: int) -> dict | None:
         return await self.fetch_one(

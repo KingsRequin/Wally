@@ -17,6 +17,24 @@ from bot.discord.voice.audio import FRAME_BYTES, VadSegmenter, to_stt_format
 # marge, pour 9,6 ko par locuteur.
 _PREROLL_FRAMES = 15
 
+# Le plafond de frames acceptées PAR LOCUTEUR et par seconde.
+#
+# Une frame vaut 20 ms : un locuteur Discord en produit physiquement 50 par
+# seconde, pas une de plus. Le plafond est à quatre fois ce maximum, pour
+# absorber une rafale de rattrapage réseau sans jamais couper de la parole
+# réelle.
+#
+# Vécu le 2026-08-28, en plein live : UN locuteur a délivré 8 261 secondes
+# d'audio en soixante — 137 fois le maximum physique — pendant vingt minutes,
+# sans qu'un seul énoncé en sorte transcrit. Le décodage de ce flot a saturé le
+# CPU du conteneur à 100 %, le thread SQLite a cessé d'être ordonnancé, et
+# toutes les écritures ont commencé à échouer sur `database is locked` : kills
+# Apex non historisés, coûts LLM non facturés, état émotionnel non sauvegardé.
+# Une panne de vocal avait emporté la mémoire et la facturation.
+#
+# Au-delà du plafond, ce n'est plus de la voix : on jette, et on le DIT.
+_MAX_FRAMES_PAR_SECONDE = 200
+
 
 class WallyAudioSink(voice_recv.AudioSink):
     """Reçoit le PCM par locuteur, segmente par VAD, déclenche un callback async par segment.
@@ -73,6 +91,11 @@ class WallyAudioSink(voice_recv.AudioSink):
         # l'attaque, et si l'on est en train de relayer.
         self._preroll: dict[int, deque] = {}
         self._relaye: dict[int, bool] = {}
+        # Le limiteur par locuteur : début de la fenêtre d'une seconde, frames
+        # acceptées dedans, et frames jetées depuis le dernier relevé.
+        self._fenetre_debut: dict[int, float] = {}
+        self._fenetre_frames: dict[int, int] = {}
+        self._frames_jetees: dict[int, int] = {}
 
     def _frames_a_relayer(self, uid: int, frame: bytes, en_parole: bool) -> tuple:
         """Ce qui part au STT distant pour cette frame — souvent rien.
@@ -98,13 +121,35 @@ class WallyAudioSink(voice_recv.AudioSink):
         anneau.clear()
         return debut + (frame,)
 
-    def pouls(self) -> tuple[int, int, dict[int, int]]:
-        """(frames reçues, énoncés clos, frames par locuteur) puis remise à zéro."""
+    def _depasse_le_plafond(self, uid: int) -> bool:
+        """Ce locuteur a-t-il dépassé son débit physique sur la seconde en cours ?
+
+        Appelé sous `self._lock`, une fois par frame. La fenêtre est glissante
+        par pas d'une seconde : simple, et sans état à purger.
+        """
+        maintenant = self._now()
+        debut = self._fenetre_debut.get(uid)
+        if debut is None or maintenant - debut >= 1.0:
+            self._fenetre_debut[uid] = maintenant
+            self._fenetre_frames[uid] = 0
+        if self._fenetre_frames[uid] >= _MAX_FRAMES_PAR_SECONDE:
+            self._frames_jetees[uid] = self._frames_jetees.get(uid, 0) + 1
+            return True
+        self._fenetre_frames[uid] += 1
+        return False
+
+    def pouls(self) -> tuple[int, int, dict[int, int], dict[int, int]]:
+        """(frames reçues, énoncés clos, frames par locuteur, frames jetées).
+
+        Les frames JETÉES comptent autant que les autres : un flot qu'on écarte
+        en silence est un flot qu'on ne diagnostique jamais.
+        """
         with self._lock:
             valeurs = (self._frames_recues, self._segments_emis,
-                       dict(self._frames_par_locuteur))
+                       dict(self._frames_par_locuteur), dict(self._frames_jetees))
             self._frames_recues = self._segments_emis = 0
             self._frames_par_locuteur.clear()
+            self._frames_jetees.clear()
         return valeurs
 
     def wants_opus(self) -> bool:
@@ -134,6 +179,8 @@ class WallyAudioSink(voice_recv.AudioSink):
                 while len(buf) >= FRAME_BYTES:
                     frame = bytes(buf[:FRAME_BYTES])
                     del buf[:FRAME_BYTES]
+                    if self._depasse_le_plafond(user.id):
+                        continue
                     self._frames_recues += 1
                     self._frames_par_locuteur[user.id] = (
                         self._frames_par_locuteur.get(user.id, 0) + 1)

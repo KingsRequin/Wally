@@ -39,11 +39,11 @@ class GalleryMixin:
         )
 
     async def delete_gallery_image(self, image_id: str) -> bool:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "DELETE FROM gallery_images WHERE id = ?", (image_id,)
-        )
-        await self._conn.commit()
-        return cursor.rowcount > 0
+        ) as cursor:
+            await self._conn.commit()
+            return cursor.rowcount > 0
 
     async def get_gallery_images(
         self,
@@ -80,47 +80,47 @@ class GalleryMixin:
             f"ORDER BY {order} "
             "LIMIT ? OFFSET ?"
         )
-        cursor = await self._conn.execute(sql, params)
-        rows = await cursor.fetchall()
-        cols = [d[0] for d in cursor.description]
-        return [dict(zip(cols, row)) for row in rows]
+        async with self._conn.execute(sql, params) as cursor:
+            rows = await cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+            return [dict(zip(cols, row)) for row in rows]
 
     async def get_gallery_image(self, image_id: str) -> dict | None:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT gi.*, COALESCE(v.votes, 0) AS votes "
             "FROM gallery_images gi "
             "LEFT JOIN (SELECT image_id, COUNT(*) AS votes FROM gallery_votes GROUP BY image_id) v "
             "  ON v.image_id = gi.id "
             "WHERE gi.id = ?",
             (image_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cursor.description]
-        return dict(zip(cols, row))
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+            return dict(zip(cols, row))
 
     async def toggle_gallery_vote(self, image_id: str, user_id: str) -> bool:
         """Toggle a vote. Returns True if the vote was added, False if removed."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT 1 FROM gallery_votes WHERE image_id = ? AND user_id = ?",
             (image_id, user_id),
-        )
-        exists = await cursor.fetchone()
-        if exists:
-            await self._conn.execute(
-                "DELETE FROM gallery_votes WHERE image_id = ? AND user_id = ?",
-                (image_id, user_id),
-            )
-            await self._conn.commit()
-            return False
-        else:
-            await self._conn.execute(
-                "INSERT INTO gallery_votes (image_id, user_id) VALUES (?, ?)",
-                (image_id, user_id),
-            )
-            await self._conn.commit()
-            return True
+        ) as cursor:
+            exists = await cursor.fetchone()
+            if exists:
+                await self._conn.execute(
+                    "DELETE FROM gallery_votes WHERE image_id = ? AND user_id = ?",
+                    (image_id, user_id),
+                )
+                await self._conn.commit()
+                return False
+            else:
+                await self._conn.execute(
+                    "INSERT INTO gallery_votes (image_id, user_id) VALUES (?, ?)",
+                    (image_id, user_id),
+                )
+                await self._conn.commit()
+                return True
 
     async def update_gallery_title(self, image_id: str, title: str) -> None:
         await self.execute(
@@ -129,7 +129,7 @@ class GalleryMixin:
         )
 
     async def get_user_image_count_today(self, user_id: str) -> int:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT COUNT(*) FROM gallery_images "
             # `'localtime'` des DEUX côtés : SQLite écrit `datetime('now')` en
             # UTC quoi qu'il arrive, alors que l'app vit en Europe/Paris. Sans
@@ -137,9 +137,9 @@ class GalleryMixin:
             # matin heure française, en plein milieu d'un live du soir.
             "WHERE user_id = ? AND date(created_at, 'localtime') = date('now', 'localtime')",
             (user_id,),
-        )
-        row = await cursor.fetchone()
-        return int(row[0]) if row else 0
+        ) as cursor:
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
 
     async def get_last_image_ts(self, user_id: str) -> float | None:
         """Epoch de la dernière image générée par cet auteur, ou None.
@@ -153,22 +153,22 @@ class GalleryMixin:
         `strftime('%s', ...)` rend l'epoch sans conversion de fuseau — pas de
         `'localtime'` ici, contrairement aux comptages du JOUR juste au-dessus.
         """
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT strftime('%s', created_at) FROM gallery_images "
             "WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
             (user_id,),
-        )
-        row = await cursor.fetchone()
-        if not row or row[0] is None:
-            return None
-        return float(row[0])
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row or row[0] is None:
+                return None
+            return float(row[0])
 
     async def get_total_image_count_today(self) -> int:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT COUNT(*) FROM gallery_images "
             "WHERE date(created_at, 'localtime') = date('now', 'localtime')"
-        )
-        row = await cursor.fetchone()
+        ) as cursor:
+            row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
     async def get_random_gallery_image(self, filter_mode: str = "all") -> dict | None:
@@ -216,16 +216,16 @@ class GalleryMixin:
                 "ORDER BY RANDOM() LIMIT 1"
             )
             params = ()
-        cursor = await self._conn.execute(sql, params)
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cursor.description]
-        return dict(zip(cols, row))
+        async with self._conn.execute(sql, params) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+            return dict(zip(cols, row))
 
     async def get_gallery_images_for_date(self, date_str: str) -> list[dict]:
         """Return all gallery images created on the given date (YYYY-MM-DD)."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT gi.*, COALESCE(v.votes, 0) AS votes "
             "FROM gallery_images gi "
             "LEFT JOIN (SELECT image_id, COUNT(*) AS votes FROM gallery_votes GROUP BY image_id) v "
@@ -236,14 +236,14 @@ class GalleryMixin:
             "WHERE date(gi.created_at, 'localtime') = ? "
             "ORDER BY gi.created_at ASC",
             (date_str,),
-        )
-        rows = await cursor.fetchall()
-        cols = [d[0] for d in cursor.description]
-        return [dict(zip(cols, row)) for row in rows]
+        ) as cursor:
+            rows = await cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+            return [dict(zip(cols, row)) for row in rows]
 
     async def has_voted(self, image_id: str, user_id: str) -> bool:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT 1 FROM gallery_votes WHERE image_id = ? AND user_id = ?",
             (image_id, user_id),
-        )
-        return (await cursor.fetchone()) is not None
+        ) as cursor:
+            return (await cursor.fetchone()) is not None

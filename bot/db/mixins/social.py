@@ -34,12 +34,12 @@ class SocialMixin:
     async def start_twitch_visit(self, channel: str) -> int:
         """Demarre une visite sur une chaine invitee. Retourne l'id de la ligne."""
         now = time.time()
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "INSERT INTO twitch_visits (channel, joined_at) VALUES (?, ?)",
             (channel, now),
-        )
-        await self._conn.commit()
-        return cursor.lastrowid
+        ) as cursor:
+            await self._conn.commit()
+            return cursor.lastrowid
 
     async def visites_ouvertes(self) -> list[dict]:
         """Les visites jamais refermées (`left_at IS NULL`).
@@ -108,12 +108,12 @@ class SocialMixin:
 
     async def get_last_interaction(self, user_id: str) -> float | None:
         """Retourne le timestamp de la derniere interaction d'un utilisateur, ou None."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT last_updated FROM memory_users WHERE user_id = ?",
             (user_id,),
-        )
-        row = await cursor.fetchone()
-        return float(row["last_updated"]) if row else None
+        ) as cursor:
+            row = await cursor.fetchone()
+            return float(row["last_updated"]) if row else None
 
     async def insert_joke(self, content: str, channel_id: str, platform: str, reaction_count: int) -> None:
         """Stocke une blague reussie."""
@@ -124,11 +124,11 @@ class SocialMixin:
 
     async def get_recent_jokes(self, channel_id: str, limit: int = 3) -> list[str]:
         """Retourne les dernieres blagues reussies du canal."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT content FROM jokes WHERE channel_id=? ORDER BY created_at DESC LIMIT ?",
             (channel_id, limit),
-        )
-        rows = await cursor.fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
         return [row["content"] for row in rows]
 
     # ── Topics ────────────────────────────────────────────────────────────────────
@@ -138,39 +138,39 @@ class SocialMixin:
     ) -> None:
         """Insere un sujet ou le fusionne (participants unionnés, mention_count++)."""
         now = time.time()
-        cur = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT id, participants FROM topics WHERE name=?", (name,)
-        )
-        row = await cur.fetchone()
-        if row is None:
+        ) as cur:
+            row = await cur.fetchone()
+            if row is None:
+                await self.execute(
+                    "INSERT INTO topics (name, summary, participants, opinion, "
+                    "mention_count, last_seen_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                    (name, expurger(summary), json.dumps(participants, ensure_ascii=False),
+                     expurger(opinion), 1, now, now),
+                )
+                return
+            existing = json.loads(row["participants"] or "[]")
+            merged: dict[str, dict] = {}
+            for p in existing + participants:
+                key = p.get("uid") or p.get("name")
+                if key:
+                    merged[key] = p
             await self.execute(
-                "INSERT INTO topics (name, summary, participants, opinion, "
-                "mention_count, last_seen_at, created_at) VALUES (?,?,?,?,?,?,?)",
-                (name, expurger(summary), json.dumps(participants, ensure_ascii=False),
-                 expurger(opinion), 1, now, now),
+                "UPDATE topics SET summary=?, participants=?, opinion=?, "
+                "mention_count=mention_count+1, last_seen_at=? WHERE id=?",
+                (expurger(summary), json.dumps(list(merged.values()), ensure_ascii=False),
+                 expurger(opinion), now, row["id"]),
             )
-            return
-        existing = json.loads(row["participants"] or "[]")
-        merged: dict[str, dict] = {}
-        for p in existing + participants:
-            key = p.get("uid") or p.get("name")
-            if key:
-                merged[key] = p
-        await self.execute(
-            "UPDATE topics SET summary=?, participants=?, opinion=?, "
-            "mention_count=mention_count+1, last_seen_at=? WHERE id=?",
-            (expurger(summary), json.dumps(list(merged.values()), ensure_ascii=False),
-             expurger(opinion), now, row["id"]),
-        )
 
     async def get_topics(self, limit: int = 10) -> list[dict]:
         """Sujets les plus chauds d'abord (récence puis fréquence)."""
-        cur = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT name, summary, participants, opinion, mention_count, last_seen_at "
             "FROM topics ORDER BY last_seen_at DESC, mention_count DESC LIMIT ?",
             (limit,),
-        )
-        rows = await cur.fetchall()
+        ) as cur:
+            rows = await cur.fetchall()
         return [
             {
                 "name": r["name"],

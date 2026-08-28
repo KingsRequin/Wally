@@ -90,7 +90,7 @@ class MemoryMixin:
         # clause restait vraie pour toujours passé les 3 tentatives : la
         # question revenait tous les jours, sans fin. Mesuré : 44 questions de
         # plus de 30 jours, réinjectées au prompt chaque nuit.
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT * FROM memory_questions"
             " WHERE user_id = ? AND resolved = 0"
             "   AND attempts < ?"
@@ -100,16 +100,16 @@ class MemoryMixin:
             "   created_at ASC"
             " LIMIT 1",
             (user_id, max_attempts, retry_cutoff),
-        )
-        row = await cursor.fetchone()
-        return dict(row) if row else None
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
     async def get_all_pending_questions(self, user_id: str) -> list[dict]:
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT * FROM memory_questions WHERE user_id = ? AND resolved = 0",
             (user_id,),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
 
     async def increment_question_attempts(self, question_id: int) -> None:
         await self.execute(
@@ -145,11 +145,11 @@ class MemoryMixin:
         de 30 jours) et repassaient au prompt chaque nuit.
         """
         cutoff = time.time() - max_age_days * 86400
-        cur = await self._conn.execute(
+        async with self._conn.execute(
             "DELETE FROM memory_questions WHERE created_at < ?", (cutoff,)
-        )
-        await self._conn.commit()
-        return cur.rowcount or 0
+        ) as cur:
+            await self._conn.commit()
+            return cur.rowcount or 0
 
     async def delete_memory_user(self, user_id: str) -> None:
         """Supprime un utilisateur de memory_users (apres fusion de comptes)."""
@@ -256,11 +256,12 @@ class MemoryMixin:
         )
         if status:
             query = f"{base} WHERE l.status = ? ORDER BY l.confidence DESC"
-            cursor = await self._conn.execute(query, (status,))
+            params: tuple = (status,)
         else:
             query = f"{base} ORDER BY l.confidence DESC"
-            cursor = await self._conn.execute(query)
-        rows = await cursor.fetchall()
+            params = ()
+        async with self._conn.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
         return [
             {
                 "id": r[0],
@@ -287,25 +288,25 @@ class MemoryMixin:
             "LEFT JOIN memory_users ma ON ma.user_id = l.alias_id "
             "WHERE l.id = ?"
         )
-        cursor = await self._conn.execute(base, (link_id,))
-        r = await cursor.fetchone()
-        if r is None:
-            return None
-        return {
-            "id": r[0], "canonical_id": r[1], "alias_id": r[2],
-            "confidence": r[3], "status": r[4], "created_at": r[5],
-            "resolved_at": r[6], "canonical_username": r[7], "alias_username": r[8],
-        }
+        async with self._conn.execute(base, (link_id,)) as cursor:
+            r = await cursor.fetchone()
+            if r is None:
+                return None
+            return {
+                "id": r[0], "canonical_id": r[1], "alias_id": r[2],
+                "confidence": r[3], "status": r[4], "created_at": r[5],
+                "resolved_at": r[6], "canonical_username": r[7], "alias_username": r[8],
+            }
 
     async def accept_link(self, link_id: int) -> dict | None:
         """Marque la liaison comme acceptee, retourne canonical_id et alias_id."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "UPDATE user_links SET status='accepted', resolved_at=? WHERE id=? RETURNING canonical_id, alias_id",
             (time.time(), link_id),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
-        return {"canonical_id": row[0], "alias_id": row[1]} if row else None
+        ) as cursor:
+            row = await cursor.fetchone()
+            await self._conn.commit()
+            return {"canonical_id": row[0], "alias_id": row[1]} if row else None
 
     async def reject_link(self, link_id: int) -> None:
         """Marque la liaison comme rejetee."""
@@ -317,22 +318,22 @@ class MemoryMixin:
 
     async def get_alias_map(self) -> dict[str, str]:
         """Retourne {alias_id: canonical_id} pour toutes les liaisons acceptees."""
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT alias_id, canonical_id FROM user_links WHERE status='accepted'"
-        )
-        rows = await cursor.fetchall()
-        return {r[0]: r[1] for r in rows}
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {r[0]: r[1] for r in rows}
 
     async def get_platform_users(self, platform: str) -> list[dict]:
         """Retourne les utilisateurs d'une plateforme depuis memory_users.
 
         Chaque dict contient 'raw_id' (sans prefixe) et 'username' (peut etre None).
         """
-        cursor = await self._conn.execute(
+        async with self._conn.execute(
             "SELECT user_id, username FROM memory_users WHERE platform = ?",
             (platform,),
-        )
-        rows = await cursor.fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
         return [
             {
                 "raw_id": r[0].split(":", 1)[1] if ":" in r[0] else r[0],

@@ -131,25 +131,63 @@ async def test_une_purge_en_echec_ne_bloque_pas_le_reste_du_menage():
 
 
 class _Conn:
-    """Enveloppe async minimale autour d'une connexion sqlite3 synchrone."""
+    """Enveloppe async minimale autour d'une connexion sqlite3 synchrone.
+
+    `execute()` rend un objet À LA FOIS attendable et gestionnaire de contexte
+    asynchrone — c'est le contrat d'`aiosqlite.Connection.execute`, et le code
+    de production s'appuie sur les deux. Le double ne portait que la moitié
+    attendable : il acceptait donc du code qui FUITE (curseur jamais fermé,
+    statement jamais finalisé, transaction de lecture qui reste ouverte) et
+    refusait le code correct. Un double incomplet valide le mauvais usage.
+    """
 
     def __init__(self, conn):
         self._c = conn
 
-    async def execute(self, sql, params=()):
-        return _Cur(self._c.execute(sql, params))
+    def execute(self, sql, params=()):
+        return _AttenteCurseur(self._c, sql, params)
 
     async def commit(self):
         self._c.commit()
+
+
+class _AttenteCurseur:
+    """`await conn.execute(...)` et `async with conn.execute(...)`, comme aiosqlite."""
+
+    def __init__(self, conn, sql, params):
+        self._conn, self._sql, self._params = conn, sql, params
+        self._cur = None
+
+    def _ouvrir(self):
+        if self._cur is None:
+            self._cur = _Cur(self._conn.execute(self._sql, self._params))
+        return self._cur
+
+    def __await__(self):
+        async def _fait():
+            return self._ouvrir()
+        return _fait().__await__()
+
+    async def __aenter__(self):
+        return self._ouvrir()
+
+    async def __aexit__(self, *exc):
+        if self._cur is not None:
+            self._cur.close()
+        return False
 
 
 class _Cur:
     def __init__(self, cur):
         self._cur = cur
         self.rowcount = cur.rowcount
+        self.lastrowid = cur.lastrowid
 
     async def fetchone(self):
         return self._cur.fetchone()
 
     async def fetchall(self):
         return self._cur.fetchall()
+
+    def close(self):
+        self._cur.close()
