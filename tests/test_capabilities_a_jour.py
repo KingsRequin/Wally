@@ -37,6 +37,10 @@ def fiche() -> str:
     ("forcer une humeur", ("émotions", "rendus")),
     # §11 — déjà présent, et il doit le rester.
     ("parler en vocal sur demande d'un modo", ("voix haute", "vocal")),
+    # Le shoutout natif : la carte cliquable, pas une phrase qui cite la chaîne.
+    # Sa cadence est imposée par Twitch, pas par nous — sa fiche doit le dire,
+    # sinon il promet un shoutout que l'API vient de refuser.
+    ("shoutout Twitch officiel", ("shoutout", "deux minutes")),
 ])
 def test_chaque_capacite_livree_figure_dans_sa_fiche(fiche, capacite, indices):
     manquants = [i for i in indices if i not in fiche]

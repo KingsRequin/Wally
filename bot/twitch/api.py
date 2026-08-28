@@ -155,6 +155,12 @@ class TwitchAPI:
     REDEMPTIONS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards/redemptions"
     REWARDS_URL = "https://api.twitch.tv/helix/channel_points/custom_rewards"
     PREDICTIONS_URL = "https://api.twitch.tv/helix/predictions"
+    ANNOUNCEMENTS_URL = "https://api.twitch.tv/helix/chat/announcements"
+    SHOUTOUTS_URL = "https://api.twitch.tv/helix/chat/shoutouts"
+    ANNOUNCE_MAX_CHARS = 500
+    # Les seules valeurs acceptées, en MINUSCULES. Ni « red », ni « DEFAULT » :
+    # l'absence de couleur se dit « primary », qui rend l'accent de la chaîne.
+    ANNOUNCE_COLORS = ("blue", "green", "orange", "purple")
 
     def __init__(
         self,
@@ -245,6 +251,102 @@ class TwitchAPI:
         except Exception as exc:
             logger.error("Twitch send_message error: {e!r}", e=exc)
         return False
+
+    async def _poster_204(
+        self, url: str, params: dict, *, quoi: str, corps: Optional[dict] = None,
+    ) -> int:
+        """POST un geste de modération : rend le statut HTTP, 0 si rien n'est parti.
+
+        L'annonce et le shoutout répondent **204 sans corps** — il n'y a donc
+        rien à relire pour savoir si c'est passé, contrairement à
+        `POST /helix/chat/messages` où le refus est DANS le corps d'un 200.
+        Appeler `.json()` ici lèverait sur le cas nominal.
+
+        Un 401 vaut un refresh et un second essai, comme partout. Les autres
+        statuts remontent tels quels : c'est à l'appelant de savoir si un 429
+        est une panne (annonce) ou une information à rendre au chat (shoutout).
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.post(
+                        url, params=params, json=corps,
+                        headers={
+                            "Authorization": f"Bearer {self._tm.bot_token}",
+                            "Client-Id": self._client_id,
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        logger.warning(
+                            "Twitch {q} 401 — refresh du token bot puis nouvel essai",
+                            q=quoi,
+                        )
+                        if not await self._tm.refresh("bot"):
+                            logger.error("Refresh du token bot échoué, {q} abandonné", q=quoi)
+                            return 401
+                        continue
+                    if resp.status_code >= 400:
+                        logger.warning(
+                            "Twitch a refusé le {q} : HTTP {s}", q=quoi, s=resp.status_code,
+                        )
+                    return resp.status_code
+        except Exception as exc:
+            logger.error("Twitch {q} en échec : {e!r}", q=quoi, e=exc)
+        return 0
+
+    async def send_announcement(
+        self, text: str, color: str = "", broadcaster_id: Optional[str] = None,
+    ) -> bool:
+        """POST /helix/chat/announcements — le message sur fond coloré.
+
+        Scope `moderator:manage:announcements`, et le compte bot doit être
+        modérateur de la chaîne. `broadcaster_id` et `moderator_id` sont des
+        paramètres d'URL : les poser dans le corps rend un 400 qui se plaint
+        d'un identifiant manquant alors qu'il a bien été fourni.
+        """
+        target = broadcaster_id or self._broadcaster_id
+        # Même filet que `send_message` : une annonce est la sortie la PLUS
+        # visible du chat, c'est la dernière où laisser filer un mot en jeu.
+        message = redact(text)[:self.ANNOUNCE_MAX_CHARS]
+        statut = await self._poster_204(
+            self.ANNOUNCEMENTS_URL,
+            {"broadcaster_id": target, "moderator_id": self._bot_id},
+            quoi="annonce",
+            # Une couleur inconnue vaut un 400, donc pas d'annonce du tout :
+            # on retombe sur l'accent de la chaîne plutôt que de tout perdre.
+            corps={"message": message,
+                   "color": color if color in self.ANNOUNCE_COLORS else "primary"},
+        )
+        return statut == 204
+
+    async def send_shoutout(self, to_broadcaster_id: str) -> str:
+        """POST /helix/chat/shoutouts — la carte cliquable de la chaîne visée.
+
+        Rend `""` quand c'est publié, sinon le motif à donner au chat : le
+        cooldown natif de Twitch est une INFORMATION, pas une panne, et le
+        distinguer d'une erreur évite d'annoncer un shoutout qui n'a pas eu lieu.
+        """
+        statut = await self._poster_204(
+            self.SHOUTOUTS_URL,
+            {"from_broadcaster_id": self._broadcaster_id,
+             "to_broadcaster_id": to_broadcaster_id,
+             "moderator_id": self._bot_id},
+            quoi="shoutout",
+        )
+        if statut == 204:
+            return ""
+        # Twitch impose les deux cadences lui-même — rien à concevoir pour s'en
+        # protéger, mais tout à dire quand elles mordent. Pas de nouvel essai :
+        # réémettre dans la seconde ne peut que rater à nouveau.
+        if statut == 429:
+            return ("Twitch impose 2 minutes entre deux shoutouts, et 60 minutes "
+                    "avant de refaire le même — c'est trop tôt.")
+        if statut in (401, 403):
+            return "je ne suis pas modérateur de la chaîne, je ne peux pas faire de shoutout."
+        if statut == 400:
+            return "cette chaîne n'existe pas, ou c'est la nôtre."
+        return "le shoutout n'est pas parti, Twitch n'a pas répondu."
 
     async def get_broadcaster_id(self, login: str) -> Optional[str]:
         """GET /helix/users?login={login}. Retourne l'ID ou None si introuvable.

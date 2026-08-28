@@ -772,6 +772,15 @@ class OverlayNarrator:
         self._bingo: Optional[dict] = None
         # Références fortes des rangements en cours (cf. `_planifier_flush`).
         self._flush_tasks: set = set()
+        # Sortie CHAT des fins de partie — une coroutine `(genre, fait)`, câblée
+        # depuis `main.py`. Même patron que `DuelRunner`, qui ne connaît de sa
+        # sortie qu'une coroutine `annoncer(evenement)` : le narrateur calcule
+        # le résultat, quelqu'un d'autre décide comment il se publie. Sans ce
+        # hook — tests, mode hors ligne — les parties se terminent comme avant.
+        # Posé APRÈS coup par `set_annonceur_fin`, comme `stream_feed.set_observer` :
+        # le narrateur naît côté Discord, l'annonceur a besoin du bot Twitch, qui
+        # n'existe qu'après.
+        self._annoncer_fin: Optional[Callable] = None
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
@@ -950,6 +959,31 @@ class OverlayNarrator:
                                      json.dumps(self._live_state_snapshot()))
         except Exception as exc:  # noqa: BLE001 — un état non rangé n'est pas fatal
             logger.debug("Overlay: parties en cours non rangées: {e!r}", e=exc)
+
+    def set_annonceur_fin(self, hook: Optional[Callable]) -> None:
+        """Branche la sortie CHAT des fins de partie — `(genre, fait)`, async."""
+        self._annoncer_fin = hook
+
+    def _annoncer(self, genre: str, fait: str) -> None:
+        """Pousse une fin de partie vers le chat, sans attendre.
+
+        Les fins de partie sont détectées dans du code SYNCHRONE — un vote
+        compté, une lettre proposée — alors que publier est asynchrone. Même
+        référence forte que `_planifier_flush` : la boucle ne garde qu'une
+        référence faible, et une tâche collectée en vol perdrait l'annonce.
+        """
+        if self._annoncer_fin is None or not fait:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return          # hors boucle (appel synchrone en test) : rien à publier
+        taches = getattr(self, "_flush_tasks", None)
+        if taches is None:
+            taches = self._flush_tasks = set()
+        tache = loop.create_task(self._annoncer_fin(genre, fait))
+        taches.add(tache)
+        tache.add_done_callback(taches.discard)
 
     def _planifier_flush(self) -> None:
         """Range l'état sans attendre : les mutations de partie sont synchrones.
@@ -2998,6 +3032,8 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=True)
             logger.info("Overlay: pendu gagné d'un coup par le chat ({w})",
                         w=game["display"])
+            self._annoncer("pendu", f"{author} a trouvé le mot du pendu du "
+                                    f"premier coup : « {game['display']} ».")
             self._hangman = None
             self._planifier_flush()
             return
@@ -3016,6 +3052,8 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=won)
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
+                self._annoncer("pendu", f"{author} a complété le mot du pendu : "
+                                        f"« {game['display']} ».")
                 self._hangman = None
             # Chaque coup compte : reprendre la partie au redémarrage sans les
             # lettres déjà trouvées la ferait recommencer sous les yeux du chat.
@@ -3028,6 +3066,11 @@ class OverlayNarrator:
         self._publish_hangman(last=token, lost=lost)
         if lost:
             logger.info("Overlay: pendu perdu ({w})", w=game["display"])
+            # Perdu, le mot n'est plus un secret — c'est même tout l'intérêt de
+            # l'annonce : le chat apprend enfin ce qu'il cherchait. Le filet de
+            # sortie a été levé juste au-dessus, il ne le masquera pas.
+            self._annoncer("pendu", "Personne n'a trouvé le mot du pendu : "
+                                    f"c'était « {game['display']} ».")
             self._hangman = None
         self._planifier_flush()
 
@@ -3190,6 +3233,9 @@ class OverlayNarrator:
             except Exception as exc:  # noqa: BLE001 — jamais bloquant
                 logger.debug("Overlay: résultat du sondage non consigné: {e!r}", e=exc)
         logger.info("Overlay: sondage clos — {r}", r=self.poll_result_line())
+        # Le dépouillement mourait à l'écran : sans ça, seul qui regardait
+        # l'overlay à la bonne seconde apprenait le résultat.
+        self._annoncer("sondage", self.poll_result_line())
         # Le résultat est ce que Wally répondra à « ça a donné quoi ? » : il doit
         # survivre au rebuild autant que le sondage lui-même.
         self._planifier_flush()

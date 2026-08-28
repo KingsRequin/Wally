@@ -47,6 +47,11 @@ _TWITCH_SEULEMENT: dict[str, str] = {
     # n'a aucune part lisible depuis Discord : l'offrir là-bas ne rendrait
     # qu'un refus systématique.
     "open_prediction": "engage les points de chaîne, autorisation par badge Twitch",
+    # La carte du shoutout s'affiche dans le CHAT TWITCH, et Twitch la refuse
+    # hors direct. Un salon Discord n'a donc ni le public qui la verrait, ni le
+    # moment où elle est possible. L'unique demande relevée (`so @…`) venait du
+    # chat Twitch, pendant un live.
+    "shoutout": "la carte s'affiche dans le chat Twitch, et seulement en live",
 }
 
 

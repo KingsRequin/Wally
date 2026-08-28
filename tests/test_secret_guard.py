@@ -92,6 +92,10 @@ def _narrator():
     n._feed = MagicMock()
     n._live = lambda: True
     n._hangman = None
+    # Sortie chat des fins de partie : ce narrateur-ci saute `__init__`, il faut
+    # donc lui poser à la main ce dont la fin de partie se sert. Ici on ne teste
+    # que le filet du mot secret — personne à prévenir.
+    n._annoncer_fin = None
     return n
 
 

@@ -39,6 +39,7 @@ from bot.discord.handlers import (
 )
 from bot.core.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.core.music_tool import MUSIC_TOOL, run_music_tool
+from bot.core.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
 from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
 
@@ -533,6 +534,14 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # chez un invité ferait répondre à côté de la chaîne où on est.
     if overlay and getattr(bot, "twitch_api", None) is not None:
         tools.append(_LAST_CLIP_TOOL)
+    # Le shoutout natif, chaîne MAISON et EN LIVE seulement. Twitch le refuse
+    # hors direct — l'offrir alors mènerait au cul-de-sac déjà payé sur Apex :
+    # un outil qui ne peut que refuser. `is_active()` porte déjà cette question,
+    # mode test compris.
+    _narrateur_so = _overlay_narrator(bot) if overlay else None
+    if _narrateur_so is not None and _narrateur_so.is_active() \
+            and getattr(bot, "twitch_api", None) is not None:
+        tools.append(SHOUTOUT_TOOL)
     # Le duel suit le runner et non l'overlay : annuler ou remettre les
     # compteurs à zéro reste possible sans écran, et `score` sait rendre les
     # chiffres en texte. Mais jamais depuis une chaîne INVITÉE — le duel
@@ -750,6 +759,8 @@ def make_tool_executor(
         if name == "follow_date":
             return await run_follow_tool(bot, args, platform=platform,
                                          user_id=user_id, author=author)
+        if name == "shoutout":
+            return await run_shoutout_tool(bot, args)
         if name == "predict":
             return await run_predict_tool(bot, args)
         if name in ("start_counting", "stop_counting", "list_counters"):

@@ -13,7 +13,13 @@ router = APIRouter()
 _TWITCH_TOKEN_URL  = "https://id.twitch.tv/oauth2/token"
 _TWITCH_USERS_URL  = "https://api.twitch.tv/helix/users"
 _BOT_SCOPES        = ("user:read:chat user:write:chat user:bot moderator:read:followers "
-                      "chat:read chat:edit user:read:emotes")
+                      "chat:read chat:edit user:read:emotes "
+                      "moderator:manage:announcements moderator:manage:shoutouts")
+# `moderator:manage:announcements` et `moderator:manage:shoutouts` (2026-08-28) :
+# l'annonce sur fond coloré et la carte cliquable d'une chaîne. Les deux exigent
+# EN PLUS que le compte bot soit modérateur de la chaîne — un scope ne suffit
+# pas, Twitch rend 401 sinon. Le token EN SERVICE ne les porte pas : il faut
+# refaire l'autorisation du compte bot depuis le dashboard.
 # `user:read:emotes` : sans lui, `/helix/chat/emotes/user` rend 401 et Wally
 # n'a jamais accès aux emotes de la chaîne, même le jour où on lui offre un
 # abonnement. Le token EN SERVICE ne le porte pas — il faut refaire

@@ -143,11 +143,14 @@ async def twitch_auth_url(request: Request, token: str, body: dict) -> dict:
     client_id = body.get("client_id", "")
     redirect_uri = f"{base_url}/api/setup/{token}/twitch/callback"
 
-    if account_type == "bot":
-        scope = "user:read:chat user:write:chat user:bot moderator:read:followers chat:read chat:edit"
-    else:
-        from bot.dashboard.routes.twitch_auth import _STREAMER_SCOPES
-        scope = _STREAMER_SCOPES
+    # Les DEUX listes viennent de `twitch_auth`. Recopiée à la main, celle du
+    # bot avait déjà décroché : il lui manquait `user:read:emotes`, ajouté le
+    # 2026-08-13 dans l'autre fichier. Un token émis par ce wizard était donc
+    # amputé d'une capacité, sans un mot dans les logs — et l'asymétrie avec la
+    # branche streamer, qui importait déjà sa constante, ne sautait aux yeux de
+    # personne.
+    from bot.dashboard.routes.twitch_auth import _BOT_SCOPES, _STREAMER_SCOPES
+    scope = _BOT_SCOPES if account_type == "bot" else _STREAMER_SCOPES
 
     # Nonce à usage unique. Le `state` ne portait que le jeton de l'URL — or en
     # mode preview ce jeton est la constante publique `__preview__` : n'importe
