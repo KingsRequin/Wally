@@ -5817,9 +5817,9 @@ async function renderAtelierSons() {
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-          <button class="btn" onclick="essayerSon('${_escHtml(s.commande)}')">▶ Écouter</button>
-          <button class="btn" onclick="enregistrerSon('${_escHtml(s.commande)}')">Enregistrer</button>
-          <button class="btn" onclick="supprimerSon('${_escHtml(s.commande)}')">Supprimer</button>
+          <button class="btn" data-son-action="essai">▶ Écouter</button>
+          <button class="btn" data-son-action="enregistrer">Enregistrer</button>
+          <button class="btn" data-son-action="supprimer">Supprimer</button>
         </div>
       </div>`;
   }).join('');
@@ -5844,6 +5844,35 @@ async function renderAtelierSons() {
     <div class="muted" style="margin-top:10px;font-size:12px">
       ${_octetsLisibles(data.max_octets || 0)} par fichier au maximum.
     </div>`;
+
+  _cablerAtelierSons(box);
+}
+
+/** Les boutons de chaque ligne, câblés par DÉLÉGATION.
+ *
+ *  Surtout pas d'`onclick="...('${nom}')"` : `_escHtml` n'échappe PAS
+ *  l'apostrophe, et le nom vient d'un nom de FICHIER. Un `x');alert(1);a.mp3`
+ *  déposé dans le dossier — par le panneau ou à la main — s'exécuterait au
+ *  rendu. Ici le nom ne traverse jamais un contexte JavaScript : il vit dans un
+ *  attribut `data-`, lu comme une chaîne.
+ *
+ *  Un seul écouteur pour toutes les lignes, posé une fois : `renderAtelierSons`
+ *  réécrit `innerHTML` à chaque geste, et en reposer un par rendu les empilerait
+ *  jusqu'à jouer un son trois fois pour un clic.
+ */
+function _cablerAtelierSons(box) {
+  if (box.dataset.cable) return;
+  box.dataset.cable = '1';
+  box.addEventListener('click', function (ev) {
+    const bouton = ev.target.closest('[data-son-action]');
+    if (!bouton) return;
+    const ligne = bouton.closest('.son-ligne');
+    if (!ligne) return;
+    const commande = ligne.dataset.commande;
+    if (bouton.dataset.sonAction === 'essai') essayerSon(commande);
+    else if (bouton.dataset.sonAction === 'enregistrer') enregistrerSon(ligne, commande);
+    else if (bouton.dataset.sonAction === 'supprimer') supprimerSon(commande);
+  });
 }
 
 function _etatAtelier(texte) {
@@ -5851,8 +5880,10 @@ function _etatAtelier(texte) {
   if (el) el.textContent = texte;
 }
 
-function _champsSon(commande) {
-  const ligne = document.querySelector('.son-ligne[data-commande="' + commande + '"]');
+/** Lit les trois champs d'une ligne. On reçoit l'ÉLÉMENT, pas un nom : le
+ *  construire en sélecteur CSS reposerait le même problème d'échappement que
+ *  les `onclick` — un nom de fichier portant un guillemet casserait la requête. */
+function _champsSon(ligne) {
   if (!ligne) return null;
   const lire = (c) => ligne.querySelector('[data-champ="' + c + '"]');
   return {
@@ -5864,8 +5895,8 @@ function _champsSon(commande) {
   };
 }
 
-async function enregistrerSon(commande) {
-  const valeurs = _champsSon(commande);
+async function enregistrerSon(ligne, commande) {
+  const valeurs = _champsSon(ligne);
   if (!valeurs) return;
   _etatAtelier('Enregistrement…');
   const r = await apiFetch('/api/admin/overlay/sons/' + encodeURIComponent(commande), {
@@ -5873,8 +5904,11 @@ async function enregistrerSon(commande) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(valeurs),
   });
+  // Le rendu D'ABORD, le message ENSUITE : `renderAtelierSons` réécrit tout le
+  // panneau, y compris la ligne d'état. Dans l'autre ordre, cliquer « Enregistrer »
+  // ne renvoyait rien du tout à l'écran.
+  if (r && r.ok) await renderAtelierSons();
   _etatAtelier(r && r.ok ? '!' + commande + ' enregistré.' : 'Échec de l\'enregistrement.');
-  if (r && r.ok) renderAtelierSons();
 }
 
 async function essayerSon(commande) {
@@ -5890,8 +5924,8 @@ async function supprimerSon(commande) {
   _etatAtelier('Suppression…');
   const r = await apiFetch('/api/admin/overlay/sons/' + encodeURIComponent(commande),
                            { method: 'DELETE' });
+  await renderAtelierSons();
   _etatAtelier(r && r.ok ? '!' + commande + ' supprimé.' : 'Échec de la suppression.');
-  renderAtelierSons();
 }
 
 async function deposerSon() {
@@ -5906,8 +5940,8 @@ async function deposerSon() {
     headers: { 'Content-Type': 'application/octet-stream' },
     body: fichier,
   });
+  await renderAtelierSons();
   if (r && r.ok) {
-    input.value = '';
     _etatAtelier(fichier.name + ' déposé.');
   } else {
     // Le serveur DIT pourquoi (extension, taille) : le relayer vaut mieux
@@ -5919,7 +5953,6 @@ async function deposerSon() {
     catch (e) { /* corps illisible */ }
     _etatAtelier('Refusé' + (raison ? ' — ' + raison : '.'));
   }
-  renderAtelierSons();
 }
 
 async function normaliserSons() {
@@ -5928,6 +5961,6 @@ async function normaliserSons() {
   if (!r || !r.ok) { _etatAtelier('Égalisation impossible.'); return; }
   const d = await r.json();
   const n = (d.normalises || []).length, e = (d.echecs || []).length;
+  await renderAtelierSons();
   _etatAtelier(n + ' son(s) égalisé(s)' + (e ? ', ' + e + ' échec(s).' : '.'));
-  renderAtelierSons();
 }

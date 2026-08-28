@@ -173,3 +173,44 @@ async def test_lessai_passe_outre_le_cooldown(atelier):
     await essayer_son_commande("apero", _Req(state))
     await essayer_son_commande("apero", _Req(state))
     assert file.qsize() == 2
+
+
+# ── Le nom d'un son ne traverse jamais un contexte JavaScript ────────────────
+
+def test_aucun_onclick_ninterpole_un_nom_de_son():
+    """`_escHtml` n'échappe PAS l'apostrophe, et la commande vient d'un FICHIER.
+
+    Un `x');alert(1);a.mp3` déposé dans le dossier — par le panneau ou à la
+    main — s'exécuterait au rendu si son nom atterrissait dans un `onclick`.
+    Les boutons de l'atelier passent donc par `data-son-action` et un écouteur
+    délégué : le nom vit dans un attribut `data-`, lu comme une chaîne.
+    """
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1]
+          / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
+    atelier = js[js.index("// ── Atelier des sons de commande"):]
+    for interdit in ("onclick=\"essayerSon(", "onclick=\"enregistrerSon(",
+                     "onclick=\"supprimerSon("):
+        assert interdit not in atelier, f"{interdit} remet un nom de fichier dans du JS"
+    assert 'data-son-action="essai"' in atelier
+    assert "closest('[data-son-action]')" in atelier
+
+
+def test_letat_est_pose_APRES_le_rendu():
+    """`renderAtelierSons` réécrit tout le panneau, ligne d'état comprise.
+
+    Posé avant le rendu, le message était effacé dans la foulée : cliquer
+    « Enregistrer » ne renvoyait rien du tout à l'écran. Vu en navigateur, pas
+    en test — d'où ce garde-fou textuel.
+    """
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1]
+          / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
+    atelier = js[js.index("// ── Atelier des sons de commande"):]
+    for geste in ("enregistrerSon", "supprimerSon", "deposerSon", "normaliserSons"):
+        corps = atelier[atelier.index("async function " + geste):]
+        corps = corps[:corps.index("\n}\n")]
+        if "renderAtelierSons" not in corps:
+            continue
+        assert corps.index("renderAtelierSons") < corps.rindex("_etatAtelier"), (
+            f"{geste} pose son message avant de re-rendre : il sera effacé")
