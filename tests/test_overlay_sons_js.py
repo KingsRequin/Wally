@@ -73,7 +73,7 @@ def test_les_sons_du_dossier_sont_decodes_une_fois_chacun():
       sortie({inv: S.inventaire(), decodes});
     """)
     assert r["inv"] == {"popup": ["ding.mp3", "erreur.wav"], "bsod": ["impact.mp3"],
-                        "raid": ["fanfare.mp3"]}
+                        "raid": ["fanfare.mp3"], "commande": []}
     assert r["decodes"] == 4
 
 
@@ -103,11 +103,11 @@ def test_deux_chargements_simultanes_ne_doublent_pas_le_tirage():
 def test_un_son_retire_du_dossier_cesse_de_sonner():
     r = _node("""
       await S.charger();
-      inventaireServeur = {popup: ["ding.mp3"], bsod: [], raid: []};
+      inventaireServeur = {popup: ["ding.mp3"], bsod: [], raid: [], commande: []};
       await S.charger();
       sortie(S.inventaire());
     """)
-    assert r == {"popup": ["ding.mp3"], "bsod": [], "raid": []}
+    assert r == {"popup": ["ding.mp3"], "bsod": [], "raid": [], "commande": []}
 
 
 def test_un_dossier_injoignable_ne_casse_rien():
@@ -119,7 +119,7 @@ def test_un_dossier_injoignable_ne_casse_rien():
       S.popup();
       sortie({inv: S.inventaire(), demarrees: demarrees.length});
     """)
-    assert r["inv"] == {"popup": [], "bsod": [], "raid": []}
+    assert r["inv"] == {"popup": [], "bsod": [], "raid": [], "commande": []}
     assert r["demarrees"] == 0
 
 
@@ -220,7 +220,8 @@ def test_sans_contexte_audio_rien_n_explose():
         """ % json.dumps(str(_STATIC / "overlay_sons.js"))],
         capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout.strip()) == {"popup": [], "bsod": [], "raid": []}
+    assert json.loads(r.stdout.strip()) == {"popup": [], "bsod": [], "raid": [],
+                                            "commande": []}
 
 
 def test_un_raid_sonne_une_fois_et_garde_sa_hauteur():

@@ -2688,6 +2688,16 @@
       // à faire est de passer au média suivant SANS attendre le tour d'après —
       // on règle sa place en le regardant.
       case "rotator":  ROTATEUR.relancer(); break;
+      // Un son demandé par le chat (`!apero`). `charger()` d'abord, pour la
+      // même raison que le spam de virus : le dossier est bind-monté et l'owner
+      // y dépose un fichier pendant le live. Ce qui est déjà décodé n'est pas
+      // retéléchargé, l'appel est donc sans frais.
+      case "son":
+        if (window.WallySons) {
+          window.WallySons.charger()
+            .then(() => window.WallySons.jouerNomme(event.nom, event.volume));
+        }
+        break;
     }
   });
 

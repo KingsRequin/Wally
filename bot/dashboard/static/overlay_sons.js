@@ -44,7 +44,10 @@
   // `raid` sonne UNE fois, quand des inconnus débarquent. Son dossier est vide
   // pour l'instant (choix de l'owner) : rien dedans, rien qui sonne, et pas une
   // erreur — c'est déjà le contrat des deux autres.
-  const GENRES = ["popup", "bsod", "raid"];
+  // `commande` : les sons que le chat déclenche par leur nom (`!apero`). Seul
+  // genre où l'on joue un fichier PRÉCIS au lieu d'un tirage — la personne qui
+  // tape `!perks` attend PERKS.mp3, pas un son du même tiroir.
+  const GENRES = ["popup", "bsod", "raid", "commande"];
 
   let ctx = null;
   let maitre = null;
@@ -165,6 +168,42 @@
     return src;
   }
 
+  /* Joue un son NOMMÉ du genre commande, à son volume propre. Rend la source.
+
+     `gain` est le multiplicateur réglé par son côté serveur : il s'empile sur
+     le gain maître au lieu de le remplacer, sinon régler un son changerait le
+     volume de tout le reste de l'overlay. */
+  function jouerNomme(nom, gain) {
+    const c = contexte();
+    if (!c) return null;
+    const trouve = (tampons.commande || []).find((s) => s.nom === nom);
+    if (!trouve) return null;
+    if (c.state === "suspended" && c.resume) {
+      try { c.resume(); } catch (e) { /* rien à faire de plus */ }
+    }
+    const src = c.createBufferSource();
+    src.buffer = trouve.buffer;
+    let sortie = maitre || c.destination;
+    // `!= null` et non un test de vérité : un volume réglé à 0 est un choix
+    // (couper un son sans le supprimer), pas une valeur absente.
+    if (gain != null && gain !== 1) {
+      const g = c.createGain();
+      g.gain.value = Math.max(0, Math.min(2, gain));
+      g.connect(sortie);
+      sortie = g;
+    }
+    src.connect(sortie);
+    src.onended = () => vivantes.delete(src);
+    vivantes.add(src);
+    try {
+      src.start();
+    } catch (e) {
+      vivantes.delete(src);
+      return null;
+    }
+    return src;
+  }
+
   /* Une fenêtre s'ouvre. */
   function popup() {
     return jouer("popup", true);
@@ -192,7 +231,7 @@
   }
 
   window.WallySons = {
-    charger, popup, bsod, raid, couperTout,
+    charger, popup, bsod, raid, couperTout, jouerNomme,
     // Pour les tests : ce que la page a réellement en mémoire, et ce qui sonne.
     inventaire: () => Object.fromEntries(
       GENRES.map((g) => [g, tampons[g].map((s) => s.nom)])),

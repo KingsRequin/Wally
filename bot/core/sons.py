@@ -14,6 +14,7 @@ qui est dans le dossier est ce qui sonne.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from bot.core.memes import _safe_name
@@ -38,7 +39,10 @@ _MEDIA_TYPES = {
 # livré vide à la demande de l'owner (2026-08-21, « configurable, pas de son
 # pour le moment ») : dossier absent ou vide, la fête est simplement muette —
 # le jour où un fichier y est déposé, il sonne sans rebuild.
-GENRES = ("popup", "bsod", "raid")
+# `commande/` est le seul genre APPELABLE par un viewer : un fichier déposé là
+# devient une commande de chat portant son propre nom (`apero.mp3` → `!apero`).
+# Rien à déclarer ailleurs, comme pour les memes — l'owner dépose, ça marche.
+GENRES = ("popup", "bsod", "raid", "commande")
 
 # Un ding, pas une bande-son. Au-delà, le décodage bloque la page du live le
 # temps du chargement — et un son de plusieurs mégaoctets sur une fenêtre qui
@@ -92,6 +96,21 @@ class SoundLibrary:
         """Tous les genres d'un coup — ce que sert la route publique."""
         return {genre: self.list(genre) for genre in GENRES}
 
+    def commandes(self) -> dict[str, str]:
+        """{nom de commande → nom de fichier} pour le genre `commande`.
+
+        Le nom de la commande EST le nom du fichier, sans extension et en
+        minuscules : `APERO.mp3` répond à `!apero`. Pas de table à tenir en
+        parallèle du dossier — une table se désynchronise, un nom de fichier
+        non.
+
+        Deux fichiers de même nom à l'extension près (`apero.mp3` et
+        `apero.wav`) : le premier dans l'ordre alphabétique gagne, et l'autre
+        est simplement inatteignable. Le cas ne mérite pas d'erreur, mais il
+        mérite de ne pas être silencieux côté panneau — d'où le tri stable.
+        """
+        return {Path(nom).stem.lower(): nom for nom in reversed(self.list("commande"))}
+
     def resolve(self, genre: str, name: str) -> Path | None:
         """Chemin d'un son servi publiquement, ou None si la demande est invalide.
 
@@ -116,3 +135,54 @@ class SoundLibrary:
         except OSError:
             return None
         return path
+
+
+# Réglages par son : le fichier vit DANS le dossier des sons, pas dans
+# `config.yaml`. Une sauvegarde du dossier emporte alors les réglages avec les
+# fichiers, et un son supprimé n'a pas à être nettoyé à deux endroits.
+_REGLAGES = "reglages.json"
+
+# Aucun cooldown par défaut (arbitrage owner du 2026-08-28) : PhantomBot en
+# imposait 120 s à tous, ce qui n'a jamais été demandé. Chaque son porte le
+# sien, réglé au cas par cas depuis le panneau.
+DEFAUTS: dict[str, float] = {"cooldown": 0.0, "volume": 1.0}
+
+
+class ReglagesSons:
+    """Cooldown et volume de chaque son de commande.
+
+    Relu à CHAQUE demande, comme le dossier lui-même : l'owner règle un volume
+    pendant le live et le son suivant doit en tenir compte, sans redémarrage.
+    Un fichier absent ou illisible rend les défauts — un réglage perdu vaut
+    mieux qu'un overlay muet.
+
+    LECTURE seule pour l'instant : le fichier s'édite à la main. L'écriture
+    arrivera avec l'écran qui l'appelle, jamais avant — un `ecrire()` sans
+    appelant est le « bouton branché sur rien » que ce dépôt s'interdit.
+    """
+
+    def __init__(self, directory: str | Path) -> None:
+        self._path = Path(directory) / "commande" / _REGLAGES
+
+    def tout(self) -> dict[str, dict[str, float]]:
+        try:
+            brut = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(brut, dict):
+            return {}
+        return {str(k).lower(): v for k, v in brut.items() if isinstance(v, dict)}
+
+    def pour(self, commande: str) -> dict[str, float]:
+        """Les réglages d'un son, défauts compris. Jamais de clé manquante."""
+        garde = dict(DEFAUTS)
+        garde.update({
+            k: float(v) for k, v in self.tout().get(commande.lower(), {}).items()
+            if k in DEFAUTS and isinstance(v, (int, float))
+        })
+        garde["cooldown"] = max(0.0, garde["cooldown"])
+        # Le volume est un MULTIPLICATEUR appliqué à la lecture. Plafonné à 2 :
+        # au-delà, Web Audio sature et le son part en grésillement, ce qui
+        # s'entend comme une panne du bot plutôt que comme un réglage.
+        garde["volume"] = min(2.0, max(0.0, garde["volume"]))
+        return garde

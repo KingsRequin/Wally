@@ -57,4 +57,17 @@ async def dispatch_command(
         await handle_code_command(bot, channel_name, author, args, badges)
         return True
 
+    # Les sons du chat, EN DERNIER : le dossier `data/sons/commande/` décide de
+    # ce qui existe, et rien n'empêche l'owner d'y déposer un `mood.mp3`. Placé
+    # ici, il ne pourra jamais éclipser une commande écrite en dur au-dessus.
+    #
+    # Chaîne MAISON uniquement, comme `!image` et `!code` : l'overlay est celui
+    # du stream d'Azraël, et un viewer d'une chaîne invitée n'a pas à y faire
+    # du bruit.
+    if (content_lower.startswith("!") and " " not in content_lower
+            and est_chaine_home(bot, channel_name)):
+        from bot.twitch.commands.sons import handle_son_command
+        if await handle_son_command(bot, content_lower[1:]):
+            return True
+
     return False
