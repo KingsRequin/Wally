@@ -733,20 +733,6 @@ async def main() -> None:
 
         stream_feed.set_observer(_narrate_stream_event)
 
-        # Les fins de partie (sondage dépouillé, pendu gagné ou perdu) partent
-        # dans le chat en ANNONCE colorée. Câblé ICI pour la même raison que le
-        # duel : il faut le bot Twitch, qui n'existe qu'à ce stade, alors que le
-        # narrateur naît côté Discord. Le narrateur calcule le résultat, cette
-        # sortie décide comment il se publie.
-        _narrateur_fin = getattr(discord_bot, "overlay_narrator", None)
-        if _narrateur_fin is not None:
-            from bot.twitch.jeu_announce import JeuAnnouncer
-
-            _annonceur_jeu = JeuAnnouncer(twitch_bot, _streamer_name.lower())
-            _narrateur_fin.set_annonceur_fin(_annonceur_jeu.annoncer)
-            logger.info("Fins de partie annoncées dans le chat de {c}",
-                        c=_streamer_name.lower())
-
         tasks.append(twitch_bot.start())
         tasks.append(stream_watcher.run())
         logger.info(

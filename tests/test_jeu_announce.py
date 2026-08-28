@@ -154,3 +154,23 @@ async def test_sans_hook_le_narrateur_tourne_comme_avant():
     for lettre in "bcdghj":
         n._count_hangman("alice", lettre)
     assert n._hangman is None
+
+
+def test_le_hook_est_pose_LA_OU_le_narrateur_naît():
+    """Le câblage doit vivre dans `discord/bot.py`, jamais dans `main.py`.
+
+    Payé en prod le 2026-08-28 : posé depuis `main.py`, où le bot Twitch EST
+    disponible, `set_annonceur_fin` n'était jamais appelé — le narrateur, lui,
+    n'y est pas encore né (il se construit dans le `setup_hook` de Discord, qui
+    tourne après le `gather`). Les tests étaient tous verts, la ligne de
+    journal n'apparaissait dans aucun log, et la fonctionnalité était morte.
+
+    L'inverse du branchement `stream_feed.set_observer` : celui-là marche parce
+    qu'il résout le narrateur À CHAQUE APPEL. Ici c'est le bot Twitch qui doit
+    être résolu tard, pas le narrateur.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parents[1] / "bot"
+    assert "set_annonceur_fin" in (racine / "discord" / "bot.py").read_text(encoding="utf-8")
+    assert "set_annonceur_fin" not in (racine / "main.py").read_text(encoding="utf-8")

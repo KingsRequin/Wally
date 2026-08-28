@@ -448,6 +448,34 @@ class WallyDiscord(commands.Bot):
                 # alors qu'il tournait encore : Wally n'en voyait plus la trace,
                 # en concluait qu'il n'en avait pas ouvert, et en relançait un.
                 await _overlay_narrator.restore_live_state()
+
+                async def _annoncer_fin_de_partie(genre: str, fait: str) -> None:
+                    """Sondage dépouillé, pendu fini : le résultat part dans le chat.
+
+                    Le bot Twitch est résolu À L'APPEL et non ici, comme
+                    `_fetch_last_clip` juste au-dessus : il n'existe pas encore
+                    quand ce narrateur naît. Poser le hook depuis `main.py`,
+                    où le bot Twitch EST disponible, ne marchait pas pour la
+                    raison symétrique — le narrateur, lui, n'y est pas encore né,
+                    et le hook n'était jamais posé. Vérifié en prod : la ligne de
+                    câblage n'apparaissait dans aucun log.
+                    """
+                    tb = getattr(self, "_twitch_bot", None)
+                    if tb is None or getattr(tb, "twitch_api", None) is None:
+                        return
+                    import os
+
+                    from bot.twitch.jeu_announce import JeuAnnouncer
+
+                    # La chaîne MAISON, nommée comme dans `main.py`. Le nom sert
+                    # à `_build_situation`, qui n'y voit une chaîne invitée que
+                    # si elle figure dans `_channel_ids` : un nom vide passerait
+                    # pour la home, mais laisserait « streamer » vide au prompt.
+                    canal = (os.getenv("TWITCH_BROADCASTER_LOGIN", "")
+                             or "Azrael_TTV").lower()
+                    await JeuAnnouncer(tb, canal).annoncer(genre, fait)
+
+                _overlay_narrator.set_annonceur_fin(_annoncer_fin_de_partie)
                 _overlay_narrator.activate()
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator
