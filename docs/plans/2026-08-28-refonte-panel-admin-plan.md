@@ -66,7 +66,7 @@ pas pour la sidebar.
 | Route | Pour | Phase |
 |---|---|---|
 | `GET /api/admin/person/{id}` | Fiche Personne agrégée : identités liées, mémoires, notes, comptes Apex, trust/love, dernières apparitions | 4 |
-| `GET /api/admin/journal/erreurs` | Lignes ERROR regroupées : message, compteur, dernière occurrence | 2 |
+| ✅ `GET /api/admin/journal/erreurs` | Lignes ERROR regroupées : message, compteur, dernière occurrence, plus le compte par niveau | 2 |
 | `GET /api/admin/decisions` | File « demande une décision » du cockpit : tâches en échec, chevauchements de scène, identités à rattacher, questions en attente — type, libellé, cible de navigation | 8 |
 
 Pas d'API de rôles (arbitrage ci-dessus). La fusion d'identités s'expose depuis
@@ -79,8 +79,8 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 
 | # | Phase | Fichiers | Vérification |
 |---|---|---|---|
-| 1 | Coquille : sidebar groupée, routage par hash, tokens de design | `index.html`, `style.css`, `app.js`, tests | Les 11 routes montent, aucune régression de contenu |
-| 2 | Journal — 3 barres d'onglets → 1 ligne de filtres, erreurs groupées | `app.js`, `routes/sse.py`, `style.css`, tests | Filtres dans l'URL, suivi auto du flux |
+| 1 | ✅ Coquille : sidebar groupée, routage par hash, tokens de design | `index.html`, `style.css`, `app.js`, `smoke_front.py`, tests | ✅ `f38843b6` — les 11 routes montent, hash juste, 14 sous-panneaux rendent |
+| 2 | ✅ Journal — 3 barres d'onglets → 1 ligne de filtres, erreurs groupées | `app.js`, `routes/sse.py`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ filtres dans l'URL et au rechargement, 15 puces dérivées, sommaire d'ancres |
 | 3 | Automatisations + sommaire d'ancres | `app.js`, `style.css`, tests | Motif « filtre au lieu d'onglet » validé |
 | 4 | API personne agrégée + Personnes + fiche | `routes/memory.py`, nouveau `routes/person.py`, `app.js`, tests | Une requête rend toute la fiche |
 | 5 | Personnalité + Modèles & coûts | `app.js`, `style.css`, tests | Prompts absorbés, sauvegarde conditionnelle |

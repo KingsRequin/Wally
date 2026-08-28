@@ -15,7 +15,7 @@
        feuille est servie à l'overlay, qui les JOUE en direct.
        Déclarée AVANT `style.css`, qui doit l'emporter. -->
   <link rel="stylesheet" href="/static/animate.min.css">
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
   <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23888888' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -117,32 +117,47 @@
       </button>
     </div>
 
-    <!-- Titre de page — écrit par le routeur, jamais à la main. -->
-    <header class="page-head" id="page-head" hidden>
-      <h1 class="page-title" id="page-title"></h1>
-      <p class="page-sub" id="page-sub"></p>
-    </header>
+    <div class="page-body">
+      <div class="page-main">
 
-    <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
-    <div class="tab-content active" id="tab-admin-parametres"></div>
+        <!-- Titre de page — écrit par le routeur, jamais à la main. -->
+        <header class="page-head" id="page-head" hidden>
+          <h1 class="page-title" id="page-title"></h1>
+          <p class="page-sub" id="page-sub"></p>
+        </header>
 
-    <!-- ADMIN MEMOIRE TAB -->
-    <div class="tab-content" id="tab-admin-memoire"></div>
+        <!-- ADMIN PARAMETRES TAB (Émotions · LLM · Images) -->
+        <div class="tab-content active" id="tab-admin-parametres"></div>
 
-    <!-- ADMIN ACTIONS TAB -->
-    <div class="tab-content" id="tab-admin-actions"></div>
+        <!-- ADMIN MEMOIRE TAB -->
+        <div class="tab-content" id="tab-admin-memoire"></div>
 
-    <!-- ADMIN PROMPTS TAB -->
-    <div class="tab-content" id="tab-admin-prompts"></div>
+        <!-- ADMIN ACTIONS TAB -->
+        <div class="tab-content" id="tab-admin-actions"></div>
 
-    <!-- ADMIN MISE EN SCENE TAB (overlay_admin.js le remplit entièrement) -->
-    <div class="tab-content" id="tab-admin-scene"></div>
+        <!-- ADMIN PROMPTS TAB -->
+        <div class="tab-content" id="tab-admin-prompts"></div>
 
-    <!-- ADMIN SYSTEME TAB (Logs · Twitch · Overlay · Instances) -->
-    <div class="tab-content" id="tab-admin-systeme"></div>
+        <!-- ADMIN MISE EN SCENE TAB (overlay_admin.js le remplit entièrement) -->
+        <div class="tab-content" id="tab-admin-scene"></div>
 
-    <!-- ADMIN VOCAL TAB (suivi/debug STT + réponses) -->
-    <div class="tab-content" id="tab-admin-voice"></div>
+        <!-- SYSTÈME › JOURNAL — page à part entière depuis la refonte : les
+             trois barres d'onglets qu'elle portait sont devenues des filtres. -->
+        <div class="tab-content" id="tab-admin-journal"></div>
+
+        <!-- ADMIN SYSTEME TAB (Connexions · Overlay) -->
+        <div class="tab-content" id="tab-admin-systeme"></div>
+
+        <!-- ADMIN VOCAL TAB (suivi/debug STT + réponses) -->
+        <div class="tab-content" id="tab-admin-voice"></div>
+
+      </div>
+
+      <!-- Sommaire d'ancres — rempli par la page qui en a un, vidé et masqué
+           par le routeur à chaque changement de route. Une page sans sommaire
+           ne doit pas hériter de celui de la précédente. -->
+      <aside class="page-rail" id="page-rail" hidden></aside>
+    </div>
 
   </main>
 </div>
@@ -165,7 +180,7 @@
 <!-- Toast Container -->
 <div id="toast-container" aria-live="assertive"></div>
 
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
 <!-- La mise en scène de l'overlay. `overlay_layout.js` d'abord : il porte les
      neuf ancrages, dont `overlay_admin.js` se sert pour placer ses rectangles. -->
 <script src="/static/overlay_layout.js?v=2"></script>

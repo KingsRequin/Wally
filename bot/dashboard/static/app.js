@@ -61,7 +61,6 @@ function _escHtml(s) {
 }
 let _twitchPendingRestart = false;
 let actionSSE   = null;
-let logFilter   = 'ALL';
 let currentEmotions = {};
 let currentMood        = {};
 let currentFatigue     = {};
@@ -69,7 +68,7 @@ let currentSecondaries = [];
 
 // ── Tab sub-navigation state ──────────────────────────────────────
 let _parametresSubTab = 'emotions';
-let _systemeSubTab    = 'logs';
+let _systemeSubTab    = 'twitch';
 
 // Panneaux dont le rendu est en cours. `panel.children.length > 0` ne suffit
 // pas : ces fonctions attendent `/api/admin/config` AVANT d'écrire, donc deux
@@ -342,7 +341,7 @@ const ROUTES = {
   'systeme/journal': {
     titre: 'Journal',
     sous: 'Ce qui se passe, en direct.',
-    pane: 'admin-systeme', sub: 'logs',
+    pane: 'admin-journal',
   },
   'systeme/connexions': {
     titre: 'Connexions',
@@ -426,6 +425,11 @@ function _appliquerRoute(route) {
 
   currentRoute = route;
 
+  // Le sommaire appartient à la page, pas à la coquille : une page sans
+  // sommaire ne doit pas hériter des ancres de la précédente, qui pointeraient
+  // vers des sections disparues.
+  viderSommaire();
+
   // Le mode « lier deux identités » est une modale sans fenêtre : il attend un
   // clic sur une AUTRE personne. Quitter l'annuaire l'abandonne, sinon le
   // prochain clic n'importe où déclencherait une fusion.
@@ -434,6 +438,7 @@ function _appliquerRoute(route) {
   _poserSousOnglet(def.pane, def.sub);
 
   if (def.pane === 'admin-parametres') renderParametresTab();
+  else if (def.pane === 'admin-journal') renderJournal();
   else if (def.pane === 'admin-systeme') renderSystemeTab();
   else if (def.pane === 'admin-memoire') renderMemoireTab();
   else if (def.pane === 'admin-prompts') renderPromptsTab();
@@ -459,6 +464,84 @@ function routerVersHash() {
 
 window.addEventListener('hashchange', routerVersHash);
 
+// ── Sommaire d'ancres ────────────────────────────────────────────────────────
+//
+// La colonne de droite d'une page longue. Générique : une page passe ses
+// sections, le sommaire les rend et suit le défilement.
+
+let _ancresCourantes = [];
+
+/** @param sections  liste de [id, libellé], dans l'ordre de la page.
+ *  @param encartHtml  HTML déjà échappé, ou '' — un fait saillant sous les ancres. */
+function poserSommaire(sections, encartHtml) {
+  const rail = document.getElementById('page-rail');
+  if (!rail) return;
+  _ancresCourantes = sections || [];
+  if (!_ancresCourantes.length) { viderSommaire(); return; }
+
+  rail.innerHTML = '<div class="rail-titre">Sur cette page</div>'
+    + '<div class="rail-ancres">'
+    + _ancresCourantes.map(function (paire) {
+        return '<a class="rail-ancre" data-ancre="' + escAttr(paire[0]) + '" href="javascript:void(0)">'
+          + escHtml(paire[1]) + '</a>';
+      }).join('')
+    + '</div>' + (encartHtml || '');
+  rail.hidden = false;
+  _majAncreActive();
+}
+
+function viderSommaire() {
+  const rail = document.getElementById('page-rail');
+  if (!rail) return;
+  _ancresCourantes = [];
+  rail.innerHTML = '';
+  rail.hidden = true;
+}
+
+/** Fait défiler la COLONNE DE CONTENU, pas la fenêtre.
+ *
+ *  `scrollIntoView` viserait le viewport : `.main-content` a son propre
+ *  `overflow-y`, et la fenêtre, elle, ne défile pas d'un pixel. Le clic
+ *  n'aurait donc aucun effet visible.
+ */
+function _allerAncre(id) {
+  const cible = document.getElementById(id);
+  const boite = document.querySelector('.main-content');
+  if (!cible || !boite) return;
+  const haut = cible.getBoundingClientRect().top
+    - boite.getBoundingClientRect().top + boite.scrollTop;
+  // 60 px : la barre du haut est collante et couvrirait le titre de section.
+  boite.scrollTo({ top: Math.max(0, haut - 60), behavior: 'smooth' });
+}
+
+function _majAncreActive() {
+  const boite = document.querySelector('.main-content');
+  const rail = document.getElementById('page-rail');
+  if (!boite || !rail || !_ancresCourantes.length) return;
+  const repere = boite.getBoundingClientRect().top + 80;
+  let actif = _ancresCourantes[0][0];
+  for (const paire of _ancresCourantes) {
+    const el = document.getElementById(paire[0]);
+    if (el && el.getBoundingClientRect().top <= repere) actif = paire[0];
+  }
+  rail.querySelectorAll('[data-ancre]').forEach(function (a) {
+    a.classList.toggle('active', a.dataset.ancre === actif);
+  });
+}
+
+// Deux écouteurs posés UNE fois, au chargement du module : les reposer à chaque
+// rendu de page les empilerait, et le défilement finirait par recalculer le
+// sommaire une fois par visite passée.
+document.addEventListener('click', function (ev) {
+  const a = ev.target.closest('#page-rail [data-ancre]');
+  if (a) _allerAncre(a.dataset.ancre);
+});
+
+window.addEventListener('load', function () {
+  const boite = document.querySelector('.main-content');
+  if (boite) boite.addEventListener('scroll', _majAncreActive, { passive: true });
+});
+
 function enterAdmin() {
   if (!getToken()) { showAuthModal(); return; }
   document.getElementById('nav-admin').style.display = 'flex';
@@ -466,8 +549,8 @@ function enterAdmin() {
   startControlBarPolling();
   // AVANT le SSE : il construit `#log-stream`, la cible dans laquelle
   // `appendLog()` écrit l'historique. Sans lui, les lignes déjà émises sont
-  // perdues au démarrage.
-  renderSystemeTab();
+  // perdues au démarrage — et ça, quelle que soit la page d'arrivée.
+  renderJournal();
   startLogSSE();
   routerVersHash();
 }
@@ -1459,92 +1542,389 @@ function stopVoiceSSE() {
   if (voiceSSE) { voiceSSE.close(); voiceSSE = null; }
 }
 
-const MAX_LOG_ENTRIES = 200;
+// ── Journal ──────────────────────────────────────────────────────────────────
+//
+// Refonte du 2026-08-28. L'écran portait TROIS barres d'onglets empilées —
+// Système › Logs › Flux — soit trois décisions avant de voir une ligne. Elles
+// deviennent une ligne de filtres, et l'état vit dans l'URL : un lien vers
+// « les erreurs eventsub » se partage et survit au rechargement.
+
+const MAX_LOG_ENTRIES = 400;
+
+const _JOURNAL_NIVEAUX = [
+  ['ALL', 'Tout'], ['INFO', 'Info'], ['WARNING', 'Warning'], ['ERROR', 'Error'],
+];
+
+// Les quatre sections de la page, dans l'ordre. Le sommaire d'ancres en dérive :
+// une section ajoutée ici apparaît dans le sommaire sans autre geste.
+const _JOURNAL_SECTIONS = [
+  ['journal-flux', 'Flux en direct'],
+  ['journal-erreurs', 'Erreurs groupées'],
+  ['journal-stats', 'Statistiques'],
+  ['journal-vider', 'Vider le journal'],
+];
+
+// L'état des filtres SURVIT au changement de page : on quitte le Journal pour
+// vérifier une tâche, on y revient, et la recherche est encore là.
+let _journalFiltres = { q: '', niveau: 'ALL', vue: 'bot', sous: [] };
+
+// Les sous-systèmes vus dans le flux. Ils ne sont pas listés en dur : une puce
+// apparaît parce qu'un module a parlé. Un module neuf est donc filtrable le
+// jour où il émet sa première ligne, sans que personne ait à l'ajouter ici.
+let _journalSousSystemes = new Set();
+
+// Le suivi automatique : on colle en bas tant que l'utilisateur n'a pas remonté.
+let _journalSuivi = true;
+
+/** Le sous-système d'une ligne, dérivé du module qui l'a émise.
+ *
+ *  `bot.twitch.events` → `twitch` · `bot.discord.voice.streaming` →
+ *  `discord.voice` · `bot.core.llm.openai_client` → `core.llm`.
+ *
+ *  On retire le dernier segment — le fichier — parce que c'est lui qui varie :
+ *  le garder ferait une puce par module, soit deux cents puces illisibles.
+ */
+function _sousSysteme(source) {
+  if (!source) return '';
+  const bouts = String(source).split('.');
+  if (bouts[0] === 'bot') bouts.shift();
+  if (bouts.length > 1) bouts.pop();
+  return bouts.join('.');
+}
+
+// ── Filtres dans l'URL ──────────────────────────────────────────────────────
+
+/** Lit les filtres depuis la partie requête du hash. */
+function _lireFiltresJournal() {
+  const brut = location.hash.replace(/^#\/?/, '');
+  const coupe = brut.indexOf('?');
+  if (coupe === -1) return false;
+  const p = new URLSearchParams(brut.slice(coupe + 1));
+  _journalFiltres = {
+    q: p.get('q') || '',
+    niveau: (p.get('niveau') || 'ALL').toUpperCase(),
+    vue: p.get('vue') === 'visiteurs' ? 'visiteurs' : 'bot',
+    sous: (p.get('sous') || '').split(',').filter(Boolean),
+  };
+  return true;
+}
+
+/** Réécrit la requête du hash sans toucher au chemin.
+ *
+ *  La route ne change pas, donc `routerVersHash` ne remonte pas la page : la
+ *  garde d'égalité du routeur est exactement ce qui rend ce geste gratuit.
+ */
+function _ecrireFiltresJournal() {
+  const p = new URLSearchParams();
+  const f = _journalFiltres;
+  if (f.q) p.set('q', f.q);
+  if (f.niveau !== 'ALL') p.set('niveau', f.niveau.toLowerCase());
+  if (f.vue !== 'bot') p.set('vue', f.vue);
+  if (f.sous.length) p.set('sous', f.sous.join(','));
+  const requete = p.toString();
+  const vise = '#/systeme/journal' + (requete ? '?' + requete : '');
+  if (location.hash !== vise) history.replaceState(null, '', vise);
+}
+
+// ── Rendu ───────────────────────────────────────────────────────────────────
+
+function renderJournal() {
+  const el = document.getElementById('tab-admin-journal');
+  if (!el) return;
+
+  if (!document.getElementById('log-stream')) {
+    el.innerHTML = `
+      <div class="journal-filtres">
+        <input type="search" class="journal-recherche" id="journal-q"
+               placeholder="Filtrer les lignes…" aria-label="Filtrer les lignes du journal">
+        <div class="segmented" id="journal-niveaux" role="group" aria-label="Niveau"></div>
+        <div class="segmented" id="journal-vues" role="group" aria-label="Source">
+          <button data-vue="bot">Bot</button>
+          <button data-vue="visiteurs">Visiteurs</button>
+        </div>
+      </div>
+      <div class="journal-puces" id="journal-puces"></div>
+      <div id="journal-flux">
+        <div class="log-stream" id="log-stream" role="log" aria-live="polite"
+             aria-label="Flux de logs"></div>
+      </div>
+      <div id="journal-visiteurs" hidden></div>
+      <div class="journal-section" id="journal-erreurs"></div>
+      <div class="journal-section" id="journal-stats"></div>
+      <div class="journal-section" id="journal-vider">
+        <div class="journal-section-titre">Vider le journal</div>
+        <div class="journal-section-sous">
+          Efface ce qui est AFFICHÉ ici. <code>app.log</code> reste intact sur le
+          disque — c'est lui la source de vérité.
+        </div>
+        <button class="btn" id="journal-vider-btn">Vider l'affichage</button>
+      </div>`;
+
+    el.querySelector('#journal-niveaux').innerHTML = _JOURNAL_NIVEAUX
+      .map(([cle, lib]) => `<button data-niveau="${cle}" class="niv-${cle}">${lib}</button>`)
+      .join('');
+
+    _cablerJournal(el);
+  }
+
+  // La requête du hash prime sur l'état mémorisé : c'est elle qu'on partage.
+  // Sans requête, on restitue les filtres d'avant et on les réécrit dans l'URL,
+  // pour que la page affiche et l'URL disent la même chose.
+  if (!_lireFiltresJournal()) _ecrireFiltresJournal();
+
+  _majCommandesJournal();
+  _rendrePucesJournal();
+  _appliquerFiltresJournal();
+  _rendreSommaireJournal();
+  chargerErreursGroupees();
+}
+
+/** Un seul écouteur par zone, posé UNE fois. Le panneau ne se reconstruit
+ *  jamais après coup — les gestes doivent donc survivre à tous les rendus de
+ *  filtre, et surtout ne pas s'empiler à chaque visite de la page. */
+function _cablerJournal(el) {
+  const q = el.querySelector('#journal-q');
+  q.addEventListener('input', function () {
+    _journalFiltres.q = q.value.trim();
+    _ecrireFiltresJournal();
+    _appliquerFiltresJournal();
+  });
+
+  el.querySelector('#journal-niveaux').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-niveau]');
+    if (!b) return;
+    _journalFiltres.niveau = b.dataset.niveau;
+    _ecrireFiltresJournal();
+    _majCommandesJournal();
+    _appliquerFiltresJournal();
+  });
+
+  el.querySelector('#journal-vues').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-vue]');
+    if (!b) return;
+    _journalFiltres.vue = b.dataset.vue;
+    _ecrireFiltresJournal();
+    _majCommandesJournal();
+    if (_journalFiltres.vue === 'visiteurs') loadVisitorsInPanel();
+  });
+
+  el.querySelector('#journal-puces').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-sous]');
+    if (!b) return;
+    const nom = b.dataset.sous;
+    const i = _journalFiltres.sous.indexOf(nom);
+    if (i === -1) _journalFiltres.sous.push(nom);
+    else _journalFiltres.sous.splice(i, 1);
+    _ecrireFiltresJournal();
+    _rendrePucesJournal();
+    _appliquerFiltresJournal();
+  });
+
+  el.querySelector('#journal-vider-btn').addEventListener('click', function () {
+    const flux = document.getElementById('log-stream');
+    if (flux) flux.innerHTML = '';
+    _journalSousSystemes = new Set();
+    _rendrePucesJournal();
+  });
+
+  // Le suivi se SUSPEND dès qu'on remonte, et se réarme en revenant en bas.
+  // Sans ça, lire une erreur de 15 h 02 est impossible dès que le bot parle :
+  // chaque ligne ramenait la vue tout en bas.
+  const flux = el.querySelector('#log-stream');
+  flux.addEventListener('scroll', function () {
+    const enBas = flux.scrollHeight - flux.scrollTop - flux.clientHeight < 24;
+    if (enBas !== _journalSuivi) {
+      _journalSuivi = enBas;
+      _majSuiviJournal();
+    }
+  });
+}
+
+function _majCommandesJournal() {
+  const el = document.getElementById('tab-admin-journal');
+  if (!el) return;
+  const q = el.querySelector('#journal-q');
+  if (q && q.value !== _journalFiltres.q) q.value = _journalFiltres.q;
+  el.querySelectorAll('[data-niveau]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.niveau === _journalFiltres.niveau);
+  });
+  el.querySelectorAll('[data-vue]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.vue === _journalFiltres.vue);
+  });
+
+  // « Visiteurs » n'est pas un autre onglet : c'est la même page, une autre
+  // source. Le flux et ses filtres de ligne n'ont alors plus d'objet.
+  const visiteurs = _journalFiltres.vue === 'visiteurs';
+  el.querySelector('#journal-flux').hidden = visiteurs;
+  el.querySelector('#journal-puces').hidden = visiteurs;
+  el.querySelector('#journal-niveaux').hidden = visiteurs;
+  el.querySelector('#journal-visiteurs').hidden = !visiteurs;
+}
+
+function _majSuiviJournal() {
+  const el = document.getElementById('journal-suivi');
+  if (!el) return;
+  el.textContent = _journalSuivi ? 'suivi automatique' : 'suivi suspendu';
+  el.classList.toggle('suspendu', !_journalSuivi);
+}
+
+function _rendrePucesJournal() {
+  const boite = document.getElementById('journal-puces');
+  if (!boite) return;
+  const noms = Array.from(_journalSousSystemes).sort();
+  boite.innerHTML = noms.map(function (n) {
+    const actif = _journalFiltres.sous.indexOf(n) !== -1;
+    return '<button class="puce' + (actif ? ' active' : '') + '" data-sous="'
+      + escAttr(n) + '" aria-pressed="' + actif + '">' + escHtml(n)
+      + (actif ? ' ✕' : '') + '</button>';
+  }).join('') + '<span class="journal-suivi" id="journal-suivi"></span>';
+  _majSuiviJournal();
+}
+
+/** Applique les trois filtres aux lignes DÉJÀ dans le DOM.
+ *
+ *  Un filtre masque, il ne redemande rien au serveur : le flux est un direct,
+ *  pas une requête. Recharger perdrait les lignes reçues entre-temps.
+ */
+function _appliquerFiltresJournal() {
+  const f = _journalFiltres;
+  const q = f.q.toLowerCase();
+  document.querySelectorAll('#log-stream .log-entry').forEach(function (e) {
+    let visible = f.niveau === 'ALL' || e.dataset.niveau === f.niveau;
+    if (visible && f.sous.length) visible = f.sous.indexOf(e.dataset.sous) !== -1;
+    if (visible && q) visible = (e.dataset.recherche || '').indexOf(q) !== -1;
+    e.classList.toggle('hidden', !visible);
+  });
+  _collerEnBasJournal();
+}
+
+function _collerEnBasJournal() {
+  const el = document.getElementById('log-stream');
+  if (el && _journalSuivi) el.scrollTop = el.scrollHeight;
+}
 
 function appendLog(entry) {
   const el = document.getElementById('log-stream');
   if (!el) return;
+
+  const sous = _sousSysteme(entry.source);
+  if (sous && !_journalSousSystemes.has(sous)) {
+    _journalSousSystemes.add(sous);
+    _rendrePucesJournal();
+  }
+
   const div = document.createElement('div');
-  div.className = `log-entry ${entry.level}`;
-  if (logFilter !== 'ALL' && entry.level !== logFilter) div.classList.add('hidden');
-  div.textContent = `[${entry.time}] ${entry.level.padEnd(7)} ${entry.message}`;
+  div.className = 'log-entry ' + entry.level;
+  div.dataset.niveau = entry.level;
+  div.dataset.sous = sous;
+  // La clé de recherche est calculée UNE fois, à l'insertion : la recalculer à
+  // chaque frappe, c'est quatre cents `toLowerCase` par caractère tapé.
+  div.dataset.recherche = ((entry.message || '') + ' ' + (entry.source || '')).toLowerCase();
+
+  const heure = document.createElement('span');
+  heure.className = 'log-heure';
+  heure.textContent = entry.time;
+  const niveau = document.createElement('span');
+  niveau.className = 'log-niveau';
+  niveau.textContent = entry.level === 'WARNING' ? 'WARN' : entry.level;
+  const message = document.createElement('span');
+  message.className = 'log-message';
+  message.textContent = entry.message;
+  div.append(heure, niveau, message);
+
+  const f = _journalFiltres;
+  let visible = f.niveau === 'ALL' || entry.level === f.niveau;
+  if (visible && f.sous.length) visible = f.sous.indexOf(sous) !== -1;
+  if (visible && f.q) visible = div.dataset.recherche.indexOf(f.q.toLowerCase()) !== -1;
+  if (!visible) div.classList.add('hidden');
+
   el.appendChild(div);
   while (el.children.length > MAX_LOG_ENTRIES) el.removeChild(el.firstChild);
-  el.scrollTop = el.scrollHeight;
+  _collerEnBasJournal();
 }
 
-function setLogFilter(level) {
-  logFilter = level;
-  document.querySelectorAll('.log-controls .btn').forEach(b => {
-    b.classList.toggle('active', b.id === `log-filter-${level}`);
-  });
-  document.querySelectorAll('.log-entry').forEach(e => {
-    e.classList.toggle('hidden', level !== 'ALL' && !e.classList.contains(level));
-  });
-}
+// ── Erreurs groupées et statistiques ────────────────────────────────────────
 
-function clearLogs() {
-  const el = document.getElementById('log-stream');
-  if (el) el.innerHTML = '';
-}
+/** Ce que le flux chronologique ne peut pas dire : combien de fois.
+ *
+ *  Quarante occurrences de la même panne défilent, on lit la dernière, et rien
+ *  n'indique que c'est la quarantième.
+ */
+async function chargerErreursGroupees() {
+  const boiteErr = document.getElementById('journal-erreurs');
+  const boiteStat = document.getElementById('journal-stats');
+  if (!boiteErr || !boiteStat) return;
 
-// ── Logs tab with sub-navigation (Flux + Visiteurs) ─────────────────────────
-
-let _logsSubTab = 'flux';
-
-function renderLogsTab() {
-  const el = document.getElementById('tab-admin-logs');
-  if (!el) return;
-
-  // Build structure once; skip if log-stream already created by _renderSystemeLogs
-  if (!el.querySelector('.mem-subnav') && !document.getElementById('log-stream')) {
-    el.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="flux" onclick="switchLogsSubTab('flux')">Flux</button>
-        <button class="mem-subnav-pill" data-subtab="visitors" onclick="switchLogsSubTab('visitors')">Visiteurs</button>
-      </div>
-      <div class="mem-subnav-content active" id="logs-sub-flux">
-        <div class="log-controls">
-          <button class="btn active" id="log-filter-ALL" onclick="setLogFilter('ALL')">TOUS</button>
-          <button class="btn" id="log-filter-INFO" onclick="setLogFilter('INFO')">INFO</button>
-          <button class="btn" id="log-filter-WARNING" onclick="setLogFilter('WARNING')">WARNING</button>
-          <button class="btn" id="log-filter-ERROR" onclick="setLogFilter('ERROR')">ERROR</button>
-          <button class="btn" onclick="clearLogs()" aria-label="Vider les logs">VIDER</button>
-        </div>
-        <div class="log-stream" id="log-stream" role="log" aria-live="polite" aria-label="Flux de logs"></div>
-      </div>
-      <div class="mem-subnav-content" id="logs-sub-visitors"></div>
-    `;
+  const r = await apiFetch('/api/admin/journal/erreurs');
+  if (!r || !r.ok) {
+    // Dire qu'on n'a pas pu lire, jamais afficher « 0 erreur » : un zéro faux
+    // est pire qu'une absence avouée.
+    boiteErr.innerHTML = '<div class="journal-section-titre">Erreurs groupées</div>'
+      + '<div class="journal-section-sous">Journal illisible pour le moment.</div>';
+    boiteStat.innerHTML = '';
+    poserSommaireJournalEncart(null);
+    return;
   }
+  const d = await r.json();
+  const groupes = d.groupes || [];
+  const niveaux = d.niveaux || {};
 
-  switchLogsSubTab(_logsSubTab);
+  boiteErr.innerHTML = '<div class="journal-section-titre">Erreurs groupées</div>'
+    + '<div class="journal-section-sous">'
+    + (groupes.length
+        ? 'Les mêmes erreurs rassemblées, la plus fréquente en premier — '
+          + escHtml(d.fichier || '')
+        : 'Aucune erreur dans ' + escHtml(d.fichier || 'le journal du jour') + '.')
+    + '</div>'
+    + groupes.map(function (g) {
+        return '<div class="journal-groupe">'
+          + '<div><div class="journal-groupe-msg">' + escHtml(g.message) + '</div>'
+          + '<div class="journal-groupe-src">' + escHtml(g.source || '—') + '</div></div>'
+          + '<div class="journal-groupe-compte">' + Number(g.fois) + ' fois'
+          + '<br>dernière ' + escHtml(g.derniere) + '</div>'
+          + '</div>';
+      }).join('');
+
+  const tuile = function (label, valeur, classe) {
+    return '<div class="journal-stat"><div class="journal-stat-label">' + label
+      + '</div><div class="journal-stat-valeur ' + (classe || '') + '">' + valeur
+      + '</div></div>';
+  };
+  boiteStat.innerHTML = '<div class="journal-section-titre">Statistiques</div>'
+    + '<div class="journal-section-sous">Sur ' + Number(d.lignes || 0)
+    + ' ligne(s) de ' + escHtml(d.fichier || 'aujourd\'hui') + '.</div>'
+    + '<div class="journal-stats">'
+    + tuile('Info', Number(niveaux.INFO || 0))
+    + tuile('Warning', Number(niveaux.WARNING || 0), 'warn')
+    + tuile('Error', Number(niveaux.ERROR || 0) + Number(niveaux.CRITICAL || 0), 'err')
+    + tuile('Sous-systèmes', _journalSousSystemes.size)
+    + '</div>';
+
+  poserSommaireJournalEncart(groupes[0] || null);
 }
 
-function switchLogsSubTab(subtab) {
-  _logsSubTab = subtab;
-  const el = document.getElementById('tab-admin-logs');
-  if (!el) return;
+// ── Sommaire d'ancres ───────────────────────────────────────────────────────
 
-  el.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
-  });
-  el.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
+let _journalEncart = null;
 
-  const panel = document.getElementById('logs-sub-' + subtab);
-  if (panel) panel.classList.add('active');
+function poserSommaireJournalEncart(groupe) {
+  _journalEncart = groupe;
+  _rendreSommaireJournal();
+}
 
-  if (subtab === 'flux') {
-    requestAnimationFrame(function() {
-      var logEl = document.getElementById('log-stream');
-      if (logEl) logEl.scrollTop = logEl.scrollHeight;
-    });
-  } else if (subtab === 'visitors') {
-    loadVisitorsInPanel();
-  }
+function _rendreSommaireJournal() {
+  const g = _journalEncart;
+  poserSommaire(_JOURNAL_SECTIONS, g
+    ? '<div class="rail-encart alerte">'
+      + '<div class="rail-encart-titre">Erreur la plus fréquente</div>'
+      + '<div class="rail-encart-ligne">' + escHtml(g.message) + '</div>'
+      + '<div class="rail-encart-meta">' + Number(g.fois) + ' fois · dernière à '
+      + escHtml(g.derniere) + '</div></div>'
+    : '');
 }
 
 async function loadVisitorsInPanel() {
-  const el = document.getElementById('logs-sub-visitors');
+  const el = document.getElementById('journal-visiteurs');
   if (!el) return;
 
   const [rc, rb] = await Promise.all([
@@ -3549,12 +3929,10 @@ function renderSystemeTab() {
   if (!el.querySelector('.mem-subnav')) {
     el.innerHTML = `
       <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="logs" onclick="switchSystemeSubTab('logs')">Logs</button>
-        <button class="mem-subnav-pill" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
+        <button class="mem-subnav-pill active" data-subtab="twitch" onclick="switchSystemeSubTab('twitch')">Twitch</button>
         <button class="mem-subnav-pill" data-subtab="overlay" onclick="switchSystemeSubTab('overlay')">Overlay</button>
       </div>
-      <div class="mem-subnav-content active" id="systeme-sub-logs"></div>
-      <div class="mem-subnav-content" id="systeme-sub-twitch"></div>
+      <div class="mem-subnav-content active" id="systeme-sub-twitch"></div>
       <div class="mem-subnav-content" id="systeme-sub-overlay"></div>
     `;
   }
@@ -3574,64 +3952,10 @@ function switchSystemeSubTab(subtab) {
   const panel = document.getElementById('systeme-sub-' + subtab);
   if (panel) panel.classList.add('active');
 
-  if (subtab === 'logs') {
-    _renderSystemeLogs(panel);
-  } else if (subtab === 'twitch') {
+  if (subtab === 'twitch') {
     _renderSystemeTwitch(panel);
   } else if (subtab === 'overlay') {
     _renderPanelOnce(panel, _renderSystemeOverlay);
-  }
-}
-
-function _renderSystemeLogs(panel) {
-  if (!panel) return;
-  if (!panel.querySelector('.mem-subnav')) {
-    // Build log sub-nav inside the systeme panel (reuse logs sub-tab structure)
-    panel.innerHTML = `
-      <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="flux" onclick="switchLogsSubTabInSysteme('flux')">Flux</button>
-        <button class="mem-subnav-pill" data-subtab="visitors" onclick="switchLogsSubTabInSysteme('visitors')">Visiteurs</button>
-      </div>
-      <div class="mem-subnav-content active" id="logs-sub-flux">
-        <div class="log-controls">
-          <button class="btn active" id="log-filter-ALL" onclick="setLogFilter('ALL')">TOUS</button>
-          <button class="btn" id="log-filter-INFO" onclick="setLogFilter('INFO')">INFO</button>
-          <button class="btn" id="log-filter-WARNING" onclick="setLogFilter('WARNING')">WARNING</button>
-          <button class="btn" id="log-filter-ERROR" onclick="setLogFilter('ERROR')">ERROR</button>
-          <button class="btn" onclick="clearLogs()" aria-label="Vider les logs">VIDER</button>
-        </div>
-        <div class="log-stream" id="log-stream" role="log" aria-live="polite" aria-label="Flux de logs"></div>
-      </div>
-      <div class="mem-subnav-content" id="logs-sub-visitors"></div>
-    `;
-  }
-  // Activate first pill
-  panel.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === _logsSubTab);
-  });
-  panel.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const logPanel = panel.querySelector('#logs-sub-' + _logsSubTab);
-  if (logPanel) logPanel.classList.add('active');
-  if (_logsSubTab === 'visitors') loadVisitorsInPanel();
-}
-
-function switchLogsSubTabInSysteme(subtab) {
-  _logsSubTab = subtab;
-  const panel = document.getElementById('systeme-sub-logs');
-  if (!panel) return;
-  panel.querySelectorAll('.mem-subnav-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.subtab === subtab);
-  });
-  panel.querySelectorAll('.mem-subnav-content').forEach(function(c) { c.classList.remove('active'); });
-  const sub = panel.querySelector('#logs-sub-' + subtab);
-  if (sub) sub.classList.add('active');
-  if (subtab === 'flux') {
-    requestAnimationFrame(function() {
-      const logEl = document.getElementById('log-stream');
-      if (logEl) logEl.scrollTop = logEl.scrollHeight;
-    });
-  } else if (subtab === 'visitors') {
-    loadVisitorsInPanel();
   }
 }
 

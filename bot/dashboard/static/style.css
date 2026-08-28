@@ -368,6 +368,148 @@ body {
   max-width: 74ch;
 }
 
+/* ── Colonne de contenu + sommaire d'ancres ───────────────────── */
+
+.page-body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.page-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Collant, et de sa propre hauteur : `align-items: flex-start` sur le parent
+ * est ce qui rend `position: sticky` effectif ici — étiré sur toute la colonne,
+ * il n'aurait nulle part où coller. */
+.page-rail {
+  width: 212px;
+  flex: none;
+  margin-left: 24px;
+  padding: 26px 18px;
+  border-left: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 48px;
+}
+
+.rail-titre {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin: 0 0 13px;
+}
+
+.rail-ancres {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 20px;
+}
+
+.rail-ancre {
+  font-size: 12.5px;
+  line-height: 1.3;
+  font-weight: 400;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.rail-ancre:hover { color: var(--text-primary); }
+
+.rail-ancre.active {
+  font-weight: 500;
+  color: var(--accent-light);
+  border-left-color: var(--accent);
+}
+
+/* Encart de bas de sommaire — un fait saillant, pas une navigation. */
+.rail-encart {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 13px;
+}
+
+.rail-encart.alerte { border-color: rgba(255, 90, 95, 0.28); }
+
+.rail-encart-titre {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin: 0 0 10px;
+}
+
+.rail-encart.alerte .rail-encart-titre { color: var(--danger-text); }
+
+.rail-encart-ligne {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c8cede;
+  margin: 0 0 5px;
+  overflow-wrap: anywhere;
+}
+
+.rail-encart-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.rail-encart + .rail-encart { margin-top: 10px; }
+
+/* Sous 1100 px le sommaire passe au-dessus, en rangée de puces. Même DOM :
+ * dupliquer les ancres dans un second nœud, c'est deux rendus à tenir en phase
+ * pour une seule source de vérité. */
+@media (max-width: 1100px) {
+  .page-body { flex-direction: column; }
+
+  .page-rail {
+    order: -1;
+    width: auto;
+    align-self: stretch;
+    margin: 0;
+    padding: 18px 0 0;
+    border-left: none;
+    position: static;
+  }
+
+  .rail-titre { display: none; }
+
+  .rail-ancres {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .rail-ancre {
+    border-left: none;
+    padding: 6px 10px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+  }
+
+  .rail-ancre.active {
+    background: var(--bg-select-2);
+    border-color: var(--accent-border);
+  }
+
+  .rail-encart { display: none; }
+}
+
 
 /* ── Cards ────────────────────────────────────────────────────── */
 
@@ -850,36 +992,244 @@ select option, .neo-select option {
 
 /* ── Logs ─────────────────────────────────────────────────────── */
 
-.log-stream {
-  background: var(--bg-canvas);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  height: calc(100vh - 240px);
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  scroll-behavior: smooth;
+/* ── Journal ──────────────────────────────────────────────────── */
+
+/* Une ligne : recherche extensible, niveau, source. Ce qui était trois barres
+ * d'onglets empilées. */
+.journal-filtres {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 11px;
+  flex-wrap: wrap;
 }
 
+.journal-recherche {
+  flex: 1;
+  min-width: 200px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-family: var(--font);
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.journal-recherche::placeholder { color: var(--text-ghost); }
+.journal-recherche:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+/* Segmented control — le motif qui remplace un onglet d'ÉTAT. */
+.segmented {
+  display: flex;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  flex: none;
+}
+
+.segmented button {
+  padding: 7px 11px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.segmented button:hover { color: var(--text-primary); }
+
+.segmented button.active {
+  background: #232b38;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Le niveau garde sa couleur même inactif : c'est ce qui permet de viser
+ * « Error » sans lire les quatre libellés. */
+.segmented button.niv-WARNING { color: var(--warning-text); }
+.segmented button.niv-ERROR { color: var(--danger-text); }
+
+.journal-puces {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 13px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.puce {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.puce:hover { border-color: var(--border-accent); }
+
+.puce.active {
+  color: var(--accent-light);
+  background: var(--bg-select-2);
+  border-color: var(--accent-border);
+}
+
+.journal-suivi {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.journal-suivi.suspendu { color: var(--warning-text); }
+
+.log-stream {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 15px;
+  height: calc(100vh - 330px);
+  min-height: 260px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+/* Trois colonnes fixes : l'heure, le niveau, le message. C'est l'alignement du
+ * niveau sur 54 px qui rend la colonne scannable. */
 .log-entry {
-  padding: 3px 6px;
-  border-radius: 4px;
-  line-height: 1.6;
+  display: flex;
+  gap: 12px;
   color: var(--text-secondary);
 }
 
-.log-entry.WARNING {
-  color: var(--warning);
-  background: rgba(210, 158, 11, 0.08);
+.log-entry .log-heure { color: var(--text-ghost); flex: none; }
+.log-entry .log-niveau { width: 54px; flex: none; color: var(--text-faint); }
+.log-entry .log-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Les lignes qui comptent DÉBORDENT du padding du conteneur, pour que leur
+ * fond teinté et leur barre de couleur touchent les bords. Sans le débord,
+ * elles ressembleraient à des cartes flottantes au milieu du flux. */
+.log-entry.WARNING,
+.log-entry.ERROR,
+.log-entry.CRITICAL {
+  margin: 0 -15px;
+  padding: 0 13px;
+  border-left: 2px solid transparent;
 }
+
+.log-entry.WARNING {
+  background: rgba(255, 176, 32, 0.06);
+  border-left-color: var(--warning);
+}
+.log-entry.WARNING .log-niveau,
+.log-entry.WARNING .log-message { color: var(--warning-text); }
+
+.log-entry.ERROR,
+.log-entry.CRITICAL {
+  background: rgba(255, 90, 95, 0.07);
+  border-left-color: var(--danger);
+}
+.log-entry.ERROR .log-niveau,
+.log-entry.ERROR .log-message,
+.log-entry.CRITICAL .log-niveau,
+.log-entry.CRITICAL .log-message { color: var(--danger-text); }
 
 .log-entry.hidden { display: none; }
 
-.log-entry.ERROR {
-  color: var(--danger);
-  background: rgba(248, 81, 73, 0.08);
+/* Sections d'ancre : le titre est la cible du sommaire. */
+.journal-section { padding-top: 26px; }
+
+.journal-section-titre {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 4px;
 }
+
+.journal-section-sous {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.journal-groupe {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  gap: 12px;
+  align-items: baseline;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--danger);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.journal-groupe-msg {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.journal-groupe-src {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.journal-groupe-compte {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.journal-stats {
+  display: flex;
+  gap: 13px;
+  flex-wrap: wrap;
+}
+
+.journal-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 16px;
+  min-width: 116px;
+}
+
+.journal-stat-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.journal-stat-valeur {
+  font-family: var(--font-mono);
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.journal-stat-valeur.warn { color: var(--warning-text); }
+.journal-stat-valeur.err { color: var(--danger-text); }
 
 .log-filters, .log-controls {
   display: flex;

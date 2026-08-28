@@ -87,8 +87,7 @@ SOUS_ONGLETS = [
         ("Dans la tête de Wally", "memoire-sub-self"),
         ("Ignorés", "memoire-sub-ignores"),
     ]),
-    ("systeme/journal", [
-        ("Logs", "systeme-sub-logs"),
+    ("systeme/connexions", [
         ("Twitch", "systeme-sub-twitch"),
         ("Overlay", "systeme-sub-overlay"),
     ]),
@@ -220,9 +219,57 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
                      f"{route} → {nom}",
                      f"{taille} car." + (" · " + erreurs[0] if erreurs else ""))
 
+    _verifier_journal(page, rap, erreurs)
+
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_journal(page, rap: Rapport, erreurs: list[str]) -> None:
+    """Le Journal est la première page vraiment REFAITE par la refonte.
+
+    Ses trois barres d'onglets sont devenues des filtres, et l'état de ces
+    filtres vit dans l'URL. Rien de tout ça n'est visible d'un test qui lit les
+    fichiers en texte : il faut cliquer, et regarder ce que le hash devient.
+    """
+    print("\n── Système › Journal ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="systeme/journal"]').click()
+    page.wait_for_timeout(1500)
+
+    lignes = page.locator("#log-stream .log-entry").count()
+    rap.dire(lignes > 0, "le flux porte des lignes", f"{lignes} ligne(s)")
+
+    # Une puce de sous-système n'est PAS listée en dur : elle apparaît parce
+    # qu'un module a parlé. Zéro puce sur un flux garni veut dire que la source
+    # des lignes s'est reperdue en route — le défaut que cette phase corrige.
+    puces = page.locator("#journal-puces .puce").count()
+    rap.dire(puces > 0, "les sous-systèmes sont dérivés des lignes", f"{puces} puce(s)")
+
+    page.locator('#journal-niveaux [data-niveau="ERROR"]').click()
+    page.wait_for_timeout(400)
+    hash_vu = page.evaluate("location.hash")
+    rap.dire("niveau=error" in hash_vu, "le filtre part dans l'URL", hash_vu)
+
+    visibles = page.locator("#log-stream .log-entry:not(.hidden)").count()
+    non_err = page.locator(
+        "#log-stream .log-entry:not(.hidden):not(.ERROR):not(.CRITICAL)").count()
+    rap.dire(non_err == 0, "le filtre ne laisse que les erreurs",
+             f"{visibles} visible(s), dont {non_err} hors ERROR")
+
+    # Rechargement à la même URL : la page doit revenir dans le même état.
+    page.reload(wait_until="networkidle")
+    page.wait_for_timeout(2000)
+    actif = page.locator("#journal-niveaux .active").inner_text().strip()
+    rap.dire(actif == "Error", "le filtre survit au rechargement", f"actif : {actif!r}")
+
+    ancres = page.locator("#page-rail .rail-ancre").count()
+    rap.dire(ancres == 4, "le sommaire d'ancres est rendu", f"{ancres} ancre(s)")
+
+    page.locator('#journal-niveaux [data-niveau="ALL"]').click()
+    page.wait_for_timeout(300)
+    rap.dire(not erreurs, "aucune erreur JS sur le Journal", " · ".join(erreurs[:2]))
 
 
 def main() -> int:

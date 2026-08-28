@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -73,6 +75,11 @@ def _log_sink(message) -> None:
         "level": record["level"].name,
         "message": record["message"],
         "time": record["time"].strftime("%H:%M:%S"),
+        # Le module émetteur — `bot.twitch.events`. Il était jeté, alors qu'il
+        # est déjà écrit dans `app.log` : le panneau Journal ne pouvait donc pas
+        # filtrer par sous-système, et l'historique relu du fichier n'avait pas
+        # la même forme que le direct. Une chaîne, rien à sérialiser.
+        "source": record["name"] or "",
     }
 
     def _pousser() -> None:
@@ -175,15 +182,45 @@ def _find_latest_log() -> Path | None:
 
 
 def _parse_log_line(line: str) -> dict | None:
-    """Parse une ligne loguru au format HH:MM:SS | LEVEL | source | message."""
+    """Parse une ligne loguru au format HH:MM:SS | LEVEL | source:ligne | message.
+
+    Rend les MÊMES champs que `_log_sink`, `source` compris : l'historique relu
+    du fichier et le direct alimentent le même panneau, et une ligne d'hier sans
+    sous-système y serait invisible à tous les filtres.
+
+    Le numéro de ligne (`bot.twitch.events:178`) est retiré : c'est le module
+    qui désigne le sous-système, le rang du `logger.info` n'y ajoute rien et
+    ferait un groupe par ligne de code.
+    """
     parts = line.split(" | ", 3)
     if len(parts) < 2:
         return None
     level = parts[1].strip()
     if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         return None
-    message = parts[3].strip() if len(parts) >= 4 else (parts[2].strip() if len(parts) == 3 else "")
-    return {"time": parts[0].strip(), "level": level, "message": message}
+    source = ""
+    if len(parts) >= 4:
+        source = parts[2].strip().rsplit(":", 1)[0]
+        message = parts[3].strip()
+    else:
+        message = parts[2].strip() if len(parts) == 3 else ""
+    return {"time": parts[0].strip(), "level": level, "message": message, "source": source}
+
+
+# Ce qui VARIE d'une occurrence à l'autre d'une même erreur : un identifiant, un
+# horodatage, un pseudo entre guillemets. Le neutraliser fait tomber les
+# variantes dans le même groupe. Volontairement conservateur — sur-grouper
+# fusionnerait deux pannes distinctes et en cacherait une.
+_JOKER_CHIFFRES = re.compile(r"\d+")
+_JOKER_GUILLEMETS = re.compile(r"«[^»]*»")
+
+# Plafond de lecture. Une journée pèse ~1,7 Mo ; ce plafond borne le pire cas
+# sans jamais entamer une journée normale.
+_MAX_LIGNES_JOURNAL = 20000
+
+
+def _cle_de_groupe(message: str) -> str:
+    return _JOKER_CHIFFRES.sub("#", _JOKER_GUILLEMETS.sub("…", message))
 
 
 @public_router.get("/sse/overlay")
@@ -293,6 +330,72 @@ async def log_history(request: Request, lines: int = 200):
     except Exception as exc:
         logger.warning("Failed to read log history: {e!r}", e=exc)
         return {"entries": [], "file": str(log_path)}
+
+
+@admin_router.get("/journal/erreurs")
+async def journal_erreurs(request: Request, max_groupes: int = 8):
+    """Les erreurs du jour, REGROUPÉES, et le compte par niveau.
+
+    Le flux brut noie une panne qui se répète : quarante fois la même ligne
+    défilent, on lit la dernière, et rien ne dit que c'est la quarantième. Le
+    regroupement rend visible ce que la chronologie cache — combien de fois, et
+    depuis quand.
+
+    La fenêtre est le fichier du JOUR (`logs/AAAA-MM-JJ/app.log`), pas 24 h
+    glissantes : c'est le découpage réel des fichiers, et prétendre autre chose
+    donnerait un compte faux au passage de minuit.
+    """
+    max_groupes = max(1, min(int(max_groupes), 50))
+    chemin = _find_latest_log()
+    if chemin is None:
+        return {"groupes": [], "niveaux": {}, "fichier": None, "lignes": 0}
+
+    def _depouiller() -> dict:
+        texte = chemin.read_text(encoding="utf-8", errors="replace")
+        lignes = texte.splitlines()[-_MAX_LIGNES_JOURNAL:]
+        niveaux: Counter[str] = Counter()
+        groupes: dict[str, dict] = {}
+        lues = 0
+        for ligne in lignes:
+            entree = _parse_log_line(ligne)
+            if entree is None:
+                continue
+            lues += 1
+            niveaux[entree["level"]] += 1
+            if entree["level"] not in ("ERROR", "CRITICAL"):
+                continue
+            cle = entree["source"] + "|" + _cle_de_groupe(entree["message"])
+            groupe = groupes.get(cle)
+            if groupe is None:
+                groupes[cle] = {
+                    "message": entree["message"],
+                    "source": entree["source"],
+                    "fois": 1,
+                    "derniere": entree["time"],
+                }
+            else:
+                # Le message gardé est le DERNIER : c'est celui dont
+                # l'horodatage est affiché, les deux doivent désigner la même
+                # occurrence.
+                groupe["message"] = entree["message"]
+                groupe["derniere"] = entree["time"]
+                groupe["fois"] += 1
+        ordonnes = sorted(groupes.values(), key=lambda g: (-g["fois"], g["derniere"]))
+        return {
+            "groupes": ordonnes[:max_groupes],
+            "niveaux": dict(niveaux),
+            "fichier": chemin.name,
+            "lignes": lues,
+        }
+
+    try:
+        return await asyncio.to_thread(_depouiller)
+    except OSError as exc:
+        # Le panneau doit DIRE qu'il n'a pas pu lire, pas afficher « 0 erreur »
+        # — un zéro faux est pire qu'une absence avouée.
+        logger.warning("Journal : lecture de {f} impossible : {e!r}", f=chemin, e=exc)
+        return {"groupes": [], "niveaux": {}, "fichier": chemin.name, "lignes": 0,
+                "erreur": "journal illisible"}
 
 
 @admin_router.get("/sse/ticket")
