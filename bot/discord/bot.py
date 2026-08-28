@@ -476,6 +476,10 @@ class WallyDiscord(commands.Bot):
                     await JeuAnnouncer(tb, canal).annoncer(genre, fait)
 
                 _overlay_narrator.set_annonceur_fin(_annoncer_fin_de_partie)
+                # En INFO, et pas en DEBUG : c'est la PREUVE que ce hook est
+                # posé. Sa version précédente ne l'était jamais, tous les tests
+                # étaient verts, et rien dans les logs ne le disait.
+                logger.info("Fins de partie : annonce chat branchée sur le narrateur")
                 _overlay_narrator.activate()
             # Exposé pour main.py, qui y branche les événements de StreamFeed.
             self.overlay_narrator = _overlay_narrator
