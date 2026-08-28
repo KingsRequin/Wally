@@ -4012,6 +4012,39 @@ button:focus-visible {
   }
 }
 
+/* ── Chrome de page ───────────────────────────────────────────── */
+/*
+ * Deux emplacements que la page courante remplit et que le routeur vide : les
+ * commandes à droite du titre, et les actions de la barre du haut. Une page ne
+ * doit jamais hériter des boutons de la précédente.
+ */
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+.page-title, .page-sub { flex: 1 0 100%; }
+.page-sub + .page-actions { margin-top: -4px; }
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.page-actions:empty { display: none; }
+
+.control-bar-page {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.control-bar-page:empty { display: none; }
+
 /* ── Navigation mobile ────────────────────────────────────────── */
 /*
  * Masquées par défaut : elles ne s'affichent que sous 768 px, où la sidebar
@@ -4248,6 +4281,12 @@ button:focus-visible {
 
   .champ-recherche { min-width: 0 !important; }
   .auto-barre, .journal-filtres { gap: 8px !important; }
+
+  /* Dans l'en-tête devenu une colonne, la rangée de puces et les commandes de
+   * page prennent chacune leur ligne — les serrer à droite du titre sur 390 px
+   * ne laisserait la place ni à l'un ni à l'autre. */
+  .theme-puces, .page-actions { flex: 1 0 100%; margin-left: 0; }
+  .ovl-source-url { max-width: 150px; }
 
   .cockpit-colonnes { grid-template-columns: 1fr !important; }
   .cockpit-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
@@ -4680,128 +4719,106 @@ body.is-mobile .mobile-back-btn {
    pris à la seule chose qu'on regarde, pour trois lignes qui ne bougent
    jamais. En onglets, elles rendent la largeur au placement. */
 
-.ovl-barre-scenes {
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding-bottom: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.ovl-barre-titre { padding-bottom: 14px; flex-shrink: 0; }
-.ovl-sur-titre {
-  font-size: 0.62rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.ovl-titre { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-top: 3px; }
-.ovl-espace { flex: 1; min-width: 0; }
-
+/* ── Le sélecteur de scènes ──────────────────────────────────────────────
+ *
+ * Refonte du 2026-08-28. C'était une barre d'ONGLETS, avec son propre titre
+ * (« MISE EN SCÈNE ») sous celui de la page — deux niveaux de chrome pour une
+ * seule page, et un motif de navigation qui n'existait nulle part ailleurs
+ * dans le panel. Les scènes deviennent un `segmented`, comme les états d'une
+ * liste : c'est exactement ce qu'elles sont, trois vues du même overlay.
+ *
+ * `position: relative` porte le menu ⋮, qui s'ouvre en absolu dedans.
+ */
 .ovl-scenes {
-  list-style: none;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  flex-wrap: wrap;
-}
-/* L'onglet : un carré supérieur arrondi qui MORD la ligne de la barre quand il
-   est actif. Pas de fond sur les autres — un onglet inactif qui se dessine
-   autant que l'actif ne dit plus lequel on regarde. */
-.ovl-scene {
   position: relative;
-  display: flex;
-  align-items: stretch;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  flex-wrap: nowrap;
 }
-.ovl-scene:hover { background: rgba(255, 255, 255, 0.04); }
-.ovl-scene.actif {
-  background: rgba(6, 182, 212, 0.1);
-  border-color: rgba(6, 182, 212, 0.4);
-}
-/* Le liseré qui referme l'onglet actif sur la ligne de la barre. En
-   pseudo-élément et non en `border-bottom-color: transparent` : la bordure du
-   conteneur est posée sur `.ovl-barre-scenes`, pas sur l'onglet. */
-.ovl-scene.actif::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: rgba(6, 182, 212, 0.1);
-}
+
 .ovl-scene-corps {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  align-items: flex-start;
-  background: transparent;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 13px;
   border: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  padding: 9px 6px 12px 15px;
+  background: none;
+  border-radius: 6px;
   cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ovl-scene-corps:hover { color: var(--text-primary); }
+.ovl-scene-corps.active {
+  background: #232b38;
+  color: var(--text-primary);
+  font-weight: 600;
 }
 .ovl-scene-corps:focus-visible {
-  outline: 2px solid rgba(6, 182, 212, 0.6);
+  outline: 2px solid var(--accent-border);
   outline-offset: -2px;
-  border-radius: 10px;
 }
-.ovl-scene-haut { display: flex; align-items: center; gap: 8px; }
-.ovl-scene-nom {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.ovl-scene.actif .ovl-scene-nom { color: var(--text-primary); }
-.ovl-scene-sous { font-size: 0.66rem; color: var(--text-muted); white-space: nowrap; }
-.ovl-scene.actif .ovl-scene-sous { color: var(--text-secondary); }
 
-/* La pastille ambre : quelque chose attend d'être publié ici. Même couleur
-   dans les onglets et dans le pied — c'est la même information. */
+.ovl-scene-nom { white-space: nowrap; }
+
+/* Le compte d'éléments visibles, en mono : c'est une valeur, pas un mot. */
+.ovl-scene-compte {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ovl-scene-corps.active .ovl-scene-compte { color: var(--text-secondary); }
+
+/* La scène par défaut : un point discret plutôt qu'un badge « défaut », qui
+ * doublait la largeur du segment pour une information rarement consultée.
+ * L'infobulle du segment la donne en toutes lettres. */
+.ovl-scene-corps.ovl-defaut .ovl-scene-nom::before {
+  content: "★ ";
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+/* La pastille ambre : quelque chose attend d'être publié sur CETTE scène. Même
+ * couleur que dans le pied — c'est la même information. */
 .ovl-point {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #d29e0b;
+  background: var(--warning);
   flex-shrink: 0;
 }
 
-.ovl-scene .ovl-menu-btn { align-self: center; margin-right: 6px; }
-
-.ovl-scene-plus {
+/* Le menu ⋮ n'est posé que sur la scène affichée : un par segment tiendrait
+ * plus de place que les noms. */
+.ovl-scenes .ovl-menu-btn {
   align-self: center;
-  margin-bottom: 10px;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 7px 12px;
+  margin-left: 2px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
   cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
 }
-.ovl-scene-plus:hover {
-  border-color: rgba(6, 182, 212, 0.45);
-  border-style: solid;
-  color: var(--text-primary);
-}
+.ovl-scenes .ovl-menu-btn:hover { color: var(--text-primary); }
+
+.ovl-scene-plus { white-space: nowrap; }
+
+/* Le ressort des barres du panneau. Il servait aussi à l'ancienne barre de
+ * scènes ; trois autres barres s'en servent encore. */
+.ovl-espace { flex: 1; min-width: 0; }
 
 /* ── L'adresse OBS de la scène affichée ──────────────────────────────── */
 
+/* Vit maintenant dans la BARRE DU HAUT, haute de 48 px : plus de
+ * `padding-bottom` hérité d'une barre de scènes qui n'existe plus. */
 .ovl-source {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding-bottom: 12px;
   min-width: 0;
 }
 .ovl-source-label {
@@ -4816,10 +4833,10 @@ body.is-mobile .mobile-back-btn {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 5px 6px 5px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 5px 4px 9px;
 }
 /* Coupée par la GAUCHE : c'est la fin qui distingue deux scènes, jamais le
    `https://`. */
@@ -4827,8 +4844,8 @@ body.is-mobile .mobile-back-btn {
   direction: rtl;
   text-align: left;
   min-width: 0;
-  max-width: 280px;
-  font-size: 0.72rem;
+  max-width: 240px;
+  font-size: 11px;
   font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -5413,26 +5430,47 @@ body.is-mobile .mobile-back-btn {
 
 /* Les chevauchements. Neutre tant qu'il n'y a rien à signaler, orange quand il
    y a — et CLIQUABLE : le geste qui suit est toujours d'aller les voir. */
+/* Un BANDEAU sur toute la largeur, au-dessus du canevas — plus une pastille
+ * perdue entre sept boutons. Deux widgets qui se recouvrent, c'est un défaut
+ * que les viewers verront et pas le streamer : ça mérite une ligne à soi.
+ *
+ * Discret quand tout va bien, ambre quand il y a quelque chose. Il ne se tait
+ * jamais : un silence se lirait comme « aucun chevauchement », alors qu'une
+ * taille non mesurée ne prouve rien. */
 .ovl-chevauchements {
-  flex: none;
-  padding: 4px 11px;
-  font: inherit;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  white-space: nowrap;
-  max-width: 340px;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 13px;
+  margin-bottom: 10px;
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 .ovl-chevauchements:hover { color: var(--text-primary); }
 .ovl-chevauchements.alerte {
-  color: rgb(251, 146, 60);
-  background: rgba(251, 146, 60, 0.10);
-  border-color: rgba(251, 146, 60, 0.35);
+  color: var(--warning-text);
+  background: rgba(255, 176, 32, 0.07);
+  border-color: rgba(255, 176, 32, 0.28);
+}
+/* « Résoudre » : le geste est le même que le clic sur le bandeau — aller voir
+ * les coupables. Le nommer évite d'avoir à deviner qu'il est cliquable. */
+.ovl-chevauchements.alerte::after {
+  content: "Résoudre";
+  float: right;
+  color: var(--warning);
+  font-weight: 500;
+  font-size: 11.5px;
+  margin-left: 14px;
 }
 
 .ovl-echelle {

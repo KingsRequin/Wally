@@ -207,11 +207,89 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_live_et_connexions(page, rap, erreurs)
     _verifier_memoire_commune(page, rap, erreurs)
     _verifier_cockpit(page, rap, erreurs)
+    _verifier_scene(page, rap, erreurs)
     _verifier_mobile(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_scene(page, rap: Rapport, erreurs: list[str]) -> None:
+    """La Scène : seule la CHROME a changé. Le canevas, la liste d'éléments et
+    l'inspecteur sont ce que le panneau a de plus éprouvé — la refonte ne
+    devait toucher qu'à ce qui les entoure, et ce test le vérifie.
+
+    `overlay_admin.js` pèse 334 ko et ne se monte qu'UNE fois par session :
+    c'est exactement le genre de panneau qui meurt en silence.
+    """
+    print("\n── Live › Scène & overlays ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="live/scene"]').click()
+    page.wait_for_timeout(3000)
+
+    # ── ce qui NE doit PAS avoir bougé ──
+    elements = page.locator("#tab-admin-scene .ovl-el").count()
+    rap.dire(elements > 0, "la liste d'éléments est intacte", f"{elements} élément(s)")
+    canevas = page.locator("#tab-admin-scene .ovl-zone-canvas").count()
+    rap.dire(canevas == 1, "le canevas est intact", f"{canevas}")
+
+    # Le bandeau des chevauchements est passé de pastille noyée dans la barre
+    # d'outils à ligne pleine largeur au-dessus du canevas. Il ne se tait
+    # JAMAIS : un silence se lirait comme « aucun chevauchement », alors qu'une
+    # taille non mesurée ne prouve rien.
+    bandeau = page.locator("#tab-admin-scene .ovl-chevauchements")
+    rap.dire(bandeau.count() == 1, "le bandeau de chevauchement est là",
+             bandeau.first.inner_text() if bandeau.count() else "absent")
+    large = page.evaluate(
+        "(() => {const b = document.querySelector('.ovl-chevauchements'),"
+        " t = document.querySelector('.ovl-travail');"
+        " return b && t ? b.clientWidth / t.clientWidth : 0;})()")
+    rap.dire(large > 0.9, "il prend toute la largeur du canevas",
+             f"{large:.0%}")
+
+    # ── ce qui a bougé ──
+    scenes = page.locator("#page-actions .ovl-scene-corps").count()
+    rap.dire(scenes > 0, "les scènes sont un segmented dans l'en-tête",
+             f"{scenes} scène(s)")
+    actives = page.locator("#page-actions .ovl-scene-corps.active").count()
+    rap.dire(actives == 1, "une seule scène est allumée", f"{actives}")
+
+    url = page.locator("#control-bar-page .ovl-source-url").inner_text()
+    rap.dire(url.startswith("http"), "l'URL OBS est montée dans la barre du haut", url)
+
+    # Le menu ⋮ n'est posé QUE sur la scène affichée : un par segment tiendrait
+    # plus de place que les noms.
+    menus = page.locator("#page-actions .ovl-menu-btn").count()
+    rap.dire(menus == 1, "un seul menu ⋮, sur la scène affichée", f"{menus}")
+
+    # Changer de scène doit suivre partout : segment allumé ET adresse OBS.
+    if scenes > 1:
+        page.locator("#page-actions .ovl-scene-corps").nth(1).click()
+        page.wait_for_timeout(900)
+        url2 = page.locator("#control-bar-page .ovl-source-url").inner_text()
+        rap.dire(url2 != url, "changer de scène change l'adresse OBS", url2)
+
+    # LE piège de cette phase : la chrome vit hors du panneau, et le routeur la
+    # vide à chaque changement de route. `monter()` ne s'exécutant qu'une fois,
+    # revenir sur la Scène la laisserait vide sans la moindre erreur.
+    page.locator('.sidebar-item[data-route="systeme/journal"]').click()
+    page.wait_for_timeout(1200)
+    page.locator('.sidebar-item[data-route="live/scene"]').click()
+    page.wait_for_timeout(1800)
+    rap.dire(page.locator("#page-actions .ovl-scene-corps").count() > 0,
+             "la chrome revient quand on revient sur la page")
+    rap.dire(page.locator("#control-bar-page .ovl-source-url").count() == 1,
+             "l'adresse OBS revient aussi")
+
+    # Et elle ne doit PAS suivre ailleurs.
+    page.locator('.sidebar-item[data-route="systeme/journal"]').click()
+    page.wait_for_timeout(1200)
+    reste = (page.locator("#page-actions .ovl-scene-corps").count()
+             + page.locator("#control-bar-page .ovl-source-url").count())
+    rap.dire(reste == 0, "elle ne déborde pas sur la page suivante", f"{reste}")
+
+    rap.dire(not erreurs, "aucune erreur JS sur la Scène", " · ".join(erreurs[:2]))
 
 
 def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:

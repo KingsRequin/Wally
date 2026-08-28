@@ -1229,7 +1229,9 @@ window.OverlayAdmin = (function () {
     if (noeuds.cadre) noeuds.cadre.innerHTML = "";
     if (noeuds.listeScenes) {
       noeuds.listeScenes.innerHTML = "";
-      noeuds.listeScenes.appendChild(creer("li", "ovl-vide", message));
+      // `div` et non `li` : le sélecteur de scènes est passé d'une `<ul>`
+      // d'onglets à un `segmented`, et un `<li>` hors liste n'a plus de sens.
+      noeuds.listeScenes.appendChild(creer("div", "ovl-vide", message));
     }
     notifier(message, "error");
   }
@@ -1925,51 +1927,55 @@ window.OverlayAdmin = (function () {
     liste.innerHTML = "";
     const diff = diffAntenne();
     (etat.layout.scenes || []).forEach(function (scene) {
-      const item = creer("li", "ovl-scene");
-      if (scene.slug === etat.slugCourant) item.classList.add("actif");
-      // Un <button> et non un <div> : c'est le geste principal de la barre, il
-      // doit se prendre au clavier comme les onglets de la barre latérale.
-      const corps = creer("button", "ovl-scene-corps");
-      corps.type = "button";
-      const haut = creer("div", "ovl-scene-haut");
-      haut.appendChild(creer("span", "ovl-scene-nom", scene.nom));
-      if (scene.slug === etat.layout.defaut) {
-        haut.appendChild(creer("span", "ovl-badge", "défaut"));
-      }
-      const change = diff.parScene[scene.slug] || { n: 0, elements: 0 };
-      if (change.n) {
-        // La pastille ambre porte la même information que le pied, sur
-        // l'onglet : sans elle, on publie sans savoir qu'une AUTRE scène part
-        // aussi — et `publier()` pousse le modèle entier.
-        const point = creer("span", "ovl-point");
-        point.title = change.n + " modification" + (change.n > 1 ? "s" : "")
-          + " en attente sur cette scène.";
-        haut.appendChild(point);
-      }
-      corps.appendChild(haut);
+      const actif = scene.slug === etat.slugCourant;
       const visibles = (scene.ordre || []).filter(function (c) {
         const el = (scene.elements || {})[c];
         return el && !el.hidden;
       }).length;
-      corps.appendChild(creer("div", "ovl-scene-sous",
-        visibles + " visible" + (visibles > 1 ? "s" : "")
-        + (change.elements
-           ? " · " + change.elements + " modifié" + (change.elements > 1 ? "s" : "")
-           : "")));
+      const change = diff.parScene[scene.slug] || { n: 0, elements: 0 };
+
+      // Un <button>, pas un <div> : c'est le geste principal de l'en-tête, il
+      // doit se prendre au clavier comme les autres segmented du panel.
+      const corps = creer("button", "ovl-scene-corps");
+      corps.type = "button";
+      if (actif) corps.classList.add("active");
+      corps.setAttribute("aria-pressed", actif ? "true" : "false");
+      // « En jeu · 35 » : le nom, et le nombre d'éléments que la scène montre.
+      // Le compte tient dans le segment, là où la carte lui donnait une ligne.
+      corps.appendChild(creer("span", "ovl-scene-nom", scene.nom));
+      corps.appendChild(creer("span", "ovl-scene-compte", "· " + visibles));
+      if (scene.slug === etat.layout.defaut) corps.classList.add("ovl-defaut");
+      if (change.n) {
+        // La pastille ambre porte la même information que le pied, sur le
+        // segment : sans elle, on publie sans savoir qu'une AUTRE scène part
+        // aussi — et `publier()` pousse le modèle entier.
+        const point = creer("span", "ovl-point");
+        point.title = change.n + " modification" + (change.n > 1 ? "s" : "")
+          + " en attente sur cette scène.";
+        corps.appendChild(point);
+      }
+      corps.title = scene.nom + " — " + visibles + " élément(s) visible(s)"
+        + (scene.slug === etat.layout.defaut ? " · scène par défaut" : "")
+        + (change.elements ? " · " + change.elements + " modifié(s)" : "");
       corps.addEventListener("click", function () { choisirScene(scene.slug); });
-      item.appendChild(corps);
+      liste.appendChild(corps);
 
-      const bouton = creer("button", "ovl-menu-btn", "⋮");
-      bouton.title = "Renommer, dupliquer, supprimer…";
-      bouton.setAttribute("aria-label", "Actions sur la scène « " + scene.nom + " »");
-      bouton.addEventListener("click", function (evt) {
-        evt.stopPropagation();
-        if (menuOuvert && menuOuvert.parentNode === item) { fermerMenu(); return; }
-        ouvrirMenu(item, scene, bouton);
-      });
-      item.appendChild(bouton);
-
-      liste.appendChild(item);
+      // Le menu ⋮ n'est posé que sur la scène AFFICHÉE. En segmented, un menu
+      // par segment tiendrait plus de place que les noms ; et renommer,
+      // dupliquer ou supprimer se fait de toute façon sur celle qu'on regarde.
+      if (actif) {
+        const bouton = creer("button", "ovl-menu-btn", "⋮");
+        bouton.type = "button";
+        bouton.title = "Renommer, dupliquer, supprimer…";
+        bouton.setAttribute("aria-label",
+          "Actions sur la scène « " + scene.nom + " »");
+        bouton.addEventListener("click", function (evt) {
+          evt.stopPropagation();
+          if (menuOuvert && menuOuvert.parentNode === liste) { fermerMenu(); return; }
+          ouvrirMenu(liste, scene, bouton);
+        });
+        liste.appendChild(bouton);
+      }
     });
     rendreSource();
   }
@@ -6261,24 +6267,6 @@ window.OverlayAdmin = (function () {
 
     barre.appendChild(creer("div", "ovl-espace"));
 
-    // La pastille des chevauchements. CLIQUABLE : elle nomme les éléments qui
-    // se recouvrent, et le geste qui suit est toujours le même — aller les
-    // voir. Elle les sélectionne donc, plutôt que de laisser chercher dans une
-    // liste de trente-sept lignes.
-    noeuds.chevauchements = creer("button", "ovl-chevauchements",
-                                  "aucun chevauchement");
-    noeuds.chevauchements.type = "button";
-    noeuds.chevauchements.addEventListener("click", function () {
-      const cles = (derniereAnalyse && derniereAnalyse.cles) || [];
-      if (!cles.length) { notifier("Aucun chevauchement à montrer."); return; }
-      etat.selection = cles.slice();
-      poserPrincipal(cles[0]);
-      rendreSelection();
-      rendreReglages();
-      notifier(cles.length + " élément(s) qui se recouvrent, sélectionnés.");
-    });
-    barre.appendChild(noeuds.chevauchements);
-
     const tous = creer("button", "ovl-lien", "Tout afficher");
     tous.title = "Pose un repère nommé à la place de chaque élément visible, "
       + "dans l'aperçu de CETTE scène seulement. Ils s'effacent au bout de 30 s.";
@@ -6597,36 +6585,54 @@ window.OverlayAdmin = (function () {
     return barre;
   }
 
-  /** La barre d'onglets, en tête du panneau : le titre, les scènes, « + Scène »
-   *  et l'adresse OBS de celle qu'on règle. */
-  function barreScenes() {
-    const barre = creer("div", "ovl-barre-scenes");
+  /** La chrome de la page : le sélecteur de scènes à droite du titre, et
+   *  l'adresse OBS dans la barre du haut.
+   *
+   *  Refonte du 2026-08-28. Le panneau portait sa PROPRE barre de titre
+   *  (« MISE EN SCÈNE / Où va chaque élément ») sous celle de la page, et sa
+   *  propre barre d'onglets — deux niveaux de chrome pour une seule page. Le
+   *  titre appartient désormais au routeur, les scènes deviennent un segmented
+   *  comme partout ailleurs dans le panel, et l'adresse OBS rejoint les actions
+   *  de la barre du haut.
+   *
+   *  Rien du canevas, de la liste d'éléments ni de l'inspecteur ne bouge : ils
+   *  sont ce que le panneau a de plus éprouvé, et la refonte ne touche QUE ce
+   *  qui les entoure.
+   *
+   *  Appelée à chaque venue sur la page, pas seulement au montage : le routeur
+   *  vide ces deux emplacements à chaque changement de route, et `monter()` ne
+   *  s'exécute qu'une fois.
+   */
+  function rendreChromePage() {
+    const actions = document.getElementById("page-actions");
+    const barreHaut = document.getElementById("control-bar-page");
+    if (!actions || !barreHaut) return;
 
-    const titre = creer("div", "ovl-barre-titre");
-    titre.appendChild(creer("div", "ovl-sur-titre", "MISE EN SCÈNE"));
-    titre.appendChild(creer("div", "ovl-titre", "Où va chaque élément"));
-    barre.appendChild(titre);
+    actions.innerHTML = "";
+    noeuds.listeScenes = creer("div", "segmented ovl-scenes");
+    noeuds.listeScenes.setAttribute("role", "group");
+    noeuds.listeScenes.setAttribute("aria-label", "Scène affichée");
+    actions.appendChild(noeuds.listeScenes);
 
-    noeuds.listeScenes = creer("ul", "ovl-scenes");
-    barre.appendChild(noeuds.listeScenes);
-
-    const plus = creer("button", "ovl-scene-plus", "+ Scène");
+    const plus = creer("button", "btn ovl-scene-plus", "+ Scène");
+    plus.type = "button";
     plus.title = "Une scène neuve, aux valeurs d'origine. « Dupliquer » (menu ⋮) "
       + "part au contraire de la scène affichée.";
     plus.addEventListener("click", function () { nouvelleScene(); });
-    barre.appendChild(plus);
+    actions.appendChild(plus);
 
-    barre.appendChild(creer("div", "ovl-espace"));
-
-    // L'adresse à coller dans OBS, celle de la scène AFFICHÉE. Une seule, à
-    // droite : trois adresses empilées prenaient la place d'une colonne sans
-    // qu'on lise jamais les deux autres.
+    // L'adresse à coller dans OBS, celle de la scène AFFICHÉE. Une seule :
+    // trois adresses empilées prenaient la place sans qu'on lise jamais les
+    // deux autres. Elle reste ENTIÈRE — la déduire de tête est ce qu'on
+    // reprochait au panneau d'avant.
+    barreHaut.innerHTML = "";
     const source = creer("div", "ovl-source");
     source.appendChild(creer("span", "ovl-source-label", "Source OBS"));
     const boite = creer("div", "ovl-source-boite");
     noeuds.sourceUrl = creer("span", "ovl-source-url", "");
     boite.appendChild(noeuds.sourceUrl);
     noeuds.sourceCopie = creer("button", "ovl-copie");
+    noeuds.sourceCopie.type = "button";
     noeuds.sourceCopie.appendChild(iconeCopie());
     noeuds.sourceCopie.addEventListener("click", function () {
       if (noeuds.sourceUrl.textContent) copier(noeuds.sourceUrl.textContent);
@@ -6635,9 +6641,10 @@ window.OverlayAdmin = (function () {
       "Copier l'adresse — c'est elle qu'on colle dans une source navigateur OBS.");
     boite.appendChild(noeuds.sourceCopie);
     source.appendChild(boite);
-    barre.appendChild(source);
+    barreHaut.appendChild(source);
 
-    return barre;
+    // Les segments ne sont peuplés qu'une fois le modèle chargé.
+    if (etat.layout) rendreScenes();
   }
 
   /** Cocher « Publier au fil de l'eau », depuis la case OU depuis le menu ⋯.
@@ -6807,6 +6814,37 @@ window.OverlayAdmin = (function () {
     return pied;
   }
 
+  /** Le bandeau des chevauchements, sur sa propre ligne AU-DESSUS du canevas.
+   *
+   *  C'était une pastille perdue dans une barre d'outils de sept boutons. Deux
+   *  widgets qui se recouvrent, c'est un défaut que les viewers verront et pas
+   *  le streamer : ça mérite une ligne à soi, pas une place entre « Tout
+   *  afficher » et l'échelle.
+   *
+   *  Il dit les TROIS cas — il y en a, il n'y en a pas, et « je ne sais pas
+   *  pour ceux-là ». Le taire quand tout va bien ferait d'un silence une
+   *  affirmation, alors qu'une taille non mesurée ne prouve rien.
+   *
+   *  CLIQUABLE, et c'est le « Résoudre » de la maquette : le geste qui suit est
+   *  toujours le même — aller voir les coupables. Il les sélectionne, plutôt
+   *  que de laisser chercher dans une liste de trente-sept lignes.
+   */
+  function bandeauChevauchements() {
+    noeuds.chevauchements = creer("button", "ovl-chevauchements",
+                                  "aucun chevauchement");
+    noeuds.chevauchements.type = "button";
+    noeuds.chevauchements.addEventListener("click", function () {
+      const cles = (derniereAnalyse && derniereAnalyse.cles) || [];
+      if (!cles.length) { notifier("Aucun chevauchement à montrer."); return; }
+      etat.selection = cles.slice();
+      poserPrincipal(cles[0]);
+      rendreSelection();
+      rendreReglages();
+      notifier(cles.length + " élément(s) qui se recouvrent, sélectionnés.");
+    });
+    return noeuds.chevauchements;
+  }
+
   function construireSquelette(conteneur) {
     conteneur.classList.add("ovl-panneau");
     conteneur.innerHTML = "";
@@ -6816,7 +6854,10 @@ window.OverlayAdmin = (function () {
     Object.keys(reperes).forEach(function (c) { delete reperes[c]; });
     listeSignature = null;
 
-    conteneur.appendChild(barreScenes());
+    // Plus de barre en tête du panneau : le titre vient du routeur, le
+    // sélecteur de scènes et l'adresse OBS vivent dans la chrome de la page
+    // (`rendreChromePage`), appelée par `renderSceneTab` à chaque venue.
+    rendreChromePage();
 
     const corps = creer("div", "ovl-corps");
 
@@ -6825,6 +6866,7 @@ window.OverlayAdmin = (function () {
     const travail = creer("div", "ovl-travail");
     noeuds.travail = travail;
     travail.appendChild(barreCanvas());
+    travail.appendChild(bandeauChevauchements());
 
     // La surface et ses deux règles graduées, dans une petite grille. Les
     // graduations ne sont pas décoratives : tout se règle ici en POURCENTAGE,
@@ -7085,6 +7127,10 @@ window.OverlayAdmin = (function () {
 
   return {
     monter: monter,
+    // La chrome vit hors du panneau : le routeur la vide à chaque changement
+    // de route, et `monter()` ne s'exécute qu'une fois. `renderSceneTab` la
+    // rappelle donc à chaque venue sur la page.
+    rendreChromePage: rendreChromePage,
     etat: etat,
     marquerModifie: marquerModifie,
     publier: publier,

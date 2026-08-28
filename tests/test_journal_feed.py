@@ -70,9 +70,14 @@ def _libelle_et_filtre(monkeypatch):
 # ── la lecture ──────────────────────────────────────────────────────────────
 
 async def test_les_messages_du_jour_reviennent_tries_dans_l_ordre():
-    maintenant = datetime.now(PARIS)
-    s = _salon(1, [_msg("Bob", "deux", maintenant),
-                   _msg("Alice", "un", maintenant - timedelta(hours=1))])
+    # Les deux messages sont posés DANS la journée en cours, à une minute
+    # d'écart. `maintenant - 1 h` tombait avant minuit entre 00 h 00 et 01 h 00 :
+    # le filtre de `lire_la_journee()` l'écartait à juste titre, et le test
+    # échouait une heure par nuit. Un test qui ne rouge que sur un créneau
+    # horaire finit par être relancé « pour voir » au lieu d'être lu.
+    minuit = datetime.now(PARIS).replace(hour=0, minute=0, second=0, microsecond=0)
+    s = _salon(1, [_msg("Bob", "deux", minuit + timedelta(minutes=2)),
+                   _msg("Alice", "un", minuit + timedelta(minutes=1))])
     feed, _, _ = _feed([s])
     out = await feed.lire_la_journee()
     assert [m["content"] for m in out] == ["un", "deux"]

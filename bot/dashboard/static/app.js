@@ -465,6 +465,7 @@ function _appliquerRoute(route, param) {
   // sommaire ne doit pas hériter des ancres de la précédente, qui pointeraient
   // vers des sections disparues.
   viderSommaire();
+  viderChromePage();
 
   // Le mode « lier deux identités » est une modale sans fenêtre : il attend un
   // clic sur une AUTRE personne. Quitter l'annuaire l'abandonne, sinon le
@@ -588,6 +589,21 @@ async function chargerBadgeSysteme() {
   const r = await apiFetch('/api/admin/decisions?max_items=1');
   if (!r || !r.ok) return;
   majBadgeSysteme((await r.json()).erreurs_du_jour);
+}
+
+/** Vide les deux emplacements que les pages peuvent remplir : les commandes à
+ *  droite du titre, et les actions de la barre du haut.
+ *
+ *  Même discipline que le sommaire d'ancres : une page ne doit jamais hériter
+ *  des boutons de la précédente. Sur la Scène, hériter d'une URL OBS d'une
+ *  autre page reviendrait à proposer de copier une adresse qui n'est plus
+ *  celle qu'on règle.
+ */
+function viderChromePage() {
+  ['page-actions', 'control-bar-page'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
 }
 
 function viderSommaire() {
@@ -4543,6 +4559,11 @@ function renderSceneTab() {
     return;
   }
   OverlayAdmin.monter(el);
+  // La chrome vit HORS du panneau — dans l'en-tête de page et la barre du
+  // haut —, et le routeur la vide à chaque changement de route. `monter()` ne
+  // s'exécute qu'une fois : sans ce second appel, revenir sur la Scène
+  // laisserait le sélecteur et l'URL OBS vides.
+  OverlayAdmin.rendreChromePage();
 }
 
 // La télémétrie de rendu (fps, pire frame, GPU) était POSTÉE six fois par minute

@@ -87,7 +87,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 6 | ✅ Médias & sons, Connexions, Voix | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ les deux « Vocal » fusionnés, `GET /connexions` rend des FAITS et pas un voyant |
 | 7 | ✅ Mémoire commune | `routes/memory.py`, `app.js`, `style.css`, `smoke_front.py`, tests | ✅ 13 sujets et leur OPINION enfin visibles ; plus un seul sous-onglet dans le panel |
 | 8 | ✅ Cockpit + API décisions | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ 11 décisions rassemblées, chacune ouvre sa page DÉJÀ filtrée |
-| 9 | Scène & overlays — chrome seule | `overlay_admin.js`, `app.js` | Canevas, liste et inspecteur intacts |
+| 9 | ✅ Scène & overlays — chrome seule | `overlay_admin.js`, `app.js`, `style.css`, `index.html`, `smoke_front.py` | ✅ canevas, 37 éléments et inspecteur intacts ; scènes en segmented, URL OBS dans la barre du haut |
 | 10 | ✅ Mobile + responsive | `style.css`, `index.html`, `app.js`, `smoke_front.py` | ✅ barre du bas à 4 destinations, listes en cartes, scène en lecture seule, zéro débordement |
 
 ## Écarts assumés par rapport à la maquette
@@ -106,10 +106,17 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   dessiner. La « latence médiane » devient « latence moyenne » : `AppState`
   tient une moyenne sur les 50 dernières réponses, l'annoncer autrement serait
   faux.
-- **Pas de « chevauchements de scène » dans la file de décisions.** Aucune
-  détection de chevauchement n'existe : `overlay_layout.py` décrit et valide un
-  placement, il ne compare pas deux éléments entre eux. L'écrire serait une
-  fonctionnalité. La file rend les quatre autres types, qui eux existent.
+- **Pas de « chevauchements de scène » dans la file de décisions du cockpit.**
+  ⚠️ La note d'origine disait « aucune détection n'existe » — **c'était faux**,
+  et il faut le corriger ici pour que personne ne reparte de cette phrase. La
+  détection existe et tourne : `overlay_admin.js` la calcule à chaque rendu
+  (`analyseChevauchements`, ~ligne 3498) et affiche six chevauchements réels en
+  prod. Mais elle est **côté navigateur**, à partir de tailles MESURÉES dans le
+  DOM — `overlay_layout.py` ne compare pas deux éléments entre eux. L'exposer
+  au cockpit demanderait de la porter en Python, sans les tailles réelles :
+  c'est un chantier, pas un branchement. La file rend les quatre autres types.
+  Le chevauchement, lui, est signalé là où il se corrige — en bandeau
+  pleine largeur au-dessus du canevas depuis la phase 9.
 - **Pas de « Doublons détectés » ni de « Purge des entrées mortes »**
   (écran 04). Les deux visaient la mémoire communautaire, qui **n'existe pas** :
   `/memory/global` rend une liste vide et refuse toute écriture en 501 depuis
