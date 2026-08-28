@@ -102,10 +102,19 @@ def test_le_smoke_test_parcourt_le_nouveau_sous_onglet():
     les sous-onglets de Mémoire y ont manqué jusqu'ici."""
     smoke = SMOKE.read_text(encoding="utf-8")
     assert '("Ignorés", "memoire-sub-ignores")' in smoke
-    # Et ses six voisins avec lui : c'est la famille entière qui n'était pas vue.
-    for ident in ("memoire-sub-users", "memoire-sub-global", "memoire-sub-notes",
+    # Et ses voisins avec lui : c'est la famille entière qui n'était pas vue.
+    #
+    # `memoire-sub-users` a quitté cette liste le 2026-08-28 : il est devenu la
+    # page Personnes, que `_verifier_personnes` parcourt à part — annuaire,
+    # filtres, ouverture d'une fiche et rechargement. Le panneau n'est donc pas
+    # sorti du parcours, il a changé de nom et de porte d'entrée.
+    for ident in ("memoire-sub-global", "memoire-sub-notes",
                   "memoire-sub-apex", "memoire-sub-self", "memoire-sub-dashboard"):
         assert ident in smoke, f"{ident} hors du parcours du smoke test"
+    assert "_verifier_personnes" in smoke, (
+        "la page Personnes a remplacé l'onglet Utilisateurs et doit être "
+        "parcourue, sinon l'annuaire peut mourir sans un bruit"
+    )
 
 
 def test_les_ids_du_smoke_test_existent_vraiment(source):

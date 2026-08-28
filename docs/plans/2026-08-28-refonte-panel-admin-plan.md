@@ -65,7 +65,7 @@ pas pour la sidebar.
 
 | Route | Pour | Phase |
 |---|---|---|
-| `GET /api/admin/person/{id}` | Fiche Personne agrégée : identités liées, mémoires, notes, comptes Apex, trust/love, dernières apparitions | 4 |
+| ✅ `GET /api/admin/person/{identite}` | Fiche agrégée : groupe d'identités, mémoires de TOUTES, alias, notes qui la mentionnent, compte Apex, trust/love (le plus haut du groupe), écoute | 4 |
 | ✅ `GET /api/admin/journal/erreurs` | Lignes ERROR regroupées : message, compteur, dernière occurrence, plus le compte par niveau | 2 |
 | `GET /api/admin/decisions` | File « demande une décision » du cockpit : tâches en échec, chevauchements de scène, identités à rattacher, questions en attente — type, libellé, cible de navigation | 8 |
 
@@ -82,7 +82,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 1 | ✅ Coquille : sidebar groupée, routage par hash, tokens de design | `index.html`, `style.css`, `app.js`, `smoke_front.py`, tests | ✅ `f38843b6` — les 11 routes montent, hash juste, 14 sous-panneaux rendent |
 | 2 | ✅ Journal — 3 barres d'onglets → 1 ligne de filtres, erreurs groupées | `app.js`, `routes/sse.py`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ filtres dans l'URL et au rechargement, 15 puces dérivées, sommaire d'ancres |
 | 3 | ✅ Automatisations + sommaire d'ancres | `app.js`, `style.css`, `smoke_front.py` | ✅ 3 onglets → 1 segmented à compteurs, liste standard, permissions en section |
-| 4 | API personne agrégée + Personnes + fiche | `routes/memory.py`, nouveau `routes/person.py`, `app.js`, tests | Une requête rend toute la fiche |
+| 4 | ✅ API personne agrégée + Personnes + fiche | nouveau `routes/person.py`, `routes/memory.py`, `app.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ une requête rend toute la fiche, 528 personnes chargées (contre 200 avant), fiche partageable |
 | 5 | Personnalité + Modèles & coûts | `app.js`, `style.css`, tests | Prompts absorbés, sauvegarde conditionnelle |
 | 6 | Médias & sons, Connexions, Voix | `app.js`, `style.css`, tests | Les deux « Vocal » fusionnés |
 | 7 | Mémoire commune | `app.js`, tests | Questions de Wally + doublons |
@@ -98,6 +98,16 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   plus cher qu'un bouton absent — le panel en a déjà compté huit. À rouvrir
   seulement si l'owner veut créer une tâche à la main depuis le panel, ce qui
   est une FONCTIONNALITÉ, pas une refonte.
+- **La fiche n'a pas d'onglet « Vu en live » ni de « Notes du bot »**
+  (écran 03). `persistent_notes` est une table GLOBALE — pas de colonne
+  d'utilisateur, une note n'appartient à personne : l'onglet rend donc « les
+  notes qui la mentionnent », et le libellé le dit. Aucune donnée de passage en
+  live par personne n'existe (`twitch_visits` porte les visites de WALLY à une
+  chaîne, pas l'inverse) : l'onglet est absent plutôt qu'inventé. De même,
+  « vu 5× » devient « vu il y a 7 h » — `memory_users` porte `last_updated`,
+  pas de compteur.
+- **La tuile « Rang Apex » affiche le compte lié, pas un rang.** Le rang exige
+  un appel à l'API Apex, qu'un endpoint de panneau n'a pas à faire.
 - **Sous 1100 px, le sommaire passe AU-DESSUS du titre**, pas sous le
   sous-titre. Même DOM, bascule purement CSS : dupliquer les ancres dans un
   second nœud, c'est deux rendus à tenir en phase pour une seule source de
@@ -122,6 +132,14 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   section de la page. `poserSommaire()` prend donc la route en premier
   paramètre et ignore les appels d'une page quittée. **Toute page qui remplit
   son sommaire après une requête réseau est concernée.**
+- **Une page ne doit écrire dans l'URL que si elle est LA page courante.**
+  Même famille que le sommaire. `enterAdmin()` construit le Journal au
+  démarrage quelle que soit la page d'arrivée (pour que `#log-stream` existe
+  avant le premier événement SSE) : ce montage réécrivait le hash en
+  `#/systeme/journal` AVANT que le routeur ne tourne, et un lien vers une fiche
+  ne survivait pas au rechargement. D'où `_construireJournal()` (le DOM seul)
+  distinct de `renderJournal()` (la page), plus une garde `currentRoute !== …`
+  dans les trois `_ecrire*`.
 - Un titre de section écrit dans le même conteneur que le corps rechargeable
   DISPARAÎT au premier rechargement, et l'ancre du sommaire mène alors à un bloc
   anonyme. Titre et corps dans deux nœuds distincts.

@@ -1370,6 +1370,262 @@ select option, .neo-select option {
 .auto-perm-nom { font-size: 12.5px; color: var(--text-body); }
 .auto-perm-qui { font-size: 11.5px; color: var(--text-dim); }
 
+/* ── Personnes : l'annuaire ───────────────────────────────────── */
+
+.pers-ligne,
+.pers-tete { grid-template-columns: 1fr 96px 96px 120px; }
+
+.pers-terne { opacity: 0.48; }
+
+.pers-qui {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pers-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: none;
+  object-fit: cover;
+}
+
+.pers-avatar-vide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.pers-nom {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.pers-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.pers-ignore { color: var(--danger-text); }
+
+.pers-trust,
+.pers-love,
+.pers-apex {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.pers-trust { color: var(--accent); }
+.pers-love  { color: var(--love); }
+.pers-apex  { color: var(--success); overflow-wrap: anywhere; }
+
+/* ── Personnes : la fiche ─────────────────────────────────────── */
+
+.fiche-retour {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-bottom: 14px;
+}
+.fiche-retour:hover { color: var(--accent-light); }
+
+.fiche-tete {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.fiche-avatar { width: 56px; height: 56px; font-size: 22px; }
+
+.fiche-tete-txt { flex: 1; min-width: 200px; }
+
+.fiche-nom {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.fiche-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--success);
+  background: rgba(55, 214, 122, 0.1);
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.fiche-badge.rouge {
+  color: var(--danger-text);
+  background: rgba(255, 90, 95, 0.1);
+}
+
+.fiche-puces {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.fiche-puce {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 4px 9px;
+  border-radius: 20px;
+}
+.fiche-puce-alias { color: var(--cognitive); }
+
+.puce-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 0 3px;
+  font-size: 11px;
+  font-family: inherit;
+  opacity: 0.7;
+}
+.puce-x:hover { opacity: 1; }
+
+.fiche-gestes { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.fiche-tuiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 13px;
+  margin-bottom: 22px;
+}
+
+.fiche-tuile {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 16px;
+}
+
+.fiche-tuile-valeur {
+  font-family: var(--font-mono);
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.fiche-jauge {
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  margin-top: 9px;
+  overflow: hidden;
+}
+.fiche-jauge span { display: block; height: 100%; border-radius: 2px; }
+
+/* Onglets INTERNES : des vues d'un même objet, pas des sections du panel.
+ * D'où le soulignement, et non la pilule de la sidebar. */
+.fiche-onglets {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.fiche-onglets button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.fiche-onglets button:hover { color: var(--text-primary); }
+.fiche-onglets button.active {
+  font-weight: 600;
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+
+.fiche-memoire {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 13px 15px;
+  margin-bottom: 8px;
+}
+
+/* Un souvenir qui expire se signale AVANT de disparaître : sinon on ne le
+ * découvre qu'à son absence. */
+.fiche-memoire.expire { border-color: rgba(255, 176, 32, 0.24); }
+.fiche-memoire.expire .fiche-memoire-meta { color: var(--warning-text); }
+
+.fiche-memoire-txt {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.fiche-memoire-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 5px;
+}
+
+.fiche-memoire-actions {
+  display: flex;
+  gap: 12px;
+  flex: none;
+  align-items: center;
+}
+
+.lien-doux,
+.lien-danger {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.lien-doux { color: var(--text-muted); }
+.lien-doux:hover { color: var(--text-primary); }
+.lien-danger { color: var(--danger-text); }
+.lien-danger:hover { color: var(--danger); }
+
+.fiche-ajout,
+.fiche-alias-form {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.fiche-alias-form { margin-top: 14px; }
+
 .log-filters, .log-controls {
   display: flex;
   gap: 6px;
@@ -1810,9 +2066,13 @@ select option, .neo-select option {
 
 /* ── Link Mode ────────────────────────────────────────────────── */
 
+/* `display: flex` bat la règle `[hidden] { display: none }` du navigateur :
+ * sans cette ligne, `boite.hidden = true` ne cacherait rien du tout. */
+.mem-link-banner[hidden] { display: none; }
+
 .mem-link-banner, .link-mode-banner {
-  background: rgba(88, 166, 255, 0.08);
-  border: 1px solid rgba(88, 166, 255, 0.2);
+  background: rgba(76, 141, 255, 0.08);
+  border: 1px solid var(--accent-border);
   border-radius: 8px;
   padding: 10px 14px;
   margin-bottom: 12px;

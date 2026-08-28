@@ -78,8 +78,9 @@ SOUS_ONGLETS = [
         ("Images", "parametres-sub-images"),
         ("Vocal", "parametres-sub-vocal"),
     ]),
-    ("cerveau/personnes", [
-        ("Utilisateurs", "memoire-sub-users"),
+    # « Utilisateurs » a disparu : c'est devenu la page Personnes, vérifiée à
+    # part. Les six autres attendent encore leur phase.
+    ("cerveau/memoire", [
         ("Mémoire communautaire", "memoire-sub-global"),
         ("Questions", "memoire-sub-dashboard"),
         ("Notes du bot", "memoire-sub-notes"),
@@ -221,10 +222,74 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
 
     _verifier_journal(page, rap, erreurs)
     _verifier_automatisations(page, rap, erreurs)
+    _verifier_personnes(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_personnes(page, rap: Rapport, erreurs: list[str]) -> None:
+    """L'annuaire et la fiche. Utilisateurs, Comptes Apex, Ignorés et les alias
+    étaient quatre onglets pour une seule question : que sait Wally de X ?"""
+    print("\n── Cerveau › Personnes ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cerveau/personnes"]').click()
+    page.wait_for_timeout(2200)
+
+    lignes = page.locator("#pers-liste .pers-ligne").count()
+    rap.dire(lignes > 0, "l'annuaire rend des personnes", f"{lignes} ligne(s)")
+
+    puces = page.locator("#pers-puces .puce").count()
+    rap.dire(puces == 5, "les cinq filtres sont des puces", f"{puces} puce(s)")
+
+    page.locator('#pers-plateformes [data-plateforme="discord"]').click()
+    page.wait_for_timeout(500)
+    hash_vu = page.evaluate("location.hash")
+    rap.dire("plateforme=discord" in hash_vu, "le filtre part dans l'URL", hash_vu)
+
+    # Le sous-titre annonce ce que la liste MONTRE. Un compte figé sur le total
+    # ferait mentir la page dès le premier filtre.
+    sous = page.locator("#page-sub").inner_text()
+    rap.dire("Discord" in sous and "connues" in sous,
+             "le sous-titre compte ce qui est montré", sous)
+
+    # ── La fiche ──
+    page.locator('#pers-plateformes [data-plateforme=""]').click()
+    page.wait_for_timeout(400)
+    page.locator("#pers-liste .pers-ligne").first.click()
+    page.wait_for_timeout(2000)
+
+    hash_vu = page.evaluate("location.hash")
+    rap.dire(hash_vu.startswith("#/cerveau/personnes/"),
+             "la ligne ouvre une fiche à son URL", hash_vu)
+
+    nom = page.locator(".fiche-nom").count()
+    tuiles = page.locator(".fiche-tuile").count()
+    onglets = page.locator(".fiche-onglets button").count()
+    rap.dire(nom == 1 and tuiles == 4 and onglets == 3,
+             "la fiche porte son en-tête, ses tuiles et ses onglets",
+             f"{nom} nom · {tuiles} tuiles · {onglets} onglets")
+
+    # Le rechargement à la même URL doit rendre la MÊME fiche : c'est ce qui
+    # rend le lien partageable.
+    page.reload(wait_until="networkidle")
+    page.wait_for_timeout(2500)
+    rap.dire(page.locator(".fiche-nom").count() == 1,
+             "la fiche survit au rechargement", page.evaluate("location.hash"))
+
+    # La sidebar doit rester allumée sur « Personnes » : une fiche est une vue
+    # de sa page, pas une page de plus.
+    allumee = page.locator(".sidebar-item.active").get_attribute("data-route")
+    rap.dire(allumee == "cerveau/personnes",
+             "la sidebar garde la page parente allumée", str(allumee))
+
+    page.locator('.fiche-onglets [data-onglet="comptes"]').click()
+    page.wait_for_timeout(400)
+    corps = _attendre_contenu(page, "fiche-corps")
+    rap.dire(corps > 0, "l'onglet « Comptes liés » rend du contenu", f"{corps} car.")
+
+    rap.dire(not erreurs, "aucune erreur JS sur Personnes", " · ".join(erreurs[:2]))
 
 
 def _verifier_automatisations(page, rap: Rapport, erreurs: list[str]) -> None:

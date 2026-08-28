@@ -39,7 +39,7 @@ def routes(js: str) -> dict[str, dict[str, str]]:
     for cle, corps in re.findall(r"^  '([^']+)': \{$(.*?)^  \},$", bloc.group(1),
                                  re.S | re.M):
         champs = {}
-        for nom in ("titre", "pane", "sub"):
+        for nom in ("titre", "pane", "sub", "parent"):
             m = re.search(nom + r": '((?:[^'\\]|\\.)*)'", corps)
             if m:
                 champs[nom] = m.group(1)
@@ -62,17 +62,37 @@ def test_chaque_entree_de_sidebar_a_sa_route(routes, routes_sidebar):
     )
 
 
-def test_chaque_route_est_atteignable_depuis_la_sidebar(routes, routes_sidebar):
-    """Une route sans entrée n'est accessible qu'en tapant l'URL à la main.
+# Les vues de DÉTAIL, ouvertes depuis une ligne de liste et non depuis la
+# sidebar. Toute autre route absente de la sidebar est une erreur : elle ne
+# serait accessible qu'en tapant l'URL à la main.
+_VUES_DE_DETAIL = {"cerveau/fiche"}
 
-    Quand la fiche personne arrivera (`cerveau/personnes/{id}`, phase 4), elle
-    fera exception : c'est une vue de détail, ouverte depuis une ligne de liste.
-    Il faudra alors l'exclure ICI, explicitement, plutôt que d'assouplir la règle.
-    """
-    orphelines = [r for r in routes if r not in routes_sidebar]
-    assert not orphelines, (
-        f"routes absentes de la sidebar : {orphelines}"
+
+def test_chaque_route_est_atteignable(routes, routes_sidebar, js):
+    orphelines = [
+        r for r in routes
+        if r not in routes_sidebar and r not in _VUES_DE_DETAIL
+    ]
+    assert not orphelines, f"routes absentes de la sidebar : {orphelines}"
+
+    # Une vue de détail doit être atteinte par un préfixe déclaré, sinon son
+    # URL ne mène nulle part et la ligne de liste ne fait rien.
+    bloc = re.search(r"^const ROUTES_PARAM = \[$(.*?)^\];$", js, re.S | re.M)
+    assert bloc, "table ROUTES_PARAM introuvable"
+    cibles = set(re.findall(r"^  \['[^']+', '([^']+)'\],$", bloc.group(1), re.M))
+    assert _VUES_DE_DETAIL <= cibles, (
+        f"vues de détail sans préfixe de route : {sorted(_VUES_DE_DETAIL - cibles)}"
     )
+
+
+def test_une_vue_de_detail_garde_sa_page_allumee(routes):
+    """Sans `parent`, ouvrir une fiche éteint toute la sidebar : plus rien
+    n'indique d'où l'on vient, ni où revenir."""
+    for cle in _VUES_DE_DETAIL:
+        assert cle in routes, f"{cle} absente de ROUTES"
+        parent = routes[cle].get("parent")
+        assert parent, f"{cle} n'a pas de page parente"
+        assert parent in routes, f"{cle} pointe vers une page parente inconnue"
 
 
 def test_chaque_route_designe_un_panneau_qui_existe(routes, html):

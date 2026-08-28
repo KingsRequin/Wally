@@ -295,7 +295,17 @@ const ROUTES = {
   'cerveau/personnes': {
     titre: 'Personnes',
     sous: 'Tout le monde que Wally connaît, sur les deux plateformes.',
-    pane: 'admin-memoire', sub: 'users',
+    pane: 'admin-personnes',
+  },
+  // Vue de détail : le titre et le sous-titre sont réécrits par la fiche
+  // elle-même, une fois qu'elle sait de QUI il s'agit.
+  'cerveau/fiche': {
+    titre: 'Personne',
+    sous: '',
+    pane: 'admin-personne',
+    // Une vue de détail garde SA page allumée dans la sidebar : sans ça, ouvrir
+    // une fiche éteint toute la navigation et on ne sait plus d'où l'on vient.
+    parent: 'cerveau/personnes',
   },
   'cerveau/memoire': {
     titre: 'Mémoire commune',
@@ -350,6 +360,13 @@ const ROUTES = {
   },
 };
 
+// Les routes qui portent un PARAMÈTRE : `#/cerveau/personnes/discord:123`.
+// Elles n'apparaissent pas dans la sidebar — on y arrive depuis une ligne de
+// liste, et on en revient par le fil d'Ariane.
+const ROUTES_PARAM = [
+  ['cerveau/personnes/', 'cerveau/fiche'],
+];
+
 const ROUTE_DEFAUT = 'cerveau/personnes';
 
 // Les anciens hash — `#admin-memoire`, et les quatre noms d'onglets déjà
@@ -373,6 +390,8 @@ const ROUTES_LEGACY = {
 // La route affichée. `null` tant que rien n'est monté, pour que le premier
 // rendu passe la garde d'égalité de `_surChangementDeHash`.
 let currentRoute = null;
+// Le paramètre de la route courante — l'identité, sur une fiche personne.
+let currentParam = '';
 
 /** Ce que dit le hash courant.
  *
@@ -386,9 +405,23 @@ function _analyserHash() {
   const coupe = brut.indexOf('?');
   const chemin = coupe === -1 ? brut : brut.slice(0, coupe);
   const requete = coupe === -1 ? '' : brut.slice(coupe);
-  if (ROUTES[chemin]) return { route: chemin, requete: requete, canonique: true };
-  if (ROUTES_LEGACY[chemin]) return { route: ROUTES_LEGACY[chemin], requete: '', canonique: false };
-  return { route: ROUTE_DEFAUT, requete: '', canonique: false };
+  if (ROUTES[chemin]) {
+    return { route: chemin, param: '', requete: requete, canonique: true };
+  }
+  for (const [prefixe, cible] of ROUTES_PARAM) {
+    if (chemin.startsWith(prefixe) && chemin.length > prefixe.length) {
+      return {
+        route: cible,
+        param: decodeURIComponent(chemin.slice(prefixe.length)),
+        requete: requete,
+        canonique: true,
+      };
+    }
+  }
+  if (ROUTES_LEGACY[chemin]) {
+    return { route: ROUTES_LEGACY[chemin], param: '', requete: '', canonique: false };
+  }
+  return { route: ROUTE_DEFAUT, param: '', requete: '', canonique: false };
 }
 
 /** Pose le sous-onglet de l'ancien panneau AVANT son rendu.
@@ -403,12 +436,14 @@ function _poserSousOnglet(pane, sub) {
   else if (pane === 'admin-systeme') _systemeSubTab = sub;
 }
 
-function _appliquerRoute(route) {
+function _appliquerRoute(route, param) {
   const def = ROUTES[route];
   if (!def) return;
+  currentParam = param || '';
 
+  const surligne = def.parent || route;
   document.querySelectorAll('.sidebar-item').forEach(function (a) {
-    a.classList.toggle('active', a.dataset.route === route);
+    a.classList.toggle('active', a.dataset.route === surligne);
   });
   document.querySelectorAll('.tab-content').forEach(function (c) {
     c.classList.remove('active');
@@ -438,6 +473,8 @@ function _appliquerRoute(route) {
   _poserSousOnglet(def.pane, def.sub);
 
   if (def.pane === 'admin-parametres') renderParametresTab();
+  else if (def.pane === 'admin-personnes') renderPersonnes();
+  else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
   else if (def.pane === 'admin-systeme') renderSystemeTab();
   else if (def.pane === 'admin-memoire') renderMemoireTab();
@@ -455,7 +492,12 @@ function _appliquerRoute(route) {
 function routerVersHash() {
   if (!getToken()) return;
   const vu = _analyserHash();
-  if (vu.route !== currentRoute) _appliquerRoute(vu.route);
+  // Le paramètre compte autant que la route : passer d'une fiche à une autre
+  // ne change pas `route`, et la garde d'égalité seule laisserait la première
+  // personne à l'écran.
+  if (vu.route !== currentRoute || vu.param !== currentParam) {
+    _appliquerRoute(vu.route, vu.param);
+  }
   // Réécrit l'URL seulement quand on a dû deviner. Poser le hash relance
   // `hashchange`, mais la route est alors déjà courante : la garde ci-dessus
   // arrête la boucle au deuxième tour.
@@ -559,7 +601,7 @@ function enterAdmin() {
   // AVANT le SSE : il construit `#log-stream`, la cible dans laquelle
   // `appendLog()` écrit l'historique. Sans lui, les lignes déjà émises sont
   // perdues au démarrage — et ça, quelle que soit la page d'arrivée.
-  renderJournal();
+  _construireJournal();
   startLogSSE();
   routerVersHash();
 }
@@ -1398,7 +1440,7 @@ async function startLogSSE() {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'links_analyzed' || data.type === 'link_accepted' || data.type === 'link_rejected' || data.type === 'link_unlinked') {
-        loadMemoryUsers();
+        chargerPersonnes();
         pollLinksBadge();
         if (data.type === 'links_analyzed' && data.count > 0) {
           toast(`🔗 ${data.count} liaison(s) à vérifier`, 'info');
@@ -1624,6 +1666,12 @@ function _lireFiltresJournal() {
  *  garde d'égalité du routeur est exactement ce qui rend ce geste gratuit.
  */
 function _ecrireFiltresJournal() {
+  // Garde indispensable : `enterAdmin()` construit le Journal au démarrage,
+  // quelle que soit la page d'arrivée, pour que `#log-stream` existe avant le
+  // premier événement SSE. Sans cette ligne, ce montage réécrivait le hash en
+  // « #/systeme/journal » AVANT que le routeur ne tourne — et un lien vers une
+  // fiche personne ne survivait pas au rechargement. Vu au smoke test.
+  if (currentRoute !== 'systeme/journal') return;
   const p = new URLSearchParams();
   const f = _journalFiltres;
   if (f.q) p.set('q', f.q);
@@ -1637,7 +1685,14 @@ function _ecrireFiltresJournal() {
 
 // ── Rendu ───────────────────────────────────────────────────────────────────
 
-function renderJournal() {
+/** Construit le panneau, sans l'ouvrir comme page.
+ *
+ *  Appelé au démarrage par `enterAdmin()`, quelle que soit la page d'arrivée :
+ *  `#log-stream` doit exister avant le premier événement du flux, sinon les
+ *  lignes déjà émises sont perdues. Ce chemin ne touche NI aux filtres, NI à
+ *  l'URL, NI au sommaire — il n'est pas la page.
+ */
+function _construireJournal() {
   const el = document.getElementById('tab-admin-journal');
   if (!el) return;
 
@@ -1675,6 +1730,11 @@ function renderJournal() {
 
     _cablerJournal(el);
   }
+}
+
+function renderJournal() {
+  _construireJournal();
+  if (!document.getElementById('log-stream')) return;
 
   // La requête du hash prime sur l'état mémorisé : c'est elle qu'on partage.
   // Sans requête, on restitue les filtres d'avant et on les réécrit dans l'URL,
@@ -2182,718 +2242,784 @@ function escJs(str) {
   );
 }
 
-// ── Memory Tab State ────────────────────────────────────────────
-let _memShowAll = false;
-let _memPlatformFilter = '';
-let _memSortBy = 'memories';
-let _memSearchTimer = null;
-let _memLinkMode = false;
-let _memLinkSourceId = null;
-let _memLinkSourceName = null;
-let _memCurrentUsers = []; // cached users for link mode
+// ── Cerveau › Personnes ─────────────────────────────────────────────────────
+//
+// Refonte du 2026-08-28. « Que sait Wally de KingsRequin ? » demandait quatre
+// onglets : ses mémoires dans Utilisateurs, son compte Apex dans Comptes Apex,
+// son statut d'écoute dans Ignorés, ses surnoms dans les alias. Toujours la
+// même question, jamais rassemblée.
+//
+// L'annuaire devient une liste unique ; « ignoré » et « Apex lié » y sont des
+// FILTRES, plus des pages. Chaque ligne ouvre une fiche, qui tient dans une
+// seule requête (`/api/admin/person/{identite}`).
 
-const MEM_CATEGORIES = [
-  { key: 'FAIT', label: 'Faits', css: 'fait', color: '#22c55e' },
-  { key: 'PREF', label: 'Préférences', css: 'pref', color: '#3b82f6' },
-  { key: 'LANG', label: 'Langue', css: 'lang', color: '#eab308' },
-  { key: 'REL', label: 'Relations', css: 'rel', color: '#a855f7' },
-  { key: '', label: 'Non classé', css: 'other', color: '#64748b' },
+const _PERS_SECTIONS = [
+  ['pers-annuaire', 'Annuaire'],
+  ['pers-fusions', 'Fusions à valider'],
 ];
 
-function renderMemoryTab(targetEl) {
-  const el = targetEl || document.getElementById('tab-memory') || document.getElementById('memoire-sub-users');
+// Les filtres se DÉCRIVENT, ils ne s'écrivent pas trois fois. Ajouter une
+// entrée ici suffit : la puce, l'état d'URL et le tri en découlent.
+const _PERS_FILTRES = [
+  ['memoire', 'Avec mémoire', function (p) { return (p.memory_count || 0) > 0; }],
+  ['apex', 'Compte Apex lié', function (p) { return !!p._apex; }],
+  ['ignore', 'Ignorés', function (p) { return !!p._ignore; }],
+  ['trust', 'Trust élevé', function (p) { return (p.trust_score || 0) >= 0.5; }],
+  ['semaine', 'Vus cette semaine', function (p) {
+    return (p.last_updated || 0) * 1000 > Date.now() - 7 * 86400000;
+  }],
+];
+
+const _PERS_TRIS = [
+  ['memories', 'Mémoires'], ['trust', 'Trust'], ['love', 'Love'], ['name', 'Nom'],
+];
+
+let _persFiltres = { q: '', plateforme: '', tri: 'memories', actifs: [] };
+let _persGens = [];
+
+function _persLireHash() {
+  const brut = location.hash.replace(/^#\/?/, '');
+  const coupe = brut.indexOf('?');
+  if (coupe === -1) { _persEcrireHash(); return; }
+  const p = new URLSearchParams(brut.slice(coupe + 1));
+  const plateforme = p.get('plateforme') || '';
+  const tri = p.get('tri') || 'memories';
+  _persFiltres = {
+    q: p.get('q') || '',
+    plateforme: (plateforme === 'discord' || plateforme === 'twitch') ? plateforme : '',
+    tri: _PERS_TRIS.some(function (t) { return t[0] === tri; }) ? tri : 'memories',
+    actifs: (p.get('f') || '').split(',').filter(function (n) {
+      return _PERS_FILTRES.some(function (f) { return f[0] === n; });
+    }),
+  };
+}
+
+function _persEcrireHash() {
+  if (currentRoute !== 'cerveau/personnes') return;
+  const p = new URLSearchParams();
+  const f = _persFiltres;
+  if (f.q) p.set('q', f.q);
+  if (f.plateforme) p.set('plateforme', f.plateforme);
+  if (f.tri !== 'memories') p.set('tri', f.tri);
+  if (f.actifs.length) p.set('f', f.actifs.join(','));
+  const requete = p.toString();
+  const vise = '#/cerveau/personnes' + (requete ? '?' + requete : '');
+  if (location.hash !== vise) history.replaceState(null, '', vise);
+}
+
+function renderPersonnes() {
+  const el = document.getElementById('tab-admin-personnes');
   if (!el) return;
-  // Build toolbar with rows for responsive layout
-  var toolbar = document.createElement('div');
-  toolbar.className = 'mem-toolbar';
 
-  var search = document.createElement('input');
-  search.type = 'text';
-  search.className = 'mem-search';
-  search.id = 'mem-search';
-  search.placeholder = 'Rechercher un utilisateur...';
-  search.setAttribute('aria-label', 'Recherche utilisateur');
-  toolbar.appendChild(search);
+  if (!document.getElementById('pers-liste')) {
+    el.innerHTML = `
+      <div class="auto-barre">
+        <input type="search" class="champ-recherche" id="pers-q"
+               placeholder="Chercher quelqu'un…" aria-label="Chercher quelqu'un">
+        <div class="segmented" id="pers-plateformes" role="group" aria-label="Plateforme">
+          <button data-plateforme="">Tous</button>
+          <button data-plateforme="discord">Discord</button>
+          <button data-plateforme="twitch">Twitch</button>
+        </div>
+        <div class="segmented" id="pers-tris" role="group" aria-label="Tri"></div>
+      </div>
+      <div class="journal-puces" id="pers-puces"></div>
+      <div class="mem-link-banner" id="pers-fusion-bandeau" hidden></div>
+      <div id="pers-annuaire">
+        <div class="liste-tete pers-tete">
+          <span>Personne</span><span>Trust</span><span>Love</span><span>Apex</span>
+        </div>
+        <div class="liste" id="pers-liste"></div>
+      </div>
+      <div class="page-section" id="pers-fusions"></div>`;
 
-  var row = document.createElement('div');
-  row.className = 'mem-toolbar-row';
+    el.querySelector('#pers-tris').innerHTML = _PERS_TRIS.map(function (t) {
+      return '<button data-tri="' + t[0] + '">' + t[1] + '</button>';
+    }).join('');
+    _cablerPersonnes(el);
+  }
 
-  var pills = document.createElement('div');
-  pills.className = 'mem-platform-pills';
-  ['', 'discord', 'twitch'].forEach(function(p) {
-    var btn = document.createElement('button');
-    btn.className = 'mem-platform-pill' + (p === '' ? ' active' : '');
-    btn.dataset.platform = p;
-    btn.textContent = p === '' ? 'Tous' : p.charAt(0).toUpperCase() + p.slice(1);
-    btn.onclick = function() { setMemPlatform(btn); };
-    pills.appendChild(btn);
+  _persLireHash();
+  poserSommaire('cerveau/personnes', _PERS_SECTIONS, '');
+  chargerPersonnes();
+}
+
+function _cablerPersonnes(el) {
+  const q = el.querySelector('#pers-q');
+  q.addEventListener('input', function () {
+    _persFiltres.q = q.value.trim();
+    _persEcrireHash();
+    _rendrePersonnes();
   });
-  row.appendChild(pills);
 
-  var sortSel = document.createElement('select');
-  sortSel.className = 'mem-sort-select';
-  sortSel.id = 'mem-sort';
-  sortSel.onchange = function() { setMemSort(sortSel.value); };
-  [['memories','Mémoires'],['trust','Trust'],['love','Love'],['name','Nom']].forEach(function(o) {
-    var opt = document.createElement('option');
-    opt.value = o[0]; opt.textContent = o[1];
-    sortSel.appendChild(opt);
+  el.querySelector('#pers-plateformes').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-plateforme]');
+    if (!b) return;
+    _persFiltres.plateforme = b.dataset.plateforme;
+    _persEcrireHash();
+    _rendrePersonnes();
   });
-  row.appendChild(sortSel);
 
-  var toggleLabel = document.createElement('label');
-  toggleLabel.className = 'mem-toggle';
-  toggleLabel.onclick = function() { toggleMemShowAll(); };
-  var track = document.createElement('div');
-  track.className = 'mem-toggle-track';
-  track.id = 'mem-toggle-track';
-  var thumb = document.createElement('div');
-  thumb.className = 'mem-toggle-thumb';
-  track.appendChild(thumb);
-  toggleLabel.appendChild(track);
-  var toggleSpan = document.createElement('span');
-  toggleSpan.textContent = 'Sans mémoire';
-  toggleLabel.appendChild(toggleSpan);
-  row.appendChild(toggleLabel);
+  el.querySelector('#pers-tris').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-tri]');
+    if (!b) return;
+    _persFiltres.tri = b.dataset.tri;
+    _persEcrireHash();
+    _rendrePersonnes();
+  });
 
-  var syncBtn = document.createElement('button');
-  syncBtn.className = 'mem-action-btn';
-  syncBtn.textContent = '↻ Sync';
-  syncBtn.onclick = function() { syncMemoryUsers(); };
-  row.appendChild(syncBtn);
+  el.querySelector('#pers-puces').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-filtre]');
+    if (!b) return;
+    const nom = b.dataset.filtre;
+    const i = _persFiltres.actifs.indexOf(nom);
+    if (i === -1) _persFiltres.actifs.push(nom);
+    else _persFiltres.actifs.splice(i, 1);
+    _persEcrireHash();
+    _rendrePersonnes();
+  });
 
-  var analyzeBtn = document.createElement('button');
-  analyzeBtn.className = 'mem-action-btn';
-  analyzeBtn.textContent = '🔗 Analyser';
-  analyzeBtn.onclick = function() { analyzeLinks(); };
-  row.appendChild(analyzeBtn);
+  // Une ligne est un LIEN vers la fiche : `location.hash` plutôt qu'un rendu
+  // direct, pour que la fiche se partage et survive au rechargement.
+  el.querySelector('#pers-fusion-bandeau').addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-fusion="annuler"]')) cancelLinkMode();
+  });
 
-  toolbar.appendChild(row);
-  el.appendChild(toolbar);
+  el.querySelector('#pers-liste').addEventListener('click', function (ev) {
+    const ligne = ev.target.closest('[data-identite]');
+    if (!ligne) return;
+    // En mode fusion, un clic RATTACHE au lieu d'ouvrir : c'est tout l'objet du
+    // mode, et le bandeau au-dessus le dit.
+    if (_memLinkMode) {
+      handleMemLinkClick(ligne.dataset.identite, ligne.dataset.nom || '',
+                         ligne.dataset.plateforme || '');
+      return;
+    }
+    location.hash = '#/cerveau/personnes/' + encodeURIComponent(ligne.dataset.identite);
+  });
+}
 
-  var pendingDiv = document.createElement('div');
-  pendingDiv.id = 'mem-pending-links';
-  el.appendChild(pendingDiv);
+async function chargerPersonnes() {
+  const liste = document.getElementById('pers-liste');
+  if (!liste) return;
+  liste.innerHTML = '<div class="liste-vide">Chargement…</div>';
 
-  var bannerDiv = document.createElement('div');
-  bannerDiv.id = 'mem-link-banner';
-  bannerDiv.style.display = 'none';
-  el.appendChild(bannerDiv);
+  const [ru, ri, ra, rl] = await Promise.all([
+    // Tout l'annuaire d'un coup, filtré ensuite dans le navigateur : une
+    // pagination rendrait la recherche menteuse, elle ne chercherait que dans
+    // la page chargée.
+    apiFetch('/api/admin/memory/users?show_all=1&limit=1000'),
+    apiFetch('/api/admin/ignored'),
+    apiFetch('/api/admin/apex/profiles'),
+    apiFetch('/api/admin/links'),
+  ]);
+  if (!ru || !ru.ok) {
+    liste.innerHTML = '<div class="liste-vide">Erreur de chargement.</div>';
+    return;
+  }
+  const gens = (await ru.json()).users || [];
 
-  var grid = document.createElement('div');
-  grid.className = 'mem-grid';
-  grid.id = 'mem-grid';
-  el.appendChild(grid);
+  // « Ignoré » et « Apex lié » sont des filtres de CETTE liste : il faut donc
+  // les rabattre sur chaque personne, sinon la puce ne pourrait rien filtrer.
+  const ignores = (ri && ri.ok) ? await ri.json() : {};
+  const clesIgnorees = new Set();
+  (ignores.discord || []).forEach(function (e) { clesIgnorees.add('discord:' + e.id); });
+  // `ignored.twitch` est une liste de CHAÎNES (les pseudos de `config.yaml`),
+  // là où `ignored.discord` porte des objets. Les traiter pareil ajoutait
+  // « twitch:undefined » et n'ignorait personne.
+  (ignores.twitch || []).forEach(function (nom) {
+    clesIgnorees.add('twitch:' + String(nom).toLowerCase());
+  });
 
-  // Wire search with debounce
-  var searchInput = document.getElementById('mem-search');
-  if (searchInput) {
-    searchInput.addEventListener('input', function() {
-      clearTimeout(_memSearchTimer);
-      _memSearchTimer = setTimeout(function() { loadMemoryUsers(); }, 300);
+  const apex = {};
+  if (ra && ra.ok) {
+    ((await ra.json()).profiles || []).forEach(function (p) {
+      (p.owners || []).forEach(function (o) { apex[o.identity || o] = p.apex_name; });
     });
   }
 
-  loadMemoryUsers();
-  pollLinksBadge();
+  _persGens = gens.map(function (p) {
+    const identite = p.user_id;
+    const nom = (p.username || '').toLowerCase();
+    const plateforme = identite.split(':')[0];
+    return Object.assign({}, p, {
+      _plateforme: plateforme,
+      _apex: apex[identite] || null,
+      _ignore: clesIgnorees.has(identite)
+        || (plateforme === 'twitch' && clesIgnorees.has('twitch:' + nom)),
+    });
+  });
+
+  _rendrePersonnes();
+  _majBandeauFusion();
+  _rendreFusions((rl && rl.ok) ? (await rl.json()).proposals || [] : []);
 }
 
-function setMemPlatform(btn) {
-  _memPlatformFilter = btn.dataset.platform;
-  document.querySelectorAll('.mem-platform-pill').forEach(function(p) { p.classList.remove('active'); });
-  btn.classList.add('active');
-  loadMemoryUsers();
-}
+function _rendrePersonnes() {
+  const liste = document.getElementById('pers-liste');
+  if (!liste) return;
+  const f = _persFiltres;
 
-function setMemSort(value) {
-  _memSortBy = value;
-  loadMemoryUsers();
-}
+  document.querySelectorAll('#pers-plateformes [data-plateforme]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.plateforme === f.plateforme);
+  });
+  document.querySelectorAll('#pers-tris [data-tri]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tri === f.tri);
+  });
+  const champ = document.getElementById('pers-q');
+  if (champ && champ.value !== f.q) champ.value = f.q;
 
-function toggleMemShowAll() {
-  _memShowAll = !_memShowAll;
-  var track = document.getElementById('mem-toggle-track');
-  if (track) track.classList.toggle('active', _memShowAll);
-  loadMemoryUsers();
-}
+  const q = f.q.toLowerCase();
+  let gens = _persGens.filter(function (p) {
+    if (f.plateforme && p._plateforme !== f.plateforme) return false;
+    if (q && ((p.username || '') + ' ' + p.user_id + ' ' + (p._apex || ''))
+        .toLowerCase().indexOf(q) === -1) return false;
+    return f.actifs.every(function (nom) {
+      const regle = _PERS_FILTRES.find(function (x) { return x[0] === nom; });
+      return regle ? regle[2](p) : true;
+    });
+  });
 
-async function loadMemoryUsers() {
-  var params = new URLSearchParams();
-  var q = (document.getElementById('mem-search') || {}).value || '';
-  if (q) params.set('q', q);
-  params.set('show_all', '1');
-  params.set('limit', '200');
-  if (_memSortBy) params.set('sort_by', _memSortBy);
-  var url = '/api/admin/memory/users' + (params.toString() ? '?' + params : '');
-  var r = await apiFetch(url);
-  if (!r || !r.ok) return;
-  var data = await r.json();
-  var users = data.users;
-  _memCurrentUsers = users;
-
-  // Client-side filters: platform + show/hide users with no memories
-  var filtered = users;
-  if (!_memShowAll) {
-    filtered = filtered.filter(function(u) { return (u.memory_count || 0) > 0; });
+  const puces = document.getElementById('pers-puces');
+  if (puces) {
+    puces.innerHTML = _PERS_FILTRES.map(function (x) {
+      const actif = f.actifs.indexOf(x[0]) !== -1;
+      return '<button class="puce' + (actif ? ' active' : '') + '" data-filtre="'
+        + x[0] + '" aria-pressed="' + actif + '">' + escHtml(x[1])
+        + (actif ? ' ✕' : '') + '</button>';
+    }).join('');
   }
-  if (_memPlatformFilter) {
-    filtered = filtered.filter(function(u) { return u.platform === _memPlatformFilter; });
-  }
 
-  var grid = document.getElementById('mem-grid');
-  if (!grid) return;
+  const cles = {
+    memories: function (p) { return p.memory_count || 0; },
+    trust: function (p) { return p.trust_score || 0; },
+    love: function (p) { return p.love_score || 0; },
+    name: function (p) { return (p.username || '').toLowerCase(); },
+  };
+  const cle = cles[f.tri] || cles.memories;
+  gens = gens.slice().sort(function (a, b) {
+    const va = cle(a), vb = cle(b);
+    if (f.tri === 'name') return String(va).localeCompare(String(vb));
+    return vb - va;
+  });
 
-  if (filtered.length === 0) {
-    grid.textContent = '';
-    var emptyDiv = document.createElement('div');
-    emptyDiv.className = 'mem-empty-state';
-    emptyDiv.textContent = 'Aucun utilisateur trouvé.';
-    grid.appendChild(emptyDiv);
+  _majSousTitrePersonnes(gens.length);
+
+  if (!gens.length) {
+    liste.innerHTML = '<div class="liste-vide">Personne ne correspond à ces filtres.</div>';
     return;
   }
 
-  grid.innerHTML = filtered.map(function(u) {
-    var displayName = u.username || u.user_id.split(':').slice(1).join(':') || u.user_id;
-    var platform = u.platform || u.user_id.split(':')[0];
-    var memCount = u.memory_count || 0;
-    var trust = u.trust_score != null ? u.trust_score : 0;
-    var love = u.love_score != null ? u.love_score : 0;
-    var hasLinks = (u.linked_accounts || []).length > 0;
-    var noMem = memCount === 0;
-    var avatarUrl = u.avatar_url;
-    var initial = (displayName || '?')[0].toUpperCase();
-
-    var avatarStyle = avatarUrl
-      ? "background-image:url('" + escAttr(avatarUrl) + "');background-size:cover;background-position:center"
-      : '';
-    var avatarContent = avatarUrl ? '' : escHtml(initial);
-
-    // Link mode classes
-    var cardClasses = 'mem-card';
-    if (noMem) cardClasses += ' no-memory';
-    if (_memLinkMode) {
-      if (u.user_id === _memLinkSourceId) {
-        cardClasses += ' link-source';
-      } else {
-        cardClasses += ' link-mode';
-      }
-    }
-
-    // `escJs` et non `escAttr` : ces chaînes finissent dans un `onclick=`, donc
-    // décodées en entités HTML avant d'être compilées comme du JS.
-    var clickHandler = _memLinkMode
-      ? "handleMemLinkClick('" + escJs(u.user_id) + "','" + escJs(displayName) + "','" + escJs(platform) + "')"
-      : "openUserModal('" + escJs(u.user_id) + "')";
-
-    return '<div class="' + cardClasses + '" data-uid="' + escAttr(u.user_id) + '" onclick="' + clickHandler + '">'
-      + '<button class="mem-card-delete" onclick="event.stopPropagation();deleteUser(\'' + escJs(u.user_id) + '\',\'' + escJs(displayName) + '\')" title="Supprimer l\'utilisateur">🗑</button>'
-      + (hasLinks ? '<span class="mem-card-link-badge">🔗 lié</span>' : '')
-      + '<div class="mem-card-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
-      + '<div class="mem-card-name" title="' + escAttr(displayName) + '">' + escHtml(displayName) + '</div>'
-      + '<div class="mem-card-sub">' + escHtml(platform) + ' · ' + (noMem ? '<em>sans mémoire</em>' : memCount + ' mémoire' + (memCount > 1 ? 's' : '')) + '</div>'
-      + '<div class="mem-card-bars">'
-      + '<div class="mem-card-bar"><div class="mem-card-bar-fill trust" style="width:' + Math.round(trust * 100) + '%"></div></div>'
-      + '<div class="mem-card-bar"><div class="mem-card-bar-fill love" style="width:' + Math.round(love * 100) + '%"></div></div>'
-      + '</div>'
-      + '<div class="mem-card-stats">'
-      + '<span style="color:#06b6d4">Trust ' + trust.toFixed(2) + '</span>'
-      + '<span style="color:#ec4899">Love ' + love.toFixed(2) + '</span>'
-      + '</div>'
+  liste.innerHTML = gens.map(function (p) {
+    const vu = p.last_updated ? apexDepuis(p.last_updated) : 'jamais vu';
+    // Une personne ignorée n'annonce PAS ses mémoires : ce qu'on veut savoir
+    // d'elle, c'est que Wally ne la lit plus.
+    const meta = p._ignore
+      ? '<span class="pers-ignore">ignoré</span>'
+      : escHtml(p._plateforme) + ' · ' + Number(p.memory_count || 0)
+        + ' mémoire' + ((p.memory_count || 0) > 1 ? 's' : '') + ' · vu ' + escHtml(vu);
+    return '<div class="liste-ligne pers-ligne' + (p._ignore ? ' pers-terne' : '')
+      + '" data-identite="' + escAttr(p.user_id)
+      + '" data-nom="' + escAttr(p.username || p.user_id)
+      + '" data-plateforme="' + escAttr(p._plateforme)
+      + '" role="button" tabindex="0">'
+      + '<div class="pers-qui">'
+      + _persAvatar(p)
+      + '<div><div class="pers-nom">' + escHtml(p.username || p.user_id) + '</div>'
+      + '<div class="pers-meta">' + meta + '</div></div></div>'
+      + '<span class="pers-trust">' + (p.trust_score || 0).toFixed(2) + '</span>'
+      + '<span class="pers-love">' + (p.love_score || 0).toFixed(2) + '</span>'
+      + '<span class="pers-apex">' + (p._apex ? escHtml(p._apex) : '—') + '</span>'
       + '</div>';
   }).join('');
 }
 
-async function syncMemoryUsers() {
-  var r = await apiFetch('/api/admin/memory/sync', { method: 'POST' });
-  if (!r || !r.ok) { toast('Erreur sync', 'error'); return; }
-  var data = await r.json();
-  var msg = data.synced + ' importé(s)' + (data.resolved ? ', ' + data.resolved + ' nom(s) résolu(s)' : '');
-  toast(msg, 'success');
-  loadMemoryUsers();
+/** L'avatar, ou l'initiale sur fond coloré quand la plateforme n'en donne pas. */
+function _persAvatar(p) {
+  if (p.avatar_url) {
+    return '<img class="pers-avatar" src="' + escAttr(p.avatar_url)
+      + '" alt="" loading="lazy">';
+  }
+  const nom = p.username || p.user_id || '?';
+  const teinte = Math.abs(_persHash(nom)) % 360;
+  return '<span class="pers-avatar pers-avatar-vide" style="background:hsl('
+    + teinte + ',42%,38%)">' + escHtml(nom.slice(0, 1).toUpperCase()) + '</span>';
 }
 
-// ── User Detail Modal ─────────────────────────────────────────────
+function _persHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
 
-async function openUserModal(userId, userData) {
-  // Fetch memories
-  var memR = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId));
-  // Faits S-P-O V2 (#observability C3) — mappés au format de la modale.
-  var facts = memR && memR.ok ? ((await memR.json()).facts || []) : [];
-  var memories = facts.map(function(f) {
-    return {
-      memory_id: f.id, id: f.id, content: f.content, category: f.category,
-      created_at: f.created_at, updated_at: f.created_at,
-      confidence: f.confidence, origin: f.origin,
-    };
-  });
+/** Le sous-titre annonce ce que la liste MONTRE, pas ce que la base contient.
+ *  Écrire « 455 connues » au-dessus de douze lignes filtrées ferait mentir la
+ *  page sur ce qu'elle affiche. */
+function _majSousTitrePersonnes(montrees) {
+  const sous = document.getElementById('page-sub');
+  if (!sous) return;
+  const total = _persGens.length;
+  const d = _persGens.filter(function (p) { return p._plateforme === 'discord'; }).length;
+  const t = _persGens.filter(function (p) { return p._plateforme === 'twitch'; }).length;
+  sous.textContent = (montrees === total
+    ? total + ' connues'
+    : montrees + ' sur ' + total + ' connues')
+    + ' · ' + d + ' Discord · ' + t + ' Twitch';
+  sous.hidden = false;
+}
 
-  // Fetch aliases
-  var aliasesR = await apiFetch('/api/admin/aliases?canonical_uid=' + encodeURIComponent(userId));
-  var aliases = aliasesR && aliasesR.ok ? (await aliasesR.json()) : [];
+function _rendreFusions(propositions) {
+  const boite = document.getElementById('pers-fusions');
+  if (!boite) return;
+  const attente = (propositions || []).filter(function (p) { return p.status === 'pending'; });
 
-  // Find user data from cached list if not passed
-  if (!userData) {
-    userData = _memCurrentUsers.find(function(u) { return u.user_id === userId; }) || {};
-  }
-
-  var displayName = userData.username || userId.split(':').slice(1).join(':') || userId;
-  var platform = userData.platform || userId.split(':')[0];
-  var trust = userData.trust_score != null ? userData.trust_score : 0;
-  var love = userData.love_score != null ? userData.love_score : 0;
-  var avatarUrl = userData.avatar_url;
-  var initial = (displayName || '?')[0].toUpperCase();
-  var linkedAccounts = userData.linked_accounts || [];
-
-  // Group memories by category
-  var grouped = {};
-  MEM_CATEGORIES.forEach(function(cat) { grouped[cat.key] = []; });
-  memories.forEach(function(m) {
-    var catKey = m.category || '';
-    if (!grouped[catKey]) grouped[catKey] = grouped[''];
-    grouped[catKey].push(m);
-  });
-  // Sort each group by date desc
-  Object.keys(grouped).forEach(function(key) {
-    grouped[key].sort(function(a, b) {
-      var da = new Date(b.updated_at || b.created_at || 0);
-      var db = new Date(a.updated_at || a.created_at || 0);
-      return da - db;
-    });
-  });
-
-  // Create backdrop
-  var backdrop = document.createElement('div');
-  backdrop.className = 'mem-modal-backdrop';
-  backdrop.addEventListener('click', function(e) {
-    if (e.target === backdrop) backdrop.remove();
-  });
-
-  var avatarStyle = avatarUrl
-    ? "background-image:url('" + escAttr(avatarUrl) + "');background-size:cover;background-position:center"
-    : '';
-  var avatarContent = avatarUrl ? '' : escHtml(initial);
-
-  // Build category sections HTML
-  var categoriesHtml = '';
-  MEM_CATEGORIES.forEach(function(cat) {
-    var items = grouped[cat.key] || [];
-    if (items.length === 0) return;
-    categoriesHtml += '<div class="mem-category" data-cat="' + escAttr(cat.key) + '">'
-      + '<div class="mem-category-header" onclick="toggleMemCategory(this)">'
-      + '<span class="mem-category-chevron">▼</span>'
-      + '<span class="mem-category-name ' + escAttr(cat.css) + '">' + escHtml(cat.label) + '</span>'
-      + '<span class="mem-category-count">(' + items.length + ')</span>'
-      + '</div>'
-      + '<div class="mem-category-body">'
-      + items.map(function(m) {
-          var isOwn = (m.source || '') === userId || (m.source_platform || '') === platform;
-          var sourceIcon = isOwn ? '🤖' : '✍️';
-          var dateStr = m.updated_at || m.created_at;
-          var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
-          return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '" style="border-left:2px solid ' + cat.color + '4d">'
-            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.content) + '</span>'
-            + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajouté manuellement') + '">' + sourceIcon + '</span>'
-            + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
-            + '<div class="mem-entry-actions">'
-            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Modifier">✏️</button>'
-            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Supprimer">🗑</button>'
-            + '</div></div>';
-        }).join('')
-      + '</div></div>';
-  });
-
-  if (categoriesHtml === '') {
-    categoriesHtml = '<div class="mem-empty-state">Aucun souvenir enregistré.</div>';
-  }
-
-  // Build linked accounts section
-  var linkedHtml = '';
-  if (linkedAccounts.length > 0) {
-    linkedHtml = '<div class="mem-linked-section">'
-      + '<div class="mem-linked-title">Comptes liés</div>'
-      + '<div class="mem-linked-pills">'
-      + linkedAccounts.map(function(a) {
-          var aPlatform = a.alias_platform || a.alias_id.split(':')[0];
-          var aName = a.alias_username || a.alias_id.split(':').slice(1).join(':');
-          return '<div class="mem-linked-pill ' + escAttr(aPlatform) + '">'
-            + (PLATFORM_ICONS[aPlatform] || '') + ' ' + escHtml(aName)
-            + '<button class="mem-linked-pill-unlink" onclick="unlinkFromModal(' + (a.link_id || 0) + ',\'' + escJs(userId) + '\')" title="Délier">✕</button>'
-            + '</div>';
-        }).join('')
-      + '</div></div>';
-  }
-
-  // Build alias section HTML
-  var aliasHtml = '<div class="mem-linked-section" id="alias-section-' + escAttr(userId) + '">'
-    + '<div class="mem-linked-title">Alias connus</div>'
-    + '<div class="mem-linked-pills" id="alias-pills-' + escAttr(userId) + '">'
-    + (aliases.length === 0 ? '<span style="color:var(--text-muted);font-size:0.8rem">Aucun alias</span>' : '')
-    + aliases.map(function(a) {
-        var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
-        var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
-        return '<div class="mem-linked-pill">'
-          + escHtml(a.nickname)
-          + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
-          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escJs(a.nickname) + '\',\'' + escJs(userId) + '\')" title="Supprimer">\u2715</button>'
-          + '</div>';
-      }).join('')
-    + '</div>'
-    + '<div style="display:flex;gap:8px;margin-top:8px">'
-    + '<input type="text" id="alias-input-' + escAttr(userId) + '" placeholder="Ajouter un alias..." class="mem-modal-search" style="flex:1;min-width:0">'
-    + '<button class="mem-modal-action add" style="white-space:nowrap" onclick="addModalAlias(\'' + escJs(userId) + '\')">Ajouter</button>'
-    + '</div>'
+  boite.innerHTML = '<div class="page-section-titre">Fusions à valider</div>'
+    + '<div class="page-section-sous">'
+    + (attente.length
+        ? attente.length + ' identité(s) semblent désigner quelqu\'un qu\'on connaît déjà.'
+        : 'Aucune identité en attente de rattachement.')
     + '</div>';
+  if (!attente.length) return;
 
-  var modal = document.createElement('div');
-  modal.className = 'mem-modal';
-  modal.innerHTML = '<div class="mem-modal-header">'
-    + '<div class="mem-modal-avatar ' + escAttr(platform) + '" style="' + avatarStyle + '">' + avatarContent + '</div>'
-    + '<div class="mem-modal-info">'
-    + '<div class="mem-modal-name">' + escHtml(displayName) + '</div>'
-    + '<div class="mem-modal-sub">' + escHtml(platform) + ' · ' + escHtml(userId) + '</div>'
-    + '</div>'
-    + '<div class="mem-modal-stats">'
-    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value trust">' + trust.toFixed(2) + '</div><div class="mem-modal-stat-label">Trust</div></div>'
-    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value love">' + love.toFixed(2) + '</div><div class="mem-modal-stat-label">Love</div></div>'
-    + '<div class="mem-modal-stat"><div class="mem-modal-stat-value count">' + memories.length + '</div><div class="mem-modal-stat-label">Mémoires</div></div>'
-    + '</div>'
-    + '<button class="mem-modal-close" onclick="this.closest(\'.mem-modal-backdrop\').remove()">✕</button>'
-    + '</div>'
-    + '<div class="mem-modal-actions">'
-    + '<button class="mem-modal-action add" onclick="showModalAddForm(\'' + escJs(userId) + '\')">+ Ajouter mémoire</button>'
-    + '<button class="mem-modal-action link" onclick="startLinkMode(\'' + escJs(userId) + '\',\'' + escJs(displayName) + '\')">🔗 Lier un compte</button>'
-    + (memories.length > 0 ? '<button class="mem-modal-action danger" onclick="deleteAllModalMemories(\'' + escJs(userId) + '\')">🗑 Supprimer tout</button>' : '')
-    + '<button class="mem-modal-action danger" onclick="deleteUser(\'' + escJs(userId) + '\',\'' + escJs(displayName) + '\')" title="Supprime l\'utilisateur et toutes ses mémoires">🗑 Supprimer l\'utilisateur</button>'
-    + '</div>'
-    + '<div id="modal-add-form"></div>'
-    + '<div class="mem-modal-toolbar">'
-    + '<select class="mem-sort-select" id="modal-mem-sort" onchange="sortModalMemories(this.value)">'
-    + '<option value="default">Tri par défaut</option>'
-    + '<option value="recent">Plus récent</option>'
-    + '<option value="oldest">Plus ancien</option>'
-    + '</select>'
-    + '<input type="text" class="mem-modal-search" id="modal-mem-search" placeholder="🔍 Rechercher..." oninput="filterModalMemories(this.value)">'
-    + '</div>'
-    + '<div id="modal-categories">' + categoriesHtml + '</div>'
-    + linkedHtml
-    + aliasHtml;
+  const hote = document.createElement('div');
+  boite.appendChild(hote);
+  renderPendingLinks(attente, hote);
 
-  backdrop.appendChild(modal);
-  modal._memories = memories;
-  modal._userId = userId;
-  modal._userData = userData;
-  document.body.appendChild(backdrop);
+  poserSommaire('cerveau/personnes', _PERS_SECTIONS,
+    '<div class="rail-encart alerte">'
+    + '<div class="rail-encart-titre">Fusions à valider</div>'
+    + '<div class="rail-encart-ligne">' + attente.length
+    + ' identité(s) semblent désigner la même personne.</div>'
+    + '<div class="rail-encart-meta">section « Fusions à valider »</div></div>');
 }
 
-function sortModalMemories(sortBy) {
-  var modal = document.querySelector('.mem-modal');
-  if (!modal || !modal._memories) return;
-  var memories = modal._memories.slice();
+// ── Cerveau › Personnes › fiche ─────────────────────────────────────────────
+//
+// Tout ce que Wally sait d'une personne, en une requête. La fiche remplace la
+// modale d'avant, qui ne montrait que les mémoires d'UNE identité : les faits
+// d'un compte lié y étaient invisibles, sans que rien ne le dise.
 
-  if (sortBy === 'recent') {
-    memories.sort(function(a, b) {
-      var da = new Date(a.created_at || a.date || 0);
-      var db = new Date(b.created_at || b.date || 0);
-      return db - da;
-    });
-  } else if (sortBy === 'oldest') {
-    memories.sort(function(a, b) {
-      var da = new Date(a.created_at || a.date || 0);
-      var db = new Date(b.created_at || b.date || 0);
-      return da - db;
-    });
-  }
+const _FICHE_ONGLETS = [
+  ['memoires', 'Mémoires'],
+  ['notes', 'Notes qui la mentionnent'],
+  ['comptes', 'Comptes liés'],
+];
 
-  var grouped = {};
-  MEM_CATEGORIES.forEach(function(cat) { grouped[cat.key] = []; });
-  memories.forEach(function(m) {
-    var catKey = m.category || '';
-    if (!grouped[catKey]) grouped[catKey] = grouped[''];
-    grouped[catKey].push(m);
-  });
+// Les catégories de `FactCategory`, groupées comme on les lit. « Expirent
+// bientôt » n'est pas une catégorie : c'est une échéance, et c'est justement ce
+// qu'on veut pouvoir isoler avant qu'elle tombe.
+const _FICHE_FILTRES = [
+  ['', 'Tout'],
+  ['FAIT', 'Faits'],
+  ['PREF', 'Préférences'],
+  ['REL', 'Relations'],
+  ['expire', 'Expirent bientôt'],
+];
 
-  if (sortBy === 'default') {
-    Object.keys(grouped).forEach(function(key) {
-      grouped[key].sort(function(a, b) {
-        var da = new Date(b.updated_at || b.created_at || 0);
-        var db = new Date(a.updated_at || a.created_at || 0);
-        return da - db;
-      });
-    });
-  }
+let _fiche = null;
+let _ficheOnglet = 'memoires';
+let _ficheFiltre = '';
 
-  var userId = modal._userId;
-  var platform = (modal._userData || {}).platform || userId.split(':')[0];
-  var categoriesHtml = '';
-  MEM_CATEGORIES.forEach(function(cat) {
-    var items = grouped[cat.key] || [];
-    if (items.length === 0) return;
-    categoriesHtml += '<div class="mem-category" data-cat="' + escAttr(cat.key) + '">'
-      + '<div class="mem-category-header" onclick="toggleMemCategory(this)">'
-      + '<span class="mem-category-chevron">\u25bc</span>'
-      + '<span class="mem-category-name ' + escAttr(cat.css) + '">' + escHtml(cat.label) + '</span>'
-      + '<span class="mem-category-count">(' + items.length + ')</span>'
-      + '</div>'
-      + '<div class="mem-category-body">'
-      + items.map(function(m) {
-          var isOwn = (m.source || '') === userId || (m.source_platform || '') === platform;
-          var sourceIcon = isOwn ? '\ud83e\udd16' : '\u270d\ufe0f';
-          var dateStr = m.updated_at || m.created_at;
-          var shortDate = dateStr ? new Date(dateStr).toLocaleString('fr', { day:'numeric', month:'short' }) : '';
-          return '<div class="mem-entry" id="mem-entry-' + escAttr(m.id) + '" style="border-left:2px solid ' + cat.color + '4d">'
-            + '<span class="mem-entry-text" id="mem-text-' + escAttr(m.id) + '">' + escHtml(m.content) + '</span>'
-            + '<span class="mem-entry-source" title="' + (isOwn ? 'Auto-extrait' : 'Ajout\u00e9 manuellement') + '">' + sourceIcon + '</span>'
-            + '<span class="mem-entry-date">' + escHtml(shortDate) + '</span>'
-            + '<div class="mem-entry-actions">'
-            + '<button class="mem-entry-action" onclick="startModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Modifier">\u270f\ufe0f</button>'
-            + '<button class="mem-entry-action" onclick="deleteModalMemory(\'' + escJs(userId) + '\',\'' + escJs(m.id) + '\')" title="Supprimer">\ud83d\uddd1</button>'
-            + '</div></div>';
-        }).join('')
-      + '</div></div>';
-  });
-
-  if (categoriesHtml === '') {
-    categoriesHtml = '<div class="mem-empty-state">Aucun souvenir enregistr\u00e9.</div>';
-  }
-
-  var container = document.getElementById('modal-categories');
-  if (container) container.innerHTML = categoriesHtml;
-}
-
-function toggleMemCategory(headerEl) {
-  var chevron = headerEl.querySelector('.mem-category-chevron');
-  var body = headerEl.nextElementSibling;
-  if (!chevron || !body) return;
-  var isCollapsed = body.classList.toggle('collapsed');
-  chevron.classList.toggle('collapsed', isCollapsed);
-}
-
-function filterModalMemories(query) {
-  var q = query.toLowerCase();
-  document.querySelectorAll('.mem-modal .mem-entry').forEach(function(entry) {
-    var textEl = entry.querySelector('.mem-entry-text');
-    var text = textEl ? textEl.textContent.toLowerCase() : '';
-    entry.style.display = text.indexOf(q) >= 0 ? '' : 'none';
-  });
-}
-
-function showModalAddForm(userId) {
-  var el = document.getElementById('modal-add-form');
+async function renderFichePersonne(identite) {
+  const el = document.getElementById('tab-admin-personne');
   if (!el) return;
-  if (el.children.length > 0) { el.textContent = ''; return; }
-  var catOptions = MEM_CATEGORIES.filter(function(c) { return c.key; }).map(function(c) {
-    return '<option value="' + escAttr(c.key) + '">' + escHtml(c.label) + '</option>';
-  }).join('') + '<option value="">Non classé</option>';
-  el.innerHTML = '<div class="mem-add-form">'
-    + '<input type="text" id="modal-add-input" placeholder="Nouveau souvenir...">'
-    + '<select id="modal-add-category">' + catOptions + '</select>'
-    + '<button onclick="submitModalAddMemory(\'' + escJs(userId) + '\')">Ajouter</button>'
+  if (!identite) { location.hash = '#/cerveau/personnes'; return; }
+
+  el.innerHTML = '<div class="liste-vide">Chargement…</div>';
+  _fiche = null;
+
+  const r = await apiFetch('/api/admin/person/' + encodeURIComponent(identite));
+  // La route a pu changer pendant l'attente : une réponse tardive ne doit pas
+  // écraser la personne qu'on regarde maintenant.
+  if (currentParam !== identite) return;
+  if (!r || !r.ok) {
+    const detail = r ? (await r.json().catch(function () { return {}; })).detail : '';
+    el.innerHTML = '<div class="liste-vide">'
+      + escHtml(detail || 'Personne introuvable.')
+      + ' — <a href="#/cerveau/personnes">revenir à l\'annuaire</a></div>';
+    return;
+  }
+  _fiche = await r.json();
+  _ficheOnglet = 'memoires';
+  _ficheFiltre = '';
+  _dessinerFiche();
+}
+
+function _dessinerFiche() {
+  const el = document.getElementById('tab-admin-personne');
+  const f = _fiche;
+  if (!el || !f) return;
+
+  const titre = document.getElementById('page-title');
+  const sous = document.getElementById('page-sub');
+  if (titre) titre.textContent = 'Personnes › ' + f.nom;
+  if (sous) {
+    sous.textContent = f.vu_le
+      ? 'Vue ' + apexDepuis(f.vu_le) + '.'
+      : 'Jamais vue depuis que Wally note les passages.';
+    sous.hidden = false;
+  }
+
+  const puces = (f.identites || []).map(function (i) {
+    return '<span class="fiche-puce">' + escHtml(i.plateforme) + ' · '
+      + escHtml(i.nom) + '</span>';
+  }).join('') + (f.alias || []).map(function (a) {
+    return '<span class="fiche-puce fiche-puce-alias">« ' + escHtml(a) + ' »</span>';
+  }).join('');
+
+  el.innerHTML = '<a class="fiche-retour" href="#/cerveau/personnes">‹ Annuaire</a>'
+    + '<div class="fiche-tete">'
+    + _persAvatar({ avatar_url: f.avatar_url, username: f.nom, user_id: f.identity })
+      .replace('pers-avatar', 'pers-avatar fiche-avatar')
+    + '<div class="fiche-tete-txt">'
+    + '<div class="fiche-nom">' + escHtml(f.nom)
+    + (f.apex ? '<span class="fiche-badge">Apex lié</span>' : '')
+    + (f.ignore ? '<span class="fiche-badge rouge">ignoré</span>' : '')
+    + '</div>'
+    + '<div class="fiche-puces">' + puces + '</div>'
+    + '</div>'
+    + '<div class="fiche-gestes">'
+    + '<button class="btn" data-fiche="fusionner">Fusionner…</button>'
+    + '<button class="btn" data-fiche="ignorer">'
+    + (f.ignore ? 'Réécouter' : 'Ignorer') + '</button>'
+    + '<button class="btn btn-danger" data-fiche="tout-oublier">Tout oublier</button>'
+    + '</div></div>'
+
+    + '<div class="fiche-tuiles">'
+    + _ficheTuile('Trust', f.trust.toFixed(2), f.trust, 'var(--accent)')
+    + _ficheTuile('Love', f.love.toFixed(2), f.love, 'var(--love)')
+    + _ficheTuile('Mémoires', String((f.memoires || []).length), null, '')
+    + _ficheTuile('Apex', f.apex ? f.apex.apex_name : '—', null, '')
+    + '</div>'
+
+    + '<div class="fiche-onglets">' + _FICHE_ONGLETS.map(function (o) {
+        const n = o[0] === 'memoires' ? (f.memoires || []).length
+          : o[0] === 'notes' ? (f.notes || []).length
+          : (f.identites || []).length;
+        return '<button data-onglet="' + o[0] + '"'
+          + (o[0] === _ficheOnglet ? ' class="active"' : '') + '>'
+          + escHtml(o[1]) + ' · ' + n + '</button>';
+      }).join('') + '</div>'
+    + '<div id="fiche-corps"></div>';
+
+  _cablerFiche(el);
+  _dessinerCorpsFiche();
+  poserSommaire('cerveau/fiche', [], '');
+}
+
+function _ficheTuile(label, valeur, jauge, couleur) {
+  return '<div class="fiche-tuile">'
+    + '<div class="journal-stat-label">' + escHtml(label) + '</div>'
+    + '<div class="fiche-tuile-valeur">' + escHtml(String(valeur)) + '</div>'
+    + (jauge === null ? ''
+      : '<div class="fiche-jauge"><span style="width:'
+        + Math.round(Math.max(0, Math.min(1, jauge)) * 100) + '%;background:'
+        + couleur + '"></span></div>')
     + '</div>';
-  var inp = document.getElementById('modal-add-input');
-  if (inp) inp.focus();
 }
 
-async function submitModalAddMemory(userId) {
-  var input = document.getElementById('modal-add-input');
-  var catEl = document.getElementById('modal-add-category');
-  var cat = catEl ? catEl.value : '';
-  var content = input ? input.value.trim() : '';
-  if (!content) { toast('Contenu requis', 'error'); return; }
-  var body = { content: content };
-  if (cat) body.category = cat;
-  var r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories', {
-    method: 'POST',
-    body: JSON.stringify(body),
+/** Un seul écouteur, posé UNE fois sur le panneau.
+ *
+ *  `_dessinerFiche` réécrit tout le contenu à chaque geste : en reposer un à
+ *  chaque rendu les empilerait, et « Oublier » finirait par demander trois
+ *  confirmations pour un clic. La délégation survit aux réécritures. */
+function _cablerFiche(el) {
+  if (el.dataset.cable) return;
+  el.dataset.cable = '1';
+  el.addEventListener('click', function (ev) {
+    const onglet = ev.target.closest('[data-onglet]');
+    if (onglet) {
+      _ficheOnglet = onglet.dataset.onglet;
+      el.querySelectorAll('[data-onglet]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.onglet === _ficheOnglet);
+      });
+      _dessinerCorpsFiche();
+      return;
+    }
+    const filtre = ev.target.closest('[data-mfiltre]');
+    if (filtre) {
+      _ficheFiltre = filtre.dataset.mfiltre;
+      _dessinerCorpsFiche();
+      return;
+    }
+    const geste = ev.target.closest('[data-fiche]');
+    if (geste) _gesteFiche(geste.dataset.fiche, geste.dataset.arg || '');
   });
-  if (r && r.ok) {
-    toast('Souvenir ajouté', 'success');
-    var bdrop = document.querySelector('.mem-modal-backdrop');
-    if (bdrop) bdrop.remove();
-    await openUserModal(userId);
-    loadMemoryUsers();
-  } else {
-    var err = r ? await r.json().catch(function() { return {}; }) : {};
-    toast(err.detail || 'Erreur', 'error');
+}
+
+function _dessinerCorpsFiche() {
+  const boite = document.getElementById('fiche-corps');
+  const f = _fiche;
+  if (!boite || !f) return;
+
+  if (_ficheOnglet === 'notes') {
+    boite.innerHTML = '<div class="page-section-sous">Les notes du bot sont '
+      + 'GLOBALES — aucune ne lui appartient. Voici celles où l\'un de ses noms '
+      + 'apparaît.</div>'
+      + ((f.notes || []).length
+        ? (f.notes || []).map(function (n) {
+            return '<div class="fiche-memoire"><div class="fiche-memoire-txt">'
+              + '<strong>' + escHtml(n.title) + '</strong><br>'
+              + escHtml(n.content) + '</div></div>';
+          }).join('')
+        : '<div class="liste-vide">Aucune note ne la mentionne.</div>');
+    return;
   }
-}
 
-function startModalEditMemory(userId, memoryId) {
-  var textEl = document.getElementById('mem-text-' + memoryId);
-  if (!textEl) return;
-  var current = textEl.textContent;
-  var entry = document.getElementById('mem-entry-' + memoryId);
-  if (!entry) return;
-  var actionsDiv = entry.querySelector('.mem-entry-actions');
-  if (actionsDiv) actionsDiv.style.display = 'none';
-  textEl.outerHTML = '<div style="display:flex;gap:6px;align-items:center;flex:1">'
-    + '<input type="text" id="edit-mem-input-' + escAttr(memoryId) + '" value="' + escAttr(current) + '"'
-    + ' style="flex:1;font-size:11px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:#e2e8f0"'
-    + ' onkeydown="if(event.key===\'Enter\') submitModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(memoryId) + '\'); if(event.key===\'Escape\') reopenModal(\'' + escJs(userId) + '\');">'
-    + '<button class="mem-entry-action" onclick="submitModalEditMemory(\'' + escJs(userId) + '\',\'' + escJs(memoryId) + '\')" style="opacity:1;font-size:11px">OK</button>'
-    + '<button class="mem-entry-action" onclick="reopenModal(\'' + escJs(userId) + '\')" style="opacity:1;font-size:11px">✕</button>'
-    + '</div>';
-  var inp = document.getElementById('edit-mem-input-' + memoryId);
-  if (inp) inp.focus();
-}
-
-async function submitModalEditMemory(userId, memoryId) {
-  var input = document.getElementById('edit-mem-input-' + memoryId);
-  var content = input ? input.value.trim() : '';
-  if (!content) { toast('Contenu requis', 'error'); return; }
-  var r = await apiFetch(
-    '/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories/' + encodeURIComponent(memoryId),
-    { method: 'PUT', body: JSON.stringify({ content: content }) }
-  );
-  if (r && r.ok) {
-    toast('Souvenir modifié', 'success');
-    await reopenModal(userId);
-  } else {
-    var err = r ? await r.json().catch(function() { return {}; }) : {};
-    toast(err.detail || 'Erreur', 'error');
+  if (_ficheOnglet === 'comptes') {
+    boite.innerHTML = (f.identites || []).map(function (i) {
+      const principal = i.identity === f.identity;
+      return '<div class="fiche-memoire"><div class="fiche-memoire-txt">'
+        + '<strong>' + escHtml(i.nom) + '</strong> '
+        + '<span class="fiche-memoire-meta">' + escHtml(i.identity) + '</span></div>'
+        + '<div class="fiche-memoire-actions">'
+        + (principal ? '<span class="fiche-memoire-meta">compte principal</span>'
+                     : '<button class="lien-danger" data-fiche="delier" data-arg="'
+                       + escAttr(i.identity) + '">Détacher</button>')
+        + '</div></div>';
+    }).join('')
+    + '<div class="fiche-alias-form">'
+    + '<input id="fiche-alias" class="champ-recherche" placeholder="ajouter un surnom…" '
+    + 'aria-label="Ajouter un surnom">'
+    + '<button class="btn" data-fiche="alias-ajouter">Ajouter</button></div>'
+    + ((f.alias || []).length
+      ? '<div class="fiche-puces">' + (f.alias || []).map(function (a) {
+          return '<span class="fiche-puce fiche-puce-alias">« ' + escHtml(a)
+            + ' » <button class="puce-x" data-fiche="alias-retirer" data-arg="'
+            + escAttr(a) + '" aria-label="Retirer ce surnom">✕</button></span>';
+        }).join('') + '</div>'
+      : '');
+    return;
   }
-}
 
-async function deleteModalMemory(userId, memoryId) {
-  var r = await apiFetch(
-    '/api/admin/memory/users/' + encodeURIComponent(userId) + '/memories/' + encodeURIComponent(memoryId),
-    { method: 'DELETE' }
-  );
-  if (r && r.ok) {
-    toast('Souvenir supprimé', 'success');
-    await reopenModal(userId);
-    loadMemoryUsers();
-  } else {
-    toast('Erreur suppression', 'error');
-  }
-}
-
-async function deleteAllModalMemories(userId) {
-  if (!confirm('Supprimer tous les souvenirs de cet utilisateur ?')) return;
-  var r = await apiFetch(
-    '/api/admin/memory/users/' + encodeURIComponent(userId),
-    { method: 'DELETE' }
-  );
-  if (r && r.ok) {
-    toast('Mémoire supprimée', 'success');
-    var bdrop = document.querySelector('.mem-modal-backdrop');
-    if (bdrop) bdrop.remove();
-    loadMemoryUsers();
-  } else {
-    toast('Erreur suppression', 'error');
-  }
-}
-
-async function deleteUser(userId, displayName) {
-  if (!confirm('Supprimer l\'utilisateur "' + displayName + '" et toutes ses mémoires ?')) return;
-  var r = await apiFetch(
-    '/api/admin/memory/users/' + encodeURIComponent(userId),
-    { method: 'DELETE' }
-  );
-  if (r && r.ok) {
-    toast('Utilisateur supprimé', 'success');
-    // Fermer la modale si ouverte
-    var bdrop = document.querySelector('.mem-modal-backdrop');
-    if (bdrop) bdrop.remove();
-    // Retirer la carte du DOM immédiatement
-    var card = document.querySelector('.mem-card[data-uid="' + userId.replace(/"/g, '\\"') + '"]');
-    if (card) card.remove();
-    // Recharger pour mettre à jour les compteurs
-    loadMemoryUsers();
-  } else {
-    toast('Erreur suppression', 'error');
-  }
-}
-
-async function reopenModal(userId) {
-  var bdrop = document.querySelector('.mem-modal-backdrop');
-  if (bdrop) bdrop.remove();
-  await openUserModal(userId);
-}
-
-async function unlinkFromModal(linkId, userId) {
-  var r = await apiFetch('/api/admin/links/' + linkId + '/unlink', { method: 'POST' });
-  if (r && r.ok) {
-    toast('Comptes déliés', 'success');
-    await reopenModal(userId);
-    loadMemoryUsers();
-  } else {
-    var err = r ? await r.json().catch(function() { return {}; }) : {};
-    toast(err.detail || 'Erreur déliaison', 'error');
-  }
-}
-
-// ── Alias Modal Helpers ────────────────────────────────────────────
-
-async function addModalAlias(userId) {
-  var input = document.getElementById('alias-input-' + userId);
-  if (!input) return;
-  var nickname = input.value.trim();
-  if (!nickname) return;
-  var r = await apiFetch('/api/admin/aliases', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nickname: nickname, canonical_uid: userId })
+  // ── Mémoires ──
+  const bientot = Date.now() + 7 * 86400000;
+  const memoires = (f.memoires || []).filter(function (m) {
+    if (_ficheFiltre === '') return true;
+    if (_ficheFiltre === 'expire') {
+      return m.expires_at && new Date(m.expires_at).getTime() < bientot;
+    }
+    return m.category === _ficheFiltre;
   });
-  if (!r || !r.ok) { var e = r ? await r.json().catch(function() { return {}; }) : {}; toast(e.detail || 'Erreur lors de l\'ajout', 'error'); return; }
-  input.value = '';
-  await _refreshAliasPills(userId);
+
+  boite.innerHTML = '<div class="journal-puces">' + _FICHE_FILTRES.map(function (x) {
+      return '<button class="puce' + (x[0] === _ficheFiltre ? ' active' : '')
+        + '" data-mfiltre="' + x[0] + '">' + escHtml(x[1]) + '</button>';
+    }).join('') + '</div>'
+    + '<div class="fiche-ajout">'
+    + '<input id="fiche-nouvelle" class="champ-recherche" '
+    + 'placeholder="ajouter un souvenir…" aria-label="Ajouter un souvenir">'
+    + '<button class="btn" data-fiche="memoire-ajouter">Ajouter</button></div>'
+    + (memoires.length
+      ? memoires.map(_ficheMemoire).join('')
+      : '<div class="liste-vide">Aucun souvenir dans cette catégorie.</div>');
 }
 
-async function deleteModalAlias(nickname, userId) {
-  var r = await apiFetch('/api/admin/aliases/' + encodeURIComponent(nickname), { method: 'DELETE' });
-  if (!r || !r.ok) { toast('Erreur lors de la suppression', 'error'); return; }
-  await _refreshAliasPills(userId);
+function _ficheMemoire(m) {
+  const expire = m.expires_at ? new Date(m.expires_at) : null;
+  const meta = [
+    m.category,
+    m.origin || m.source || '',
+    m.created_at ? m.created_at.slice(0, 10) : '',
+    expire ? 'expire le ' + m.expires_at.slice(0, 10) : '',
+  ].filter(Boolean).join(' · ');
+  return '<div class="fiche-memoire' + (expire ? ' expire' : '') + '">'
+    + '<div class="fiche-memoire-txt">' + escHtml(m.content)
+    + '<div class="fiche-memoire-meta">' + escHtml(meta) + '</div></div>'
+    + '<div class="fiche-memoire-actions">'
+    + '<button class="lien-doux" data-fiche="memoire-editer" data-arg="'
+    + Number(m.id) + '">Modifier</button>'
+    + '<button class="lien-danger" data-fiche="memoire-oublier" data-arg="'
+    + Number(m.id) + '">Oublier</button>'
+    + '</div></div>';
 }
 
-async function _refreshAliasPills(userId) {
-  var r = await apiFetch('/api/admin/aliases?canonical_uid=' + encodeURIComponent(userId));
-  if (!r || !r.ok) return;
-  var aliases = await r.json();
-  var container = document.getElementById('alias-pills-' + userId);
-  if (!container) return;
-  container.innerHTML = aliases.length === 0
-    ? '<span style="color:var(--text-muted);font-size:0.8rem">Aucun alias</span>'
-    : aliases.map(function(a) {
-        var srcTag = a.source === 'llm' ? 'LLM' : 'Manuel';
-        var srcColor = a.source === 'llm' ? '#06b6d4' : '#22c55e';
-        return '<div class="mem-linked-pill">'
-          + escHtml(a.nickname)
-          + ' <span style="font-size:0.65rem;padding:1px 5px;border-radius:4px;background:' + srcColor + '22;color:' + srcColor + '">' + srcTag + '</span>'
-          + '<button class="mem-linked-pill-unlink" onclick="deleteModalAlias(\'' + escJs(a.nickname) + '\',\'' + escJs(userId) + '\')" title="Supprimer">\u2715</button>'
-          + '</div>';
-      }).join('');
+/** Le propriétaire d'un fait : c'est SON identité qu'attendent les routes de
+ *  mémoire, pas celle de la fiche. Un fait venu du compte Twitch lié serait
+ *  sinon modifié sous l'identité Discord — et introuvable. */
+function _ficheProprietaire(idMemoire) {
+  const m = (_fiche.memoires || []).find(function (x) { return x.id === idMemoire; });
+  return (m && m.user_id) || _fiche.identity;
 }
 
-// ── Account Linking Flow (grid selection mode) ─────────────────────
+async function _gesteFiche(geste, arg) {
+  const f = _fiche;
+  if (!f) return;
 
+  if (geste === 'fusionner') {
+    startLinkMode(f.identity, f.nom);
+    location.hash = '#/cerveau/personnes';
+    return;
+  }
+
+  if (geste === 'ignorer') {
+    await _ficheBasculerEcoute(f);
+    return;
+  }
+
+  if (geste === 'tout-oublier') {
+    await oublierToutDe(f.identity, f.nom);
+    return;
+  }
+
+  if (geste === 'memoire-ajouter') {
+    const champ = document.getElementById('fiche-nouvelle');
+    const contenu = (champ && champ.value || '').trim();
+    if (!contenu) return;
+    const r = await apiFetch('/api/admin/memory/users/'
+      + encodeURIComponent(f.identity) + '/memories',
+      { method: 'POST', body: JSON.stringify({ content: contenu, category: '' }) });
+    if (r && r.ok) { toast('Souvenir ajouté'); _rechargerFiche(); }
+    else toast('Ajout impossible', 'error');
+    return;
+  }
+
+  if (geste === 'memoire-editer') {
+    const id = Number(arg);
+    const m = (f.memoires || []).find(function (x) { return x.id === id; });
+    const texte = prompt('Modifier le souvenir :', m ? m.content : '');
+    if (texte === null || !texte.trim()) return;
+    const r = await apiFetch('/api/admin/memory/users/'
+      + encodeURIComponent(_ficheProprietaire(id)) + '/memories/' + id,
+      { method: 'PUT', body: JSON.stringify({ content: texte.trim() }) });
+    if (r && r.ok) { toast('Souvenir modifié'); _rechargerFiche(); }
+    else toast('Modification impossible', 'error');
+    return;
+  }
+
+  if (geste === 'memoire-oublier') {
+    const id = Number(arg);
+    // « Oublier » ARCHIVE : le fait sort de la vue et du prompt, mais reste
+    // rattrapable. Le dire, pour que le geste ne paraisse pas irréversible.
+    if (!confirm('Oublier ce souvenir ? Il sort du prompt, mais reste archivé.')) return;
+    const r = await apiFetch('/api/admin/memory/users/'
+      + encodeURIComponent(_ficheProprietaire(id)) + '/memories/' + id,
+      { method: 'DELETE' });
+    if (r && r.ok) { toast('Souvenir oublié'); _rechargerFiche(); }
+    else toast('Suppression impossible', 'error');
+    return;
+  }
+
+  if (geste === 'alias-ajouter') {
+    const champ = document.getElementById('fiche-alias');
+    const nom = (champ && champ.value || '').trim();
+    if (!nom) return;
+    const r = await apiFetch('/api/admin/memory/aliases', {
+      method: 'POST',
+      body: JSON.stringify({ nickname: nom, canonical_uid: f.identity, display_name: f.nom }),
+    });
+    if (r && r.ok) { toast('Surnom ajouté'); _rechargerFiche(); }
+    else toast('Ajout impossible', 'error');
+    return;
+  }
+
+  if (geste === 'alias-retirer') {
+    const r = await apiFetch('/api/admin/memory/aliases/' + encodeURIComponent(arg),
+      { method: 'DELETE' });
+    if (r && r.ok) { toast('Surnom retiré'); _rechargerFiche(); }
+    else toast('Suppression impossible', 'error');
+    return;
+  }
+
+  if (geste === 'delier') {
+    if (!confirm('Détacher ' + arg + ' ? Ses souvenirs cesseront d\'apparaître ici.')) return;
+    const rl = await apiFetch('/api/admin/links');
+    const liens = (rl && rl.ok) ? (await rl.json()).proposals || [] : [];
+    const lien = liens.find(function (l) {
+      return l.status === 'accepted' && l.alias_id === arg;
+    });
+    if (!lien) { toast('Liaison introuvable', 'error'); return; }
+    const r = await apiFetch('/api/admin/links/' + lien.id + '/unlink', { method: 'POST' });
+    if (r && r.ok) { toast('Compte détaché'); _rechargerFiche(); }
+    else toast('Détachement impossible', 'error');
+  }
+}
+
+/** Écouter ou ignorer — le mécanisme diffère selon la plateforme.
+ *
+ *  Discord passe par la table des bannis du chat web, Twitch par la liste de
+ *  la config. Les deux ne se voient pas l'un l'autre : n'en toucher qu'un
+ *  laisserait la personne muette d'un côté et lue de l'autre.
+ */
+async function _ficheBasculerEcoute(f) {
+  const discord = (f.identites || []).find(function (i) { return i.plateforme === 'discord'; });
+  const twitch = (f.identites || []).find(function (i) { return i.plateforme === 'twitch'; });
+  const remettre = f.ignore;
+
+  if (discord) {
+    const id = discord.identity.split(':')[1];
+    if (remettre) await apiFetch('/api/admin/chat-bans/' + encodeURIComponent(id),
+                                 { method: 'DELETE' });
+    else await apiFetch('/api/admin/chat-bans', {
+      method: 'POST',
+      body: JSON.stringify({ discord_id: id, username: discord.nom,
+                             reason: 'ignoré depuis la fiche' }),
+    });
+  }
+  if (twitch) {
+    const nom = (twitch.nom || twitch.identity.split(':')[1] || '').toLowerCase();
+    // La liste courante vient de `/ignored`, pas d'un cache : la page a pu
+    // rester ouverte pendant qu'on modifiait la liste ailleurs, et réécrire une
+    // vieille copie effacerait ces changements.
+    const ri = await apiFetch('/api/admin/ignored');
+    const actuels = (ri && ri.ok) ? ((await ri.json()).twitch || []).map(String) : [];
+    const suivante = remettre
+      ? actuels.filter(function (n) { return n.toLowerCase() !== nom; })
+      : (actuels.some(function (n) { return n.toLowerCase() === nom; })
+          ? actuels : actuels.concat([nom]));
+    // POST, pas PUT : `config.save()` réécrit la config en mémoire, et c'est
+    // cette route-là que le panneau « Ignorés » emprunte déjà.
+    await apiFetch('/api/admin/config', {
+      method: 'POST',
+      body: JSON.stringify({ twitch: { ignored_users: suivante } }),
+    });
+  }
+  if (!discord && !twitch) { toast('Aucune identité à régler', 'error'); return; }
+  toast(remettre ? 'Wally la réécoute' : 'Wally ne la lira plus');
+  _rechargerFiche();
+}
+
+function _rechargerFiche() {
+  if (_fiche) renderFichePersonne(_fiche.identity);
+}
+
+// ── Memory Tab State ────────────────────────────────────────────
+let _memLinkMode = false;
+let _memLinkSourceId = null;
+let _memLinkSourceName = null;
+
+/** Entre en mode « lier deux identités ».
+ *
+ *  Ce mode est une modale sans fenêtre : il attend un clic sur une AUTRE
+ *  personne de l'annuaire. D'où le bandeau, et d'où l'abandon automatique du
+ *  mode au changement de page — sans ça, le prochain clic n'importe où
+ *  déclencherait une fusion.
+ */
 function startLinkMode(sourceUserId, sourceUsername) {
   _memLinkMode = true;
   _memLinkSourceId = sourceUserId;
   _memLinkSourceName = sourceUsername;
-  // Close modal
-  var bdrop = document.querySelector('.mem-modal-backdrop');
-  if (bdrop) bdrop.remove();
-  // Show banner
-  var banner = document.getElementById('mem-link-banner');
-  if (banner) {
-    banner.style.display = 'flex';
-    banner.className = 'mem-link-banner';
-    banner.innerHTML = '<div class="mem-link-banner-info">'
-      + '<strong>' + escHtml(sourceUsername) + '</strong> ↔ Cliquer sur un utilisateur...'
-      + '</div>'
-      + '<button class="mem-action-btn" onclick="cancelLinkMode()">Annuler</button>';
-  }
-  // Re-render grid with link mode classes
-  loadMemoryUsers();
+  _majBandeauFusion();
 }
 
 function cancelLinkMode() {
   _memLinkMode = false;
   _memLinkSourceId = null;
   _memLinkSourceName = null;
-  var banner = document.getElementById('mem-link-banner');
-  if (banner) banner.style.display = 'none';
-  loadMemoryUsers();
+  _majBandeauFusion();
+}
+
+/** Le bandeau est rendu DANS l'annuaire, au-dessus de la liste. Il disparaît
+ *  avec le mode. */
+function _majBandeauFusion() {
+  const boite = document.getElementById('pers-fusion-bandeau');
+  if (!boite) return;
+  if (!_memLinkMode) { boite.innerHTML = ''; boite.hidden = true; return; }
+  boite.hidden = false;
+  boite.innerHTML = '<div class="mem-link-banner-info"><strong>'
+    + escHtml(_memLinkSourceName || '') + '</strong> ↔ cliquez sur la personne '
+    + 'à rattacher…</div>'
+    + '<button class="btn" data-fusion="annuler">Annuler</button>';
 }
 
 async function handleMemLinkClick(targetUserId, targetName, targetPlatform) {
@@ -2902,9 +3028,11 @@ async function handleMemLinkClick(targetUserId, targetName, targetPlatform) {
 
   if (!confirm('Lier ' + _memLinkSourceName + ' avec ' + targetName + ' ?')) return;
 
-  // Determine canonical (Discord preferred)
-  var sourcePlatform = _memLinkSourceId.split(':')[0];
-  var canonical, alias;
+  // Discord devient le canonique quand il est en jeu : c'est la plateforme qui
+  // porte l'avatar et l'identifiant stable, Twitch n'ayant qu'un pseudo qui
+  // change.
+  const sourcePlatform = _memLinkSourceId.split(':')[0];
+  let canonical, alias;
   if (sourcePlatform === 'discord') {
     canonical = _memLinkSourceId; alias = targetUserId;
   } else if (targetPlatform === 'discord') {
@@ -2913,20 +3041,34 @@ async function handleMemLinkClick(targetUserId, targetName, targetPlatform) {
     canonical = _memLinkSourceId; alias = targetUserId;
   }
 
-  var r = await apiFetch('/api/admin/links/manual', {
+  const r = await apiFetch('/api/admin/links/manual', {
     method: 'POST',
     body: JSON.stringify({ canonical_id: canonical, alias_id: alias }),
   });
   if (r && r.ok) {
-    toast('Comptes liés avec succès', 'success');
-    var sourceId = _memLinkSourceId;
+    toast('Comptes liés', 'success');
     cancelLinkMode();
-    // Reopen modal on source user
-    await openUserModal(sourceId);
     pollLinksBadge();
+    // On ouvre la fiche du CANONIQUE : c'est elle qui porte désormais les deux
+    // jeux de souvenirs, et c'est ce qu'on veut vérifier après une fusion.
+    location.hash = '#/cerveau/personnes/' + encodeURIComponent(canonical);
   } else {
-    var err = r ? await r.json().catch(function() { return {}; }) : {};
+    const err = r ? await r.json().catch(function () { return {}; }) : {};
     toast(err.detail || 'Erreur liaison', 'error');
+  }
+}
+
+/** Efface TOUT ce que Wally sait d'une personne. */
+async function oublierToutDe(userId, displayName) {
+  if (!confirm('Tout oublier de « ' + displayName + ' » ? '
+    + 'Ses souvenirs sont archivés, pas effacés — mais la fiche sera vide.')) return;
+  const r = await apiFetch('/api/admin/memory/users/' + encodeURIComponent(userId),
+                           { method: 'DELETE' });
+  if (r && r.ok) {
+    toast('Mémoire effacée', 'success');
+    location.hash = '#/cerveau/personnes';
+  } else {
+    toast('Suppression impossible', 'error');
   }
 }
 
@@ -3082,7 +3224,7 @@ async function acceptLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/accept`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison acceptée — mémoires fusionnées', 'success');
-    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
+    await Promise.all([chargerPersonnes(), pollLinksBadge()]);
   } else {
     toast('Erreur', 'error');
   }
@@ -3092,7 +3234,7 @@ async function rejectLink(id) {
   const r = await apiFetch(`/api/admin/links/${id}/reject`, { method: 'POST' });
   if (r && r.ok) {
     toast('Liaison rejetée', 'success');
-    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
+    await Promise.all([chargerPersonnes(), pollLinksBadge()]);
   } else {
     toast('Erreur', 'error');
   }
@@ -3102,7 +3244,7 @@ async function unlinkAccounts(id) {
   const r = await apiFetch(`/api/admin/links/${id}/unlink`, { method: 'POST' });
   if (r && r.ok) {
     toast('Comptes déliés', 'success');
-    await Promise.all([loadMemoryUsers(), pollLinksBadge()]);
+    await Promise.all([chargerPersonnes(), pollLinksBadge()]);
   } else {
     const err = r ? await r.json().catch(() => ({})) : {};
     toast(err.detail || 'Erreur déliaison', 'error');
@@ -3125,8 +3267,10 @@ async function pollLinksBadge() {
   } catch (e) { /* ignore */ }
 }
 
-function renderPendingLinks(proposals) {
-  var container = document.getElementById('mem-pending-links');
+function renderPendingLinks(proposals, cible) {
+  // La cible est passée par l'appelant depuis la refonte : la page Personnes
+  // rend les fusions dans SA section, l'ancien onglet Mémoire dans la sienne.
+  var container = cible || document.getElementById('mem-pending-links');
   if (!container) return;
   if (!proposals || proposals.length === 0) {
     container.textContent = '';
@@ -4419,7 +4563,7 @@ function _fmtNum(n) {
 
 // ── Merged Mémoire Tab (Users + Global + Dashboard) ──────────────────────────
 
-let _memoireSubTab = 'users';
+let _memoireSubTab = 'global';
 
 function renderMemoireTab() {
   const el = document.getElementById('tab-admin-memoire');
@@ -4429,16 +4573,14 @@ function renderMemoireTab() {
   if (!el.querySelector('.mem-subnav')) {
     el.innerHTML = `
       <div class="mem-subnav">
-        <button class="mem-subnav-pill active" data-subtab="users" onclick="switchMemoireSubTab('users')">Utilisateurs</button>
-        <button class="mem-subnav-pill" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
+        <button class="mem-subnav-pill active" data-subtab="global" onclick="switchMemoireSubTab('global')">Mémoire communautaire</button>
         <button class="mem-subnav-pill" data-subtab="dashboard" onclick="switchMemoireSubTab('dashboard')">Questions</button>
         <button class="mem-subnav-pill" data-subtab="notes" onclick="switchMemoireSubTab('notes')">Notes du bot</button>
         <button class="mem-subnav-pill" data-subtab="apex" onclick="switchMemoireSubTab('apex')">Comptes Apex</button>
         <button class="mem-subnav-pill" data-subtab="self" onclick="switchMemoireSubTab('self')">Dans la tête de Wally</button>
         <button class="mem-subnav-pill" data-subtab="ignores" onclick="switchMemoireSubTab('ignores')">Ignorés</button>
       </div>
-      <div class="mem-subnav-content active" id="memoire-sub-users"></div>
-      <div class="mem-subnav-content" id="memoire-sub-global"></div>
+      <div class="mem-subnav-content active" id="memoire-sub-global"></div>
       <div class="mem-subnav-content" id="memoire-sub-dashboard"></div>
       <div class="mem-subnav-content" id="memoire-sub-notes"></div>
       <div class="mem-subnav-content" id="memoire-sub-apex"></div>
@@ -4462,9 +4604,7 @@ function switchMemoireSubTab(subtab) {
   const panel = document.getElementById('memoire-sub-' + subtab);
   if (panel) panel.classList.add('active');
 
-  if (subtab === 'users') {
-    if (!document.getElementById('mem-grid')) renderMemoryTab(panel);
-  } else if (subtab === 'global') {
+  if (subtab === 'global') {
     if (panel.children.length === 0) renderGlobalMemoryTab(panel);
   } else if (subtab === 'dashboard') {
     if (panel && panel.children.length === 0) {
@@ -5690,6 +5830,7 @@ function _lireFiltresAuto() {
 }
 
 function _ecrireFiltresAuto() {
+  if (currentRoute !== 'live/automatisations') return;
   const p = new URLSearchParams();
   if (_autoFiltres.q) p.set('q', _autoFiltres.q);
   if (_autoFiltres.vue !== 'avenir') p.set('vue', _autoFiltres.vue);

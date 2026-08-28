@@ -261,8 +261,11 @@ async def list_users(
     merged_users.sort(key=key_fn, reverse=reverse)
 
     total = len(merged_users)
-    # Clamp limit
-    limit = max(1, min(limit, 200))
+    # Plafond relevé à 1000 le 2026-08-28 : la page Personnes charge TOUT et
+    # filtre dans le navigateur. À 200, les 255 personnes suivantes étaient
+    # introuvables — pas seulement longues à trouver, invisibles, y compris à la
+    # recherche. Exactement le défaut déjà corrigé sur `/apex/personnes`.
+    limit = max(1, min(limit, 1000))
     offset = max(0, offset)
     paginated = merged_users[offset:offset + limit]
 
