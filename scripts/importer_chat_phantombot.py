@@ -162,10 +162,13 @@ async def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--db", default=os.getenv("DB_PATH", "data/wally.db"))
     p.add_argument("--jour", help="une seule journée, AAAA-MM-JJ (essai avant la masse)")
+    p.add_argument("--depuis", help="reprendre à partir de cette date incluse")
     p.add_argument("--apply", action="store_true", help="écrit (sinon dry-run)")
     args = p.parse_args()
 
     par_jour = _lire_les_logs(args.jour)
+    if args.depuis:
+        par_jour = {j: v for j, v in par_jour.items() if j >= args.depuis}
     if not par_jour:
         print("Rien à importer.")
         return 0
@@ -212,7 +215,7 @@ async def main() -> int:
             ingest=MemoryIngest(memory.fact_store, secondary),
         )
 
-        ecrits = 0
+        ecrits = rates = 0
         for date in sorted(par_jour):
             # Minuit heure de Paris ce jour-là, ramené en UTC naïf comme le
             # reste des colonnes de dates (cf. `MemoryService.add`). L'heure
@@ -224,14 +227,28 @@ async def main() -> int:
             ]
             for i in range(0, len(messages), _LOT):
                 lot = messages[i:i + _LOT]
-                ecrits += await extracteur._extract_facts(
-                    lot, "twitch", f"phantombot:{date}",
-                    origin=f"phantombot_chat:{date}", quand=quand,
-                )
+                try:
+                    ecrits += await extracteur._extract_facts(
+                        lot, "twitch", f"phantombot:{date}",
+                        origin=f"phantombot_chat:{date}", quand=quand,
+                    )
+                # Un lot qui échoue ne doit PAS emporter le reste de l'archive.
+                # Vécu le 2026-08-28 : une réponse vide de DeepSeek (« JSON vide
+                # après repair ») a fait tomber le script au 70e jour sur 91, et
+                # les 21 derniers n'ont jamais été lus. Un lot perdu, c'est
+                # 25 lignes ; une exception qui remonte, c'est trois semaines.
+                except Exception as e:  # noqa: BLE001 — best-effort par lot
+                    rates += 1
+                    logger.warning("Lot {i} du {d} perdu : {e!r}",
+                                   i=i // _LOT, d=date, e=e)
             logger.info("Import {d} : {n} ligne(s) → {e} fait(s) au total",
                         d=date, n=len(messages), e=ecrits)
 
         print(f"\n{ecrits} fait(s) écrit(s), datés de leur jour d'origine.")
+        if rates:
+            # Chiffré et DIT : un import silencieusement partiel se lit comme un
+            # import complet, et personne ne revient jamais dessus.
+            print(f"⚠️  {rates} lot(s) de {_LOT} lignes perdus (voir les logs).")
         print("Les portraits ne se régénéreront PAS tout seuls (les faits ne "
               "sont pas 'récents') — lancer scripts/regenerer_portraits.py "
               "--apply si on veut qu'ils intègrent cette matière.")
