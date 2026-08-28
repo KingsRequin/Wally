@@ -32,10 +32,44 @@ _APPELER_NOMME = re.compile(
     r"[«\"'“‘]",
     re.I,
 )
+# ⚠️ « se FAIRE appeler » ne couvrait que l'INFINITIF. « se fait appeler » —
+# la formulation la plus naturelle pour enseigner un surnom — traversait le
+# garde sans un bruit, comme toutes les autres conjugaisons ; seul « on doit se
+# faire appeler ainsi » était attrapé, c'est-à-dire la tournure que personne
+# n'écrit. Relevé le 2026-08-28, troisième brèche de ce garde après les faits
+# et les notes.
+#
+# Le verbe « faire » est donc conjugué explicitement. Deux tournures ont été
+# ÉCARTÉES à dessein : « alias » (qui a un sens technique ordinaire) et « le
+# nomme » (qui veut aussi dire désigner à un poste). Leur ambiguïté coûterait
+# plus cher que les cas qu'elles attraperaient — un garde qui refuse un
+# souvenir légitime accuse la personne d'enseigner un surnom.
 _SE_FAIRE_APPELER = re.compile(
-    r"(?:se faire appeler|qu'on l['ae]\s*appelle|qu'on l['ae]\s*surnomme|"
+    # Le pronom réfléchi varie autant que le verbe : « il SE fait appeler »,
+    # « tu TE fais appeler », « je ME fais appeler ». Aucune de ces tournures
+    # n'a de sens ordinaire hors « nommer » — l'élargissement est sans risque.
+    r"(?:(?:se|te|me)\s+"
+    r"(?:faire|fait|fais|font|faisait|faisaient|fera|feront|ferait)"
+    r"\s+appeler|"
+    r"qu'on l['ae]\s*appelle|qu'on l['ae]\s*surnomme|"
     r"aime l['ae]\s*appeler|préfère être appelée?|doit être appelée?|"
-    r"veut être appelée?|l['ae]\s*appelle\s+\w)",
+    r"veut être appelée?|l['ae]\s*appelle\s+\w|"
+    r"(?:son|ton|mon|leur)\s+petit\s+nom)",
+    re.I,
+)
+
+# Nommer une CHOSE n'est pas étiqueter quelqu'un. Un sujet impersonnel — « ça
+# s'appelle… », « ce qu'on appelle… » — désigne un objet, une fonctionnalité,
+# une expression maison. Ce garde protège les gens des étiquettes, pas le
+# vocabulaire de la communauté.
+#
+# Trouvé en auditant la base : la note « Azraël a décidé que ça s'appelle "le
+# journal de Wally" » se faisait refuser. Elle n'était là que parce qu'elle
+# avait été écrite AVANT le garde — la réécrire aurait échoué, sur une note qui
+# ne parle de personne.
+_NOMMER_UNE_CHOSE = re.compile(
+    r"(?:ça|ca|ce|cela|celui-ci|celle-ci)\s+s['’]\s*appelle|"
+    r"ce\s+qu['’]on\s+appelle",
     re.I,
 )
 
@@ -81,7 +115,8 @@ def detecter(texte: str, user_id: str | None = None) -> str | None:
     texte = texte.replace("\u2019", "'").replace("\u2018", "'").replace("\u201b", "'")
     # L'exception d'abord : « préfère son vrai pseudo plutôt que le surnom X »
     # contient les deux marqueurs, et c'est le second qui doit l'emporter.
-    if _VRAI_PSEUDO.search(texte) or _APPELER_SOLLICITE.search(texte):
+    if (_VRAI_PSEUDO.search(texte) or _APPELER_SOLLICITE.search(texte)
+            or _NOMMER_UNE_CHOSE.search(texte)):
         return None
     if _SURNOM.search(texte):
         return "le texte enseigne ou commente un surnom"

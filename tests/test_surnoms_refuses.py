@@ -321,3 +321,70 @@ async def test_la_passe_de_21h_ne_peut_pas_REINTRODUIRE_un_surnom(tmp_path):
         assert "On a fini sur un sondage" in portrait
     finally:
         await db.close()
+
+
+@pytest.mark.parametrize("texte", [
+    "KingsRequin se fait appeler petit chevreuil",
+    "il se faisait appeler le boss",
+    "ils se font appeler les requins",
+    "tu te fais appeler comment",
+    "elle se fera appeler Lily maintenant",
+    "son petit nom est chevreuil",
+])
+def test_les_formes_CONJUGUEES_de_se_faire_appeler_sont_gardees(texte):
+    """Le motif ne couvrait que l'INFINITIF — « se faire appeler ».
+
+    Relevé le 2026-08-28 : « se fait appeler », la formulation la plus naturelle
+    pour enseigner un surnom, traversait le garde sans un bruit. Toutes les
+    conjugaisons passaient, seul « on doit se faire appeler ainsi » était
+    attrapé — c'est-à-dire la tournure que personne n'écrit.
+
+    Ce garde a déjà récidivé deux fois (les faits d'abord, les notes ensuite) ;
+    la troisième brèche était dans son motif même.
+    """
+    assert detecter(texte, "discord:1") is not None, (
+        f"« {texte} » enseigne un surnom et passe à travers le garde"
+    )
+
+
+@pytest.mark.parametrize("texte", [
+    "je t'appelle demain pour en parler",
+    "il a appelé pour prévenir qu'il serait en retard",
+    "on l'a nommé modérateur du serveur",
+    "elle se fait des amis facilement",
+    "il fait appel à un joker",
+])
+def test_le_garde_elargi_ne_mord_PAS_sur_le_langage_ordinaire(texte):
+    """La contrepartie du test précédent, et la plus importante.
+
+    « appeler » veut aussi dire téléphoner, et « nommer » désigner à un poste :
+    un garde trop large refuserait des souvenirs parfaitement légitimes, en
+    disant à la personne qu'elle enseigne un surnom. C'est pourquoi « alias » et
+    « le nomme » ont été volontairement ÉCARTÉS du motif — leur ambiguïté coûte
+    plus cher que les cas qu'ils attraperaient.
+    """
+    assert detecter(texte, "discord:1") is None, (
+        f"« {texte} » est du langage ordinaire et se fait refuser"
+    )
+
+
+@pytest.mark.parametrize("texte", [
+    'Azraël a décidé que ça s\'appelle "le journal de Wally"',
+    "ce qu'on appelle « le purgatoire », c'est le serveur",
+    'cela s\'appelle "un hot drop" en Apex',
+])
+def test_nommer_une_CHOSE_n_est_pas_donner_un_surnom(texte):
+    """Un sujet impersonnel désigne un objet, pas quelqu'un.
+
+    Trouvé en auditant la base avec le garde réparé : la note « Azraël a décidé
+    que ça s'appelle "le journal de Wally" » se faisait refuser. Elle nomme une
+    FONCTIONNALITÉ, pas une personne — et le garde existe pour protéger les
+    gens des étiquettes, pas pour empêcher de nommer les choses.
+
+    Le faux positif préexistait à l'élargissement du 2026-08-28 : il vient du
+    motif « appeler + guillemets », et la note n'était en base que parce qu'elle
+    avait été écrite avant que le garde existe. La réécrire aurait échoué.
+    """
+    assert detecter(texte, "discord:1") is None, (
+        f"« {texte} » nomme une chose et se fait refuser"
+    )

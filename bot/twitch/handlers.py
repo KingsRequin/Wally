@@ -14,8 +14,9 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 # Le duel Apex ne vit que sur la chaîne maison : son outil n'est offert que
 # par ce chemin, et son exécution reste ici plutôt que dans `discord/handlers`.
 from bot.intelligence.overlay_narrator import DUEL_TOOL_SPEC as _DUEL_TOOL
-from bot.tools.notes_tool import run_save_note_tool
-from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
+from bot.tools.notes_tool import (
+    run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
+)
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.audit_log import observe_event
 from bot.core.conversation_log import new_trace_id
@@ -804,28 +805,12 @@ def make_tool_executor(
         if name == "save_persistent_note":
             return await run_save_note_tool(bot.db, args)
         if name == "delete_persistent_note":
-            titre = str(args.get("title") or "").strip()
-            if not titre:
-                return json.dumps({"status": "error", "message": (
-                    "Il me faut le titre de la note à supprimer."
-                )})
-            deleted = await bot.db.delete_persistent_note(titre)
-            if deleted:
-                return json.dumps({"status": "ok", "message": f"Note '{titre}' supprimée."})
-            return json.dumps({"status": "not_found", "message": f"Note '{titre}' introuvable."})
+            return await run_delete_note_tool(bot.db, args)
         if name == "save_user_memory":
-            contenu = str(args.get("content") or "").strip()
-            if not contenu:
-                return json.dumps({"status": "error",
-                                   "message": "Il me faut ce que je dois retenir."})
-            refus = _detecter_surnom(contenu, f"{platform}:{user_id}")
-            if refus is not None:
-                logger.info("save_user_memory refusé ({r}) : « {c} »",
-                            r=refus, c=contenu[:120])
-                return json.dumps({"status": "denied", "message": REFUS_SURNOM})
-            await bot.memory.add(platform, user_id, contenu, username=author,
-                                 origin=f"Twitch/{channel}")
-            return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
+            return await run_save_user_memory_tool(
+                bot.memory, args, platform=platform, user_id=user_id,
+                username=author, origin=f"Twitch/{channel}",
+            )
         # Un outil peut être connu du modèle mais indisponible sur cette
         # instance (clé absente). La branche `no_such_tool` ne couvrait que
         # les noms INCONNUS : on tombait sur `None.search(...)`, et les

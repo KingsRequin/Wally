@@ -7,8 +7,9 @@ from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
-from bot.tools.notes_tool import run_save_note_tool
-from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as detecter_surnom
+from bot.tools.notes_tool import (
+    run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
+)
 from bot.core.web_search import WEB_SEARCH_TOOL
 from bot.discord.voice.brain import generate_search_filler
 from bot.intelligence.overlay_narrator import (
@@ -360,32 +361,17 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             return await run_save_note_tool(bot.db, json.loads(arguments or "{}"))
 
         if name == "delete_persistent_note":
-            a = json.loads(arguments or "{}")
-            titre = str(a.get("title") or "").strip()
-            if not titre:
-                return json.dumps({"status": "error", "message": (
-                    "Il me faut le titre de la note à supprimer."
-                )})
-            deleted = await bot.db.delete_persistent_note(titre)
-            if deleted:
-                return json.dumps({"status": "ok", "message": f"Note '{titre}' supprimée."})
-            return json.dumps({"status": "not_found", "message": f"Note '{titre}' introuvable."})
+            return await run_delete_note_tool(bot.db, json.loads(arguments or "{}"))
 
         if name == "save_user_memory":
-            # Proposé au vocal depuis toujours via `_NOTE_TOOLS`, jamais routé :
+            # Proposé au vocal depuis toujours via `NOTE_TOOLS`, jamais routé :
             # « retiens que… » dit à voix haute rendait « Outil inconnu », et
             # Wally répondait « c'est noté » sans rien avoir noté. Le souvenir
-            # appartient à qui PARLE, pas au dernier entendu.
-            a = json.loads(arguments or "{}")
-            contenu = str(a.get("content") or "").strip()
-            if not contenu:
-                return json.dumps({"status": "error",
-                                   "message": "Il me faut ce que je dois retenir."})
-            refus = detecter_surnom(contenu)
-            if refus is not None:
-                logger.info("voice tool: souvenir refusé ({r}) : « {c} »",
-                            r=refus, c=contenu[:120])
-                return json.dumps({"status": "denied", "message": REFUS_SURNOM})
+            # appartient à qui PARLE, pas au dernier entendu — d'où cette
+            # identification du locuteur, la seule part vraiment propre au
+            # vocal. Le reste (validation, garde anti-surnom, écriture) est
+            # l'exécutant commun aux trois plateformes.
+            #
             # Pas `sid` : le nom porte déjà un `int | None` dans `leave_voice`,
             # et mypy type une locale à sa PREMIÈRE assignation.
             locuteur = _speaker()
@@ -398,13 +384,12 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             membre = _membre_du_locuteur(locuteur)
             salon = getattr(service, "_channel", None)
             # `user_id` BRUT : `memory.add` construit « platform:user_id » lui-même.
-            await bot.memory.add(
-                "discord", str(locuteur), contenu,
+            return await run_save_user_memory_tool(
+                bot.memory, json.loads(arguments or "{}"),
+                platform="discord", user_id=str(locuteur),
                 username=_author_label(membre) if membre is not None else None,
                 origin=_channel_origin(salon) if salon is not None else "Discord vocal",
             )
-            logger.info("voice tool: souvenir retenu pour {sid}", sid=locuteur)
-            return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
 
         if name in ("create_action_task", "cancel_action_task", "list_action_tasks"):
             from bot.discord.handlers import _resolve_discord_roles

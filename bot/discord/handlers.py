@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.tools.notes_tool import run_save_note_tool
-from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
+from bot.tools.notes_tool import (
+    run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
+)
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
@@ -58,64 +59,10 @@ NOTABLE_REACTION_EMOJIS = {
     "😱", "🤯", "👀", "😡", "🤮", "💩", "⛔", "😤",
 }
 
-_NOTE_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "save_persistent_note",
-            "description": (
-                "Quand quelqu'un te demande de retenir, noter ou mémoriser quelque chose "
-                "qui concerne tout le serveur ou la communauté (un événement, une règle, "
-                "une info partagée, un engagement que tu prends), utilise cet outil. "
-                "La note sera injectée dans TOUTES tes futures conversations."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Titre court et unique de la note"},
-                    "content": {"type": "string", "description": "Contenu de la note"},
-                },
-                "required": ["title", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_persistent_note",
-            "description": "Supprimer une note persistante par son titre",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Titre exact de la note à supprimer"},
-                },
-                "required": ["title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_user_memory",
-            "description": (
-                "Quand quelqu'un te demande de retenir, noter ou mémoriser quelque chose "
-                "qui le concerne personnellement (préférence, fait biographique, opinion, "
-                "habitude, info privée), utilise cet outil. Le souvenir sera associé "
-                "uniquement à cet utilisateur."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Fait ou information à retenir sur cet utilisateur, formulé comme une phrase factuelle courte",
-                    },
-                },
-                "required": ["content"],
-            },
-        },
-    },
-]
+# `NOTE_TOOLS` (retenir une note, en supprimer une, retenir un fait sur
+# quelqu'un) vit dans `bot/tools/notes_tool.py`, avec ses trois exécutants.
+# Il était défini ICI, dans un adapter que l'AUTRE plateforme importait.
+from bot.tools.notes_tool import NOTE_TOOLS as _NOTE_TOOLS
 
 # Overlay du stream, dans une conversation. La définition vit avec le narrateur :
 # le chemin vocal l'utilise aussi, et deux copies divergeraient.
@@ -3027,15 +2974,7 @@ async def _respond(
             if name == "save_persistent_note":
                 return await run_save_note_tool(bot.db, args)
             if name == "delete_persistent_note":
-                titre = str(args.get("title") or "").strip()
-                if not titre:
-                    return json.dumps({"status": "error", "message": (
-                        "Il me faut le titre de la note à supprimer."
-                    )})
-                deleted = await bot.db.delete_persistent_note(titre)
-                if deleted:
-                    return json.dumps({"status": "ok", "message": f"Note '{titre}' supprimée."})
-                return json.dumps({"status": "not_found", "message": f"Note '{titre}' introuvable."})
+                return await run_delete_note_tool(bot.db, args)
             if name == "say_in_voice":
                 # Les rôles viennent du MESSAGE, jamais du modèle : ce sont eux
                 # qui décident si la personne a le droit de faire parler Wally.
@@ -3045,21 +2984,11 @@ async def _respond(
                     roles=_roles_discord_effectifs(bot, message.author),
                     maison=True)
             if name == "save_user_memory":
-                contenu = str(args.get("content") or "").strip()
-                if not contenu:
-                    return json.dumps({"status": "error",
-                                       "message": "Il me faut ce que je dois retenir."})
-                # Le refus est DIT, pas avalé : le store refuserait de toute
-                # façon d'écrire, mais en silence — Wally répondrait « c'est
-                # noté » sur un souvenir qui n'existe pas.
-                refus = _detecter_surnom(contenu, f"discord:{user_id}")
-                if refus is not None:
-                    logger.info("save_user_memory refusé ({r}) : « {c} »",
-                                r=refus, c=contenu[:120])
-                    return json.dumps({"status": "denied", "message": REFUS_SURNOM})
-                await bot.memory.add("discord", user_id, contenu, username=_author_label(message.author),
-                                     origin=_channel_origin(message.channel))
-                return json.dumps({"status": "ok", "message": "Souvenir sauvegardé."})
+                return await run_save_user_memory_tool(
+                    bot.memory, args, platform="discord", user_id=user_id,
+                    username=_author_label(message.author),
+                    origin=_channel_origin(message.channel),
+                )
 
             if name in ("web_search", "image_search"):
                 if "🌐" not in _reaction_emojis:
