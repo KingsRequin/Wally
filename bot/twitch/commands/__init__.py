@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bot.twitch.commands.code import handle_code_command
+from bot.twitch.commands.code import handle_code_command, handle_pp_command
 from bot.twitch.commands.mood import handle_mood_command
 
 if TYPE_CHECKING:
@@ -45,6 +45,10 @@ async def dispatch_command(
 
     if content_lower == "!mood":
         await handle_mood_command(bot, channel_name)
+        return True
+
+    if content_lower == "!pp":
+        await handle_pp_command(bot, channel_name)
         return True
 
     if content_lower.startswith("!code"):

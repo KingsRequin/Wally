@@ -18,6 +18,12 @@ class BotConfig:
     link_min_confidence: float = 0.75
     notification_channel_id: int | None = None
     bedroom_channel_id: int | None = None   # #chambre-de-wally — cible des rappels créés en vocal
+    # Salon Discord où l'annonce de partie privée est poussée quand un modérateur
+    # pose le code sur Twitch, et rôle pingué à cette occasion. C'est ce ping qui
+    # fait venir ceux qui ne sont pas devant le live. Les deux à None = pas
+    # d'annonce, le code reste dans le chat Twitch.
+    partie_privee_channel_id: int | None = None
+    partie_privee_role_id: int | None = None
     # Salon vocal rejoint en écoute seule quand le stream démarre. None = jamais.
     stream_voice_channel_id: int | None = None
     emotion_peak_threshold: float = 0.7

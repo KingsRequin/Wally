@@ -15,6 +15,20 @@ if TYPE_CHECKING:
 _daily_codes: dict[str, dict] = {}
 
 
+# L'organisation des parties — la règle des demandes d'ami. Elle vivait dans
+# `pp.js` (PhantomBot), qui ne l'a jamais dite : le script enregistre ses
+# commandes sous `./custom/pp.js` alors qu'il vit dans `./custom/custom/pp.js`,
+# donc PhantomBot ne les associe à aucun script et se tait. Zéro occurrence dans
+# ses logs de chat de février à août 2026. Personne ne l'a donc jamais lue.
+_PP_MSG = (
+    "Les game viewers ou parties privées se font tous les samedis, n'hésitez pas "
+    "à dire si vous voulez jouer ! Vous devez demander azrael_ttv en amis pour "
+    "jouer avec (sauf pour les parties privées). /!\\ [ATTENTION] la demande "
+    "d'ami est uniquement pour les games viewers, vous serez supprimé une fois "
+    "terminé. /!\\"
+)
+
+
 def _code_display_msg(code: str) -> str:
     return (
         f"ON DIT BONJOUR AVANT DE METTRE LE CODE — "
@@ -22,6 +36,64 @@ def _code_display_msg(code: str) -> str:
         "donnez-vous des défis ou lâchez cette vilaine manette, "
         "on est pas là pour rouler sur la commu."
     )
+
+
+async def _annoncer_sur_discord(bot: "WallyTwitch", code: str) -> None:
+    """Pousse l'annonce de partie privée dans le salon Discord, rôle pingué.
+
+    Pas de webhook, contrairement à `pp.js` : Wally est déjà dans la guilde, donc
+    aucun secret à porter ni à révoquer le jour où PhantomBot s'éteint.
+
+    Best-effort de bout en bout : l'annonce est un bonus, le chat Twitch est la
+    fonction. Une guilde injoignable ne doit pas priver le live de son code.
+    """
+    cfg = bot.config.bot
+    salon_id, role_id = cfg.partie_privee_channel_id, cfg.partie_privee_role_id
+    discord_bot = getattr(bot, "discord_bot", None)
+    if not salon_id or discord_bot is None:
+        return
+    try:
+        import discord
+
+        salon = discord_bot.get_channel(salon_id)
+        if salon is None:
+            salon = await discord_bot.fetch_channel(salon_id)
+        if salon is None:
+            logger.warning("Annonce partie privée : salon {sid} introuvable", sid=salon_id)
+            return
+        ping = f"<@&{role_id}> " if role_id else ""
+        # Le garde global du projet pose `roles=False` : sans autorisation
+        # explicite, le `<@&…>` s'afficherait sans notifier personne — et le ping
+        # est justement ce qui fait venir ceux qui ne regardent pas le live.
+        # Restreint à CE rôle : ni @everyone, ni les membres cités.
+        mentions = discord.AllowedMentions(
+            everyone=False,
+            users=False,
+            roles=[discord.Object(id=role_id)] if role_id else False,
+        )
+        await salon.send(
+            f"# {ping}Une partie privée est organisée chez "
+            f"[Azrael](https://www.twitch.tv/azrael_ttv) ! Le code est : `{code}`",
+            allowed_mentions=mentions,
+        )
+        logger.info("Annonce de partie privée publiée sur Discord (code {code})", code=code)
+    except Exception as e:  # noqa: BLE001 — best-effort, le chat Twitch prime
+        logger.warning("Annonce partie privée échouée: {e!r}", e=e)
+
+
+async def handle_pp_command(bot: "WallyTwitch", channel_name: str) -> None:
+    """Gère `!pp` — rappelle comment les parties s'organisent."""
+    await _repondre(bot, channel_name, _PP_MSG)
+
+
+async def _repondre(bot: "WallyTwitch", channel_name: str, message: str) -> None:
+    """Répond sur la chaîne : IRC pour les invitées, API pour la maison."""
+    if channel_name in bot._channel_ids:
+        irc_channel = bot.get_channel(channel_name)
+        if irc_channel:
+            await irc_channel.send(message)
+    else:
+        await bot.twitch_api.send_automatic(message)
 
 
 async def handle_code_command(
@@ -48,6 +120,9 @@ async def handle_code_command(
             _daily_codes[channel_name] = {"code": None, "date": today}
 
     state = _daily_codes[channel_name]
+    # Rempli si un code vient d'être posé — l'annonce Discord part APRÈS le chat
+    # Twitch : le live ne doit pas attendre un aller-retour vers une guilde.
+    code_a_annoncer: str | None = None
 
     if state["date"] != today:
         state["code"] = None
@@ -65,15 +140,27 @@ async def handle_code_command(
             await bot.db.upsert_persistent_note(db_key, json.dumps(state))
             code_msg = _code_display_msg(args)
             logger.info("!code défini par {user} sur {ch} : {code}", user=author, ch=channel_name, code=args)
+            # Annoncé seulement à la POSE, et seulement depuis la chaîne maison :
+            # `!code` répond aussi sur les chaînes invitées, où un modérateur
+            # pingerait le Discord d'Azraël pour SA partie privée. Même réflexe
+            # que `!image` et les outils d'overlay.
+            from bot.twitch.handlers import est_chaine_home
+
+            if est_chaine_home(bot, channel_name):
+                code_a_annoncer = args
     else:
         if state["code"]:
             code_msg = _code_display_msg(state["code"])
         else:
-            code_msg = "Pas de code pour le moment, rendez-vous samedi matin pour y participer !"
+            # La règle des demandes d'ami est la partie utile quand il n'y a pas
+            # encore de code : sans elle, Wally renvoyait à samedi sans dire ce
+            # qu'il fallait préparer d'ici là.
+            code_msg = (
+                "Pas de code pour le moment, rendez-vous samedi matin pour y "
+                f"participer ! {_PP_MSG}"
+            )
 
-    if channel_name in bot._channel_ids:
-        irc_channel = bot.get_channel(channel_name)
-        if irc_channel:
-            await irc_channel.send(code_msg)
-    else:
-        await bot.twitch_api.send_automatic(code_msg)
+    await _repondre(bot, channel_name, code_msg)
+
+    if code_a_annoncer is not None:
+        await _annoncer_sur_discord(bot, code_a_annoncer)
