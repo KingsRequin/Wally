@@ -111,9 +111,20 @@ async def _generate_and_send(
     bot: "WallyTwitch",
     channel_name: str,
     template: str,
+    user_id: str = "",
     **kwargs,
 ) -> None:
-    """Generate an OpenAI response from an event template and send via Helix API."""
+    """Rédige la réaction à un événement et la publie.
+
+    `user_id` est l'identifiant NUMÉRIQUE Twitch, jamais le pseudo : un login se
+    change quand on veut, l'ID jamais. Ce site bâtissait sa clé sur
+    `kwargs["username"]` — relevé le 2026-08-28 dans `cost_log`, 31 clés-pseudo
+    pour 50 clés-ID sur la même population. Deux formes de clé rendent les coûts
+    inagrégeables, et c'est la règle que `handlers.py` énonce déjà.
+
+    Le pseudo, lui, continue de partir au modèle dans le template : l'ID
+    IDENTIFIE, le pseudo S'ADRESSE, et les deux sont nécessaires.
+    """
     try:
         from bot.intelligence.prompts import PromptBuilder
 
@@ -128,7 +139,9 @@ async def _generate_and_send(
             weekday_directives=bot.persona.weekday_directives,
             composite_directives=bot.persona.composite_directives,
         )
-        event_user_id = f"twitch:{kwargs.get('username', '')}" if kwargs.get('username') else None
+        # Sans identifiant — un cheer anonyme, par exemple — on n'attribue à
+        # PERSONNE. Se rabattre sur le pseudo recréerait la clé qu'on retire ici.
+        event_user_id = f"twitch:{user_id}" if user_id else None
         reply = await bot.llm.complete(
             system,
             [{"role": "user", "content": f"Réagis à cet événement Twitch : {formatted}"}],
@@ -168,6 +181,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
+            user_id=str(payload.data.user.id),
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
         )
 
@@ -188,6 +202,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
+            user_id=str(payload.data.user.id),
             username=payload.data.user.name, amount=0, months=0, raiders_count=0,
         )
 
@@ -216,6 +231,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
+            user_id=str(payload.data.user.id),
             username=payload.data.user.name, amount=0,
             months=payload.data.cumulative_months, raiders_count=0,
         )
@@ -236,6 +252,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
+            user_id="" if payload.data.is_anonymous else str(payload.data.user.id),
             username=gifter,
             amount=payload.data.total,   # nb de gifts dans cette transaction
             months=0,
@@ -265,6 +282,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, payload.data.broadcaster.name, cfg.message,
+            user_id="" if payload.data.is_anonymous else str(payload.data.user.id),
             username=username, amount=payload.data.bits, months=0, raiders_count=0,
         )
 
@@ -297,6 +315,7 @@ def register_events(bot: "WallyTwitch") -> None:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
             bot, channel_name, cfg.message,
+            user_id=str(payload.data.raider.id),
             username=payload.data.raider.name, amount=0,
             months=0, raiders_count=payload.data.viewer_count,
         )
