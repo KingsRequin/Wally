@@ -83,7 +83,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 2 | ✅ Journal — 3 barres d'onglets → 1 ligne de filtres, erreurs groupées | `app.js`, `routes/sse.py`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ filtres dans l'URL et au rechargement, 15 puces dérivées, sommaire d'ancres |
 | 3 | ✅ Automatisations + sommaire d'ancres | `app.js`, `style.css`, `smoke_front.py` | ✅ 3 onglets → 1 segmented à compteurs, liste standard, permissions en section |
 | 4 | ✅ API personne agrégée + Personnes + fiche | nouveau `routes/person.py`, `routes/memory.py`, `app.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ une requête rend toute la fiche, 528 personnes chargées (contre 200 avant), fiche partageable |
-| 5 | Personnalité + Modèles & coûts | `app.js`, `style.css`, tests | Prompts absorbés, sauvegarde conditionnelle |
+| 5 | ✅ Personnalité + Modèles & coûts | `routes/admin.py`, `app.js`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ Prompts absorbés, `GET /couts` rend visible ce que `cost_log` enregistrait sans lecteur |
 | 6 | Médias & sons, Connexions, Voix | `app.js`, `style.css`, tests | Les deux « Vocal » fusionnés |
 | 7 | Mémoire commune | `app.js`, tests | Questions de Wally + doublons |
 | 8 | Cockpit + API décisions | nouveau `routes/decisions.py`, `app.js`, tests | Chaque item ouvre sa page déjà filtrée |
@@ -98,6 +98,17 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
   plus cher qu'un bouton absent — le panel en a déjà compté huit. À rouvrir
   seulement si l'owner veut créer une tâche à la main depuis le panel, ce qui
   est une FONCTIONNALITÉ, pas une refonte.
+- **Pas de « Garde-fous » sur Modèles & coûts** (écran 06 : plafond quotidien
+  + interrupteur « bascule vers Haiku au plafond »). Aucun mécanisme de
+  plafond de coût LLM n'existe — `autonomous_daily_limit` borne la génération
+  d'images à l'initiative, rien d'autre. Un plafond qui bascule de modèle est
+  une FONCTIONNALITÉ à écrire du consommateur vers l'UI, pas un écran à
+  dessiner. La « latence médiane » devient « latence moyenne » : `AppState`
+  tient une moyenne sur les 50 dernières réponses, l'annoncer autrement serait
+  faux.
+- **« Bot général » et « Anti-spam Discord » restent sur Personnalité**, marqués
+  transitoires : ils règlent l'adaptateur Discord et partent vers Connexions en
+  phase 6. Les laisser là vaut mieux que de les rendre inatteignables.
 - **La fiche n'a pas d'onglet « Vu en live » ni de « Notes du bot »**
   (écran 03). `persistent_notes` est une table GLOBALE — pas de colonne
   d'utilisateur, une note n'appartient à personne : l'onglet rend donc « les

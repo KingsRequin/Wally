@@ -5,6 +5,7 @@ import copy
 import asyncio
 import os
 import re
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -879,6 +880,68 @@ async def restart_container(request: Request) -> dict:
 
     logger.info("Container restart dispatched via host bridge")
     return {"ok": True, "message": "Redémarrage déclenché via le pont hôte."}
+
+
+# ── Coûts LLM ────────────────────────────────────────────────────────────────
+
+@router.get("/couts")
+async def couts_llm(request: Request, heures: int = 24, jours: int = 14) -> dict:
+    """Ce que Wally coûte, par usage et par jour.
+
+    `log_cost()` écrit dans `cost_log` depuis toujours ; l'onglet qui le lisait
+    a été retiré (remplacé par Langfuse, puis abandonné). La mesure existait
+    donc, sans que rien ne la montre — la signature de panne exacte que les
+    garde-fous du projet visent. Cette route la rend au panneau.
+
+    Le découpage est PAR USAGE (`purpose`), pas par rôle LLM : c'est ce que la
+    base porte, et regrouper vingt-cinq usages en cinq rôles demanderait une
+    table de correspondance écrite à la main, qui se périmerait au premier
+    usage neuf sans que personne s'en aperçoive.
+    """
+    heures = max(1, min(int(heures), 24 * 30))
+    jours = max(1, min(int(jours), 90))
+    etat = request.app.state.wally
+    db = etat.db
+    depuis = time.time() - heures * 3600
+
+    par_usage = await db.get_cost_breakdown(depuis, "purpose")
+    par_modele = await db.get_cost_breakdown(depuis, "model")
+
+    # Quel(s) modèle(s) servent chaque usage : c'est la question qu'on se pose
+    # devant une ligne chère, et la table de coûts seule n'y répond pas.
+    lignes = await db.fetch_all(
+        "SELECT purpose, model, COUNT(*) AS n FROM cost_log "
+        "WHERE timestamp >= ? GROUP BY purpose, model ORDER BY n DESC",
+        (depuis,),
+    )
+    modeles_par_usage: dict[str, list[str]] = {}
+    for r in lignes:
+        modeles_par_usage.setdefault(r["purpose"] or "", []).append(r["model"])
+
+    return {
+        "fenetre_heures": heures,
+        "total": round(sum(u["total"] for u in par_usage), 6),
+        "usages": [
+            {
+                "usage": u["key"] or "(sans usage)",
+                "appels": u["count"],
+                "cout": u["total"],
+                "modeles": modeles_par_usage.get(u["key"] or "", []),
+            }
+            for u in par_usage
+        ],
+        "modeles": [
+            {"modele": m["key"], "appels": m["count"], "cout": m["total"]}
+            for m in par_modele
+        ],
+        # Les `jours` DERNIERS, pas « depuis J-14 » : une fenêtre de 14 × 86400 s
+        # touche 15 dates civiles, et le titre « 14 derniers jours » se
+        # retrouvait au-dessus de quinze barres.
+        "jours": (await db.get_daily_costs(time.time() - jours * 86400))[-jours:],
+        # Une MOYENNE sur les cinquante dernières réponses, pas une médiane :
+        # c'est ce que `AppState` tient, et l'annoncer autrement serait faux.
+        "latence_moyenne_ms": etat.avg_response_ms,
+    }
 
 
 # ── Persistent notes ─────────────────────────────────────────────────────────

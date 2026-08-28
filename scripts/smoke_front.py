@@ -52,7 +52,6 @@ ONGLETS = [
     ("Personnes", "cerveau/personnes"),
     ("Mémoire commune", "cerveau/memoire"),
     ("Personnalité", "cerveau/personnalite"),
-    ("Textes de référence", "cerveau/textes"),
     ("Modèles & coûts", "cerveau/modeles"),
     ("Scène & overlays", "live/scene"),
     ("Voix", "live/voix"),
@@ -72,9 +71,9 @@ ONGLETS = [
 # la refonte se fait par étapes, ces sous-onglets vivent encore derrière leur
 # nouvelle route. Ils disparaîtront panneau par panneau, chacun avec sa phase.
 SOUS_ONGLETS = [
-    ("cerveau/personnalite", [
-        ("Émotions", "parametres-sub-emotions"),
-        ("LLM", "parametres-sub-llm"),
+    # Émotions et LLM ont quitté ce sous-onglet : ils sont devenus Personnalité
+    # et Modèles & coûts, vérifiés à part. Images et Vocal attendent la phase 6.
+    ("live/medias", [
         ("Images", "parametres-sub-images"),
         ("Vocal", "parametres-sub-vocal"),
     ]),
@@ -223,10 +222,52 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     _verifier_journal(page, rap, erreurs)
     _verifier_automatisations(page, rap, erreurs)
     _verifier_personnes(page, rap, erreurs)
+    _verifier_personnalite_et_couts(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_personnalite_et_couts(page, rap: Rapport, erreurs: list[str]) -> None:
+    """Personnalité absorbe l'onglet Prompts ; Modèles & coûts rend visible ce
+    que `cost_log` enregistrait sans que rien ne le montre."""
+    print("\n── Cerveau › Personnalité et Modèles ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cerveau/personnalite"]').click()
+    page.wait_for_timeout(2200)
+
+    etat = _attendre_contenu(page, "perso-etat")
+    rap.dire(etat >= _CONTENU_MIN, "l'humeur et le tempérament sont rendus",
+             f"{etat} car.")
+    prompts = _attendre_contenu(page, "perso-prompts")
+    rap.dire(prompts >= _CONTENU_MIN, "les textes de référence sont absorbés",
+             f"{prompts} car.")
+
+    # L'éditeur se re-rend dans SA cible : un clic sur un fichier cherchait
+    # jusqu'ici un panneau supprimé, et ne faisait rien en silence.
+    fichiers = page.locator("#perso-prompts .prompt-file-item, #perso-prompts li")
+    if fichiers.count() > 1:
+        fichiers.nth(1).click()
+        page.wait_for_timeout(600)
+        rap.dire(_attendre_contenu(page, "perso-prompts") >= _CONTENU_MIN,
+                 "changer de fichier ne vide pas l'éditeur")
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cerveau/modeles"]').click()
+    page.wait_for_timeout(2500)
+
+    modeles = _attendre_contenu(page, "mod-modeles")
+    rap.dire(modeles >= _CONTENU_MIN, "le choix des modèles est rendu", f"{modeles} car.")
+
+    lignes = page.locator("#mod-usage .mod-ligne").count()
+    rap.dire(lignes > 0, "les coûts par usage sont enfin visibles", f"{lignes} usage(s)")
+
+    barres = page.locator("#mod-courbe .mod-barre, .mod-courbe .mod-barre").count()
+    rap.dire(barres > 0, "la courbe des 14 jours est tracée", f"{barres} barre(s)")
+
+    rap.dire(not erreurs, "aucune erreur JS sur Personnalité et Modèles",
+             " · ".join(erreurs[:2]))
 
 
 def _verifier_personnes(page, rap: Rapport, erreurs: list[str]) -> None:

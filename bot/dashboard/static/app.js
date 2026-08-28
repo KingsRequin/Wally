@@ -314,19 +314,13 @@ const ROUTES = {
   },
   'cerveau/personnalite': {
     titre: 'Personnalité',
-    sous: 'L\'humeur du moment et le tempérament de fond.',
-    pane: 'admin-parametres', sub: 'emotions',
-  },
-  // Transitoire : absorbée par « Personnalité » en phase 5.
-  'cerveau/textes': {
-    titre: 'Textes de référence',
-    sous: 'Les prompts qui définissent sa voix.',
-    pane: 'admin-prompts',
+    sous: 'Comment Wally se comporte — par des nombres, et par des textes.',
+    pane: 'admin-personnalite',
   },
   'cerveau/modeles': {
     titre: 'Modèles & coûts',
     sous: 'Quel modèle sert à quoi, et ce que ça coûte.',
-    pane: 'admin-parametres', sub: 'llm',
+    pane: 'admin-modeles',
   },
   'live/scene': {
     titre: 'Scène & overlays',
@@ -378,7 +372,7 @@ const ROUTES_LEGACY = {
   'admin-memoire':     'cerveau/personnes',
   'admin-memory-dash': 'cerveau/memoire',
   'admin-actions':     'live/automatisations',
-  'admin-prompts':     'cerveau/textes',
+  'admin-prompts':     'cerveau/personnalite',
   'admin-scene':       'live/scene',
   'admin-systeme':     'systeme/journal',
   'admin-logs':        'systeme/journal',
@@ -474,6 +468,8 @@ function _appliquerRoute(route, param) {
 
   if (def.pane === 'admin-parametres') renderParametresTab();
   else if (def.pane === 'admin-personnes') renderPersonnes();
+  else if (def.pane === 'admin-personnalite') renderPersonnalite();
+  else if (def.pane === 'admin-modeles') renderModeles();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
   else if (def.pane === 'admin-systeme') renderSystemeTab();
@@ -2242,6 +2238,142 @@ function escJs(str) {
   );
 }
 
+// ── Cerveau › Personnalité ──────────────────────────────────────────────────
+//
+// Fusionne Paramètres › Émotions et l'onglet Prompts. Les deux disaient la même
+// chose : comment Wally se comporte. L'un par des nombres, l'autre par des
+// textes — et ils vivaient à deux endroits sans rapport apparent.
+
+const _PERSO_SECTIONS = [
+  ['perso-etat', 'Humeur et tempérament'],
+  ['perso-textes', 'Textes de référence'],
+];
+
+function renderPersonnalite() {
+  const el = document.getElementById('tab-admin-personnalite');
+  if (!el) return;
+
+  if (!document.getElementById('perso-etat')) {
+    el.innerHTML = '<div class="page-section" id="perso-etat"></div>'
+      + '<div class="page-section" id="perso-textes">'
+      + '<div class="page-section-titre">Textes de référence</div>'
+      + '<div class="page-section-sous">Les fichiers qui définissent sa voix et '
+      + 'sa cognition. Ceux de <code>bot/persona/</code> se rechargent à chaud ; '
+      + 'ceux de la cognition sont lus au démarrage et demandent un restart.</div>'
+      + '<div id="perso-prompts"></div></div>';
+  }
+
+  _renderPanelOnce(document.getElementById('perso-etat'), _renderParametresEmotions);
+  renderPromptsTab(document.getElementById('perso-prompts'));
+  poserSommaire('cerveau/personnalite', _PERSO_SECTIONS, '');
+}
+
+// ── Cerveau › Modèles & coûts ───────────────────────────────────────────────
+//
+// Séparé de la personnalité parce que c'est une décision TECHNIQUE : quel
+// modèle sert à quoi, et ce que ça coûte.
+//
+// `log_cost()` écrit dans `cost_log` depuis toujours. L'onglet qui le lisait a
+// été retiré — remplacé par Langfuse, puis abandonné. La mesure existait donc
+// sans que rien ne la montre, ce qui est la définition d'une panne silencieuse.
+
+const _MOD_SECTIONS = [
+  ['mod-modeles', 'Modèles'],
+  ['mod-usage', 'Coûts par usage'],
+  ['mod-jours', '14 derniers jours'],
+];
+
+function renderModeles() {
+  const el = document.getElementById('tab-admin-modeles');
+  if (!el) return;
+
+  if (!document.getElementById('mod-modeles')) {
+    el.innerHTML = '<div class="page-section" id="mod-modeles"></div>'
+      + '<div class="page-section" id="mod-usage"></div>'
+      + '<div class="page-section" id="mod-jours"></div>';
+  }
+
+  _renderPanelOnce(document.getElementById('mod-modeles'), _renderParametresLLM);
+  poserSommaire('cerveau/modeles', _MOD_SECTIONS, '');
+  chargerCouts();
+}
+
+async function chargerCouts() {
+  const usage = document.getElementById('mod-usage');
+  const jours = document.getElementById('mod-jours');
+  if (!usage || !jours) return;
+
+  const r = await apiFetch('/api/admin/couts');
+  if (!r || !r.ok) {
+    // Ne pas afficher « 0 $ » : un zéro faux se lit comme une bonne nouvelle.
+    usage.innerHTML = '<div class="page-section-titre">Coûts par usage</div>'
+      + '<div class="page-section-sous">Coûts illisibles pour le moment.</div>';
+    jours.innerHTML = '';
+    return;
+  }
+  const d = await r.json();
+  const usages = d.usages || [];
+  const latence = d.latence_moyenne_ms;
+
+  usage.innerHTML = '<div class="page-section-titre">Coûts par usage</div>'
+    + '<div class="page-section-sous">'
+    + _dollars(d.total) + ' sur les ' + Number(d.fenetre_heures) + ' dernières heures'
+    // « moyenne » et pas « médiane » : c'est ce que `AppState` tient, sur les
+    // cinquante dernières réponses. L'annoncer autrement serait faux.
+    + (latence ? ' · latence moyenne ' + Math.round(latence) + ' ms' : '')
+    + '.</div>'
+    + '<div class="liste-tete mod-tete"><span>Usage</span><span>Modèle</span>'
+    + '<span>Appels</span><span>Coût</span></div>'
+    + (usages.length
+      ? '<div class="liste">' + usages.map(function (u) {
+          return '<div class="liste-ligne mod-ligne">'
+            + '<span class="mod-usage">' + escHtml(u.usage) + '</span>'
+            + '<span class="mod-modele">' + escHtml((u.modeles || []).join(', ') || '—')
+            + '</span>'
+            + '<span class="mod-nb">' + Number(u.appels) + '</span>'
+            + '<span class="mod-cout">' + _dollars(u.cout) + '</span>'
+            + '</div>';
+        }).join('') + '</div>'
+      : '<div class="liste-vide">Aucun appel sur la fenêtre.</div>');
+
+  _rendreCourbeCouts(jours, d.jours || []);
+}
+
+/** Le coût, au cent près quand il compte, au dixième de cent quand il est
+ *  petit — « 0.00 $ » partout ne dirait rien de la répartition. */
+function _dollars(v) {
+  const n = Number(v) || 0;
+  if (n === 0) return '0 $';
+  if (n < 0.01) return n.toFixed(4) + ' $';
+  return n.toFixed(2) + ' $';
+}
+
+/** Une barre par jour. Le seuil est la MOYENNE de la période : une barre au
+ *  dessus se colore, et on voit d'un coup les jours qui ont coûté cher sans
+ *  avoir à lire quatorze nombres. */
+function _rendreCourbeCouts(boite, jours) {
+  if (!jours.length) {
+    boite.innerHTML = '<div class="page-section-titre">14 derniers jours</div>'
+      + '<div class="page-section-sous">Rien d\'enregistré sur la période.</div>';
+    return;
+  }
+  const couts = jours.map(function (j) { return Number(j.cost) || 0; });
+  const haut = Math.max.apply(null, couts) || 1;
+  const moyenne = couts.reduce(function (a, b) { return a + b; }, 0) / couts.length;
+
+  boite.innerHTML = '<div class="page-section-titre">14 derniers jours</div>'
+    + '<div class="page-section-sous">'
+    + _dollars(couts.reduce(function (a, b) { return a + b; }, 0))
+    + ' au total · ' + _dollars(moyenne) + ' par jour en moyenne.</div>'
+    + '<div class="mod-courbe">' + jours.map(function (j) {
+        const c = Number(j.cost) || 0;
+        return '<div class="mod-barre" title="' + escAttr(j.date + ' — ' + _dollars(c)) + '">'
+          + '<span style="height:' + Math.max(2, Math.round(c / haut * 100)) + '%"'
+          + (c > moyenne ? ' class="haut"' : '') + '></span>'
+          + '<em>' + escHtml(String(j.date).slice(5)) + '</em></div>';
+      }).join('') + '</div>';
+}
+
 // ── Cerveau › Personnes ─────────────────────────────────────────────────────
 //
 // Refonte du 2026-08-28. « Que sait Wally de KingsRequin ? » demandait quatre
@@ -3811,7 +3943,10 @@ async function _renderParametresEmotions(panel) {
   `;
   wrapper.appendChild(lambdaCard);
 
-  // Bot général + anti-spam cards
+  // ⚠️ TRANSITOIRE — « Bot général » et « Anti-spam » ne relèvent pas de la
+  // personnalité : ils règlent l'adaptateur Discord. Ils partent vers la page
+  // Connexions en phase 6 (cf. docs/plans/2026-08-28-refonte-panel-admin-plan.md).
+  // Les laisser ici en attendant vaut mieux que de les rendre inatteignables.
   const botCard = document.createElement('div');
   botCard.className = 'card config-section';
   botCard.innerHTML = `
@@ -6230,9 +6365,17 @@ var _promptsData = null;        // { persona: {}, system_prompts: {} }
 var _promptsSection = 'persona'; // 'persona' | 'system'
 var _promptsFile = null;
 
-async function renderPromptsTab() {
-  var el = document.getElementById('tab-admin-prompts');
+let _promptsCible = null;
+
+async function renderPromptsTab(cible) {
+  // La cible est passée par « Personnalité », qui héberge l'éditeur en section.
+  // Elle est MÉMORISÉE : `selectPromptFile` et `switchPromptsSection` re-rendent
+  // l'éditeur, et cherchaient jusqu'ici un `#tab-admin-prompts` qui n'existe
+  // plus depuis que l'onglet Prompts a été absorbé. Un clic sur un fichier
+  // n'aurait rien fait, en silence.
+  var el = cible || _promptsCible;
   if (!el) return;
+  _promptsCible = el;
   el.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Chargement...</div>';
 
   await _loadPromptsModels();
@@ -6433,13 +6576,13 @@ function _updatePromptTokenInfo(text) {
 
 function selectPromptFile(filename) {
   _promptsFile = filename;
-  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
+  _renderPromptsUI(_promptsCible);
 }
 
 async function switchPromptsSection(section) {
   _promptsSection = section;
   _promptsFile = null;
-  _renderPromptsUI(document.getElementById('tab-admin-prompts'));
+  _renderPromptsUI(_promptsCible);
 }
 
 async function savePromptFile() {

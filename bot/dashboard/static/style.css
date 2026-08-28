@@ -1626,6 +1626,77 @@ select option, .neo-select option {
 }
 .fiche-alias-form { margin-top: 14px; }
 
+/* ── Modèles & coûts ──────────────────────────────────────────── */
+
+.mod-ligne,
+.mod-tete { grid-template-columns: 1fr 200px 90px 90px; }
+
+.mod-ligne { cursor: default; }
+
+.mod-usage {
+  font-size: 12.5px;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.mod-modele {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--accent-light);
+  overflow-wrap: anywhere;
+}
+
+.mod-nb,
+.mod-cout {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-align: right;
+}
+.mod-nb { color: var(--text-faint); }
+.mod-cout { color: var(--text-primary); }
+
+/* Une barre par jour. Elles partagent la largeur : `flex: 1` plutôt qu'une
+ * largeur calculée, pour que quatorze ou quatre-vingt-dix tiennent pareil. */
+.mod-courbe {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+  padding: 12px 14px 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.mod-barre {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.mod-barre > span {
+  display: block;
+  background: #2b4266;
+  border-radius: 3px 3px 0 0;
+  transition: background 0.12s ease;
+}
+.mod-barre > span.haut { background: var(--accent); }
+.mod-barre:hover > span { background: var(--accent-light); }
+
+.mod-barre > em {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-style: normal;
+  color: var(--text-ghost);
+  text-align: center;
+  white-space: nowrap;
+}
+
 .log-filters, .log-controls {
   display: flex;
   gap: 6px;
