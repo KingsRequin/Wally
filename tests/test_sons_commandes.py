@@ -9,7 +9,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bot.core.sons import DEFAUTS, GENRES, ReglagesSons, SoundLibrary
+from bot.core.sons import (
+    DEFAUTS, GENRES, ReglagesSons, SoundLibrary, resoudre_commande,
+)
 from bot.twitch.commands.sons import _derniers, handle_son_command
 
 
@@ -150,3 +152,65 @@ async def test_sans_overlay_cable_rien_ne_leve(atelier):
     bot = MagicMock()
     bot.dashboard_state = None
     assert await handle_son_command(bot, "apero") is False
+
+
+# ── Alias ─────────────────────────────────────────────────────────────────────
+
+def test_un_alias_designe_le_meme_son(atelier):
+    """Relevé dans les logs : `!perk` tapé 8 fois pour un son nommé `perks`."""
+    _regler(atelier, "perks", alias=["perk", "perques"])
+    lib, reg = SoundLibrary(atelier), ReglagesSons(atelier)
+    assert resoudre_commande(lib, reg, "perk") == ("perks", "perks.mp3")
+    assert resoudre_commande(lib, reg, "PERQUES") == ("perks", "perks.mp3")
+
+
+def test_le_nom_du_fichier_prime_sur_un_alias(atelier):
+    """Sinon un alias posé par inadvertance détourne un son existant, en silence."""
+    _regler(atelier, "perks", alias=["apero"])
+    assert resoudre_commande(SoundLibrary(atelier), ReglagesSons(atelier),
+                             "apero") == ("apero", "APERO.mp3")
+
+
+def test_un_alias_vers_un_son_supprime_ne_resout_rien(atelier):
+    """Le fichier part, l'alias reste dans le JSON : il ne doit rien déclencher."""
+    _regler(atelier, "disparu", alias=["fantome"])
+    assert resoudre_commande(SoundLibrary(atelier), ReglagesSons(atelier),
+                             "fantome") is None
+
+
+def test_un_alias_revendique_deux_fois_est_stable(atelier):
+    """Arbitraire mais DÉTERMINISTE : un choix au hasard serait indébogable."""
+    _regler(atelier, "perks", alias=["truc"])
+    _regler(atelier, "apero", alias=["truc"])
+    reg = ReglagesSons(atelier)
+    assert reg.alias()["truc"] == "apero"          # premier dans l'ordre alpha
+    assert reg.alias() == ReglagesSons(atelier).alias()
+
+
+def test_un_alias_mal_formé_est_ignore_sans_lever(atelier):
+    _regler(atelier, "perks", alias="pas une liste")
+    _regler(atelier, "apero", alias=["", "  ", 42, "ok"])
+    assert ReglagesSons(atelier).alias() == {"ok": "apero"}
+
+
+async def test_un_alias_declenche_le_son(atelier):
+    _regler(atelier, "perks", alias=["perk"])
+    bot = _bot(atelier)
+    assert await handle_son_command(bot, "perk") is True
+    assert bot.dashboard_state.overlay_feed.publish.call_args[0][0]["nom"] == "perks.mp3"
+
+
+async def test_un_alias_ne_contourne_pas_le_cooldown_du_son(atelier):
+    """Le piège de tout système d'alias : deux portes, un seul verrou."""
+    _regler(atelier, "perks", alias=["perk"], cooldown=300)
+    bot = _bot(atelier)
+    assert await handle_son_command(bot, "perks") is True
+    assert await handle_son_command(bot, "perk") is True     # traité, mais muet
+    assert bot.dashboard_state.overlay_feed.publish.call_count == 1
+
+
+async def test_un_alias_herite_du_volume_du_son(atelier):
+    _regler(atelier, "perks", alias=["perk"], volume=0.4)
+    bot = _bot(atelier)
+    await handle_son_command(bot, "perk")
+    assert bot.dashboard_state.overlay_feed.publish.call_args[0][0]["volume"] == 0.4

@@ -149,7 +149,7 @@ DEFAUTS: dict[str, float] = {"cooldown": 0.0, "volume": 1.0}
 
 
 class ReglagesSons:
-    """Cooldown et volume de chaque son de commande.
+    """Cooldown, volume et alias de chaque son de commande.
 
     Relu à CHAQUE demande, comme le dossier lui-même : l'owner règle un volume
     pendant le live et le son suivant doit en tenir compte, sans redémarrage.
@@ -164,7 +164,7 @@ class ReglagesSons:
     def __init__(self, directory: str | Path) -> None:
         self._path = Path(directory) / "commande" / _REGLAGES
 
-    def tout(self) -> dict[str, dict[str, float]]:
+    def tout(self) -> dict[str, dict]:
         try:
             brut = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -186,3 +186,48 @@ class ReglagesSons:
         # s'entend comme une panne du bot plutôt que comme un réglage.
         garde["volume"] = min(2.0, max(0.0, garde["volume"]))
         return garde
+
+    def alias(self) -> dict[str, str]:
+        """{autre nom → commande}. Ce que le chat tape VRAIMENT, en somme.
+
+        Relevé dans les logs de PhantomBot : `!perk` a été tapé 8 fois et
+        `!annif` 6 fois, pour des sons qui s'appellent `perks` et `anniv`. Ces
+        gens-là n'ont rien entendu, et rien ne le leur a dit.
+
+        Deux sons revendiquant le même alias : le premier dans l'ordre
+        alphabétique gagne. Arbitraire, mais STABLE — un tri sur un dict au
+        hasard ferait répondre un son différent selon le redémarrage, ce qui est
+        indébogable depuis le chat.
+        """
+        out: dict[str, str] = {}
+        for commande in sorted(self.tout()):
+            noms = self.tout().get(commande, {}).get("alias") or []
+            if not isinstance(noms, list):
+                continue
+            for nom in noms:
+                if isinstance(nom, str) and nom.strip():
+                    out.setdefault(nom.strip().lower(), commande)
+        return out
+
+
+def resoudre_commande(library: "SoundLibrary", reglages: ReglagesSons,
+                      mot: str) -> tuple[str, str] | None:
+    """(commande canonique, fichier) que ce mot déclenche, ou None.
+
+    Les FICHIERS priment sur les alias, toujours. Sinon un alias posé par
+    inadvertance — `"alias": ["mood"]` sur un son quelconque — détournerait un
+    son existant, et le seul symptôme serait « le mauvais son sort », sans rien
+    dans les logs pour dire pourquoi.
+
+    Le couple rendu porte la commande CANONIQUE, pas le mot tapé : c'est elle
+    qui porte le cooldown et le volume. Autrement, `!perk` contournerait
+    tranquillement le cooldown de `!perks`.
+    """
+    mot = mot.strip().lower()
+    fichiers = library.commandes()
+    if mot in fichiers:
+        return mot, fichiers[mot]
+    canonique = reglages.alias().get(mot)
+    if canonique and canonique in fichiers:
+        return canonique, fichiers[canonique]
+    return None

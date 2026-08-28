@@ -46,19 +46,27 @@ def _atelier(bot: "WallyTwitch"):
     return library, ReglagesSons(library.directory), feed
 
 
-async def handle_son_command(bot: "WallyTwitch", commande: str) -> bool:
-    """Joue le son nommé sur l'overlay. Rend False si ce n'est pas un son connu.
+async def handle_son_command(bot: "WallyTwitch", mot: str) -> bool:
+    """Joue le son que `mot` désigne sur l'overlay. False si ce n'en est pas un.
+
+    `mot` est ce que la personne a TAPÉ : ce peut être le nom du son ou l'un de
+    ses alias. Tout ce qui suit raisonne ensuite sur la commande CANONIQUE —
+    cooldown et volume lui appartiennent, sinon `!perk` contournerait le
+    cooldown de `!perks`.
 
     Muet en cas de refus : ni message d'erreur, ni réponse dans le chat. Un son
     encore en cooldown qui répondrait « attends 42 s » ferait deux nuisances au
     lieu d'une — c'est précisément le spam qu'on veut éviter.
     """
+    from bot.core.sons import resoudre_commande
+
     library, reglages, feed = _atelier(bot)
     if library is None:
         return False
-    fichier = library.commandes().get(commande)
-    if fichier is None:
+    trouve = resoudre_commande(library, reglages, mot)
+    if trouve is None:
         return False
+    commande, fichier = trouve
 
     reglage = reglages.pour(commande)
     maintenant = time.monotonic()
@@ -68,7 +76,7 @@ async def handle_son_command(bot: "WallyTwitch", commande: str) -> bool:
                     c=commande, n=reglage["cooldown"] - depuis)
         return True
 
-    _derniers[commande] = maintenant
+    _derniers[commande] = maintenant   # la canonique, jamais l'alias
     # Sans `scene` : un son demandé par le chat s'entend sur toutes les pages
     # d'overlay, quelle que soit la scène à l'antenne — comme `!image`.
     feed.publish({
@@ -77,5 +85,8 @@ async def handle_son_command(bot: "WallyTwitch", commande: str) -> bool:
         "nom": fichier,
         "volume": reglage["volume"],
     })
-    logger.info("Son !{c} joué sur l'overlay ({f})", c=commande, f=fichier)
+    # Le mot tapé ET la commande atteinte : sans les deux, un alias qui résout
+    # mal se lit dans les logs comme un son qui sort tout seul.
+    logger.info("Son !{m} → {c} joué sur l'overlay ({f})",
+                m=mot, c=commande, f=fichier)
     return True
