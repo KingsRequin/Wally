@@ -22,7 +22,7 @@ from bot.twitch.events.virus_popups import CLE_RECOMPENSE, lancer_spam_virus
 def _bot(*, narrateur=True, live=True, storm_ok=True):
     bot = MagicMock()
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
-    bot.twitch_api.send_message = AsyncMock()
+    bot.twitch_api.send_automatic = AsyncMock()
     if narrateur:
         narrateur_obj = MagicMock()
         narrateur_obj.is_active.return_value = live
@@ -51,7 +51,7 @@ async def test_hors_live_les_points_sont_rendus():
 
     bot.discord_bot.overlay_narrator.show_virus_popups.assert_not_called()
     bot.twitch_api.refund_redemption.assert_awaited_once_with("r1", "d1")
-    dit = bot.twitch_api.send_message.await_args.kwargs["text"].lower()
+    dit = bot.twitch_api.send_automatic.await_args.args[0].lower()
     assert "rina" in dit and ("rendu" in dit or "remboursé" in dit)
 
 
@@ -94,7 +94,7 @@ async def test_un_remboursement_refuse_est_dit_tel_quel():
 
     await lancer_spam_virus(bot, acheteur="rina", reward_id="r1", redemption_id="d1")
 
-    dit = bot.twitch_api.send_message.await_args.kwargs["text"].lower()
+    dit = bot.twitch_api.send_automatic.await_args.args[0].lower()
     assert "rendre" in dit or "manuellement" in dit or "pas pu" in dit
 
 

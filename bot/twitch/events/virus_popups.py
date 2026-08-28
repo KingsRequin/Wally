@@ -74,7 +74,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
                  f"automatiquement, il faudra le faire manuellement "
                  f"(redemption {redemption_id}).")
     try:
-        await bot.twitch_api.send_message(text=texte)
+        await bot.twitch_api.send_automatic(texte)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
         logger.error("Spam de virus : refus non annoncé dans le chat : {e!r}", e=exc)
 

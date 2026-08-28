@@ -152,7 +152,7 @@ async def test_un_rattrapage_en_erreur_ne_bloque_jamais_le_demarrage():
 # ── Ce que le viewer ENTEND ─────────────────────────────────────────────────
 def _bot():
     bot = MagicMock()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.llm.complete = AsyncMock(side_effect=RuntimeError("LLM mort"))
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.persona.build_prompt_block = MagicMock(return_value="persona")
@@ -170,7 +170,7 @@ async def test_l_annonce_nomme_l_acheteur_et_l_indisponibilite():
     bot = _bot()
     await DuelAnnonceur(bot, channel="azrael_ttv")(
         Evenement("rattrapage", {"viewer": "carol"}))
-    texte = bot.twitch_api.send_message.await_args.kwargs["text"].lower()
+    texte = bot.twitch_api.send_automatic.await_args.args[0].lower()
     assert "carol" in texte
     assert "rendus" in texte
     assert "hors ligne" in texte, f"la raison doit être dite : {texte!r}"
@@ -185,5 +185,5 @@ async def test_l_annonce_ne_parle_pas_du_duelliste_precedent():
     annonceur = DuelAnnonceur(bot, channel="azrael_ttv")
     await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
     await annonceur(Evenement("rattrapage", {"viewer": ""}))
-    texte = bot.twitch_api.send_message.await_args.kwargs["text"].lower()
+    texte = bot.twitch_api.send_automatic.await_args.args[0].lower()
     assert "bob" not in texte, f"personne ne dit que c'était Bob : {texte!r}"

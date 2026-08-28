@@ -110,7 +110,7 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
                  f"automatiquement, il faudra le faire manuellement "
                  f"(redemption {redemption_id}).")
     try:
-        await bot.twitch_api.send_message(text=texte)
+        await bot.twitch_api.send_automatic(texte)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
         logger.error("Humeur : refus non annoncé dans le chat : {e!r}", e=exc)
 
@@ -159,9 +159,9 @@ async def forcer_humeur(bot, *, acheteur: str, texte: str, intensite: float,
         _feed(bot, f"{acheteur} a forcé l'humeur de Wally : {emotion} à {pourcent} %")
         mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
         try:
-            await bot.twitch_api.send_message(
-                text=f"{mention}c'est fait, me voilà {_en_francais(emotion)} "
-                     f"à {pourcent} %. Merci qui.")
+            await bot.twitch_api.send_automatic(
+                f"{mention}c'est fait, me voilà {_en_francais(emotion)} "
+                f"à {pourcent} %. Merci qui.")
         except Exception as exc:  # noqa: BLE001 — l'humeur est déjà changée
             logger.error("Humeur : changement non annoncé dans le chat : {e!r}", e=exc)
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot

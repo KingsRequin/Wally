@@ -161,6 +161,11 @@ class TwitchAPI:
     # Les seules valeurs acceptées, en MINUSCULES. Ni « red », ni « DEFAULT » :
     # l'absence de couleur se dit « primary », qui rend l'accent de la chaîne.
     ANNOUNCE_COLORS = ("blue", "green", "orange", "purple")
+    # UNE couleur pour tout ce que Wally publie sans qu'on le lui demande. Fixe,
+    # et pas tirée de son humeur : le chat apprend en une soirée que « violet =
+    # ce n'est pas une réponse », là où une couleur qui change à chaque fois ne
+    # dit plus rien — elle décore.
+    AUTO_COLOR = "purple"
 
     def __init__(
         self,
@@ -319,6 +324,34 @@ class TwitchAPI:
                    "color": color if color in self.ANNOUNCE_COLORS else "primary"},
         )
         return statut == 204
+
+    async def send_automatic(
+        self, text: str, broadcaster_id: Optional[str] = None,
+    ) -> bool:
+        """Publie un message que PERSONNE n'a demandé à Wally directement.
+
+        Récompense de points de chaîne, follow, raid, étape de duel, fin de
+        partie, `!mood`, présentation d'une image : toutes ces lignes sortaient
+        avec exactement le même poids visuel qu'un « lol » de viewer. Elles
+        passent désormais en ANNONCE, dont le fond coloré tient l'œil quelques
+        secondes.
+
+        Ce qui reste un message ordinaire : la réponse à quelqu'un qui parle à
+        Wally, sa prise de parole spontanée dans une conversation en cours, et
+        la confirmation d'un `say_in_voice` — trois formes de conversation, où
+        le violet dirait le contraire de ce qu'il est censé dire.
+
+        **Un canal indisponible n'est pas une raison de se taire** : sans le
+        scope, ou si le compte bot n'est pas modérateur, la ligne repart en
+        message ordinaire. Une récompense payée en points doit produire une
+        réponse visible, colorée ou non.
+        """
+        if await self.send_announcement(text, color=self.AUTO_COLOR,
+                                        broadcaster_id=broadcaster_id):
+            return True
+        logger.warning("Annonce indisponible, repli en message ordinaire : {t}",
+                       t=text[:80])
+        return await self.send_message(text=text, broadcaster_id=broadcaster_id)
 
     async def send_shoutout(self, to_broadcaster_id: str) -> str:
         """POST /helix/chat/shoutouts — la carte cliquable de la chaîne visée.

@@ -43,11 +43,6 @@ _SOCLE = (
 class JeuAnnouncer:
     """Publie la fin d'une partie. Une instance, câblée sur le narrateur."""
 
-    # Fixe, et pas tirée de l'humeur : le chat apprend en une soirée que
-    # « violet = un truc de jeu ». Une couleur qui change à chaque fois ne dit
-    # plus rien — elle décore. Twitch n'accepte que blue, green, orange, purple.
-    COULEUR = "purple"
-
     def __init__(self, bot, channel: str = "") -> None:
         self._bot = bot
         self._channel = channel
@@ -95,12 +90,13 @@ class JeuAnnouncer:
             logger.warning("Fin de partie ({g}) : pas d'API Twitch, rien publié", g=genre)
             return
         try:
-            if await api.send_announcement(texte, color=self.COULEUR):
-                logger.info("Fin de partie ({g}) annoncée : {t}", g=genre, t=texte[:80])
+            # Le repli — scope absent, bot non modérateur, AutoMod — vit dans
+            # `send_automatic`, avec les huit autres chemins qui publient sans
+            # qu'on ait parlé à Wally. Il était écrit ici en premier ; le garder
+            # en double aurait fait deux réponses à la même question.
+            if not await api.send_automatic(texte):
+                logger.warning("Fin de partie ({g}) non publiée du tout", g=genre)
                 return
-            # Scope absent, bot non modérateur, AutoMod : le canal manque, pas
-            # le résultat. On le dit en message ordinaire plutôt que de le perdre.
-            logger.warning("Fin de partie ({g}) : annonce refusée, repli en message", g=genre)
-            await api.send_message(text=texte)
+            logger.info("Fin de partie ({g}) annoncée : {t}", g=genre, t=texte[:80])
         except Exception as exc:  # noqa: BLE001 — une fin de partie n'est pas critique
             logger.error("Fin de partie ({g}) non publiée : {e!r}", g=genre, e=exc)

@@ -1632,10 +1632,13 @@ async def _announce_overlay_image(
                 logger.warning("IRC non connecté pour {ch}, message ignoré", ch=channel_name)
                 return
             await irc_channel.send(reply)
-        elif not await bot.twitch_api.send_message(text=reply):
-            # Helix répond 200 sans rien publier quand AutoMod retient le
-            # message ou que la chaîne filtre : même conclusion que l'IRC
-            # déconnecté juste au-dessus. `send_message` a déjà dit pourquoi.
+        # `send_automatic` : Wally commente une image qui vient d'apparaître à
+        # l'écran, il ne répond à personne. Fond violet sur la chaîne maison,
+        # repli en message ordinaire si le canal manque. Le retour reste LU —
+        # Helix répond 200 sans rien publier quand AutoMod retient le message
+        # ou que la chaîne filtre : même conclusion que l'IRC déconnecté
+        # juste au-dessus.
+        elif not await bot.twitch_api.send_automatic(reply):
             return
 
         bot.memory.append_prelude(channel_id, self_name, reply)

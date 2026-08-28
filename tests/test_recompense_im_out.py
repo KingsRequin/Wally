@@ -22,7 +22,7 @@ def _bot(*, connecte=True, speak=None):
     bot = MagicMock()
     bot.discord_bot.voice_service = service
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.stream_feed = MagicMock()
     return bot, service
 
@@ -58,7 +58,7 @@ async def test_hors_vocal_les_points_sont_rendus():
 
     service.speak.assert_not_awaited()
     bot.twitch_api.refund_redemption.assert_awaited_once_with("RW", "R1")
-    assert "rendus" in bot.twitch_api.send_message.call_args.kwargs["text"]
+    assert "rendus" in bot.twitch_api.send_automatic.call_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -89,7 +89,7 @@ async def test_un_remboursement_refuse_est_dit_franchement():
 
     await im_out.dire_im_out(bot, acheteur="alice", reward_id="RW", redemption_id="R1")
 
-    texte = bot.twitch_api.send_message.call_args.kwargs["text"]
+    texte = bot.twitch_api.send_automatic.call_args.args[0]
     assert "PAS pu te rendre tes points" in texte
 
 

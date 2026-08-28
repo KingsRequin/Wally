@@ -41,6 +41,10 @@ def fiche() -> str:
     # Sa cadence est imposée par Twitch, pas par nous — sa fiche doit le dire,
     # sinon il promet un shoutout que l'API vient de refuser.
     ("shoutout Twitch officiel", ("shoutout", "deux minutes")),
+    # Le canal des messages automatiques. Il doit savoir que sa sortie CHANGE
+    # d'aspect selon qu'on lui a parlé ou non — sinon il décrit un chat où
+    # toutes ses lignes se ressemblent, ce qui n'est plus vrai.
+    ("annonces sur fond violet", ("fond violet", "ce n'est pas une réponse")),
 ])
 def test_chaque_capacite_livree_figure_dans_sa_fiche(fiche, capacite, indices):
     manquants = [i for i in indices if i not in fiche]

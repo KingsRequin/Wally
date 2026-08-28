@@ -16,23 +16,24 @@ from unittest.mock import AsyncMock, MagicMock
 from bot.twitch.jeu_announce import JeuAnnouncer
 
 
-def _bot(rediction="Personne n'a trouvé, c'était GIBRALTAR LUL", annonce_ok=True):
+def _bot(rediction="Personne n'a trouvé, c'était GIBRALTAR LUL", publie=True):
     bot = MagicMock()
     bot.llm.complete = AsyncMock(return_value=rediction)
-    bot.twitch_api.send_announcement = AsyncMock(return_value=annonce_ok)
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    # `send_automatic` porte le fond violet ET le repli en message ordinaire,
+    # pour les neuf chemins qui publient sans qu'on ait parlé à Wally. La fin
+    # de partie ne refait pas ce choix dans son coin.
+    bot.twitch_api.send_automatic = AsyncMock(return_value=publie)
     bot.persona.get_system_prompt = MagicMock(return_value="tu es Wally")
     return bot
 
 
 @pytest.mark.asyncio
-async def test_la_fin_de_partie_part_en_annonce_violette():
+async def test_la_fin_de_partie_passe_par_le_canal_automatique():
+    """Et pas par le chat ordinaire : personne n'a demandé ce résultat."""
     bot = _bot()
     await JeuAnnouncer(bot).annoncer("pendu", "Personne n'a trouvé le mot : GIBRALTAR.")
 
-    bot.twitch_api.send_announcement.assert_awaited_once()
-    assert bot.twitch_api.send_announcement.await_args.kwargs["color"] == "purple"
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -45,18 +46,17 @@ async def test_une_redaction_en_panne_publie_le_fait_NU():
     fait = "Personne n'a trouvé le mot : GIBRALTAR."
     await JeuAnnouncer(bot).annoncer("pendu", fait)
 
-    assert bot.twitch_api.send_announcement.await_args.args[0] == fait
+    assert bot.twitch_api.send_automatic.await_args.args[0] == fait
 
 
 @pytest.mark.asyncio
-async def test_une_annonce_refusee_retombe_sur_un_message_ordinaire():
-    """Le scope peut manquer, ou le bot ne pas être modérateur. Le résultat, lui,
-    doit sortir quand même : un canal indisponible n'est pas une raison de se
-    taire."""
-    bot = _bot(annonce_ok=False)
+async def test_une_publication_impossible_ne_leve_pas():
+    """Ni annonce ni message : le live continue, une fin de partie n'est pas
+    critique. Le repli lui-même est testé avec `send_automatic`."""
+    bot = _bot(publie=False)
     await JeuAnnouncer(bot).annoncer("sondage", "Le sondage est plié : « oui » gagne.")
 
-    bot.twitch_api.send_message.assert_awaited_once()
+    bot.twitch_api.send_automatic.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -64,8 +64,7 @@ async def test_un_fait_vide_ne_publie_rien():
     bot = _bot()
     await JeuAnnouncer(bot).annoncer("sondage", "   ")
 
-    bot.twitch_api.send_announcement.assert_not_awaited()
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -73,7 +72,7 @@ async def test_l_annonce_ne_depasse_pas_le_plafond_twitch():
     bot = _bot(rediction="x" * 900)
     await JeuAnnouncer(bot).annoncer("pendu", "peu importe")
 
-    assert len(bot.twitch_api.send_announcement.await_args.args[0]) <= 500
+    assert len(bot.twitch_api.send_automatic.await_args.args[0]) <= 500
 
 
 # ── le câblage : le narrateur déclenche, il ne publie pas ──────────────────

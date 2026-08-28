@@ -9,7 +9,7 @@ def make_bot(channel_ids=None, bot_name="Wally"):
         "anger": 0.2, "joy": 0.5, "sadness": 0.1, "curiosity": 0.3, "boredom": 0.0,
     }
     bot._channel_ids = channel_ids or {}
-    bot.twitch_api.send_message = AsyncMock()
+    bot.twitch_api.send_automatic = AsyncMock()
     bot.config.bot.name = bot_name
     # IRC channel mock
     irc_channel = MagicMock()
@@ -24,8 +24,8 @@ async def test_mood_sends_via_helix_on_home_channel():
     from bot.twitch.commands.mood import handle_mood_command
     bot = make_bot(channel_ids={})
     await handle_mood_command(bot, "streamer")
-    bot.twitch_api.send_message.assert_awaited_once()
-    sent_text = bot.twitch_api.send_message.call_args.kwargs["text"]
+    bot.twitch_api.send_automatic.assert_awaited_once()
+    sent_text = bot.twitch_api.send_automatic.call_args.args[0]
     assert "Wally" in sent_text
     assert "Joie" in sent_text
     assert "50%" in sent_text
@@ -37,7 +37,7 @@ async def test_mood_uses_bot_name_from_config():
     from bot.twitch.commands.mood import handle_mood_command
     bot = make_bot(channel_ids={}, bot_name="Cindy")
     await handle_mood_command(bot, "streamer")
-    sent_text = bot.twitch_api.send_message.call_args.kwargs["text"]
+    sent_text = bot.twitch_api.send_automatic.call_args.args[0]
     assert sent_text.startswith("Humeur de Cindy —"), f"Attendu 'Humeur de Cindy —', obtenu: {sent_text}"
     assert "Wally" not in sent_text, f"'Wally' hardcodé trouvé dans: {sent_text}"
 
@@ -50,7 +50,7 @@ async def test_mood_sends_via_irc_on_guest_channel():
     await handle_mood_command(bot, "guestchan")
     bot.get_channel.assert_called_once_with("guestchan")
     bot.get_channel.return_value.send.assert_awaited_once()
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -58,7 +58,7 @@ async def test_mood_message_contains_all_five_emotions():
     from bot.twitch.commands.mood import handle_mood_command
     bot = make_bot()
     await handle_mood_command(bot, "streamer")
-    text = bot.twitch_api.send_message.call_args.kwargs["text"]
+    text = bot.twitch_api.send_automatic.call_args.args[0]
     for label in ("Colère", "Joie", "Tristesse", "Curiosité", "Ennui"):
         assert label in text, f"Label '{label}' manquant dans: {text}"
 

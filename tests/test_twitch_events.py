@@ -15,7 +15,7 @@ def make_bot(event_cfg=None):
     bot.emotion.get_state = MagicMock(return_value={})
     bot.prompts.build_system_prompt = MagicMock(return_value="sys")
     bot.llm.complete = AsyncMock(return_value="réponse")
-    bot.twitch_api.send_message = AsyncMock()
+    bot.twitch_api.send_automatic = AsyncMock()
 
     default_cfg = {
         "follow": MagicMock(active=True, message="follow {username}"),
@@ -148,7 +148,7 @@ async def test_subscription_end_no_message_sent():
     with patch("bot.twitch.events.social._generate_and_send", new_callable=AsyncMock) as mock_send:
         await handler(payload)
     mock_send.assert_not_awaited()
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_not_awaited()
 
 
 # ── channel.chat.message handler ─────────────────────────────────────────────
@@ -172,7 +172,7 @@ async def test_chat_message_handler_calls_handle_message():
 
 @pytest.mark.asyncio
 async def test_generate_and_send_uses_twitch_api():
-    """_generate_and_send must call bot.twitch_api.send_message, not IRC channel.send."""
+    """_generate_and_send must call bot.twitch_api.send_automatic, not IRC channel.send."""
     from bot.twitch.events import _generate_and_send
 
     bot = make_bot()
@@ -181,8 +181,8 @@ async def test_generate_and_send_uses_twitch_api():
     await _generate_and_send(bot, "mychan", "Bonjour {username}!", username="alice",
                               amount=0, months=0, raiders_count=0)
 
-    bot.twitch_api.send_message.assert_awaited_once()
-    sent = bot.twitch_api.send_message.call_args.kwargs["text"]
+    bot.twitch_api.send_automatic.assert_awaited_once()
+    sent = bot.twitch_api.send_automatic.call_args.args[0]
     assert "alice" in sent
 
 

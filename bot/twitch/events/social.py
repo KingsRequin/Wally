@@ -137,7 +137,7 @@ async def _generate_and_send(
         )
         if len(reply) > 480:
             reply = reply[:477] + "..."
-        await bot.twitch_api.send_message(text=reply)
+        await bot.twitch_api.send_automatic(reply)
     except Exception as e:
         logger.error("Twitch event send error: {e!r}", e=e)
 

@@ -243,3 +243,108 @@ async def test_le_refus_de_twitch_est_rendu_tel_quel_au_modele():
 
     assert rendu["status"] != "ok"
     assert "trop tôt" in rendu["message"]
+
+
+# ── le canal des messages AUTOMATIQUES ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_un_message_automatique_part_en_annonce():
+    """Tout ce qui n'est pas une réponse à quelqu'un passe par là.
+
+    Récompense de points de chaîne, follow, raid, étape de duel, fin de
+    partie, `!mood` : ces lignes sortaient avec exactement le même poids
+    visuel qu'un « lol » de viewer. L'annonce les sépare.
+    """
+    api = make_api()
+    http, ctx = _post(make_204())
+    try:
+        assert await api.send_automatic("Azraël vient de passer Diamant") is True
+    finally:
+        ctx.stop()
+    assert http.post.call_args.kwargs["json"]["color"] == "purple"
+
+
+@pytest.mark.asyncio
+async def test_sans_le_scope_le_message_automatique_sort_QUAND_MEME():
+    """Le canal peut manquer — scope pas encore ré-autorisé, bot non modérateur.
+    Ce n'est pas une raison de se taire : une récompense payée en points doit
+    produire une réponse visible, colorée ou non."""
+    api = make_api()
+    refus, ctx = make_erreur(401), None
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        http = MockClient.return_value.__aenter__.return_value
+        # L'annonce échoue (401 même après refresh), le message ordinaire passe.
+        http.post = AsyncMock(side_effect=[refus, refus, make_http_message_ok()])
+        assert await api.send_automatic("merci pour les 100 bits") is True
+    assert http.post.await_count == 3
+
+
+def make_http_message_ok():
+    """Un 200 de `POST /helix/chat/messages` : le corps dit qu'il est publié."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json = MagicMock(return_value={
+        "data": [{"message_id": "abc", "is_sent": True, "drop_reason": None}]})
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+# ── l'invariant : aucun chemin automatique ne repasse par le chat ordinaire ─
+
+_AUTOMATIQUES = [
+    ("bot/twitch/duel_announce.py", "les étapes du duel Apex"),
+    ("bot/twitch/jeu_announce.py", "les fins de sondage et de pendu"),
+    ("bot/twitch/events/im_out.py", "la récompense « I'm out »"),
+    ("bot/twitch/events/redemptions.py", "les récompenses de points de chaîne"),
+    ("bot/twitch/events/humeur.py", "l'humeur forcée et son remboursement"),
+    ("bot/twitch/events/social.py", "follow, sub, bits, raid"),
+    ("bot/twitch/events/virus_popups.py", "l'attaque de popups"),
+    ("bot/twitch/commands/mood.py", "!mood — cinq valeurs, aucune rédaction"),
+    ("bot/twitch/commands/code.py", "!code — un lien, aucune rédaction"),
+]
+
+
+@pytest.mark.parametrize("chemin,quoi", _AUTOMATIQUES)
+def test_un_chemin_automatique_ne_publie_pas_en_message_ordinaire(chemin, quoi):
+    """Neuf fichiers, un seul canal. Un dixième s'ajoutera un jour.
+
+    L'invariant se vérifie sur le TEXTE parce qu'il porte sur des sites d'appel
+    dispersés : les rejouer tous demanderait neuf harnais d'événements, et
+    c'est justement le genre de couverture qu'on n'écrit pas — puis un site
+    repart en `send_message` sans que personne ne le voie.
+
+    `send_automatic` retombe DÉJÀ sur `send_message` quand le canal manque :
+    un appel direct ici n'est donc jamais un repli, seulement un oubli.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / chemin).read_text(encoding="utf-8")
+    assert "send_message(" not in source, (
+        f"{chemin} ({quoi}) publie en message ordinaire. Ce chemin est "
+        "AUTOMATIQUE : personne n'a parlé à Wally, il doit passer par "
+        "`send_automatic`, qui gère déjà le repli."
+    )
+    assert "send_automatic(" in source, (
+        f"{chemin} ({quoi}) n'appelle plus le canal automatique."
+    )
+
+
+def test_les_chemins_de_CONVERSATION_restent_en_message_ordinaire():
+    """L'autre moitié de l'invariant, et la plus facile à perdre.
+
+    Trois sorties doivent garder le poids visuel d'un message de chat, parce
+    que ce sont des tours de parole : la réponse à quelqu'un, la prise de
+    parole spontanée dans une conversation en cours, et la confirmation d'un
+    `say_in_voice` adressée à celui qui l'a demandée. Les passer en violet
+    ferait dire au fond coloré le contraire de ce qu'il dit — et noierait le
+    signal en une soirée, ce qui est le risque nommé dès la fiche de départ.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parents[1]
+    handlers = (racine / "bot/twitch/handlers.py").read_text(encoding="utf-8")
+    voice = (racine / "bot/discord/voice/request.py").read_text(encoding="utf-8")
+
+    # `_envoyer_reponse_twitch` (la réponse) et le chemin spontané.
+    assert handlers.count("twitch_api.send_message(") == 2
+    assert "api.send_message(" in voice

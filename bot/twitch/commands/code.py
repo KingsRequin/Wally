@@ -76,4 +76,4 @@ async def handle_code_command(
         if irc_channel:
             await irc_channel.send(code_msg)
     else:
-        await bot.twitch_api.send_message(text=code_msg)
+        await bot.twitch_api.send_automatic(code_msg)

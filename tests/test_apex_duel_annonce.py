@@ -27,7 +27,7 @@ def test_le_registre_couvre_tous_les_types_emis():
 
 def _bot(reponse_llm="Ça commence !"):
     bot = MagicMock()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.llm.complete = AsyncMock(return_value=reponse_llm)
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.persona.build_prompt_block = MagicMock(return_value="persona")
@@ -41,8 +41,8 @@ def _bot(reponse_llm="Ça commence !"):
 
 
 def _envoye(bot) -> str:
-    assert bot.twitch_api.send_message.await_args is not None, "rien n'est parti dans le chat"
-    return bot.twitch_api.send_message.await_args.kwargs["text"]
+    assert bot.twitch_api.send_automatic.await_args is not None, "rien n'est parti dans le chat"
+    return bot.twitch_api.send_automatic.await_args.args[0]
 
 
 @pytest.mark.asyncio

@@ -377,7 +377,12 @@ class DuelAnnonceur:
             # publication — un refus d'AutoMod arrive dans le corps
             # (`is_sent: false`), et `send_message` le traduit en `False`. Une
             # étape de duel avalée en silence est indétectable autrement.
-            if not await self._bot.twitch_api.send_message(text=texte):
+            #
+            # `send_automatic` : personne n'a parlé à Wally, c'est la machine à
+            # états du duel qui pousse. Fond violet, et repli en message
+            # ordinaire si le canal manque — le viewer a payé ses points, sa
+            # manche doit s'annoncer d'une façon ou d'une autre.
+            if not await self._bot.twitch_api.send_automatic(texte):
                 logger.warning("Duel : annonce refusée par Twitch — « {t} »",
                                t=texte[:80])
         except Exception as exc:  # noqa: BLE001 — l'overlay doit rester servi

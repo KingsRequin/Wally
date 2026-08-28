@@ -23,4 +23,4 @@ async def handle_mood_command(bot: "WallyTwitch", channel_name: str) -> None:
         if irc_channel:
             await irc_channel.send(mood_text)
     else:
-        await bot.twitch_api.send_message(text=mood_text)
+        await bot.twitch_api.send_automatic(mood_text)

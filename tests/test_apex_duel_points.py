@@ -276,7 +276,7 @@ async def test_une_manche_en_cours_ne_solde_rien():
 # ── Ce que le duelliste ENTEND ──────────────────────────────────────────────
 def _bot():
     bot = MagicMock()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     # LLM coupé : c'est le texte FACTUEL qui part, celui que le code garantit.
     bot.llm.complete = AsyncMock(side_effect=RuntimeError("LLM mort"))
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
@@ -300,7 +300,7 @@ async def _annonce_du_verdict(rembourser: bool, gagnant: str | None,
         "azrael": 6, "viewer": viewer_kills, "gagnant": gagnant,
         "rembourser": rembourser, "abandon": abandon,
         "scores": [{"azrael": 6, "viewer": viewer_kills}]}))
-    return bot.twitch_api.send_message.await_args.kwargs["text"]
+    return bot.twitch_api.send_automatic.await_args.args[0]
 
 
 @pytest.mark.asyncio

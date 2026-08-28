@@ -52,7 +52,7 @@ async def test_un_raid_alimente_le_flux_meme_sans_message_automatique():
 
     assert feed.record.called, "le raid n'a pas été perçu"
     assert "raid" in str(feed.record.call_args).lower()
-    bot.twitch_api.send_message.assert_not_awaited()   # pas de message auto
+    bot.twitch_api.send_automatic.assert_not_awaited()   # pas de message auto
 
 
 @pytest.mark.asyncio
@@ -80,7 +80,7 @@ async def test_un_abonnement_est_percu_meme_sans_message_automatique():
     await handlers["event_eventsub_notification_subscription"](payload)
 
     assert feed.record.called
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -97,7 +97,7 @@ async def test_des_bits_sont_percus_meme_sans_message_automatique():
     await handlers["event_eventsub_notification_cheer"](payload)
 
     assert feed.record.called
-    bot.twitch_api.send_message.assert_not_awaited()
+    bot.twitch_api.send_automatic.assert_not_awaited()
 
 
 @pytest.mark.asyncio

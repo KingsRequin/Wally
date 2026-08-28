@@ -18,7 +18,7 @@ import pytest
 def _bot():
     bot = MagicMock()
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.emotion = MagicMock()
     bot.stream_feed = None
     return bot
@@ -109,7 +109,7 @@ async def test_wally_ANNONCE_ce_qui_lui_arrive():
     bot = _bot()
     await forcer_humeur(bot, acheteur="bob", texte="colère", intensite=0.5,
                         reward_id="r1", redemption_id="d1")
-    bot.twitch_api.send_message.assert_awaited()
+    bot.twitch_api.send_automatic.assert_awaited()
 
 
 # ── rembourser ──────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ async def test_un_mot_INCONNU_rembourse_et_le_dit():
                         reward_id="r1", redemption_id="d1")
     bot.emotion.set_emotion.assert_not_called()
     bot.twitch_api.refund_redemption.assert_awaited_once_with("r1", "d1")
-    dit = bot.twitch_api.send_message.call_args.kwargs["text"].lower()
+    dit = bot.twitch_api.send_automatic.call_args.args[0].lower()
     assert "rendu" in dit or "rembours" in dit
 
 
@@ -145,7 +145,7 @@ async def test_un_remboursement_REFUSE_ne_promet_pas_le_contraire():
     bot.twitch_api.refund_redemption = AsyncMock(return_value=False)
     await forcer_humeur(bot, acheteur="bob", texte="pizza", intensite=0.5,
                         reward_id="r1", redemption_id="d1")
-    dit = bot.twitch_api.send_message.call_args.kwargs["text"].lower()
+    dit = bot.twitch_api.send_automatic.call_args.args[0].lower()
     assert "pas pu" in dit or "manuellement" in dit
 
 
@@ -176,7 +176,7 @@ async def test_un_chat_injoignable_ne_fait_pas_remonter_l_exception():
     """Un handler d'événement ne tue jamais le bot."""
     from bot.twitch.events.humeur import forcer_humeur
     bot = _bot()
-    bot.twitch_api.send_message = AsyncMock(side_effect=RuntimeError("chat mort"))
+    bot.twitch_api.send_automatic = AsyncMock(side_effect=RuntimeError("chat mort"))
     await forcer_humeur(bot, acheteur="bob", texte="colère", intensite=0.5,
                         reward_id="r1", redemption_id="d1")
 

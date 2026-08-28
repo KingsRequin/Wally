@@ -157,7 +157,11 @@ async def test_spontaneous_memory_twitch():
 def _bot_chaine_home():
     bot = make_bot_for_spontaneous()
     bot._channel_ids = {}                 # pas d'IRC : la chaîne home passe par Helix
+    # DEUX canaux, et ce fichier teste les deux : la prise de parole spontanée
+    # reste un message de chat (c'est une conversation), l'annonce d'image passe
+    # par le canal automatique (Wally commente un écran, il ne répond à personne).
     bot.twitch_api.send_message = AsyncMock(return_value=False)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=False)
     return bot
 
 
@@ -211,7 +215,7 @@ async def test_annonce_d_image_publiee_entre_en_memoire():
     incomplet, par exemple) ferait passer le test précédent pour la mauvaise
     raison."""
     bot = _bot_chaine_home()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     await _annonce_image(bot)
     bot.memory.append_prelude.assert_called_once()
     bot.memory.append_message.assert_called_once()

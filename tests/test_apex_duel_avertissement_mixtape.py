@@ -21,7 +21,7 @@ from bot.twitch.duel_announce import DuelAnnonceur, registre_duel
 
 def _bot(reponse_llm="Bob débarque, ça va saigner."):
     bot = MagicMock()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.llm.complete = AsyncMock(return_value=reponse_llm)
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
     bot.persona.build_prompt_block = MagicMock(return_value="persona")
@@ -37,7 +37,7 @@ def _bot(reponse_llm="Bob débarque, ça va saigner."):
 async def _ouverture(bot, mode_jeu="Battle Royale ou Joker") -> str:
     annonceur = DuelAnnonceur(bot, channel="azrael_ttv", mode_jeu=mode_jeu)
     await annonceur(Evenement("duel_ouvert", {"viewer": "Bob"}))
-    return bot.twitch_api.send_message.await_args.kwargs["text"]
+    return bot.twitch_api.send_automatic.await_args.args[0]
 
 
 @pytest.mark.asyncio

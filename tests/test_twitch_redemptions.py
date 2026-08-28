@@ -9,7 +9,7 @@ from bot.twitch.events.redemptions import _est_notre_recompense, handle_redempti
 def _bot(reward_id="RW", duel_en_cours=None, persisted_reward_id=None):
     bot = MagicMock()
     bot.twitch_api.refund_redemption = AsyncMock(return_value=True)
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     bot.duel_runner = MagicMock()
     bot.duel_runner._reward_id = reward_id
     bot.duel_runner.duel_en_cours = duel_en_cours
@@ -114,8 +114,12 @@ async def test_exception_dans_ouvrir_rembourse():
 # est toujours reconnue via l'identifiant persisté. Sur ces deux chemins, le
 # viewer voyait ses points revenir sans jamais savoir pourquoi.
 def _dit(bot) -> str:
-    return " ".join(str(c.kwargs.get("text", ""))
-                    for c in bot.twitch_api.send_message.await_args_list)
+    # Le texte passe en POSITIONNEL depuis que ce chemin publie en annonce :
+    # `send_automatic(texte)`. Lu en `kwargs["text"]`, il rendait "" — et ces
+    # tests, qui vérifient qu'un remboursement n'est jamais MUET, seraient
+    # passés au vert le jour où le message aurait vraiment disparu.
+    return " ".join(str(c.args[0]) if c.args else str(c.kwargs.get("text", ""))
+                    for c in bot.twitch_api.send_automatic.await_args_list)
 
 
 @pytest.mark.asyncio
@@ -151,7 +155,7 @@ async def test_un_chat_injoignable_ne_fait_pas_remonter_l_exception():
     """L'annonce est un bonus : le remboursement, lui, est déjà passé."""
     bot = _bot(persisted_reward_id="RW")
     bot.duel_runner = None
-    bot.twitch_api.send_message = AsyncMock(side_effect=RuntimeError("Twitch down"))
+    bot.twitch_api.send_automatic = AsyncMock(side_effect=RuntimeError("Twitch down"))
 
     await handle_redemption(bot, _event(reward_id="RW"))  # ne doit pas lever
 

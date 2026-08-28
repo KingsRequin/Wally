@@ -143,7 +143,7 @@ async def test_un_compte_valide_donne_en_reponse_lance_toujours_le_duel():
 # ── Ce que le viewer ENTEND ─────────────────────────────────────────────────
 def _bot():
     bot = MagicMock()
-    bot.twitch_api.send_message = AsyncMock(return_value=True)
+    bot.twitch_api.send_automatic = AsyncMock(return_value=True)
     # LLM coupé : c'est le texte FACTUEL qui part, celui que le code garantit.
     bot.llm.complete = AsyncMock(side_effect=RuntimeError("LLM mort"))
     bot.prompts.build_system_prompt = MagicMock(return_value="system")
@@ -162,7 +162,7 @@ async def _annonce(cause: str) -> str:
     await DuelAnnonceur(bot, channel="azrael_ttv")(Evenement(
         "compte_introuvable", {"viewer": "Bob", "url": "https://x.test",
                                "etapes": "les étapes exactes", "cause": cause}))
-    return bot.twitch_api.send_message.await_args.kwargs["text"].lower()
+    return bot.twitch_api.send_automatic.await_args.args[0].lower()
 
 
 @pytest.mark.asyncio
