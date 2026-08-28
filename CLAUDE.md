@@ -235,7 +235,7 @@ bot/
 │   ├── overlay_feed.py  # Fan-out SSE vers l'overlay OBS (calqué sur CognitiveFeed)
 │   ├── overlay_elements.py · overlay_layout.py · overlay_layout_store.py
 │   ├── memes.py · meme_import.py · sons.py · quotes.py · tally.py
-│   ├── music.py · music_tool.py  # Battement + ordres de l'extension Chrome d'Azraël
+│   ├── music.py         # Battement + ordres de l'extension Chrome d'Azraël
 │   ├── predictions.py · prediction_kills.py  # Paris Twitch résolus par Wally
 │   ├── canari.py        # Invariants vérifiés au BOOT (état réel base + disque)
 │   ├── secret_guard.py  # Mots connus mais interdits en sortie (pendu en cours)
@@ -298,6 +298,12 @@ bot/
 │   ├── EMOTIONS.md · SECONDARIES.md · COMPOSITES.md · WEEKDAYS.md
 │   ├── CAPABILITIES.md · EVENTS.md · FIL.md · USERS.md
 │   └── prompts/         # templates chargés via load_prompt("name")
+├── tools/               # Les outils appelables par le LLM — un module par outil
+│   ├── follow_tool.py · music_tool.py · notes_tool.py · shoutout_tool.py
+│   └── ⚠️ Un module qui n'est QU'un outil vit ICI, jamais dans un adapter.
+│       Un SERVICE qui expose son propre outil (`web_search`, `scrape`,
+│       `history_search`, `prediction_kills`, `apex/tool`) garde le sien.
+│       `tests/test_tools_rangement.py` tient la règle.
 └── db/
     ├── database.py      # aiosqlite : init du schéma + helpers
     ├── schema_v2.py     # DDL des tables intelligence (atomic_facts, thoughts…)
@@ -662,7 +668,7 @@ Pièges API confirmés :
 
 ## Musique d'Azraël
 
-`bot/core/music.py` + `music_tool.py` + `bot/dashboard/routes/music.py` + `extension-musique/`
+`bot/core/music.py` + `bot/tools/music_tool.py` + `bot/dashboard/routes/music.py` + `extension-musique/`
 (extension Chrome installée chez l'owner, hors Web Store).
 
 Un seul canal, bidirectionnel : l'extension envoie un **battement** (ce qui passe), la réponse
@@ -798,7 +804,9 @@ automatiquement vers `reminder_recurring` selon `schedule.type`.
 
 `_NOTE_TOOLS` (notes persistantes) est défini dans `discord/handlers.py` et **importé par
 `twitch/handlers.py`** — injecté inconditionnellement dans chaque `complete_with_tools()` des deux
-plateformes.
+plateformes. ⚠️ Sa DÉFINITION est donc dans un adapter alors que son EXÉCUTION vit dans
+`bot/tools/notes_tool.py` : les deux moitiés du même outil sont séparées. C'est l'un des onze
+outils qui restent à sortir de `discord/handlers.py` — cf. la fiche Notion sur la modularité.
 
 Les rappels sont générés par le LLM via le pipeline complet (persona, émotions, directives du
 jour) avec `secondary_llm.complete()`.

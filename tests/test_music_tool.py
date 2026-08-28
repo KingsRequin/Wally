@@ -33,7 +33,7 @@ def _bot(*, etat=None, resultat=None):
 
 @pytest.mark.asyncio
 async def test_un_MODERATEUR_pilote():
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True})
     out = await run_music_tool(bot, {"action": "next"}, roles=["moderator"])
     bot.music.commander.assert_awaited_once()
@@ -44,7 +44,7 @@ async def test_un_MODERATEUR_pilote():
 async def test_le_STREAMER_pilote_aussi():
     """Il porte « admin » et PAS « moderator » dans le vocabulaire du dépôt.
     Le piège a déjà mordu sur `say_in_voice`."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     await run_music_tool(bot, {"action": "pause"}, roles=["admin"])
     bot.music.commander.assert_awaited_once()
@@ -54,7 +54,7 @@ async def test_le_STREAMER_pilote_aussi():
 async def test_un_VIEWER_se_fait_charrier_et_rien_ne_part():
     """La demande de l'owner. Le refus doit dire au modèle QUOI EN FAIRE :
     sans consigne, Wally répondrait par un « non » plat."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     out = await run_music_tool(bot, {"action": "next"}, roles=[])
     bot.music.commander.assert_not_awaited()
@@ -65,7 +65,7 @@ async def test_un_VIEWER_se_fait_charrier_et_rien_ne_part():
 async def test_des_roles_ABSENTS_valent_viewer():
     """Le défaut sûr : un chemin d'appel qui oublie de passer les badges ne doit
     pas ouvrir la commande à tout le monde."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     await run_music_tool(bot, {"action": "next"}, roles=None)
     bot.music.commander.assert_not_awaited()
@@ -75,7 +75,7 @@ async def test_des_roles_ABSENTS_valent_viewer():
 async def test_une_chaine_INVITEE_ne_commande_pas_la_musique_de_la_maison():
     """Même garde que le vocal et l'overlay : un modérateur d'une chaîne
     invitée ferait sinon changer la musique chez Azraël, devant ses viewers."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     out = await run_music_tool(bot, {"action": "next"}, roles=["moderator"],
                                maison=False)
@@ -87,7 +87,7 @@ async def test_une_chaine_INVITEE_ne_commande_pas_la_musique_de_la_maison():
 
 @pytest.mark.asyncio
 async def test_N_IMPORTE_QUI_peut_demander_ce_qui_passe():
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True})
     out = await run_music_tool(bot, {"action": "now"}, roles=[])
     assert "Numb" in out and "Linkin Park" in out
@@ -98,14 +98,14 @@ async def test_N_IMPORTE_QUI_peut_demander_ce_qui_passe():
 async def test_sans_etat_connu_wally_dit_qu_il_NE_SAIT_PAS():
     """Et surtout pas « rien ne joue » : l'extension peut être éteinte, l'onglet
     fermé. Ce sont deux réponses opposées."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     out = await run_music_tool(_bot(etat=None), {"action": "now"}, roles=[])
     assert "sais pas" in out.lower() or "ne sait pas" in out.lower()
 
 
 @pytest.mark.asyncio
 async def test_une_musique_EN_PAUSE_est_dite_en_pause():
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": False})
     out = await run_music_tool(bot, {"action": "now"}, roles=[])
     assert "pause" in out.lower()
@@ -118,7 +118,7 @@ async def test_un_ordre_SANS_accuse_ne_devient_pas_un_succes():
     """Le cœur de la règle, jusqu'au bout de la chaîne : le service rend un
     échec, et Wally doit le dire au chat plutôt que d'annoncer un geste qui n'a
     pas eu lieu."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(resultat={"ok": False, "raison": "le lecteur d'Azraël n'a pas répondu"})
     out = await run_music_tool(bot, {"action": "next"}, roles=["moderator"])
     assert "pas" in out.lower()
@@ -129,7 +129,7 @@ async def test_un_ordre_SANS_accuse_ne_devient_pas_un_succes():
 async def test_le_titre_qui_SUIT_est_annonce_quand_on_le_connait():
     """L'accusé rapporte le nouveau morceau : autant le dire, ça évite un
     « c'est fait » sans contenu."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(resultat={"ok": True, "titre": "In The End"})
     out = await run_music_tool(bot, {"action": "next"}, roles=["moderator"])
     assert "In The End" in out
@@ -137,7 +137,7 @@ async def test_le_titre_qui_SUIT_est_annonce_quand_on_le_connait():
 
 @pytest.mark.asyncio
 async def test_une_action_INCONNUE_est_refusee_sans_appeler_le_service():
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     out = await run_music_tool(bot, {"action": "supprimer_youtube"}, roles=["admin"])
     bot.music.commander.assert_not_awaited()
@@ -147,7 +147,7 @@ async def test_une_action_INCONNUE_est_refusee_sans_appeler_le_service():
 @pytest.mark.asyncio
 async def test_sans_service_du_tout_on_le_dit():
     """Le bot peut tourner sans que la musique soit branchée."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = MagicMock()
     bot.music = None
     out = await run_music_tool(bot, {"action": "now"}, roles=["admin"])
@@ -160,7 +160,7 @@ def test_l_outil_enumere_ses_actions():
     """L'énuméré est la barrière : il vit dans le schéma ET dans le service, pas
     dans une phrase du prompt."""
     from bot.core.music import ACTIONS
-    from bot.core.music_tool import MUSIC_TOOL
+    from bot.tools.music_tool import MUSIC_TOOL
 
     enum = MUSIC_TOOL["function"]["parameters"]["properties"]["action"]["enum"]
     assert set(enum) == ACTIONS | {"now"}
@@ -169,7 +169,7 @@ def test_l_outil_enumere_ses_actions():
 def test_l_outil_dit_au_modele_que_le_droit_se_verifie_ailleurs():
     """Il ne doit PAS être conditionné aux badges à l'assemblage : la garde est
     à l'exécution, et c'est ce qui permet de charrier celui qui essaie."""
-    from bot.core.music_tool import MUSIC_TOOL
+    from bot.tools.music_tool import MUSIC_TOOL
 
     description = MUSIC_TOOL["function"]["description"].lower()
     assert "modérateur" in description or "moderateur" in description
@@ -247,7 +247,7 @@ def test_le_morceau_qui_change_est_BRANCHE_sur_l_overlay():
 async def test_sur_DISCORD_on_peut_demander_ce_qui_passe():
     """Le §10 le veut ouvert à tous, et un membre du Discord d'Azraël a autant
     de raisons de demander qu'un viewer Twitch."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True})
     out = await run_music_tool(bot, {"action": "now"}, roles=None, pilotable=False)
     assert "Numb" in out
@@ -258,7 +258,7 @@ async def test_sur_DISCORD_le_pilotage_ORIENTE_au_lieu_de_charrier():
     """Un salon Discord ne porte pas de badge de modérateur Twitch : le droit y
     est invérifiable. Mais celui qui demande n'a rien tenté de louche — on lui
     dit où ça se passe, on ne se moque pas de lui."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot()
     out = await run_music_tool(bot, {"action": "next"}, roles=None, pilotable=False)
     bot.music.commander.assert_not_awaited()

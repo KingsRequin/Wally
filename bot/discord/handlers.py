@@ -13,13 +13,13 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.core.notes_tool import run_save_note_tool
+from bot.tools.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
-from bot.core.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
-from bot.core.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
+from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
@@ -715,7 +715,7 @@ async def _clip_sans_ecran(bot, args: dict) -> str:
     faire seule (`get_last_clip`, `find_clip`, `get_top_clips`) : le narrateur
     n'était qu'un intermédiaire. Seul l'affichage vidéo se perd.
     """
-    from bot.core.follow_tool import api_twitch
+    from bot.tools.follow_tool import api_twitch
 
     api = api_twitch(bot)
     if api is None:

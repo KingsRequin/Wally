@@ -14,7 +14,7 @@ from bot.intelligence.prompts import assemble_memory_context, build_session_reca
 # Le duel Apex ne vit que sur la chaîne maison : son outil n'est offert que
 # par ce chemin, et son exécution reste ici plutôt que dans `discord/handlers`.
 from bot.intelligence.overlay_narrator import DUEL_TOOL_SPEC as _DUEL_TOOL
-from bot.core.notes_tool import run_save_note_tool
+from bot.tools.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as _detecter_surnom
 from bot.core.apex.tool import APEX_OVERLAY_TOOL as _APEX_OVERLAY_TOOL
 from bot.core.audit_log import observe_event
@@ -37,9 +37,9 @@ from bot.discord.handlers import (
     _QUOTE_TOOL, run_quote_tool,
     _PRESENCE_TOOL, run_presence_tool, _presence_service,
 )
-from bot.core.follow_tool import FOLLOW_TOOL, run_follow_tool
-from bot.core.music_tool import MUSIC_TOOL, run_music_tool
-from bot.core.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
+from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
+from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
 from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
 

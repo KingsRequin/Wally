@@ -204,7 +204,7 @@ def _bot_avec_api(api):
 @pytest.mark.asyncio
 async def test_l_outil_resout_le_pseudo_puis_shoutoute():
     """Le modèle donne un pseudo ; Helix veut un identifiant numérique."""
-    from bot.core.shoutout_tool import run_shoutout_tool
+    from bot.tools.shoutout_tool import run_shoutout_tool
 
     api = MagicMock()
     api.get_broadcaster_id = AsyncMock(return_value="777")
@@ -218,7 +218,7 @@ async def test_l_outil_resout_le_pseudo_puis_shoutoute():
 
 @pytest.mark.asyncio
 async def test_un_pseudo_inconnu_ne_part_pas_vers_helix():
-    from bot.core.shoutout_tool import run_shoutout_tool
+    from bot.tools.shoutout_tool import run_shoutout_tool
 
     api = MagicMock()
     api.get_broadcaster_id = AsyncMock(return_value=None)
@@ -234,7 +234,7 @@ async def test_le_refus_de_twitch_est_rendu_tel_quel_au_modele():
     """Le cooldown doit ARRIVER jusqu'à Wally, sinon il annonce un shoutout
     qui n'a pas eu lieu — le défaut exact de `send_message` qui avalait ses
     erreurs et laissait enrichir la mémoire d'une réplique jamais partie."""
-    from bot.core.shoutout_tool import run_shoutout_tool
+    from bot.tools.shoutout_tool import run_shoutout_tool
 
     api = MagicMock()
     api.get_broadcaster_id = AsyncMock(return_value="777")

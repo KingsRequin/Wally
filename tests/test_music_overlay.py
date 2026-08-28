@@ -94,7 +94,7 @@ def test_les_textes_sont_bornes():
 @pytest.mark.asyncio
 async def test_demander_le_titre_l_AFFICHE_aussi():
     """Le §10 : Wally le dit ET l'affiche."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     n = _narrateur()
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True},
                narrateur=n)
@@ -107,7 +107,7 @@ async def test_demander_le_titre_l_AFFICHE_aussi():
 async def test_sans_narrateur_la_reponse_ecrite_marche_QUAND_MEME():
     """Depuis Discord ou une chaîne invitée : on répond, on n'affiche pas chez
     Azraël. Et l'absence d'écran ne doit pas faire échouer la réponse."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True})
     out = await run_music_tool(bot, {"action": "now"}, roles=[], narrateur=None)
     assert "Numb" in out
@@ -116,7 +116,7 @@ async def test_sans_narrateur_la_reponse_ecrite_marche_QUAND_MEME():
 @pytest.mark.asyncio
 async def test_quand_on_ne_sait_pas_on_n_affiche_RIEN():
     """Pas de carte « je ne sais pas » sur le live : c'est une réponse de chat."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     n = _narrateur()
     out = await run_music_tool(_bot(etat=None, narrateur=n), {"action": "now"},
                                roles=[], narrateur=n)
@@ -128,7 +128,7 @@ async def test_quand_on_ne_sait_pas_on_n_affiche_RIEN():
 async def test_un_ECRAN_en_panne_ne_casse_pas_la_reponse():
     """Le narrateur peut lever (bus overlay indisponible). La personne doit
     quand même obtenir son titre."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     n = MagicMock()
     n.show_music.side_effect = RuntimeError("bus mort")
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True})
@@ -255,7 +255,7 @@ async def test_demander_le_titre_affiche_AUSSI_la_pochette():
     """L'autre chemin d'affichage : « c'est quoi la musique ? » dans le chat. Il
     a sa propre construction d'appel — une pochette branchée d'un seul côté est
     exactement la panne que les tests de parité cherchent."""
-    from bot.core.music_tool import run_music_tool
+    from bot.tools.music_tool import run_music_tool
     n = _narrateur()
     bot = _bot(etat={"titre": "Numb", "artiste": "Linkin Park", "joue": True,
                      "url": "https://www.youtube.com/watch?v=kXYiU_JCYtU"},

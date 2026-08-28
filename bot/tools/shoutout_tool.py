@@ -4,9 +4,9 @@
 s'affiche chez tous les viewers, avec le jeu, cliquable. C'est autre chose qu'un
 message qui dit « allez voir untel ».
 
-Rangé ici et non dans `twitch/handlers.py` pour la même raison que
-`follow_tool.py` : ce module-là importe déjà `discord/handlers`, et l'inverse
-ferait un cycle. On lui emprunte d'ailleurs `api_twitch`.
+Hors de `twitch/handlers.py` pour la même raison que `follow_tool.py`, dont il
+emprunte `api_twitch` : cet adapter importe déjà `discord/handlers`, et
+l'inverse ferait un cycle.
 
 Deux gardes viennent de Twitch et non de nous, ce qui est rare : un shoutout
 toutes les 2 minutes, et 60 minutes avant de refaire le même. Le sur-usage est
@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from bot.core.follow_tool import api_twitch
+from bot.tools.follow_tool import api_twitch
 from bot.core.self_trace import note_act
 
 

@@ -6,8 +6,8 @@ import json
 from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
-from bot.core.music_tool import MUSIC_TOOL, run_music_tool
-from bot.core.notes_tool import run_save_note_tool
+from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.notes_tool import run_save_note_tool
 from bot.core.surnoms import REFUS as REFUS_SURNOM, detecter as detecter_surnom
 from bot.core.web_search import WEB_SEARCH_TOOL
 from bot.discord.voice.brain import generate_search_filler

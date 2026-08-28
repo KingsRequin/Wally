@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from bot.core.follow_tool import _duree_depuis, api_twitch, run_follow_tool
+from bot.tools.follow_tool import _duree_depuis, api_twitch, run_follow_tool
 
 
 def _api(**kw):

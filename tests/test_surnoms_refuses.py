@@ -183,7 +183,7 @@ async def test_une_note_persistante_n_enseigne_pas_de_surnom():
     n° 30, écrite le 2026-08-20) : elle donnait un ORDRE, réinjecté à chaque
     appel, et il battait la consigne du prompt.
     """
-    from bot.core.notes_tool import run_save_note_tool
+    from bot.tools.notes_tool import run_save_note_tool
 
     db = _FauxDB()
     rendu = json.loads(await run_save_note_tool(db, {
@@ -207,7 +207,7 @@ async def test_le_TITRE_de_la_note_est_garde_lui_aussi():
     Ne filtrer que le contenu laisserait « Surnom de KingsRequin » s'afficher
     en gras dans chaque prompt, ce qui suffit à réapprendre l'étiquette.
     """
-    from bot.core.notes_tool import run_save_note_tool
+    from bot.tools.notes_tool import run_save_note_tool
 
     db = _FauxDB()
     rendu = json.loads(await run_save_note_tool(db, {
@@ -222,7 +222,7 @@ async def test_le_TITRE_de_la_note_est_garde_lui_aussi():
 @pytest.mark.asyncio
 async def test_une_note_ordinaire_passe():
     """Le garde ne doit pas fermer l'outil : la plupart des notes sont légitimes."""
-    from bot.core.notes_tool import run_save_note_tool
+    from bot.tools.notes_tool import run_save_note_tool
 
     db = _FauxDB()
     rendu = json.loads(await run_save_note_tool(db, {
@@ -242,7 +242,7 @@ async def test_un_champ_manquant_rend_une_erreur_DITE():
     au milieu de `complete_with_tools`, et Wally annonçait « c'est noté » sans
     rien avoir noté.
     """
-    from bot.core.notes_tool import run_save_note_tool
+    from bot.tools.notes_tool import run_save_note_tool
 
     db = _FauxDB()
     rendu = json.loads(await run_save_note_tool(db, {"title": "Sans contenu"}))

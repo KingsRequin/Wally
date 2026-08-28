@@ -1,8 +1,9 @@
 """« Depuis quand tu suis la chaîne ? » — la date vient de Twitch, jamais de lui.
 
-Sorti de `twitch/handlers.py` pour que Discord puisse l'offrir aussi : ce module
-importe déjà `discord/handlers`, donc l'inverse ferait un cycle. Même raison et
-même place que `music_tool.py` et `prediction_kills.py`.
+Hors des adapters pour que les DEUX plateformes puissent l'offrir : `twitch/
+handlers.py` importe déjà `discord/handlers`, donc y loger l'outil ferait un
+cycle. Ce module a d'abord atterri dans `bot/core/` pour cette seule raison —
+un contournement, pas un choix — avant que `bot/tools/` existe pour l'accueillir.
 
 Le besoin vient des traces : « wally je follow la chaine dpuis quand? » →
 « Pas de date de follow dans mon dossier, j'ai pas accès à ça ». C'était faux —
