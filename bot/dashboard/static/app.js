@@ -471,9 +471,18 @@ window.addEventListener('hashchange', routerVersHash);
 
 let _ancresCourantes = [];
 
-/** @param sections  liste de [id, libellé], dans l'ordre de la page.
- *  @param encartHtml  HTML déjà échappé, ou '' — un fait saillant sous les ancres. */
-function poserSommaire(sections, encartHtml) {
+/** @param route  la route qui possède ce sommaire.
+ *  @param sections  liste de [id, libellé], dans l'ordre de la page.
+ *  @param encartHtml  HTML déjà échappé, ou '' — un fait saillant sous les ancres.
+ *
+ *  La route est OBLIGATOIRE, et c'est tout l'intérêt : les pages remplissent
+ *  leur sommaire après une requête réseau. Vu à l'écran le 2026-08-28 — la
+ *  réponse de `/journal/erreurs` arrivait alors qu'on était déjà sur
+ *  Automatisations, et y plantait « Flux en direct · Erreurs groupées ·
+ *  Statistiques », des ancres vers des sections absentes de la page.
+ */
+function poserSommaire(route, sections, encartHtml) {
+  if (route !== currentRoute) return;
   const rail = document.getElementById('page-rail');
   if (!rail) return;
   _ancresCourantes = sections || [];
@@ -1635,7 +1644,7 @@ function renderJournal() {
   if (!document.getElementById('log-stream')) {
     el.innerHTML = `
       <div class="journal-filtres">
-        <input type="search" class="journal-recherche" id="journal-q"
+        <input type="search" class="champ-recherche" id="journal-q"
                placeholder="Filtrer les lignes…" aria-label="Filtrer les lignes du journal">
         <div class="segmented" id="journal-niveaux" role="group" aria-label="Niveau"></div>
         <div class="segmented" id="journal-vues" role="group" aria-label="Source">
@@ -1649,11 +1658,11 @@ function renderJournal() {
              aria-label="Flux de logs"></div>
       </div>
       <div id="journal-visiteurs" hidden></div>
-      <div class="journal-section" id="journal-erreurs"></div>
-      <div class="journal-section" id="journal-stats"></div>
-      <div class="journal-section" id="journal-vider">
-        <div class="journal-section-titre">Vider le journal</div>
-        <div class="journal-section-sous">
+      <div class="page-section" id="journal-erreurs"></div>
+      <div class="page-section" id="journal-stats"></div>
+      <div class="page-section" id="journal-vider">
+        <div class="page-section-titre">Vider le journal</div>
+        <div class="page-section-sous">
           Efface ce qui est AFFICHÉ ici. <code>app.log</code> reste intact sur le
           disque — c'est lui la source de vérité.
         </div>
@@ -1859,8 +1868,8 @@ async function chargerErreursGroupees() {
   if (!r || !r.ok) {
     // Dire qu'on n'a pas pu lire, jamais afficher « 0 erreur » : un zéro faux
     // est pire qu'une absence avouée.
-    boiteErr.innerHTML = '<div class="journal-section-titre">Erreurs groupées</div>'
-      + '<div class="journal-section-sous">Journal illisible pour le moment.</div>';
+    boiteErr.innerHTML = '<div class="page-section-titre">Erreurs groupées</div>'
+      + '<div class="page-section-sous">Journal illisible pour le moment.</div>';
     boiteStat.innerHTML = '';
     poserSommaireJournalEncart(null);
     return;
@@ -1869,8 +1878,8 @@ async function chargerErreursGroupees() {
   const groupes = d.groupes || [];
   const niveaux = d.niveaux || {};
 
-  boiteErr.innerHTML = '<div class="journal-section-titre">Erreurs groupées</div>'
-    + '<div class="journal-section-sous">'
+  boiteErr.innerHTML = '<div class="page-section-titre">Erreurs groupées</div>'
+    + '<div class="page-section-sous">'
     + (groupes.length
         ? 'Les mêmes erreurs rassemblées, la plus fréquente en premier — '
           + escHtml(d.fichier || '')
@@ -1890,8 +1899,8 @@ async function chargerErreursGroupees() {
       + '</div><div class="journal-stat-valeur ' + (classe || '') + '">' + valeur
       + '</div></div>';
   };
-  boiteStat.innerHTML = '<div class="journal-section-titre">Statistiques</div>'
-    + '<div class="journal-section-sous">Sur ' + Number(d.lignes || 0)
+  boiteStat.innerHTML = '<div class="page-section-titre">Statistiques</div>'
+    + '<div class="page-section-sous">Sur ' + Number(d.lignes || 0)
     + ' ligne(s) de ' + escHtml(d.fichier || 'aujourd\'hui') + '.</div>'
     + '<div class="journal-stats">'
     + tuile('Info', Number(niveaux.INFO || 0))
@@ -1914,7 +1923,7 @@ function poserSommaireJournalEncart(groupe) {
 
 function _rendreSommaireJournal() {
   const g = _journalEncart;
-  poserSommaire(_JOURNAL_SECTIONS, g
+  poserSommaire('systeme/journal', _JOURNAL_SECTIONS, g
     ? '<div class="rail-encart alerte">'
       + '<div class="rail-encart-titre">Erreur la plus fréquente</div>'
       + '<div class="rail-encart-ligne">' + escHtml(g.message) + '</div>'
@@ -5519,8 +5528,6 @@ async function testOverlayImage() {
 
 // ── Actions Tab ──────────────────────────────────────────────────────────────
 
-let _actionsSubTab = 'tasks';
-
 async function startActionSSE() {
   if (actionSSE) actionSSE.close();
   actionSSE = await openAdminSSE('/api/admin/sse/actions');
@@ -5529,8 +5536,9 @@ async function startActionSSE() {
     try {
       var evt = JSON.parse(e.data);
       if (evt.type && evt.task_id) {
-        if (_actionsSubTab === 'tasks') loadActionTasks();
-        if (_actionsSubTab === 'completed') loadCompletedTasks();
+        // Une seule liste désormais : le filtre d'état est appliqué au rendu,
+        // pas à la requête. Un rechargement les sert donc tous les trois.
+        chargerAutomatisations();
       }
     } catch (err) {
       console.warn('flux actions : message ignoré', err, e.data);
@@ -5548,210 +5556,286 @@ function stopActionSSE() {
   if (actionSSE) { actionSSE.close(); actionSSE = null; }
 }
 
+// ── Automatisations ─────────────────────────────────────────────────────────
+//
+// Refonte du 2026-08-28. Trois onglets — Tâches, Terminées, Permissions — pour
+// une seule et même liste vue sous trois angles. Les deux premiers deviennent
+// un filtre d'état, le troisième une section de la page.
+//
+// Pas de bouton « + Tâche », malgré la maquette : il n'existe aucune route de
+// création côté serveur (`routes/actions.py` n'expose que GET, cancel, pause,
+// resume, execute). Les tâches naissent d'une demande faite à Wally, qui passe
+// par `ActionService.create()`. Un bouton branché sur rien coûte plus cher
+// qu'un bouton absent — on le saurait, le panel en a compté huit.
+
+const _AUTO_VUES = [
+  ['avenir', 'À venir'],
+  ['terminees', 'Terminées'],
+  ['echec', 'En échec'],
+];
+
+const _AUTO_SECTIONS = [
+  ['auto-taches', 'Tâches'],
+  ['auto-permissions', 'Qui peut demander quoi'],
+  ['auto-historique', 'Historique d\'exécution'],
+];
+
+let _autoFiltres = { q: '', vue: 'avenir' };
+let _autoTaches = [];
+let _autoOuverte = null;   // l'id de la tâche dépliée, s'il y en a une
+
+/** L'état d'une tâche, tel que la page le range.
+ *
+ *  `last_error` prime sur le statut : une tâche récurrente qui échoue reste
+ *  `active` jusqu'à sa troisième tentative, et la ranger « à venir » sans rien
+ *  dire est exactement ce qui la laissait échouer trois semaines.
+ */
+function _autoEtat(t) {
+  // `last_error` passe AVANT le statut terminal : une tâche annulée après avoir
+  // échoué reste ce qu'on cherche quand on clique « En échec ». La ranger dans
+  // « Terminées » affichait son message d'erreur en rouge sous un compteur
+  // « En échec · 0 » — vu à l'écran, et proprement incompréhensible.
+  if (t.last_error) return 'echec';
+  if (t.status === 'completed' || t.status === 'cancelled' || t.status === 'missed') {
+    return 'terminees';
+  }
+  return 'avenir';
+}
+
+function _autoPastille(t) {
+  const etat = _autoEtat(t);
+  if (etat === 'echec') return ['rouge', 'en échec'];
+  if (etat === 'terminees') return ['gris', t.status === 'missed' ? 'manquée' : t.status === 'cancelled' ? 'annulée' : 'terminée'];
+  if (t.status === 'paused') return ['ambre', 'en pause'];
+  return ['vert', t.schedule_type === 'once' ? 'programmée' : 'récurrente'];
+}
+
 function renderActionsTab() {
   const el = document.getElementById('tab-admin-actions');
   if (!el) return;
 
-  // Build sub-nav + content containers
-  var subnavHtml = '<div class="actions-subnav">'
-    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'tasks' ? ' active' : '') + '" onclick="switchActionsSubTab(\'tasks\')">Tâches</button>'
-    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'completed' ? ' active' : '') + '" onclick="switchActionsSubTab(\'completed\')">Terminées</button>'
-    + '<button class="actions-subnav-pill' + (_actionsSubTab === 'permissions' ? ' active' : '') + '" onclick="switchActionsSubTab(\'permissions\')">Permissions</button>'
-    + '</div>';
-
-  el.textContent = '';
-  el.insertAdjacentHTML('beforeend', subnavHtml);
-
-  var tasksDiv = document.createElement('div');
-  tasksDiv.id = 'actions-tasks-content';
-  tasksDiv.className = 'actions-subcontent' + (_actionsSubTab === 'tasks' ? ' active' : '');
-  el.appendChild(tasksDiv);
-
-  var completedDiv = document.createElement('div');
-  completedDiv.id = 'actions-completed-content';
-  completedDiv.className = 'actions-subcontent' + (_actionsSubTab === 'completed' ? ' active' : '');
-  el.appendChild(completedDiv);
-
-  var permsDiv = document.createElement('div');
-  permsDiv.id = 'actions-perms-content';
-  permsDiv.className = 'actions-subcontent' + (_actionsSubTab === 'permissions' ? ' active' : '');
-  el.appendChild(permsDiv);
-
-  if (_actionsSubTab === 'tasks') {
-    loadActionTasks();
-  } else if (_actionsSubTab === 'completed') {
-    loadCompletedTasks();
-  } else {
-    loadActionPermissions();
+  if (!document.getElementById('auto-liste')) {
+    el.innerHTML = `
+      <div class="auto-barre">
+        <input type="search" class="champ-recherche" id="auto-q"
+               placeholder="Chercher une tâche…" aria-label="Chercher une tâche">
+        <div class="segmented" id="auto-vues" role="group" aria-label="État"></div>
+      </div>
+      <div id="auto-taches">
+        <div class="liste-tete auto-tete">
+          <span>Tâche</span><span>Prochaine exécution</span>
+          <span>Créateur</span><span>État</span>
+        </div>
+        <div class="liste auto-liste" id="auto-liste"></div>
+      </div>
+      <div class="page-section" id="auto-permissions"></div>
+      <div class="page-section" id="auto-historique"></div>`;
+    _cablerAutomatisations(el);
   }
+
+  _lireFiltresAuto();
+  poserSommaire('live/automatisations', _AUTO_SECTIONS, '');
+  chargerAutomatisations();
+  loadActionPermissions();
 }
 
-function switchActionsSubTab(tab) {
-  _actionsSubTab = tab;
-  renderActionsTab();
-}
-
-function _buildActionCard(t) {
-  var statusClass = t.status || 'active';
-  var isPaused = t.status === 'paused';
-  var isTerminal = t.status === 'completed' || t.status === 'cancelled';
-  var nextRun = t.next_run_at ? new Date(t.next_run_at).toLocaleString('fr-FR') : '—';
-  var execInfo = t.execution_count + (t.max_executions ? '/' + t.max_executions : '');
-  var creator = escHtml(t.creator_id || '?');
-  var platform = t.creator_platform || '';
-
-  var card = document.createElement('div');
-  card.className = 'action-card';
-
-  // Header
-  var header = document.createElement('div');
-  header.className = 'action-card-header';
-  var typeBadge = document.createElement('span');
-  typeBadge.className = 'action-type-badge';
-  typeBadge.textContent = t.action_type;
-  var statusBadge = document.createElement('span');
-  statusBadge.className = 'action-status-badge ' + statusClass;
-  statusBadge.textContent = t.status;
-  header.appendChild(typeBadge);
-  header.appendChild(statusBadge);
-  card.appendChild(header);
-
-  // Description
-  var desc = document.createElement('div');
-  desc.className = 'action-card-desc';
-  desc.textContent = t.description || 'Pas de description';
-  card.appendChild(desc);
-
-  // Meta
-  var meta = document.createElement('div');
-  meta.className = 'action-card-meta';
-
-  var rows = [
-    ['Créateur', creator + ' (' + escHtml(platform) + ')'],
-    ['Prochaine exécution', nextRun],
-    ['Exécutions', execInfo],
-    ['Type planification', t.schedule_type || '—'],
-  ];
-  if (t.last_error) {
-    rows.push(['Dernière erreur', t.last_error]);
-  }
-  rows.forEach(function(pair) {
-    var row = document.createElement('div');
-    row.className = 'action-card-meta-row';
-    var label = document.createElement('span');
-    label.className = 'action-meta-label';
-    label.textContent = pair[0];
-    var val = document.createElement('span');
-    val.textContent = pair[1];
-    if (pair[0] === 'Dernière erreur') val.style.color = '#ef4444';
-    row.appendChild(label);
-    row.appendChild(val);
-    meta.appendChild(row);
+function _cablerAutomatisations(el) {
+  const q = el.querySelector('#auto-q');
+  q.addEventListener('input', function () {
+    _autoFiltres.q = q.value.trim();
+    _ecrireFiltresAuto();
+    _rendreListeAuto();
   });
-  card.appendChild(meta);
 
-  // Action buttons (only for non-terminal tasks)
-  if (!isTerminal) {
-    var actions = document.createElement('div');
-    actions.className = 'action-card-actions';
+  el.querySelector('#auto-vues').addEventListener('click', function (ev) {
+    const b = ev.target.closest('[data-vue]');
+    if (!b) return;
+    _autoFiltres.vue = b.dataset.vue;
+    _autoOuverte = null;
+    _ecrireFiltresAuto();
+    _rendreListeAuto();
+  });
 
-    var pauseBtn = document.createElement('button');
-    pauseBtn.className = 'action-btn';
-    pauseBtn.textContent = isPaused ? '▶ Reprendre' : '⏸ Pause';
-    pauseBtn.addEventListener('click', function() { actionTaskTogglePause(t.id, isPaused); });
-    actions.appendChild(pauseBtn);
-
-    var execBtn = document.createElement('button');
-    execBtn.className = 'action-btn action-btn-exec';
-    execBtn.textContent = '⚡ Exécuter';
-    execBtn.addEventListener('click', function() { actionTaskExecuteNow(t.id); });
-    actions.appendChild(execBtn);
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.className = 'action-btn action-btn-cancel';
-    cancelBtn.textContent = '✕ Annuler';
-    cancelBtn.addEventListener('click', function() { actionTaskCancel(t.id); });
-    actions.appendChild(cancelBtn);
-
-    card.appendChild(actions);
-  }
-
-  return card;
+  // Délégation, et jamais d'`onclick` interpolé : le titre d'une tâche est
+  // dicté par un utilisateur Discord ou Twitch. Ici, l'id ne traverse aucun
+  // contexte JavaScript — il vit dans un `data-`, lu comme une chaîne.
+  el.querySelector('#auto-liste').addEventListener('click', function (ev) {
+    const bouton = ev.target.closest('[data-geste]');
+    if (bouton) {
+      const id = Number(bouton.dataset.tache);
+      const geste = bouton.dataset.geste;
+      if (geste === 'pause') actionTaskTogglePause(id, bouton.dataset.pause === '1');
+      else if (geste === 'executer') actionTaskExecuteNow(id);
+      else if (geste === 'annuler') actionTaskCancel(id);
+      return;
+    }
+    const ligne = ev.target.closest('[data-tache]');
+    if (!ligne) return;
+    const id = Number(ligne.dataset.tache);
+    _autoOuverte = _autoOuverte === id ? null : id;
+    _rendreListeAuto();
+  });
 }
 
-async function loadActionTasks() {
-  var container = document.getElementById('actions-tasks-content');
-  if (!container) return;
-  container.textContent = '';
-  var loading = document.createElement('div');
-  loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
-  loading.textContent = 'Chargement...';
-  container.appendChild(loading);
+function _lireFiltresAuto() {
+  const brut = location.hash.replace(/^#\/?/, '');
+  const coupe = brut.indexOf('?');
+  if (coupe === -1) { _ecrireFiltresAuto(); return; }
+  const p = new URLSearchParams(brut.slice(coupe + 1));
+  const vue = p.get('vue') || '';
+  _autoFiltres = {
+    q: p.get('q') || '',
+    vue: _AUTO_VUES.some(function (v) { return v[0] === vue; }) ? vue : 'avenir',
+  };
+}
 
-  var r = await apiFetch('/api/actions/tasks');
+function _ecrireFiltresAuto() {
+  const p = new URLSearchParams();
+  if (_autoFiltres.q) p.set('q', _autoFiltres.q);
+  if (_autoFiltres.vue !== 'avenir') p.set('vue', _autoFiltres.vue);
+  const requete = p.toString();
+  const vise = '#/live/automatisations' + (requete ? '?' + requete : '');
+  if (location.hash !== vise) history.replaceState(null, '', vise);
+}
+
+async function chargerAutomatisations() {
+  const liste = document.getElementById('auto-liste');
+  if (!liste) return;
+  liste.innerHTML = '<div class="liste-vide">Chargement…</div>';
+
+  // L'annuaire en parallèle : `creator_id` est un identifiant de plateforme,
+  // et « 610550333042589752 » ne dit à personne QUI a demandé la tâche.
+  const [r, annuaire] = await Promise.all([
+    apiFetch('/api/actions/tasks'),
+    annuairePersonnes().catch(function () { return []; }),
+  ]);
   if (!r || !r.ok) {
-    loading.textContent = 'Erreur de chargement';
+    liste.innerHTML = '<div class="liste-vide">Erreur de chargement.</div>';
     return;
   }
-  var data = await r.json();
-  var allTasks = data.tasks || [];
-  // Only show active and paused tasks
-  var tasks = allTasks.filter(function(t) { return t.status === 'active' || t.status === 'paused'; });
+  const noms = {};
+  (annuaire || []).forEach(function (p) { noms[p.identity] = p.nom; });
 
-  container.textContent = '';
-
-  if (tasks.length === 0) {
-    var empty = document.createElement('div');
-    empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
-    empty.textContent = 'Aucune tâche en cours';
-    container.appendChild(empty);
-    return;
-  }
-
-  var grid = document.createElement('div');
-  grid.className = 'action-grid';
-  tasks.forEach(function(t) {
-    grid.appendChild(_buildActionCard(t));
+  _autoTaches = ((await r.json()).tasks || []).map(function (t) {
+    const identite = (t.creator_platform || '') + ':' + (t.creator_id || '');
+    return Object.assign({}, t, { _qui: noms[identite] || t.creator_id || '?' });
   });
-  container.appendChild(grid);
+
+  _rendreListeAuto();
+  _rendreHistoriqueAuto();
 }
 
-async function loadCompletedTasks() {
-  var container = document.getElementById('actions-completed-content');
-  if (!container) return;
-  container.textContent = '';
-  var loading = document.createElement('div');
-  loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
-  loading.textContent = 'Chargement...';
-  container.appendChild(loading);
+function _rendreListeAuto() {
+  const liste = document.getElementById('auto-liste');
+  const vues = document.getElementById('auto-vues');
+  if (!liste || !vues) return;
 
-  var r = await apiFetch('/api/actions/tasks');
-  if (!r || !r.ok) {
-    loading.textContent = 'Erreur de chargement';
+  const q = _autoFiltres.q.toLowerCase();
+  const cherche = function (t) {
+    if (!q) return true;
+    return ((t.description || '') + ' ' + (t.action_type || '') + ' ' + t._qui)
+      .toLowerCase().indexOf(q) !== -1;
+  };
+  const retenues = _autoTaches.filter(cherche);
+
+  // Les comptes du segmented se lisent APRÈS la recherche : annoncer « À venir
+  // · 4 » alors que la recherche n'en laisse qu'une ferait mentir le bouton.
+  vues.innerHTML = _AUTO_VUES.map(function (v) {
+    const n = retenues.filter(function (t) { return _autoEtat(t) === v[0]; }).length;
+    return '<button data-vue="' + v[0] + '"'
+      + (v[0] === _autoFiltres.vue ? ' class="active"' : '')
+      + '>' + v[1] + ' · ' + n + '</button>';
+  }).join('');
+
+  const taches = retenues.filter(function (t) { return _autoEtat(t) === _autoFiltres.vue; });
+  if (!taches.length) {
+    liste.innerHTML = '<div class="liste-vide">'
+      + (q ? 'Aucune tâche ne correspond à cette recherche.'
+           : _autoFiltres.vue === 'echec' ? 'Aucune tâche en échec. Tant mieux.'
+           : _autoFiltres.vue === 'terminees' ? 'Aucune tâche terminée.'
+           : 'Aucune tâche à venir.')
+      + '</div>';
     return;
   }
-  var data = await r.json();
-  var allTasks = data.tasks || [];
-  var tasks = allTasks.filter(function(t) {
-    return t.status === 'completed' || t.status === 'cancelled' || t.status === 'missed';
-  });
 
-  container.textContent = '';
+  liste.innerHTML = taches.map(function (t) {
+    const etat = _autoEtat(t);
+    const pastille = _autoPastille(t);
+    const quand = t.next_run_at
+      ? new Date(t.next_run_at).toLocaleString('fr-FR',
+          { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '—';
+    // Le message d'erreur PREND LA PLACE du sous-titre : c'est la seule chose
+    // qu'on veut lire sur une ligne qui a échoué.
+    const sous = t.last_error
+      ? '<div class="auto-sous echec">' + escHtml(t.last_error) + '</div>'
+      : '<div class="auto-sous">' + escHtml(t.action_type || '')
+        + ' · ' + (t.schedule_type === 'once' ? 'une fois' : escHtml(t.schedule_type || ''))
+        + '</div>';
 
-  if (tasks.length === 0) {
-    var empty = document.createElement('div');
-    empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';
-    empty.textContent = 'Aucune tâche terminée';
-    container.appendChild(empty);
-    return;
-  }
+    let bloc = '<div class="liste-ligne auto-ligne' + (etat === 'echec' ? ' echec' : '')
+      + (etat === 'terminees' ? ' terne' : '') + '" data-tache="' + Number(t.id) + '">'
+      + '<div><div class="auto-titre">' + escHtml(t.description || 'Sans description')
+      + '</div>' + sous + '</div>'
+      + '<span class="auto-quand">' + escHtml(quand) + '</span>'
+      + '<span class="auto-qui">' + escHtml(t._qui) + '</span>'
+      + '<span class="pastille ' + pastille[0] + '">' + pastille[1] + '</span>'
+      + '</div>';
 
-  var grid = document.createElement('div');
-  grid.className = 'action-grid';
-  tasks.forEach(function(t) {
-    grid.appendChild(_buildActionCard(t));
-  });
-  container.appendChild(grid);
+    if (_autoOuverte === t.id) {
+      const fini = etat === 'terminees';
+      bloc += '<div class="auto-detail">'
+        + '<div class="auto-detail-info">'
+        + 'exécutions ' + Number(t.execution_count || 0)
+        + (t.max_executions ? '/' + Number(t.max_executions) : '')
+        + ' · échecs consécutifs ' + Number(t.consecutive_failures || 0)
+        + ' · créée le ' + escHtml(String(t.created_at || '').slice(0, 16).replace('T', ' '))
+        + (t.target_channel ? ' · vers ' + escHtml(t.target_channel) : '')
+        + '</div>'
+        + (fini ? '' :
+            '<button class="btn" data-geste="pause" data-tache="' + Number(t.id)
+            + '" data-pause="' + (t.status === 'paused' ? '1' : '0') + '">'
+            + (t.status === 'paused' ? 'Reprendre' : 'Mettre en pause') + '</button>'
+          + '<button class="btn" data-geste="executer" data-tache="' + Number(t.id)
+            + '">Exécuter maintenant</button>'
+          + '<button class="btn" data-geste="annuler" data-tache="' + Number(t.id)
+            + '">Annuler</button>')
+        + '</div>';
+    }
+    return bloc;
+  }).join('');
+}
+
+/** Ce qui a TOURNÉ récemment, tous statuts confondus.
+ *
+ *  Différent du tableau, qui range par état : une tâche récurrente saine n'y
+ *  apparaît jamais comme « ayant tourné », alors que c'est elle qui tourne le
+ *  plus. Il n'existe pas de table d'historique d'exécution — `last_run_at` et
+ *  `execution_count` de chaque tâche sont ce qu'on a, et ils suffisent.
+ */
+function _rendreHistoriqueAuto() {
+  const boite = document.getElementById('auto-historique');
+  if (!boite) return;
+  const passees = _autoTaches
+    .filter(function (t) { return t.last_run_at; })
+    .sort(function (a, b) { return String(b.last_run_at).localeCompare(String(a.last_run_at)); })
+    .slice(0, 12);
+
+  boite.innerHTML = '<div class="page-section-titre">Historique d\'exécution</div>'
+    + '<div class="page-section-sous">'
+    + (passees.length ? 'Les douze dernières tâches à avoir tourné.'
+                      : 'Aucune tâche n\'a encore tourné.')
+    + '</div>'
+    + (passees.length ? '<div class="liste">' + passees.map(function (t) {
+        const quand = new Date(t.last_run_at).toLocaleString('fr-FR',
+          { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return '<div class="liste-ligne auto-ligne' + (t.last_error ? ' echec' : '') + '">'
+          + '<div class="auto-titre">' + escHtml(t.description || 'Sans description') + '</div>'
+          + '<span class="auto-quand">' + escHtml(quand) + '</span>'
+          + '<span class="auto-qui">' + escHtml(t._qui) + '</span>'
+          + '<span class="auto-qui">' + Number(t.execution_count || 0) + '×</span>'
+          + '</div>';
+      }).join('') + '</div>' : '');
 }
 
 async function actionTaskTogglePause(id, isPaused) {
@@ -5759,14 +5843,14 @@ async function actionTaskTogglePause(id, isPaused) {
   var r = await apiFetch('/api/actions/tasks/' + id + '/' + endpoint, { method: 'POST' });
   if (!r || !r.ok) { toast('Erreur ' + endpoint, 'error'); return; }
   toast(isPaused ? 'Tâche reprise' : 'Tâche en pause', 'success');
-  loadActionTasks();
+  chargerAutomatisations();
 }
 
 async function actionTaskExecuteNow(id) {
   var r = await apiFetch('/api/actions/tasks/' + id + '/execute', { method: 'POST' });
   if (!r || !r.ok) { toast('Erreur exécution', 'error'); return; }
   toast('Exécution lancée', 'success');
-  loadActionTasks();
+  chargerAutomatisations();
 }
 
 async function actionTaskCancel(id) {
@@ -5774,7 +5858,7 @@ async function actionTaskCancel(id) {
   var r = await apiFetch('/api/actions/tasks/' + id + '/cancel', { method: 'POST' });
   if (!r || !r.ok) { toast('Erreur annulation', 'error'); return; }
   toast('Tâche annulée', 'success');
-  loadActionTasks();
+  chargerAutomatisations();
 }
 
 var TWITCH_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'admin'];
@@ -5932,8 +6016,20 @@ async function saveDiscordPerm(actionType, guildId, roleIds) {
 }
 
 async function loadActionPermissions() {
-  var container = document.getElementById('actions-perms-content');
-  if (!container) return;
+  var section = document.getElementById('auto-permissions');
+  if (!section) return;
+
+  // Le TITRE est écrit une fois et ne bouge plus ; seul le corps se recharge.
+  // Le vider avec le reste emportait l'en-tête que le sommaire d'ancres vise,
+  // et l'ancre menait alors à un bloc anonyme.
+  var container = document.getElementById('auto-permissions-corps');
+  if (!container) {
+    section.innerHTML = '<div class="page-section-titre">Qui peut demander quoi</div>'
+      + '<div class="page-section-sous">Le rôle minimum requis pour demander '
+      + 'chaque type de tâche à Wally, par plateforme.</div>'
+      + '<div id="auto-permissions-corps"></div>';
+    container = document.getElementById('auto-permissions-corps');
+  }
   container.textContent = '';
   var loading = document.createElement('div');
   loading.style.cssText = 'color:var(--text-muted);text-align:center;padding:32px';

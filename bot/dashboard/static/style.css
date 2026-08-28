@@ -1004,7 +1004,7 @@ select option, .neo-select option {
   flex-wrap: wrap;
 }
 
-.journal-recherche {
+.champ-recherche {
   flex: 1;
   min-width: 200px;
   background: var(--bg-surface);
@@ -1015,8 +1015,8 @@ select option, .neo-select option {
   font-size: 12.5px;
   color: var(--text-primary);
 }
-.journal-recherche::placeholder { color: var(--text-ghost); }
-.journal-recherche:focus {
+.champ-recherche::placeholder { color: var(--text-ghost); }
+.champ-recherche:focus {
   outline: none;
   border-color: var(--accent-border);
 }
@@ -1150,16 +1150,16 @@ select option, .neo-select option {
 .log-entry.hidden { display: none; }
 
 /* Sections d'ancre : le titre est la cible du sommaire. */
-.journal-section { padding-top: 26px; }
+.page-section { padding-top: 26px; }
 
-.journal-section-titre {
+.page-section-titre {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-strong);
   margin: 0 0 4px;
 }
 
-.journal-section-sous {
+.page-section-sous {
   font-size: 12.5px;
   color: var(--text-muted);
   margin: 0 0 12px;
@@ -1230,6 +1230,145 @@ select option, .neo-select option {
 }
 .journal-stat-valeur.warn { color: var(--warning-text); }
 .journal-stat-valeur.err { color: var(--danger-text); }
+
+/* ── Liste standard ───────────────────────────────────────────── */
+/*
+ * Le séparateur entre deux lignes est le FOND du conteneur, laissé visible par
+ * un `gap: 1px`. Une bordure par ligne doublerait au contact et laisserait un
+ * trait plus épais entre chaque paire.
+ */
+
+.liste-tete {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 9px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.liste-ligne {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+  background: var(--bg-surface);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.liste-ligne:hover { background: var(--bg-overlay); }
+.liste-ligne.echec { border-left-color: var(--danger); }
+.liste-ligne.terne { opacity: 0.55; }
+
+.liste-vide {
+  background: var(--bg-surface);
+  padding: 26px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Automatisations ──────────────────────────────────────────── */
+
+.auto-barre {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 16px;
+  flex-wrap: wrap;
+}
+
+.auto-ligne,
+.auto-tete { grid-template-columns: 1fr 150px 150px 110px; }
+
+.auto-titre {
+  font-size: 13px;
+  line-height: 1.3;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.auto-sous {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.auto-sous.echec { color: var(--danger-text); }
+
+.auto-quand {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-body);
+}
+
+.auto-qui {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.pastille {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 5px;
+  justify-self: start;
+  white-space: nowrap;
+}
+.pastille.vert  { color: var(--success);     background: rgba(55, 214, 122, 0.1); }
+.pastille.rouge { color: var(--danger-text); background: rgba(255, 90, 95, 0.1); }
+.pastille.gris  { color: var(--text-dim);    background: var(--border-subtle); }
+.pastille.ambre { color: var(--warning-text);background: rgba(255, 176, 32, 0.1); }
+
+/* Le détail d'une tâche : replié par défaut, il porte les gestes que le
+ * tableau ne montre pas. Sans lui, passer en cartes-en-lignes aurait retiré
+ * pause / exécuter / annuler. */
+.auto-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--bg-sunken);
+}
+
+.auto-detail-info {
+  flex: 1;
+  min-width: 200px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.auto-perm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+}
+
+.auto-perm-nom { font-size: 12.5px; color: var(--text-body); }
+.auto-perm-qui { font-size: 11.5px; color: var(--text-dim); }
 
 .log-filters, .log-controls {
   display: flex;
@@ -1363,14 +1502,14 @@ select option, .neo-select option {
 
 /* ── Sub-nav Pills ────────────────────────────────────────────── */
 
-.sub-nav, .mem-subnav, .actions-subnav {
+.sub-nav, .mem-subnav {
   display: flex;
   gap: 4px;
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
-.sub-nav-btn, .mem-subnav-pill, .actions-subnav-pill {
+.sub-nav-btn, .mem-subnav-pill {
   padding: 6px 16px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1386,19 +1525,19 @@ select option, .neo-select option {
   white-space: nowrap;
 }
 
-.sub-nav-btn:hover, .mem-subnav-pill:hover, .actions-subnav-pill:hover {
+.sub-nav-btn:hover, .mem-subnav-pill:hover {
   background: var(--bg-overlay);
   color: var(--text-primary);
 }
 
-.sub-nav-btn.active, .mem-subnav-pill.active, .actions-subnav-pill.active {
+.sub-nav-btn.active, .mem-subnav-pill.active {
   background: rgba(88, 166, 255, 0.15);
   color: var(--accent);
   border-color: rgba(88, 166, 255, 0.3);
 }
 
-.mem-subnav-content, .actions-subcontent { display: none; }
-.mem-subnav-content.active, .actions-subcontent.active { display: block; }
+.mem-subnav-content { display: none; }
+.mem-subnav-content.active { display: block; }
 
 /* ── Memory Tab — Toolbar ─────────────────────────────────────── */
 
@@ -2268,100 +2407,6 @@ select option, .neo-select option {
 .actions-table tbody tr:hover {
   background: var(--bg-overlay);
 }
-
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.action-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem;
-  transition: border-color 0.15s;
-}
-
-.action-card:hover { border-color: var(--border-accent); }
-
-.action-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.action-type-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  background: rgba(88, 166, 255, 0.12);
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.action-status-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.action-status-badge.active   { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
-.action-status-badge.paused   { background: rgba(210, 158, 11, 0.15); color: var(--warning); }
-.action-status-badge.completed { background: rgba(63, 185, 80, 0.15); color: var(--success); }
-.action-status-badge.cancelled { background: rgba(72, 79, 88, 0.3); color: var(--text-muted); }
-.action-status-badge.missed    { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
-
-.action-card-desc {
-  font-size: 0.88rem;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  line-height: 1.4;
-}
-
-.action-card-meta { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
-.action-card-meta-row { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); }
-.action-meta-label { font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; font-size: 0.72rem; }
-
-.action-card-actions {
-  display: flex;
-  gap: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.action-btn {
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-family: var(--font);
-}
-
-.action-btn:hover { background: var(--border); color: var(--text-primary); }
-
-.action-btn-exec {
-  background: rgba(88, 166, 255, 0.1);
-  border-color: rgba(88, 166, 255, 0.25);
-  color: var(--accent);
-}
-.action-btn-exec:hover { background: rgba(88, 166, 255, 0.2); }
-
-.action-btn-cancel {
-  background: rgba(248, 81, 73, 0.08);
-  border-color: rgba(248, 81, 73, 0.2);
-  color: var(--danger);
-}
-.action-btn-cancel:hover { background: rgba(248, 81, 73, 0.15); }
 
 /* Action toggle switch */
 .action-toggle { display: inline-flex; align-items: center; cursor: pointer; }

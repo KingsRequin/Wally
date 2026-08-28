@@ -220,10 +220,58 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
                      f"{taille} car." + (" · " + erreurs[0] if erreurs else ""))
 
     _verifier_journal(page, rap, erreurs)
+    _verifier_automatisations(page, rap, erreurs)
 
     if captures:
         page.screenshot(path=str(captures / "admin.png"))
     page.close()
+
+
+def _verifier_automatisations(page, rap: Rapport, erreurs: list[str]) -> None:
+    """Tâches / Terminées / Permissions étaient trois onglets pour une seule
+    liste. Les deux premiers sont un filtre d'état, le troisième une section."""
+    print("\n── Live › Automatisations ──")
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="live/automatisations"]').click()
+    page.wait_for_timeout(1800)
+
+    # Les comptes du segmented sont DÉRIVÉS des tâches chargées : trois boutons
+    # sans compte veut dire que la liste n'est jamais arrivée.
+    vues = page.locator("#auto-vues button").count()
+    rap.dire(vues == 3, "les trois états sont des filtres", f"{vues} bouton(s)")
+
+    libelle = page.locator("#auto-vues button").first.inner_text()
+    rap.dire("·" in libelle, "le filtre annonce son compte", libelle)
+
+    page.locator('#auto-vues [data-vue="terminees"]').click()
+    page.wait_for_timeout(500)
+    hash_vu = page.evaluate("location.hash")
+    rap.dire("vue=terminees" in hash_vu, "l'état part dans l'URL", hash_vu)
+
+    # Le tableau doit dire quelque chose dans TOUS les cas : une liste vide sans
+    # phrase, c'est un panneau mort qu'on prend pour une absence de tâches.
+    contenu = _attendre_contenu(page, "auto-liste")
+    rap.dire(contenu > 0, "la liste rend quelque chose", f"{contenu} car.")
+
+    perms = _attendre_contenu(page, "auto-permissions")
+    rap.dire(perms >= _CONTENU_MIN, "les permissions sont une section", f"{perms} car.")
+
+    ancres = page.locator("#page-rail .rail-ancre").all_inner_texts()
+    rap.dire(ancres == ["Tâches", "Qui peut demander quoi", "Historique d'exécution"],
+             "le sommaire est celui de CETTE page", " · ".join(ancres))
+
+    # Chaque ancre doit viser une section qui EXISTE. Un sommaire peint par une
+    # autre page (réponse réseau tardive) passe tous les tests de comptage et
+    # mène pourtant vers le vide — le défaut corrigé le 2026-08-28.
+    orphelines = page.evaluate(
+        "Array.from(document.querySelectorAll('#page-rail [data-ancre]'))"
+        ".filter(a => !document.getElementById(a.dataset.ancre))"
+        ".map(a => a.dataset.ancre)")
+    rap.dire(not orphelines, "chaque ancre vise une section présente",
+             " · ".join(orphelines))
+
+    rap.dire(not erreurs, "aucune erreur JS sur Automatisations",
+             " · ".join(erreurs[:2]))
 
 
 def _verifier_journal(page, rap: Rapport, erreurs: list[str]) -> None:
@@ -264,8 +312,10 @@ def _verifier_journal(page, rap: Rapport, erreurs: list[str]) -> None:
     actif = page.locator("#journal-niveaux .active").inner_text().strip()
     rap.dire(actif == "Error", "le filtre survit au rechargement", f"actif : {actif!r}")
 
-    ancres = page.locator("#page-rail .rail-ancre").count()
-    rap.dire(ancres == 4, "le sommaire d'ancres est rendu", f"{ancres} ancre(s)")
+    ancres = page.locator("#page-rail .rail-ancre").all_inner_texts()
+    rap.dire(ancres == ["Flux en direct", "Erreurs groupées", "Statistiques",
+                        "Vider le journal"],
+             "le sommaire est celui de CETTE page", " · ".join(ancres))
 
     page.locator('#journal-niveaux [data-niveau="ALL"]').click()
     page.wait_for_timeout(300)

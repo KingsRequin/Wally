@@ -81,7 +81,7 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 |---|---|---|---|
 | 1 | ✅ Coquille : sidebar groupée, routage par hash, tokens de design | `index.html`, `style.css`, `app.js`, `smoke_front.py`, tests | ✅ `f38843b6` — les 11 routes montent, hash juste, 14 sous-panneaux rendent |
 | 2 | ✅ Journal — 3 barres d'onglets → 1 ligne de filtres, erreurs groupées | `app.js`, `routes/sse.py`, `style.css`, `index.html`, `smoke_front.py`, tests | ✅ filtres dans l'URL et au rechargement, 15 puces dérivées, sommaire d'ancres |
-| 3 | Automatisations + sommaire d'ancres | `app.js`, `style.css`, tests | Motif « filtre au lieu d'onglet » validé |
+| 3 | ✅ Automatisations + sommaire d'ancres | `app.js`, `style.css`, `smoke_front.py` | ✅ 3 onglets → 1 segmented à compteurs, liste standard, permissions en section |
 | 4 | API personne agrégée + Personnes + fiche | `routes/memory.py`, nouveau `routes/person.py`, `app.js`, tests | Une requête rend toute la fiche |
 | 5 | Personnalité + Modèles & coûts | `app.js`, `style.css`, tests | Prompts absorbés, sauvegarde conditionnelle |
 | 6 | Médias & sons, Connexions, Voix | `app.js`, `style.css`, tests | Les deux « Vocal » fusionnés |
@@ -89,6 +89,19 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 | 8 | Cockpit + API décisions | nouveau `routes/decisions.py`, `app.js`, tests | Chaque item ouvre sa page déjà filtrée |
 | 9 | Scène & overlays — chrome seule | `overlay_admin.js`, `app.js` | Canevas, liste et inspecteur intacts |
 | 10 | Mobile + responsive | `style.css`, `index.html`, `app.js` | Barre du bas, scène en lecture seule |
+
+## Écarts assumés par rapport à la maquette
+
+- **Pas de bouton « + Tâche »** (écran 10). Aucune route de création n'existe :
+  `routes/actions.py` n'expose que GET, cancel, pause, resume, execute. Les
+  tâches naissent d'une demande faite à Wally. Un bouton branché sur rien coûte
+  plus cher qu'un bouton absent — le panel en a déjà compté huit. À rouvrir
+  seulement si l'owner veut créer une tâche à la main depuis le panel, ce qui
+  est une FONCTIONNALITÉ, pas une refonte.
+- **Sous 1100 px, le sommaire passe AU-DESSUS du titre**, pas sous le
+  sous-titre. Même DOM, bascule purement CSS : dupliquer les ancres dans un
+  second nœud, c'est deux rendus à tenir en phase pour une seule source de
+  vérité. À revoir en phase 10 avec le reste du mobile.
 
 ## Pièges connus de la zone
 
@@ -103,3 +116,12 @@ Chaque phase ≤ 5 fichiers, vérifiée avant la suivante. `overlay_admin.js`
 - Les onglets legacy (`admin-config`, `admin-logs`, `admin-overlay`,
   `admin-twitch`) redirigent déjà ; les anciens hash doivent continuer de tomber
   sur la bonne page neuve.
+- **Le sommaire d'ancres appartient à UNE route.** Vu à l'écran le 2026-08-28 :
+  la réponse de `/journal/erreurs` revenait alors qu'on était déjà sur
+  Automatisations et y plantait les ancres du Journal, qui ne visaient aucune
+  section de la page. `poserSommaire()` prend donc la route en premier
+  paramètre et ignore les appels d'une page quittée. **Toute page qui remplit
+  son sommaire après une requête réseau est concernée.**
+- Un titre de section écrit dans le même conteneur que le corps rechargeable
+  DISPARAÎT au premier rechargement, et l'ancre du sommaire mène alors à un bloc
+  anonyme. Titre et corps dans deux nœuds distincts.
