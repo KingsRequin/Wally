@@ -1,34 +1,73 @@
-/* Wally Dashboard — GitHub Dark Theme */
+/* Wally Dashboard — refonte 2026-08-28
+ *
+ * Palette et échelle tirées de `design_handoff_panel_admin/README.md`. Les noms
+ * de variables historiques (`--bg-canvas`, `--text-secondary`…) sont CONSERVÉS
+ * et repointés sur la nouvelle palette : 5 200 lignes de règles en héritent
+ * sans être touchées. Les tokens neufs, qui n'avaient pas d'équivalent, sont
+ * groupés en dessous.
+ *
+ * La typo reste Inter — c'est ce que le panel charge déjà, et le handoff
+ * demande de porter l'ÉCHELLE des maquettes, pas leur police.
+ */
 
 :root {
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Courier New', Courier, monospace;
+  /* La monospace n'est pas décorative : elle sépare la valeur technique
+   * (horodatage, id, trust, coût, clé d'élément) du texte qu'on lit. C'est ce
+   * contraste qui permet de SCANNER une liste. Courier New la rendait illisible
+   * en petit corps. */
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo,
+               Consolas, 'Liberation Mono', monospace;
 
-  /* Palette — GitHub Dark */
-  --bg-canvas:     #0d1117;
-  --bg-surface:    #161b22;
-  --bg-overlay:    #1c2128;
-  --border:        #30363d;
-  --border-accent: #3d444d;
-  --text-primary:  #e6edf3;
-  --text-secondary:#7d8590;
-  --text-muted:    #484f58;
-  --accent:        #58a6ff;
-  --accent-hover:  #79c0ff;
-  --success:       #3fb950;
-  --danger:        #f85149;
-  --warning:       #d29e0b;
+  /* Fonds */
+  --bg-canvas:     #0b0d11;   /* fond de page */
+  --bg-sidebar:    #0d1014;
+  --bg-surface:    #12151b;   /* carte */
+  --bg-overlay:    #171b22;   /* surface 2, survol de ligne */
+  --bg-sunken:     #0e1116;   /* champ, flux de journal, canevas */
+  --bg-select:     #1a2130;
+  --bg-select-2:   #1d2633;   /* fond d'accent : entrée active, puce active */
+
+  /* Bordures */
+  --border:        #232935;
+  --border-subtle: #1c212b;
+  --border-accent: #2b3240;   /* bordure marquée */
+
+  /* Textes */
+  --text-strong:   #f2f5fa;
+  --text-primary:  #e5e9f0;
+  --text-body:     #d6dbe5;
+  --text-secondary:#9aa2b1;
+  --text-dim:      #8a92a2;
+  --text-muted:    #6f7787;
+  --text-faint:    #5d6472;
+  --text-ghost:    #4d5461;
+
+  /* Accents */
+  --accent:        #4c8dff;
+  --accent-hover:  #8fbaff;
+  --accent-light:  #8fbaff;
+  --accent-bg:     #1d2633;
+  --accent-border: #2b4266;
+  --success:       #37d67a;
+  --warning:       #ffb020;
+  --warning-text:  #e0c48a;
+  --danger:        #ff5a5f;
+  --danger-text:   #ff8b8e;
+  --love:          #f472b6;
+  --cognitive:     #a78bfa;
+  --canvas-select: #ff8a3d;
 
   /* Emotions */
-  --c-anger:    #f85149;
-  --c-joy:      #d29e0b;
-  --c-curiosity:#3fb950;
-  --c-sadness:  #58a6ff;
-  --c-boredom:  #a371f7;
+  --c-anger:    #ff5a5f;
+  --c-joy:      #ffb020;
+  --c-curiosity:#37d67a;
+  --c-sadness:  #4c8dff;
+  --c-boredom:  #a78bfa;
 
   /* Status */
-  --c-online:  #3fb950;
-  --c-offline: #f85149;
+  --c-online:  #37d67a;
+  --c-offline: #ff5a5f;
 }
 
 /* ── Reset ────────────────────────────────────────────────────── */
@@ -54,7 +93,7 @@ body {
 
 .main-content {
   flex: 1;
-  padding: 0 32px 32px;
+  padding: 0 28px 26px;
   overflow-y: auto;
   min-width: 0;
 }
@@ -62,13 +101,13 @@ body {
 /* ── Sidebar ──────────────────────────────────────────────────── */
 
 .sidebar {
-  width: 200px;
+  width: 216px;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 16px 0;
-  border-right: 1px solid var(--border);
-  background: var(--bg-surface);
+  padding: 18px 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
   flex-shrink: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -77,12 +116,20 @@ body {
 .sidebar::-webkit-scrollbar { display: none; }
 
 .sidebar-logo {
-  font-size: 1.3rem;
-  font-weight: 800;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
   color: var(--accent);
-  margin-bottom: 24px;
-  padding: 0 16px;
-  letter-spacing: -1px;
+  padding: 0 18px 18px;
+  letter-spacing: 0;
+}
+
+.sidebar-logo-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-faint);
 }
 
 .sidebar-nav {
@@ -90,48 +137,54 @@ body {
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  padding: 0 8px;
+  padding: 0 10px;
 }
+
+/* En-tête de groupe : ce qui remplace un niveau entier de navigation. */
+.sidebar-group {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  padding: 16px 11px 7px;
+}
+.sidebar-nav > .sidebar-group:first-child { padding-top: 0; }
 
 .sidebar-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 8px 11px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: color 0.15s, background 0.15s;
-  position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
   cursor: pointer;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  /* Posée sur TOUTES les entrées, transparente au repos : mise seulement sur
+   * l'entrée active, elle décalerait son libellé de 2 px au changement de page. */
+  border-left: 2px solid transparent;
 }
 
 .sidebar-item span {
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: inherit;
 }
 
 .sidebar-item:hover {
   color: var(--text-primary);
-  background: var(--bg-overlay);
+  background: #161b23;
 }
 
 .sidebar-item.active {
-  color: var(--text-primary);
-  background: var(--bg-overlay);
-}
-
-.sidebar-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
-  background: var(--accent);
-  border-radius: 0 3px 3px 0;
+  color: var(--accent-light);
+  background: var(--bg-select-2);
+  font-weight: 600;
+  border-left-color: var(--accent);
 }
 
 .sidebar-divider {
@@ -175,20 +228,17 @@ body {
   color: var(--text-primary);
 }
 
+/* Le compteur d'alerte d'une entrée. En ligne, à droite du libellé : la
+ * pastille ronde flottante d'avant chevauchait le texte dès deux chiffres. */
 .sidebar-badge {
-  position: absolute;
-  top: 2px;
-  right: 8px;
-  background: var(--danger);
-  color: white;
-  font-size: 0.5rem;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--danger);
+  background: rgba(255, 90, 95, 0.12);
+  padding: 3px 5px;
+  border-radius: 4px;
+  flex: none;
 }
 
 /* ── Control Bar ──────────────────────────────────────────────── */
@@ -199,14 +249,13 @@ body {
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: rgba(22, 27, 34, 0.95);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
-  margin: 0 -32px 20px -32px;
-  padding: 8px 32px;
-  gap: 16px;
+  height: 48px;
+  flex: none;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
+  margin: 0 -28px;
+  padding: 0 24px;
+  gap: 14px;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -214,7 +263,17 @@ body {
 .control-bar-group {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
+}
+
+.control-bar-spacer { flex: 1; }
+
+.control-bar-build {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-ghost);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .control-bar-indicator {
@@ -224,8 +283,8 @@ body {
 }
 
 .control-bar-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--c-offline);
   transition: background 0.3s;
@@ -242,43 +301,71 @@ body {
 }
 
 .control-bar-btn {
-  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  font-family: var(--font);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg-overlay);
+  border: 1px solid var(--border-accent);
+  background: #141922;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .control-bar-btn:hover {
-  background: var(--border);
+  background: var(--bg-select);
   color: var(--text-primary);
 }
 
 .control-bar-btn.restart {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--danger);
-  border-color: rgba(248, 81, 73, 0.3);
+  color: var(--danger-text);
+  background: #191114;
+  border-color: rgba(255, 90, 95, 0.3);
 }
 
 .control-bar-btn.restart:hover {
-  background: rgba(248, 81, 73, 0.15);
-  border-color: rgba(248, 81, 73, 0.5);
+  background: rgba(255, 90, 95, 0.15);
+  border-color: rgba(255, 90, 95, 0.5);
 }
 
 .control-bar-btn.update {
   color: var(--success);
-  border-color: rgba(63, 185, 80, 0.3);
+  background: #0f1a14;
+  border-color: rgba(55, 214, 122, 0.32);
 }
 
 .control-bar-btn.update:hover {
-  background: rgba(63, 185, 80, 0.15);
-  border-color: rgba(63, 185, 80, 0.5);
+  background: rgba(55, 214, 122, 0.15);
+  border-color: rgba(55, 214, 122, 0.55);
+}
+
+/* ── Titre de page ────────────────────────────────────────────── */
+/* Écrit par le routeur (`_appliquerRoute`), jamais dans le HTML. */
+
+.page-head {
+  padding: 26px 0 20px;
+}
+
+.page-title {
+  font-size: 23px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.page-sub {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  max-width: 74ch;
 }
 
 
@@ -2946,23 +3033,19 @@ button:focus-visible {
     min-height: 44px;
     justify-content: center;
     flex-shrink: 0;
-    flex-direction: column;
+    white-space: nowrap;
+    border-left: none !important;
   }
 
-  .sidebar-item span,
   .sidebar-mode-btn span {
     display: none !important;
   }
 
-  .sidebar-item.active::before {
-    left: 50% !important;
-    top: auto !important;
-    bottom: 0 !important;
-    transform: translateX(-50%) !important;
-    width: 24px !important;
-    height: 3px !important;
-    border-radius: 4px 4px 0 0;
-  }
+  /* La sidebar mobile définitive (barre du bas à 4 destinations) arrive en
+   * phase 10. En attendant : les libellés RESTENT visibles. Les masquer était
+   * bon tant qu'une icône les doublait — la refonte a retiré les icônes, et
+   * cacher le span rendrait des boutons vides. */
+  .sidebar-group { display: none !important; }
 
   .sidebar-divider { display: none !important; }
   .sidebar-spacer { display: none !important; }

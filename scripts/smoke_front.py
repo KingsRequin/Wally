@@ -14,7 +14,7 @@ jour, dans du code qui tournait en production :
 
 Ce que le script vérifie, et qui n'était vérifiable nulle part ailleurs :
   1. l'overlay charge, ses 37 éléments sont dans le DOM, aucune erreur JS ;
-  2. les sept onglets du dashboard admin s'ouvrent sans erreur ;
+  2. les onze pages du dashboard admin s'ouvrent sans erreur ;
   3. les sous-onglets de Paramètres — dont Vocal — rendent du CONTENU.
 
 Le « sans erreur » ne suffit pas seul : un panneau peut rester vide en silence.
@@ -41,9 +41,26 @@ import sys
 BASE = "http://127.0.0.1:8080"
 _RACINE = pathlib.Path(__file__).resolve().parent.parent
 
-# Les sept de la sidebar, dans l'ordre où ils apparaissent.
-ONGLETS = ["Paramètres", "Mémoire", "Actions", "Prompts",
-           "Mise en scène", "Système", "Vocal"]
+# Les pages de la sidebar, dans l'ordre où elles apparaissent. Depuis la
+# refonte du 2026-08-28 (docs/plans/2026-08-28-refonte-panel-admin-plan.md), ce
+# sont des ROUTES : cliquer l'entrée pose `#/cerveau/personnes` et le routeur
+# monte la page. Le parcours vaut donc aussi comme test du routeur.
+# On clique l'entrée par sa ROUTE, pas par son libellé : depuis la refonte,
+# « Mémoire commune » et « Voix » nomment aussi des titres et des pilules à
+# l'intérieur des panneaux, et un clic par texte visait un `<h2>` caché.
+ONGLETS = [
+    ("Personnes", "cerveau/personnes"),
+    ("Mémoire commune", "cerveau/memoire"),
+    ("Personnalité", "cerveau/personnalite"),
+    ("Textes de référence", "cerveau/textes"),
+    ("Modèles & coûts", "cerveau/modeles"),
+    ("Scène & overlays", "live/scene"),
+    ("Voix", "live/voix"),
+    ("Médias & sons", "live/medias"),
+    ("Automatisations", "live/automatisations"),
+    ("Journal", "systeme/journal"),
+    ("Connexions", "systeme/connexions"),
+]
 
 # Sous-onglets, et l'id du panneau que chacun remplit. C'est ici que vivait le
 # défaut : un sous-onglet peut être le seul cassé de sa famille, l'onglet parent
@@ -51,14 +68,17 @@ ONGLETS = ["Paramètres", "Mémoire", "Actions", "Prompts",
 #
 # Mémoire manquait entièrement à ce parcours — sept panneaux, dont ceux qui
 # portent les gens et leur mémoire, montaient sans qu'aucun outil ne le vérifie.
+# Le premier terme est la PAGE par laquelle on arrive sur l'ancien panneau —
+# la refonte se fait par étapes, ces sous-onglets vivent encore derrière leur
+# nouvelle route. Ils disparaîtront panneau par panneau, chacun avec sa phase.
 SOUS_ONGLETS = [
-    ("Paramètres", [
+    ("cerveau/personnalite", [
         ("Émotions", "parametres-sub-emotions"),
         ("LLM", "parametres-sub-llm"),
         ("Images", "parametres-sub-images"),
         ("Vocal", "parametres-sub-vocal"),
     ]),
-    ("Mémoire", [
+    ("cerveau/personnes", [
         ("Utilisateurs", "memoire-sub-users"),
         ("Mémoire communautaire", "memoire-sub-global"),
         ("Questions", "memoire-sub-dashboard"),
@@ -67,7 +87,7 @@ SOUS_ONGLETS = [
         ("Dans la tête de Wally", "memoire-sub-self"),
         ("Ignorés", "memoire-sub-ignores"),
     ]),
-    ("Système", [
+    ("systeme/journal", [
         ("Logs", "systeme-sub-logs"),
         ("Twitch", "systeme-sub-twitch"),
         ("Overlay", "systeme-sub-overlay"),
@@ -164,30 +184,40 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     page.wait_for_timeout(2500)
     rap.dire(not erreurs, "le SPA se monte sans erreur", " · ".join(erreurs[:2]))
 
-    for nom in ONGLETS:
+    for nom, route in ONGLETS:
         del erreurs[:]
-        cible = page.get_by_text(nom, exact=True).first
+        cible = page.locator(f'.sidebar-item[data-route="{route}"]')
         if cible.count() == 0:
-            rap.dire(False, f"onglet {nom}", "introuvable dans la sidebar")
+            rap.dire(False, f"page {nom}", "introuvable dans la sidebar")
             continue
         cible.click()
         page.wait_for_timeout(1800)
-        rap.dire(not erreurs, f"onglet {nom}", " · ".join(erreurs[:2]))
+        # Le clic doit avoir posé le hash : c'est LUI qui rend l'URL
+        # partageable et le rechargement fidèle. Un `onclick` qui monte le
+        # panneau sans toucher l'URL passerait le reste du test sans broncher.
+        hash_vu = page.evaluate("location.hash")
+        rap.dire(not erreurs and hash_vu == f"#/{route}",
+                 f"page {nom}",
+                 f"hash {hash_vu!r}" + (" · " + erreurs[0] if erreurs else ""))
 
-    for parent, enfants in SOUS_ONGLETS:
-        print(f"\n── sous-onglets de {parent} ──")
-        page.get_by_text(parent, exact=True).first.click()
+    for route, enfants in SOUS_ONGLETS:
+        print(f"\n── sous-onglets derrière {route} ──")
+        page.locator(f'.sidebar-item[data-route="{route}"]').click()
         page.wait_for_timeout(1200)
         for nom, ident in enfants:
             del erreurs[:]
-            # `.last` : le nom du sous-onglet apparaît aussi dans la sidebar et
-            # dans les panneaux déjà montés ; la pilule est le dernier rendu.
-            page.get_by_text(nom, exact=True).last.click()
+            # La pilule est visée par son `data-subtab`, dans le panneau ACTIF.
+            # Le nom seul ne suffit plus : « Mémoire communautaire » désigne
+            # aussi une entrée de sidebar et un titre de panneau.
+            sous = ident.split("-sub-", 1)[1]
+            page.locator(
+                f'.tab-content.active .mem-subnav-pill[data-subtab="{sous}"]'
+            ).first.click()
             taille = _attendre_contenu(page, ident)
             # Les deux conditions, pas une : sans erreur mais vide reste un
             # panneau mort, et c'est exactement la forme qu'avait le défaut.
             rap.dire(not erreurs and taille >= _CONTENU_MIN,
-                     f"{parent} → {nom}",
+                     f"{route} → {nom}",
                      f"{taille} car." + (" · " + erreurs[0] if erreurs else ""))
 
     if captures:

@@ -55,7 +55,6 @@ const PLATFORM_ICONS = {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let currentTab  = 'admin-parametres';
 let logSSE      = null;
 function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -277,9 +276,190 @@ async function restartTwitchContainer() {
   _waitForReconnect();
 }
 
-// ── Mode & tabs ───────────────────────────────────────────────────────────────
+// ── Routage par hash ─────────────────────────────────────────────────────────
+//
+// Refonte du 2026-08-28 — cf. docs/plans/2026-08-28-refonte-panel-admin-plan.md
+// et design_handoff_panel_admin/. Le panel passe de 7 onglets × jusqu'à 7
+// sous-onglets à 11 pages plates groupées en 3 thèmes.
+//
+// L'URL porte la page, et plus tard ses filtres (`#/systeme/journal?niveau=error`).
+// Sans elle, un item du cockpit ne peut pas ouvrir Automatisations DÉJÀ filtré
+// sur « En échec », un lien ne se partage pas, et un redémarrage du conteneur
+// ramène toujours sur la même section.
+//
+// `pane` et `sub` sont TRANSITOIRES : tant qu'une page n'a pas été refaite, sa
+// route ouvre l'ANCIEN panneau, au bon sous-onglet. C'est ce qui rend la
+// refonte livrable phase par phase sans jamais casser le panel en production.
+// Chaque phase remplace un couple `pane`/`sub` par un vrai rendu.
 
-function enterAdmin(tabId) {
+const ROUTES = {
+  'cerveau/personnes': {
+    titre: 'Personnes',
+    sous: 'Tout le monde que Wally connaît, sur les deux plateformes.',
+    pane: 'admin-memoire', sub: 'users',
+  },
+  'cerveau/memoire': {
+    titre: 'Mémoire commune',
+    sous: 'Ce que Wally sait du groupe plutôt que d\'une personne.',
+    pane: 'admin-memoire', sub: 'global',
+  },
+  'cerveau/personnalite': {
+    titre: 'Personnalité',
+    sous: 'L\'humeur du moment et le tempérament de fond.',
+    pane: 'admin-parametres', sub: 'emotions',
+  },
+  // Transitoire : absorbée par « Personnalité » en phase 5.
+  'cerveau/textes': {
+    titre: 'Textes de référence',
+    sous: 'Les prompts qui définissent sa voix.',
+    pane: 'admin-prompts',
+  },
+  'cerveau/modeles': {
+    titre: 'Modèles & coûts',
+    sous: 'Quel modèle sert à quoi, et ce que ça coûte.',
+    pane: 'admin-parametres', sub: 'llm',
+  },
+  'live/scene': {
+    titre: 'Scène & overlays',
+    sous: 'Le placement de ce que les viewers voient.',
+    pane: 'admin-scene',
+  },
+  'live/voix': {
+    titre: 'Voix',
+    sous: 'Ce que Wally entend, et ce qu\'il répond à l\'oral.',
+    pane: 'admin-voice',
+  },
+  'live/medias': {
+    titre: 'Médias & sons',
+    sous: 'Images, galerie, et sons déclenchés par le chat.',
+    pane: 'admin-parametres', sub: 'images',
+  },
+  'live/automatisations': {
+    titre: 'Automatisations',
+    sous: 'Les tâches que Wally exécute tout seul.',
+    pane: 'admin-actions',
+  },
+  'systeme/journal': {
+    titre: 'Journal',
+    sous: 'Ce qui se passe, en direct.',
+    pane: 'admin-systeme', sub: 'logs',
+  },
+  'systeme/connexions': {
+    titre: 'Connexions',
+    sous: 'Discord, Twitch, et l\'état des jetons.',
+    pane: 'admin-systeme', sub: 'twitch',
+  },
+};
+
+const ROUTE_DEFAUT = 'cerveau/personnes';
+
+// Les anciens hash — `#admin-memoire`, et les quatre noms d'onglets déjà
+// redirigés avant la refonte. Un signet posé il y a six mois doit continuer de
+// tomber sur la bonne page, pas sur la page d'accueil.
+const ROUTES_LEGACY = {
+  'admin-parametres':  'cerveau/personnalite',
+  'admin-config':      'cerveau/personnalite',
+  'admin-memoire':     'cerveau/personnes',
+  'admin-memory-dash': 'cerveau/memoire',
+  'admin-actions':     'live/automatisations',
+  'admin-prompts':     'cerveau/textes',
+  'admin-scene':       'live/scene',
+  'admin-systeme':     'systeme/journal',
+  'admin-logs':        'systeme/journal',
+  'admin-twitch':      'systeme/connexions',
+  'admin-overlay':     'live/scene',
+  'admin-voice':       'live/voix',
+};
+
+// La route affichée. `null` tant que rien n'est monté, pour que le premier
+// rendu passe la garde d'égalité de `_surChangementDeHash`.
+let currentRoute = null;
+
+/** Ce que dit le hash courant.
+ *
+ *  `canonique` distingue « l'URL désigne déjà cette page » de « on a dû
+ *  deviner » (ancien hash, ou charabia). Dans le second cas seulement, le
+ *  routeur réécrit l'URL — sinon il effacerait les filtres, qui vivent dans la
+ *  partie requête (`#/systeme/journal?niveau=error`).
+ */
+function _analyserHash() {
+  const brut = location.hash.replace(/^#\/?/, '');
+  const coupe = brut.indexOf('?');
+  const chemin = coupe === -1 ? brut : brut.slice(0, coupe);
+  const requete = coupe === -1 ? '' : brut.slice(coupe);
+  if (ROUTES[chemin]) return { route: chemin, requete: requete, canonique: true };
+  if (ROUTES_LEGACY[chemin]) return { route: ROUTES_LEGACY[chemin], requete: '', canonique: false };
+  return { route: ROUTE_DEFAUT, requete: '', canonique: false };
+}
+
+/** Pose le sous-onglet de l'ancien panneau AVANT son rendu.
+ *
+ *  `renderParametresTab` et ses voisins lisent la variable de module pour
+ *  choisir quoi monter : la poser après le rendu n'aurait aucun effet visible.
+ */
+function _poserSousOnglet(pane, sub) {
+  if (!sub) return;
+  if (pane === 'admin-parametres') _parametresSubTab = sub;
+  else if (pane === 'admin-memoire') _memoireSubTab = sub;
+  else if (pane === 'admin-systeme') _systemeSubTab = sub;
+}
+
+function _appliquerRoute(route) {
+  const def = ROUTES[route];
+  if (!def) return;
+
+  document.querySelectorAll('.sidebar-item').forEach(function (a) {
+    a.classList.toggle('active', a.dataset.route === route);
+  });
+  document.querySelectorAll('.tab-content').forEach(function (c) {
+    c.classList.remove('active');
+  });
+  const pane = document.getElementById('tab-' + def.pane);
+  if (pane) pane.classList.add('active');
+
+  const tete = document.getElementById('page-head');
+  const titre = document.getElementById('page-title');
+  const sous = document.getElementById('page-sub');
+  if (titre) titre.textContent = def.titre;
+  if (sous) { sous.textContent = def.sous || ''; sous.hidden = !def.sous; }
+  if (tete) tete.hidden = false;
+
+  currentRoute = route;
+
+  // Le mode « lier deux identités » est une modale sans fenêtre : il attend un
+  // clic sur une AUTRE personne. Quitter l'annuaire l'abandonne, sinon le
+  // prochain clic n'importe où déclencherait une fusion.
+  if (def.pane !== 'admin-memoire' && _memLinkMode) cancelLinkMode();
+
+  _poserSousOnglet(def.pane, def.sub);
+
+  if (def.pane === 'admin-parametres') renderParametresTab();
+  else if (def.pane === 'admin-systeme') renderSystemeTab();
+  else if (def.pane === 'admin-memoire') renderMemoireTab();
+  else if (def.pane === 'admin-prompts') renderPromptsTab();
+  else if (def.pane === 'admin-scene') renderSceneTab();
+
+  // Les deux flux SSE de page : ouverts sur leur page, fermés partout ailleurs.
+  if (def.pane === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
+  if (def.pane === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
+
+  pollLinksBadge();
+}
+
+/** Le gestionnaire de `hashchange`, et le point d'entrée du premier rendu. */
+function routerVersHash() {
+  if (!getToken()) return;
+  const vu = _analyserHash();
+  if (vu.route !== currentRoute) _appliquerRoute(vu.route);
+  // Réécrit l'URL seulement quand on a dû deviner. Poser le hash relance
+  // `hashchange`, mais la route est alors déjà courante : la garde ci-dessus
+  // arrête la boucle au deuxième tour.
+  if (!vu.canonique) location.hash = '#/' + vu.route;
+}
+
+window.addEventListener('hashchange', routerVersHash);
+
+function enterAdmin() {
   if (!getToken()) { showAuthModal(); return; }
   document.getElementById('nav-admin').style.display = 'flex';
   showControlBar(true);
@@ -289,47 +469,7 @@ function enterAdmin(tabId) {
   // perdues au démarrage.
   renderSystemeTab();
   startLogSSE();
-  showTab(tabId || 'admin-parametres');
-}
-
-function showTab(tabId) {
-  // Redirect legacy tab names to new consolidated tabs
-  const _legacyRedirect = {
-    'admin-config': 'admin-parametres',
-    'admin-logs':   'admin-systeme',
-    'admin-overlay': 'admin-systeme',
-    'admin-twitch': 'admin-systeme',
-  };
-  if (_legacyRedirect[tabId]) {
-    // Set the appropriate sub-tab before redirecting
-    if (tabId === 'admin-logs') _systemeSubTab = 'logs';
-    else if (tabId === 'admin-overlay') _systemeSubTab = 'overlay';
-    else if (tabId === 'admin-twitch') _systemeSubTab = 'twitch';
-    tabId = _legacyRedirect[tabId];
-  }
-
-  document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-  const btn = document.querySelector(`.sidebar-item[data-tab="${tabId}"]`);
-  if (btn) btn.classList.add('active');
-
-  const pane = document.getElementById(`tab-${tabId}`);
-  if (pane) pane.classList.add('active');
-
-  currentTab = tabId;
-  location.hash = tabId;
-
-  if (tabId !== 'admin-memoire' && _memLinkMode) { cancelLinkMode(); }
-  if (tabId === 'admin-parametres') renderParametresTab();
-  if (tabId === 'admin-systeme') renderSystemeTab();
-  if (tabId === 'admin-memoire') renderMemoireTab();
-  if (tabId === 'admin-memory-dash') loadMemoryDashboard();
-  if (tabId === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
-  if (tabId === 'admin-voice') { renderVoiceTab(); startVoiceSSE(); } else { stopVoiceSSE(); }
-  if (tabId === 'admin-prompts') renderPromptsTab();
-  if (tabId === 'admin-scene') renderSceneTab();
-  pollLinksBadge();
+  routerVersHash();
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -1612,11 +1752,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     showAuthModal();
     return;
   }
-  // L'onglet demandé est lu AVANT d'entrer : `enterAdmin()` ouvre les Paramètres
-  // et écrit le hash au passage. On relisait donc le hash qu'on venait de poser,
-  // et on réaffichait le même onglet — chaque panneau était monté deux fois.
-  const hash = location.hash.replace('#', '');
-  enterAdmin(hash || undefined);
+  // `enterAdmin()` finit par `routerVersHash()`, qui lit le hash courant :
+  // rien à lui passer. Le double montage d'autrefois — on posait le hash puis
+  // on le relisait — n'a plus de chemin possible, la route ne s'applique que
+  // si elle DIFFÈRE de la route courante.
+  enterAdmin();
 });
 
 // ── Memory tab ────────────────────────────────────────────────────────────────
@@ -2981,7 +3121,7 @@ function switchParametresSubTab(subtab) {
   } else if (subtab === 'vocal') {
     // Passe par la garde comme ses trois voisins : `_renderParametresVoice`
     // vide le panneau, PUIS attend `/api/admin/config`, PUIS écrit. Deux appels
-    // rapprochés (double-clic sur la pilule, `showTab` rejoué) franchissaient
+    // rapprochés (double-clic sur la pilule, route rejouée) franchissaient
     // tous deux le vidage avant qu'aucun n'ait écrit → formulaire vocal en
     // double. `saveVoiceConfigParams` lisant par `getElementById`, qui ne rend
     // que le PREMIER, un réglage saisi dans la seconde copie était sauvegardé
