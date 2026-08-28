@@ -338,3 +338,23 @@ def test_les_lettres_repetees_et_les_espaces_sont_comptes_juste():
                           sollicite=True)
     assert shown is not None
     assert shown["letters"] == 14
+
+
+def test_le_lancement_rappelle_que_l_indice_reste_cache():
+    """Le message de lancement est le SEUL moment sans `_hangman_context`.
+
+    La partie vient d'être créée dans ce tour : le bloc « Pendu en cours »,
+    qui interdit d'écrire le mot ET le premier indice, n'entrera au prompt
+    qu'au tour suivant. Ce que Wally lit en écrivant son annonce, c'est ce
+    retour d'outil — et lui seul.
+
+    Relevé sur les six lancements réels d'août 2026 : quatre annonçaient
+    l'indice reformulé (« sur le thème d'Apex » pour « une légende d'Apex »,
+    « une carte d'Apex à deviner »), alors que l'overlay ne le montre qu'à
+    deux essais de la fin. Le décompte des lettres, lui, est public.
+    """
+    from bot.discord.handlers import _overlay_outcome
+
+    phrase = _overlay_outcome({"widget": "hangman", "letters": 9})
+    assert "9 lettres" in phrase
+    assert "indice" in phrase.lower()

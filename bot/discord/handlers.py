@@ -561,8 +561,16 @@ def _overlay_outcome(shown: dict) -> str:
         cells = shown.get("cells") or []
         return f"La grille de bingo est à l'écran : {len(cells)} cases, aucune cochée."
     if widget == "hangman":
+        # L'annonce de lancement est le SEUL moment où `_hangman_context` n'est
+        # pas encore au prompt — la partie vient de naître dans ce tour. Sans le
+        # rappel ICI, l'indice que Wally vient d'écrire ressort reformulé dans sa
+        # phrase : quatre lancements sur six en août 2026 (« sur le thème
+        # d'Apex » pour « une légende d'Apex », « une carte d'Apex à deviner »),
+        # alors que l'overlay ne le montre qu'à deux essais de la fin.
         return (f"Le pendu est lancé, {shown.get('letters', '?')} lettres à "
-                "deviner. Le chat propose une lettre par message.")
+                "deviner. Le chat propose une lettre par message. L'indice, lui, "
+                "reste caché : il s'affichera tout seul à deux essais de la fin. "
+                "Ne le donne pas dans ton annonce, même résumé en un thème.")
     if widget == "goal":
         return (f"L'objectif « {shown.get('label')} » est à l'écran : "
                 f"{shown.get('count', 0)}/{shown.get('target')}. Il se remplit tout seul.")
