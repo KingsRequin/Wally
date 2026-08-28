@@ -24,7 +24,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -117,6 +117,11 @@ class _Candidate:
     # l'AtomicFact via _make_fact). origin = lieu précis ; expires_at = péremption.
     origin:            str | None = None
     expires_at:        datetime | None = None
+    # QUAND la chose a été dite, si ce n'est pas maintenant. Rempli seulement par
+    # les rattrapages sur archives (cf. `scripts/importer_chat_phantombot.py`) :
+    # un fait de février daté d'aujourd'hui fausse la réconciliation, qui tranche
+    # les contradictions à l'ancienneté, et le ferait passer pour du frais.
+    quand:             datetime | None = None
 
 
 @dataclass
@@ -257,16 +262,18 @@ class MemoryIngest:
         )
         if match is not None:
             if _normalize(cand.object) == _normalize(match.object_ or ""):
-                await self._confirm(match)
+                await self._confirm(match, cand.quand)
                 return ("confirmed", match)
 
             # Object différent. Catégorie stable → arbitre ; volatile → coexiste.
             if category in _STABLE_CATEGORIES:
                 verdict = await self._arbitrate(cand, [match])
                 if verdict.kind == "same_as":
-                    await self._confirm(match)
+                    await self._confirm(match, cand.quand)
                     return ("confirmed", match)
                 if verdict.kind == "contradicts":
+                    if self._trop_vieux_pour_remplacer(cand, match):
+                        return ("ignored", match)
                     new = await self._supersede(match, cand, user_id)
                     return ("superseded", new, match)
                 # "new" → coexistence (rare sur stable mais possible)
@@ -284,13 +291,15 @@ class MemoryIngest:
                 (s for s in siblings if s.id == verdict.target_fact_id), None
             )
             if verdict.kind == "same_as" and target is not None:
-                await self._confirm(target)
+                await self._confirm(target, cand.quand)
                 return ("confirmed", target)
             if (
                 verdict.kind == "contradicts"
                 and target is not None
                 and target.category in _STABLE_CATEGORIES
             ):
+                if self._trop_vieux_pour_remplacer(cand, target):
+                    return ("ignored", target)
                 new = await self._supersede(target, cand, user_id)
                 return ("superseded", new, target)
 
@@ -338,11 +347,45 @@ class MemoryIngest:
 
     # ── Mutations base ────────────────────────────────────────────────────────
 
-    async def _confirm(self, existing: AtomicFact) -> None:
-        await self._store.confirm(existing.id)
+    async def _confirm(self, existing: AtomicFact,
+                       quand: datetime | None = None) -> None:
+        await self._store.confirm(existing.id, quand)
         # Reflète le renforcement sur l'objet en mémoire (pour le résultat).
         existing.support_count += 1
         existing.confidence = min(0.99, existing.confidence + 0.05)
+
+    @staticmethod
+    def _trop_vieux_pour_remplacer(cand: _Candidate, existant: AtomicFact) -> bool:
+        """Une archive a-t-elle le droit d'écraser ce fait ?
+
+        Non, si elle est plus VIEILLE que lui. La réconciliation donne raison au
+        candidat entrant sur toute contradiction — parfaitement juste tant que ce
+        qui entre vient d'être dit, faux dès qu'on rattrape des mois d'archives.
+
+        Vu au premier import de chat PhantomBot (2026-02-20) : « jubeii1979 est
+        belge », dit en février, a remplacé « Jubeii1979 est streamer américain »,
+        appris le matin même. Le passé effaçait le présent, en silence.
+
+        `quand` est None sur tout le chemin normal, où cette garde ne s'applique
+        donc jamais.
+        """
+        if cand.quand is None:
+            return False
+        connu = max(existant.created_at, existant.last_seen_at)
+        # `created_at` mélange l'UTC naïf et l'ISO à offset selon le chemin
+        # d'écriture (cf. `_naive_utc` dans journal.py). Comparer les deux lève
+        # « can't compare offset-naive and offset-aware datetimes ».
+        if connu.tzinfo is not None:
+            connu = connu.astimezone(timezone.utc).replace(tzinfo=None)
+        if cand.quand >= connu:
+            return False
+        logger.info(
+            "Archive écartée : « {s} {p} {o} » ({q:%Y-%m-%d}) contredit un fait "
+            "plus RÉCENT (#{id}, {d:%Y-%m-%d}) — la base garde le sien",
+            s=cand.subject, p=cand.predicate, o=cand.object,
+            q=cand.quand, id=existant.id, d=connu,
+        )
+        return True
 
     async def _supersede(
         self, old: AtomicFact, cand: _Candidate, user_id: str
@@ -372,7 +415,7 @@ class MemoryIngest:
         )
         confidence = _CONFIDENCE_BY_SOURCE.get(cand.confidence_source, 0.55)
         content = _render_content(cand)
-        return AtomicFact(
+        fait = AtomicFact(
             user_id=user_id,
             content=content,
             category=category,
@@ -386,6 +429,12 @@ class MemoryIngest:
             origin=cand.origin,
             expires_at=cand.expires_at,
         )
+        # Rattrapage sur archive : le fait porte le jour où la chose a été DITE,
+        # pas celui de l'import. Posé APRÈS coup pour laisser le défaut d'
+        # `AtomicFact` (UTC naïf, comme le reste de ces colonnes) au cas courant.
+        if cand.quand is not None:
+            fait.created_at = fait.last_seen_at = cand.quand
+        return fait
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

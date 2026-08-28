@@ -51,7 +51,8 @@ async def contexte(tmp_path):
     extracteur = FactExtractor(MagicMock(), memory, llm, db)
     ranges: list[tuple[str, str, str]] = []
 
-    async def _capture(platform, raw_id, item, text, cat, disp, origin=None, expires_at=None):
+    async def _capture(platform, raw_id, item, text, cat, disp, origin=None,
+                       expires_at=None, quand=None):
         ranges.append((platform, raw_id, text))
         return True
 

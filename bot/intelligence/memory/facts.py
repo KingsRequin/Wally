@@ -902,18 +902,24 @@ class SQLiteFactStore:
             )
         return replies
 
-    async def confirm(self, fact_id: int) -> None:
+    async def confirm(self, fact_id: int, quand: datetime | None = None) -> None:
         """Renforce un fait existant sans dupliquer (observation CONFIRM) :
         support_count +1, confidence +0.05 (cap 0.99), last_seen_at = maintenant.
+
+        `quand` sert aux rattrapages sur des archives : confirmer un fait avec
+        une observation de février ne doit PAS le marquer comme revu aujourd'hui.
+        `MAX(last_seen_at, ?)` parce qu'une observation ancienne ne peut que
+        laisser la date en place — sinon réimporter deux fois dans le désordre
+        ferait reculer la fraîcheur d'un fait bien vivant.
         """
         async with self._connect() as db:
             await db.execute(
                 """UPDATE atomic_facts
                    SET support_count = support_count + 1,
                        confidence    = MIN(0.99, confidence + 0.05),
-                       last_seen_at  = ?
+                       last_seen_at  = MAX(last_seen_at, ?)
                    WHERE id = ?""",
-                (datetime.utcnow().isoformat(), fact_id),
+                ((quand or datetime.utcnow()).isoformat(), fact_id),
             )
             await db.commit()
 

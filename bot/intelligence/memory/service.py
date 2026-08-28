@@ -28,6 +28,11 @@ _SUMMARIZE_SYSTEM = load_prompt(
 
 _CHUNK_SIZE = 10  # messages per summarization chunk
 
+# Au-delà, un fait durable est daté au prompt (cf. `_fact_freshness`). Deux mois :
+# assez long pour ne rien annoter de ce qui vit dans la conversation courante,
+# assez court pour couvrir une saison de jeu, un rang Apex, un projet abandonné.
+_VIEUX_JOURS = 60
+
 
 class MemoryService:
     def __init__(self, config: "Config"):
@@ -191,6 +196,7 @@ class MemoryService:
                   category: str = "FAIT", username: str | None = None,
                   source: str = "memoire_directe", origin: str | None = None,
                   expires_at: "datetime | None" = None,
+                  quand: "datetime | None" = None,
                   **_kw) -> None:
         """Écrit un fait VERBATIM, sans passer par la réconciliation S-P-O.
 
@@ -232,7 +238,7 @@ class MemoryService:
             if norm:
                 jumeau = await self._facts.find_same_content(uid, cat, norm)
                 if jumeau is not None:
-                    await self._facts.confirm(jumeau)
+                    await self._facts.confirm(jumeau, quand)
                     return
             # UTC NAÏF, comme partout ailleurs (`AtomicFact` et les 15 requêtes
             # de `facts.py` utilisent `utcnow()`). Ce seul point d'écriture en
@@ -240,7 +246,9 @@ class MemoryService:
             # 4 101 lignes sur 14 400 au 2026-08-10 — et toute soustraction
             # directe entre les deux lève `TypeError`. Les helpers défensifs qui
             # recollent `tzinfo` après coup n'existent que pour ça.
-            now = datetime.utcnow()
+            # `quand` : la chose a été DITE à cette date-là, pas maintenant.
+            # Seuls les rattrapages sur archives le posent.
+            now = quand or datetime.utcnow()
             await self._retrieval.add_fact(AtomicFact(
                 user_id=uid,
                 content=content, category=cat, confidence=1.0,
@@ -258,23 +266,36 @@ class MemoryService:
 
     @staticmethod
     def _fact_freshness(f) -> str:
-        """Indication temporelle pour un fait éphémère (qui a un `expires_at`).
+        """Indication temporelle : quand la chose a-t-elle été dite ?
 
-        Les faits déjà périmés sont filtrés en amont (search_fts) ; on n'annote
-        donc que les éphémères encore valides, pour que Wally situe dans le temps
-        ("tu prévoyais ça tout à l'heure / il y a 2 jours")."""
-        if getattr(f, "expires_at", None) is None:
-            return ""
+        Deux cas l'exigent, pour la même raison — Wally présentait comme actuel
+        ce qui ne l'est plus :
+
+        - les **éphémères** (`expires_at` posé), encore valides mais datés :
+          « tu prévoyais ça tout à l'heure / il y a 2 jours » ;
+        - les **durables ANCIENS**, au-delà de `_VIEUX_JOURS`. Un fait sans date
+          se lit comme du présent : « xeforce_ est Platine 2 » rapporté six mois
+          plus tard devient un mensonge que rien ne signale. 427 faits actifs
+          étaient dans ce cas au 2026-08-28, et le rattrapage des archives
+          PhantomBot (`scripts/importer_chat_phantombot.py`) en ajoute des
+          milliers d'un coup.
+
+        Les faits déjà périmés sont filtrés en amont (`search_fts`).
+        """
         from datetime import datetime, timezone
         created = f.created_at
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
         age_days = (datetime.now(timezone.utc) - created).total_seconds() / 86400
+        if getattr(f, "expires_at", None) is None and age_days < _VIEUX_JOURS:
+            return ""
         if age_days < 1:
             return " (dit plus tôt aujourd'hui)"
         if age_days < 2:
             return " (dit hier)"
-        return f" (dit il y a {int(age_days)} jours)"
+        if age_days < 60:
+            return f" (dit il y a {int(age_days)} jours)"
+        return f" (dit il y a {int(age_days / 30)} mois)"
 
     @classmethod
     def _format_fact(cls, f) -> str:

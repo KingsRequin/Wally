@@ -504,6 +504,7 @@ class FactExtractor:
         display: str,
         origin: "str | None" = None,
         expires_at: "datetime | None" = None,
+        quand: "datetime | None" = None,
     ) -> bool:
         """Persist one extracted fact, routing through S-P-O reconciliation when
         possible, falling back to verbatim `memory.add()` otherwise.
@@ -551,6 +552,7 @@ class FactExtractor:
                     importance=importance,
                     origin=origin,
                     expires_at=expires_at,
+                    quand=quand,
                 )
                 await self._ingest.reconcile_candidate(prefixed_uid, cand)
                 return True
@@ -564,7 +566,7 @@ class FactExtractor:
         try:
             await self._memory.add(
                 platform, raw_id, fact_text, category=category, username=display,
-                origin=origin, expires_at=expires_at,
+                origin=origin, expires_at=expires_at, quand=quand,
             )
             return True
         except Exception as exc:
@@ -655,8 +657,16 @@ class FactExtractor:
         platform: str,
         channel_id: str,
         origin: "str | None" = None,
+        quand: "datetime | None" = None,
     ) -> int:
         """Call the LLM to extract facts from a batch of messages.
+
+        `quand` : la date à laquelle ces messages ont été DITS, quand ce n'est
+        pas maintenant — un rattrapage sur archives (`scripts/importer_chat_
+        phantombot.py`). Sans lui, cinq mois de chat de février entreraient
+        datés d'aujourd'hui : la réconciliation tranche les contradictions à
+        l'ancienneté, et le portrait du soir ne régénère que les personnes dont
+        un fait a bougé « récemment » (`get_users_with_recent_facts`).
 
         Returns the number of fact entries stored.
         """
@@ -817,7 +827,7 @@ class FactExtractor:
                 )
                 if await self._store_fact(
                     plat, raw_id, fi, fact_text, category, display,
-                    origin=origin, expires_at=expires_at,
+                    origin=origin, expires_at=expires_at, quand=quand,
                 ):
                     stored_count += 1
 
