@@ -3680,12 +3680,14 @@ async function _renderSystemeOverlay(panel) {
       <div id="overlay-health-line" class="muted">Mesure en cours…</div>
     </div>
     <div id="overlay-config-container-systeme"></div>
+    <div id="atelier-sons" class="card" style="margin-top:12px"></div>
   `;
 
   pollOverlayStatusForSysteme();
   refreshOverlayForceLive();
   refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+  renderAtelierSons();
 }
 
 // ── Mise en scène (onglet dédié) ─────────────────────────────────────────────
@@ -5761,4 +5763,171 @@ async function savePromptFile() {
     status.textContent = '✗ Erreur lors de la sauvegarde';
     status.style.color = 'rgb(239,68,68)';
   }
+}
+
+// ── Atelier des sons de commande (Système → Overlay) ─────────────────────────
+//
+// Ce que le chat déclenche par son nom : `!apero`, `!perks`… Le DOSSIER décide
+// de ce qui existe, cet écran ne fait que déposer, régler et retirer. Il n'y a
+// donc rien à tenir en mémoire ici : chaque geste se conclut par un rechargement
+// de la liste depuis le serveur, seule source de vérité.
+
+function _octetsLisibles(n) {
+  return n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' Mo'
+                          : Math.round(n / 1024) + ' Ko';
+}
+
+async function renderAtelierSons() {
+  const box = document.getElementById('atelier-sons');
+  if (!box) return;
+  let data = null;
+  try {
+    const r = await apiFetch('/api/admin/overlay/sons');
+    if (r && r.ok) data = await r.json();
+  } catch (e) {
+    // Réseau coupé : on le DIT. Un panneau vide se lit comme « aucun son ».
+  }
+  if (!data) {
+    box.innerHTML = '<div class="card-title">SONS DU CHAT</div>'
+      + '<div class="muted">Liste indisponible — le bot ne répond pas.</div>';
+    return;
+  }
+  const sons = data.sons || [];
+  const lignes = sons.map(function (s) {
+    return `
+      <div class="son-ligne" data-commande="${_escHtml(s.commande)}"
+           style="display:grid;grid-template-columns:1fr auto;gap:8px;
+                  padding:10px 0;border-top:1px solid rgba(255,255,255,0.08)">
+        <div>
+          <div style="font-weight:600">!${_escHtml(s.commande)}
+            <span class="muted" style="font-weight:400">
+              · ${_escHtml(s.fichier)} · ${_octetsLisibles(s.taille)}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;align-items:center">
+            <label class="muted">Pause
+              <input type="number" min="0" step="1" value="${Number(s.cooldown)}"
+                     data-champ="cooldown" style="width:72px"> s</label>
+            <label class="muted">Volume
+              <input type="number" min="0" max="2" step="0.05" value="${Number(s.volume)}"
+                     data-champ="volume" style="width:72px"></label>
+            <label class="muted" style="flex:1;min-width:220px">Autres noms
+              <input type="text" value="${_escHtml((s.alias || []).join(', '))}"
+                     data-champ="alias" placeholder="perk, perques"
+                     style="width:100%"></label>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <button class="btn" onclick="essayerSon('${_escHtml(s.commande)}')">▶ Écouter</button>
+          <button class="btn" onclick="enregistrerSon('${_escHtml(s.commande)}')">Enregistrer</button>
+          <button class="btn" onclick="supprimerSon('${_escHtml(s.commande)}')">Supprimer</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="card-title">SONS DU CHAT</div>
+    <p class="muted" style="margin-top:0">
+      Le nom du fichier EST la commande : <code>apero.mp3</code> répond à
+      <code>!apero</code>. Déposez-en un, il répond aussitôt — aucun redémarrage.
+      « Pause » à 0 = pas de limite. « Autres noms » sert aux fautes de frappe
+      courantes, elles partagent la pause et le volume du son.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+      <input type="file" id="son-fichier" accept=".mp3,.wav,.ogg,.m4a">
+      <button class="btn" onclick="deposerSon()">Déposer</button>
+      <button class="btn" onclick="normaliserSons()"
+        title="Met tous les sons au même niveau perçu (EBU R128). L'original de chaque fichier est conservé.">
+        Égaliser les volumes</button>
+      <span id="atelier-sons-etat" class="muted"></span>
+    </div>
+    ${sons.length ? lignes : '<div class="muted">Aucun son. Déposez un mp3 pour commencer.</div>'}
+    <div class="muted" style="margin-top:10px;font-size:12px">
+      ${_octetsLisibles(data.max_octets || 0)} par fichier au maximum.
+    </div>`;
+}
+
+function _etatAtelier(texte) {
+  const el = document.getElementById('atelier-sons-etat');
+  if (el) el.textContent = texte;
+}
+
+function _champsSon(commande) {
+  const ligne = document.querySelector('.son-ligne[data-commande="' + commande + '"]');
+  if (!ligne) return null;
+  const lire = (c) => ligne.querySelector('[data-champ="' + c + '"]');
+  return {
+    cooldown: Number(lire('cooldown').value) || 0,
+    volume: Number(lire('volume').value),
+    // Une saisie vide doit VIDER la liste, pas la laisser en place : `split`
+    // sur une chaîne vide rend [''], d'où le filtre.
+    alias: lire('alias').value.split(',').map((s) => s.trim()).filter(Boolean),
+  };
+}
+
+async function enregistrerSon(commande) {
+  const valeurs = _champsSon(commande);
+  if (!valeurs) return;
+  _etatAtelier('Enregistrement…');
+  const r = await apiFetch('/api/admin/overlay/sons/' + encodeURIComponent(commande), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(valeurs),
+  });
+  _etatAtelier(r && r.ok ? '!' + commande + ' enregistré.' : 'Échec de l\'enregistrement.');
+  if (r && r.ok) renderAtelierSons();
+}
+
+async function essayerSon(commande) {
+  _etatAtelier('Envoi sur l\'overlay…');
+  const r = await apiFetch('/api/admin/overlay/sons/'
+    + encodeURIComponent(commande) + '/essai', { method: 'POST' });
+  _etatAtelier(r && r.ok ? 'Joué sur l\'overlay.'
+                         : 'L\'overlay n\'a pas répondu.');
+}
+
+async function supprimerSon(commande) {
+  if (!confirm('Supprimer !' + commande + ' ? Le fichier et ses réglages partent.')) return;
+  _etatAtelier('Suppression…');
+  const r = await apiFetch('/api/admin/overlay/sons/' + encodeURIComponent(commande),
+                           { method: 'DELETE' });
+  _etatAtelier(r && r.ok ? '!' + commande + ' supprimé.' : 'Échec de la suppression.');
+  renderAtelierSons();
+}
+
+async function deposerSon() {
+  const input = document.getElementById('son-fichier');
+  const fichier = input && input.files && input.files[0];
+  if (!fichier) { _etatAtelier('Choisissez un fichier.'); return; }
+  _etatAtelier('Envoi de ' + fichier.name + '…');
+  // Le corps est le fichier BRUT : pas de multipart, donc pas de dépendance
+  // `python-multipart` côté serveur pour un seul fichier à la fois.
+  const r = await apiFetch('/api/admin/overlay/sons/' + encodeURIComponent(fichier.name), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: fichier,
+  });
+  if (r && r.ok) {
+    input.value = '';
+    _etatAtelier(fichier.name + ' déposé.');
+  } else {
+    // Le serveur DIT pourquoi (extension, taille) : le relayer vaut mieux
+    // qu'un « échec » qui laisse chercher.
+    let raison = '';
+    // `apiFetch` rend NULL sur 401 (session expirée) : `r.json()` lèverait,
+    // et le `catch` masquerait la vraie cause derrière un « Refusé » sec.
+    try { if (r) raison = (await r.json()).detail || ''; }
+    catch (e) { /* corps illisible */ }
+    _etatAtelier('Refusé' + (raison ? ' — ' + raison : '.'));
+  }
+  renderAtelierSons();
+}
+
+async function normaliserSons() {
+  _etatAtelier('Égalisation en cours (quelques secondes par son)…');
+  const r = await apiFetch('/api/admin/overlay/normaliser-sons', { method: 'POST' });
+  if (!r || !r.ok) { _etatAtelier('Égalisation impossible.'); return; }
+  const d = await r.json();
+  const n = (d.normalises || []).length, e = (d.echecs || []).length;
+  _etatAtelier(n + ' son(s) égalisé(s)' + (e ? ', ' + e + ' échec(s).' : '.'));
+  renderAtelierSons();
 }

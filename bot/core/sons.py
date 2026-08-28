@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from loguru import logger
+
 from bot.core.memes import _safe_name
 
 # Extension acceptée -> type MIME annoncé par la route publique. On ne laisse
@@ -156,9 +158,9 @@ class ReglagesSons:
     Un fichier absent ou illisible rend les défauts — un réglage perdu vaut
     mieux qu'un overlay muet.
 
-    LECTURE seule pour l'instant : le fichier s'édite à la main. L'écriture
-    arrivera avec l'écran qui l'appelle, jamais avant — un `ecrire()` sans
-    appelant est le « bouton branché sur rien » que ce dépôt s'interdit.
+    L'écriture n'existe que depuis que l'atelier de Système → Overlay l'appelle
+    (`PUT /api/admin/overlay/sons/{commande}`) — un `ecrire()` sans écran serait
+    le « bouton branché sur rien » que ce dépôt s'interdit.
     """
 
     def __init__(self, directory: str | Path) -> None:
@@ -210,6 +212,49 @@ class ReglagesSons:
         return out
 
 
+    def ecrire(self, commande: str, valeurs: dict) -> dict:
+        """Range cooldown, volume et alias d'un son, et rend ce qui a été retenu.
+
+        Réécrit le fichier ENTIER à chaque fois, comme `config.save()` : deux
+        onglets ouverts sur le panneau ne peuvent pas produire un JSON à moitié
+        d'une version et à moitié de l'autre.
+        """
+        commande = commande.lower()
+        courant = self.tout()
+        entree = dict(courant.get(commande) or {})
+        for cle in DEFAUTS:
+            if isinstance(valeurs.get(cle), (int, float)):
+                entree[cle] = float(valeurs[cle])
+        if isinstance(valeurs.get("alias"), list):
+            # Dédoublonné en gardant l'ordre de saisie : l'owner relit sa liste
+            # telle qu'il l'a tapée, et un doublon ne fait rien de plus.
+            propres: list[str] = []
+            for nom in valeurs["alias"]:
+                nom = str(nom).strip().lower()
+                # Un alias qui porte le nom de sa propre commande ne sert à
+                # rien et ferait croire à une deuxième porte.
+                if nom and nom != commande and nom not in propres:
+                    propres.append(nom)
+            entree["alias"] = propres
+        courant[commande] = entree
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(courant, indent=2, ensure_ascii=False),
+                              encoding="utf-8")
+        return {**self.pour(commande), "alias": entree.get("alias", [])}
+
+    def oublier(self, commande: str) -> None:
+        """Retire les réglages d'un son — appelé quand son fichier est supprimé.
+
+        Sans ça, un `reglages.json` accumule les entrées de sons disparus, et un
+        alias orphelin resterait affiché dans le panneau pour un son inexistant.
+        """
+        courant = self.tout()
+        if courant.pop(commande.lower(), None) is None:
+            return
+        self._path.write_text(json.dumps(courant, indent=2, ensure_ascii=False),
+                              encoding="utf-8")
+
+
 def resoudre_commande(library: "SoundLibrary", reglages: ReglagesSons,
                       mot: str) -> tuple[str, str] | None:
     """(commande canonique, fichier) que ce mot déclenche, ou None.
@@ -231,3 +276,65 @@ def resoudre_commande(library: "SoundLibrary", reglages: ReglagesSons,
     if canonique and canonique in fichiers:
         return canonique, fichiers[canonique]
     return None
+
+
+# ── Normalisation ─────────────────────────────────────────────────────────────
+#
+# Sept fichiers déposés au fil des ans, sept niveaux différents : `!apero` couvre
+# le jeu quand `!rina` s'entend à peine. `loudnorm` (EBU R128) les met au même
+# niveau PERÇU — pas au même pic, ce qui ne veut rien dire à l'oreille.
+#
+# ffmpeg est déjà dans l'image (7.1.5) : aucune dépendance à ajouter. Les valeurs
+# viennent du `normalise_mp3.sh` de PhantomBot, qui faisait le même travail à la
+# main dans un GUI tkinter.
+_LUFS_CIBLE = -14.0
+_TRUE_PEAK = -1.5
+
+# L'original est mis de côté avant traitement (arbitrage owner) : une
+# normalisation ratée ne doit pas coûter le son. Suffixe et non sous-dossier —
+# `list()` ignore déjà tout ce qui n'a pas une extension audio.
+SUFFIXE_ORIGINAL = ".origine"
+
+
+def normaliser(chemin: Path, *, timeout: float = 120.0) -> bool:
+    """Met un son au niveau perçu de référence. Rend True si le fichier a changé.
+
+    BLOQUANT (ffmpeg) : à appeler dans `asyncio.to_thread`, jamais dans la
+    boucle d'événements.
+
+    Le fichier n'est remplacé qu'une fois ffmpeg terminé SANS erreur et avec une
+    sortie non vide. Un ffmpeg tué par le timeout laissait sinon un mp3 tronqué
+    à la place d'un son qui marchait.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not chemin.is_file():
+        return False
+    garde = chemin.with_suffix(chemin.suffix + SUFFIXE_ORIGINAL)
+    with tempfile.NamedTemporaryFile(suffix=chemin.suffix, delete=False) as tmp:
+        sortie = Path(tmp.name)
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(chemin),
+             "-af", f"loudnorm=I={_LUFS_CIBLE}:TP={_TRUE_PEAK}:LRA=11",
+             "-c:a", "libmp3lame", "-q:a", "2", str(sortie)],
+            capture_output=True, timeout=timeout, check=False,
+        )
+        if res.returncode != 0 or sortie.stat().st_size == 0:
+            logger.warning("Normalisation de {f} échouée : {e}", f=chemin.name,
+                           e=res.stderr.decode("utf-8", "replace")[-300:])
+            return False
+        # L'original n'est gardé QUE la première fois : normaliser deux fois ne
+        # doit pas écraser la sauvegarde par une version déjà traitée.
+        if not garde.exists():
+            shutil.copy2(chemin, garde)
+        shutil.move(str(sortie), str(chemin))
+        logger.info("Son normalisé : {f}", f=chemin.name)
+        return True
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("Normalisation de {f} impossible : {e!r}", f=chemin.name, e=e)
+        return False
+    finally:
+        sortie.unlink(missing_ok=True)

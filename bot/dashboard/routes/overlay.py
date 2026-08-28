@@ -20,6 +20,7 @@ from loguru import logger
 
 from bot.core.memes import media_type
 from bot.core.music import vignette
+from bot.core.sons import _MAX_BYTES, _MEDIA_TYPES
 from bot.core.sons import media_type as son_media_type
 
 public_router = APIRouter()
@@ -763,3 +764,162 @@ async def post_overlay_preview(request: Request) -> dict:
     feed.publish({"type": "widget", "scene": slug, "kind": cle, "params": params})
     logger.info("Overlay : essai du widget « {k} » sur « {s} »", k=cle, s=slug)
     return {"ok": True, "affiche": True}
+
+
+# ── L'atelier des sons de commande ────────────────────────────────────────────
+#
+# Ce que le chat déclenche par son nom (`!apero`), réglé depuis Système → Overlay.
+# Le dossier reste la source de vérité : ces routes déposent, retirent et
+# règlent, elles ne tiennent aucun index en mémoire.
+
+
+def _atelier_sons(request: Request):
+    """(bibliothèque, réglages) ou 503 — l'atelier n'a rien à dire sans dossier."""
+    from bot.core.sons import ReglagesSons
+
+    library = getattr(request.app.state.wally, "sons", None)
+    if library is None:
+        raise HTTPException(503, "Bibliothèque de sons indisponible")
+    return library, ReglagesSons(library.directory)
+
+
+@admin_router.get("/overlay/sons")
+async def lister_sons_commande(request: Request) -> dict:
+    """Les sons appelables par le chat, avec leurs réglages et leurs alias.
+
+    Le dossier commande : un réglage orphelin (son supprimé à la main hors du
+    panneau) n'apparaît pas. Il vaut mieux qu'il disparaisse de l'écran que d'y
+    proposer des réglages pour un fichier qui ne sonnera jamais.
+    """
+    library, reglages = _atelier_sons(request)
+    alias_par_commande: dict[str, list[str]] = {}
+    for alias, commande in reglages.alias().items():
+        alias_par_commande.setdefault(commande, []).append(alias)
+    sons = []
+    for commande, fichier in sorted(library.commandes().items()):
+        chemin = library.resolve("commande", fichier)
+        sons.append({
+            "commande": commande,
+            "fichier": fichier,
+            "taille": chemin.stat().st_size if chemin else 0,
+            "alias": sorted(alias_par_commande.get(commande, [])),
+            **reglages.pour(commande),
+        })
+    return {"sons": sons, "max_octets": _MAX_BYTES}
+
+
+@admin_router.put("/overlay/sons/{commande}")
+async def regler_son_commande(commande: str, request: Request) -> dict:
+    """Cooldown, volume et alias d'un son. Le son doit exister."""
+    library, reglages = _atelier_sons(request)
+    if commande.lower() not in library.commandes():
+        raise HTTPException(404, "Aucun son ne porte ce nom")
+    corps = await request.json()
+    if not isinstance(corps, dict):
+        raise HTTPException(400, "Corps attendu : un objet")
+    retenu = reglages.ecrire(commande, corps)
+    logger.info("Son !{c} réglé : {r}", c=commande.lower(), r=retenu)
+    return {"commande": commande.lower(), **retenu}
+
+
+@admin_router.post("/overlay/sons/{nom}")
+async def deposer_son_commande(nom: str, request: Request) -> dict:
+    """Dépose un fichier dans `commande/`. Le corps est le fichier BRUT.
+
+    Pas de `multipart` : il demanderait `python-multipart`, donc une ligne de
+    plus dans `requirements.txt` — et toute modification de ce fichier invalide
+    la couche `pip install` du Dockerfile, soit une réinstallation complète pour
+    un seul fichier à la fois. Le corps brut suffit ici.
+    """
+    from bot.core.memes import _safe_name
+
+    library, _ = _atelier_sons(request)
+    propre = _safe_name(nom)
+    if not propre or Path(propre).suffix.lower() not in _MEDIA_TYPES:
+        raise HTTPException(400, f"Extension attendue : {', '.join(sorted(_MEDIA_TYPES))}")
+    contenu = await request.body()
+    if not contenu:
+        raise HTTPException(400, "Fichier vide")
+    if len(contenu) > _MAX_BYTES:
+        # Le même plafond que la bibliothèque : accepter au-delà déposerait un
+        # fichier que l'overlay refuserait ensuite de lister, sans rien dire.
+        raise HTTPException(413, f"Un son fait {_MAX_BYTES // 1024} Ko au plus")
+    dossier = library.directory / "commande"
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / propre).write_bytes(contenu)
+    logger.info("Son déposé : {f} ({n} octets)", f=propre, n=len(contenu))
+    return {"fichier": propre, "commande": Path(propre).stem.lower()}
+
+
+@admin_router.delete("/overlay/sons/{commande}")
+async def supprimer_son_commande(commande: str, request: Request) -> dict:
+    """Retire le fichier ET ses réglages — sinon les alias survivent au son."""
+    library, reglages = _atelier_sons(request)
+    fichier = library.commandes().get(commande.lower())
+    if fichier is None:
+        raise HTTPException(404, "Aucun son ne porte ce nom")
+    chemin = library.resolve("commande", fichier)
+    if chemin is None:
+        raise HTTPException(404, "Fichier introuvable")
+    chemin.unlink()
+    reglages.oublier(commande)
+    logger.info("Son !{c} supprimé ({f})", c=commande.lower(), f=fichier)
+    return {"supprime": commande.lower()}
+
+
+@admin_router.post("/overlay/sons/{commande}/essai")
+async def essayer_son_commande(commande: str, request: Request) -> dict:
+    """Joue le son sur l'overlay, comme si le chat l'avait demandé.
+
+    Le seul moyen de juger un volume : un curseur ne dit rien tant qu'on n'a
+    pas entendu le son par-dessus le jeu. Passe OUTRE le cooldown — c'est un
+    essai, pas une demande du chat.
+    """
+    library, reglages = _atelier_sons(request)
+    fichier = library.commandes().get(commande.lower())
+    if fichier is None:
+        raise HTTPException(404, "Aucun son ne porte ce nom")
+    feed = getattr(request.app.state.wally, "overlay_feed", None)
+    if feed is None:
+        raise HTTPException(503, "Flux d'overlay indisponible")
+    feed.publish({
+        "type": "son", "genre": "commande", "nom": fichier,
+        "volume": reglages.pour(commande)["volume"],
+    })
+    return {"joue": commande.lower()}
+
+
+@admin_router.post("/overlay/normaliser-sons")
+async def normaliser_sons_commande(request: Request) -> dict:
+    """Met tous les sons de commande au même niveau perçu (EBU R128).
+
+    Chemin volontairement HORS de `/overlay/sons/…` : `POST /overlay/sons/{nom}`
+    dépose un fichier, et une route littérale sous le même préfixe se ferait
+    avaler par la paramétrée selon l'ordre de déclaration. Un « normaliser » qui
+    créerait un son nommé « normaliser » est le genre de bug qu'on ne voit qu'en
+    prod.
+
+    Mesuré sur les sept sons repris à PhantomBot : de −16,2 à −20,7 LUFS, soit
+    4,5 LUFS d'écart — `!anniv` s'entendait à peine quand `!perks` couvrait le
+    jeu. L'original de chaque fichier est mis de côté avant traitement.
+
+    ffmpeg est BLOQUANT : chaque fichier part dans un thread, sinon la boucle
+    d'événements — donc tout le bot — s'arrête le temps de sept encodages.
+    """
+    import asyncio
+
+    from bot.core.sons import normaliser
+
+    library, _ = _atelier_sons(request)
+    faits, echecs = [], []
+    for commande, fichier in sorted(library.commandes().items()):
+        chemin = library.resolve("commande", fichier)
+        if chemin is None:
+            continue
+        if await asyncio.to_thread(normaliser, chemin):
+            faits.append(commande)
+        else:
+            echecs.append(commande)
+    logger.info("Normalisation : {n} son(s) traité(s), {e} échec(s)",
+                n=len(faits), e=len(echecs))
+    return {"normalises": faits, "echecs": echecs}
