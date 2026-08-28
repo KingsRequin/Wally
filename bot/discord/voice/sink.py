@@ -184,6 +184,14 @@ class WallyAudioSink(voice_recv.AudioSink):
             asyncio.run_coroutine_threadsafe(self._on_segment(user, segment), self._loop)
 
     def cleanup(self) -> None:
+        # `AudioSink.__del__` (twitchio/voice_recv) appelle `cleanup()` sur TOUT
+        # objet collecté, y compris un sink dont `__init__` n'a pas abouti. Sans
+        # ce garde, la vraie cause de l'échec d'init part en fumée derrière un
+        # `AttributeError: '_lock'` levé dans un `__del__` — donc « Exception
+        # ignored », sans traceback exploitable. Rien à nettoyer de toute façon :
+        # aucun attribut n'a encore été posé.
+        if not hasattr(self, "_lock"):
+            return
         with self._lock:
             self._segmenters.clear()
             self._frame_buf.clear()

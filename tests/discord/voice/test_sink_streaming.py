@@ -199,3 +199,14 @@ async def test_mode_batch_route_le_segment_vers_on_segment(monkeypatch):
     await asyncio.sleep(0.05)
 
     assert (3, b"BATCHSEG") in segments
+
+
+def test_cleanup_sur_sink_non_initialise_ne_leve_pas():
+    """`AudioSink.__del__` appelle `cleanup()` même si `__init__` n'a pas abouti.
+
+    Sans garde, la vraie cause d'un échec d'init disparaissait derrière un
+    `AttributeError: '_lock'` levé DANS un `__del__` — donc « Exception ignored »,
+    sans traceback exploitable, au moment précis où on aurait besoin de la cause.
+    """
+    sink = WallyAudioSink.__new__(WallyAudioSink)  # __init__ jamais exécuté
+    sink.cleanup()  # ne doit pas lever
