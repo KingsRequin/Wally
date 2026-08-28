@@ -348,3 +348,47 @@ def test_les_chemins_de_CONVERSATION_restent_en_message_ordinaire():
     # `_envoyer_reponse_twitch` (la réponse) et le chemin spontané.
     assert handlers.count("twitch_api.send_message(") == 2
     assert "api.send_message(" in voice
+
+
+@pytest.mark.asyncio
+async def test_un_scope_manquant_ne_declenche_pas_un_refresh_de_token():
+    """401 « missing scope » n'est PAS un token expiré.
+
+    Tant que l'autorisation n'a pas été refaite, CHAQUE follow, sub, raid et
+    récompense passerait par : annonce → 401 → refresh du token → annonce →
+    401 → message. Trois requêtes et un renouvellement de token pour une ligne
+    de chat, sur un token qui n'aura de toute façon pas le scope. Twitch le dit
+    dans le corps ; il suffit de le lire.
+    """
+    api = make_api()
+    refus = make_erreur(401)
+    refus.json = MagicMock(return_value={
+        "error": "Unauthorized", "status": 401,
+        "message": "Missing scope: moderator:manage:announcements"})
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        http = MockClient.return_value.__aenter__.return_value
+        http.post = AsyncMock(return_value=refus)
+        assert await api.send_announcement("coucou") is False
+    assert http.post.await_count == 1
+    api._tm.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_le_canal_indisponible_est_retenu_et_on_arrete_d_y_frapper():
+    """Une fois su, inutile de redemander à chaque ligne.
+
+    Sans ça, un raid de cinquante lignes ferait cinquante annonces refusées
+    avant cinquante messages. Le canal est réessayé plus tard : l'autorisation
+    peut être refaite en cours de live, et personne ne redémarrera le bot pour ça.
+    """
+    api = make_api()
+    refus = make_erreur(401)
+    refus.json = MagicMock(return_value={"message": "Missing scope: x"})
+    with patch("bot.twitch.api.httpx.AsyncClient") as MockClient:
+        http = MockClient.return_value.__aenter__.return_value
+        http.post = AsyncMock(side_effect=[refus, make_http_message_ok(),
+                                           make_http_message_ok()])
+        assert await api.send_automatic("premier") is True
+        assert await api.send_automatic("deuxième") is True
+    # 1 annonce refusée + 1 message, puis un message SEUL : pas de seconde annonce.
+    assert http.post.await_count == 3

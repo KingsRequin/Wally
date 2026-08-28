@@ -53,6 +53,21 @@ def _refus_helix(resp: httpx.Response) -> Optional[dict]:
     return None
 
 
+def _scope_manquant(resp: httpx.Response) -> bool:
+    """Un 401 qui dit « il te manque un droit », pas « ton jeton a expiré ».
+
+    Twitch rend les deux avec le même statut ; seul le corps les sépare
+    (« Missing scope: moderator:manage:announcements »). Les confondre coûte un
+    renouvellement de token par ligne de chat, sur un token qui n'aura pas
+    davantage le scope après.
+    """
+    try:
+        message = str((resp.json() or {}).get("message") or "")
+    except Exception:  # noqa: BLE001 — un corps illisible ne prouve rien
+        return False
+    return "scope" in message.lower()
+
+
 def _ratelimit_wait(resp, *, default: float = 1.0, cap: float = 5.0) -> float:
     """Secondes à attendre après un 429, d'après `Ratelimit-Reset` (epoch)."""
     try:
@@ -166,6 +181,10 @@ class TwitchAPI:
     # ce n'est pas une réponse », là où une couleur qui change à chaque fois ne
     # dit plus rien — elle décore.
     AUTO_COLOR = "purple"
+    # Délai avant de retenter une annonce après un refus. Assez long pour ne pas
+    # frapper à chaque ligne, assez court pour qu'une autorisation refaite en
+    # plein live reprenne d'elle-même.
+    ANNONCE_RETRY_S = 900.0
 
     def __init__(
         self,
@@ -178,6 +197,9 @@ class TwitchAPI:
         self._client_id = client_id
         self._bot_id = bot_id
         self._broadcaster_id = broadcaster_id
+        # Instant (monotone) avant lequel on ne retente pas d'annonce — posé
+        # quand le canal se refuse, cf. `send_automatic`.
+        self._annonce_ko_jusqu_a: float = 0.0
 
     async def send_message(
         self,
@@ -282,6 +304,16 @@ class TwitchAPI:
                         },
                         timeout=10,
                     )
+                    if resp.status_code == 401 and _scope_manquant(resp):
+                        # Un scope absent n'est pas un token expiré : le
+                        # renouveler rendrait le MÊME token, sans le scope, et
+                        # chaque follow paierait un refresh pour rien.
+                        logger.warning(
+                            "Twitch {q} refusé : scope absent du token du bot — "
+                            "refaire l'autorisation du compte bot depuis le dashboard",
+                            q=quoi,
+                        )
+                        return 401
                     if resp.status_code == 401 and attempt == 0:
                         logger.warning(
                             "Twitch {q} 401 — refresh du token bot puis nouvel essai",
@@ -346,11 +378,19 @@ class TwitchAPI:
         message ordinaire. Une récompense payée en points doit produire une
         réponse visible, colorée ou non.
         """
-        if await self.send_announcement(text, color=self.AUTO_COLOR,
-                                        broadcaster_id=broadcaster_id):
-            return True
-        logger.warning("Annonce indisponible, repli en message ordinaire : {t}",
-                       t=text[:80])
+        # Une fois le canal su indisponible, on n'y frappe plus pendant un
+        # moment : sans ça, un raid de cinquante lignes ferait cinquante
+        # annonces refusées avant cinquante messages. Réessayé ensuite, parce
+        # que l'autorisation peut être refaite EN COURS de live et que personne
+        # ne redémarrera le bot pour ça.
+        if time.monotonic() >= self._annonce_ko_jusqu_a:
+            if await self.send_announcement(text, color=self.AUTO_COLOR,
+                                            broadcaster_id=broadcaster_id):
+                return True
+            self._annonce_ko_jusqu_a = time.monotonic() + self.ANNONCE_RETRY_S
+            logger.warning("Annonce indisponible, repli en message ordinaire "
+                           "(nouvel essai dans {m} min) : {t}",
+                           m=int(self.ANNONCE_RETRY_S // 60), t=text[:80])
         return await self.send_message(text=text, broadcaster_id=broadcaster_id)
 
     async def send_shoutout(self, to_broadcaster_id: str) -> str:
