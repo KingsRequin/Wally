@@ -18,6 +18,7 @@ def _client(owner_discord_id: str, name: str) -> TestClient:
     app.state.wally = SimpleNamespace(
         start_time=0.0,
         message_count=0,
+        messages_avant_boot=0,
         message_count_discord=0,
         message_count_twitch=0,
         message_count_web=0,

@@ -92,6 +92,11 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Le total de messages de tous les temps, repris là où le cycle
+        # précédent l'a laissé. À défaut on repart de zéro : le compteur est
+        # une vitrine, il ne doit jamais empêcher le bot de démarrer.
+        await charger_compteur_messages(state)
+
         # Snapshot immédiat au démarrage — graphe 24h disponible dès l'ouverture
         try:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
@@ -122,6 +127,9 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
             await cleanup_task
         except asyncio.CancelledError:
             pass
+        # Dernière écriture AVANT de rendre la main : sans elle, un rebuild
+        # perdait tout ce qui a été traité depuis le dernier tour de boucle.
+        await ranger_compteur_messages(state)
         logger.info("Dashboard shutdown")
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -351,14 +359,53 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     return app
 
 
+CLE_COMPTEUR_MESSAGES = "messages_traites_total"
+
+
+async def charger_compteur_messages(state: "AppState") -> None:
+    """Relit le total de tous les temps dans `bot_state`.
+
+    En cas d'absence ou de valeur illisible, on repart du report zéro : le
+    compteur redevient « depuis le boot », ce qui est faux mais visible, plutôt
+    que d'empêcher le démarrage pour une vitrine.
+    """
+    try:
+        brut = await state.db.get_state(CLE_COMPTEUR_MESSAGES)
+        state.messages_avant_boot = max(0, int(brut)) if brut is not None else 0
+    except (ValueError, TypeError) as exc:
+        logger.warning("Compteur de messages illisible, report à zéro : {e!r}", e=exc)
+        state.messages_avant_boot = 0
+    except Exception as exc:
+        logger.warning("Compteur de messages non relu : {e!r}", e=exc)
+        state.messages_avant_boot = 0
+
+
+async def ranger_compteur_messages(state: "AppState") -> None:
+    """Écrit le total courant. Idempotent : la même valeur peut être réécrite.
+
+    On range la SOMME, jamais le compteur de ce cycle seul : au redémarrage
+    suivant elle redevient le report, et `message_count` repart de zéro.
+    """
+    try:
+        await state.db.set_state(
+            CLE_COMPTEUR_MESSAGES,
+            str(state.messages_avant_boot + state.message_count),
+        )
+    except Exception as exc:
+        logger.warning("Compteur de messages non rangé : {e!r}", e=exc)
+
+
 async def _snapshot_task(state: "AppState") -> None:
-    """Insère un snapshot d'émotion toutes les 5 minutes."""
+    """Snapshot d'émotion et total de messages, toutes les 5 minutes."""
     while True:
         await asyncio.sleep(300)
         try:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
             logger.warning("Failed periodic emotion snapshot: {e!r}", e=exc)
+        # Le filet, pour le jour où le processus est tué sans passer par
+        # l'arrêt propre : au pire on perd cinq minutes de comptage.
+        await ranger_compteur_messages(state)
 
 
 

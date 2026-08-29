@@ -179,6 +179,7 @@ docker compose logs -f wally
 # Diagnostic (lire les logs AVANT de toucher au code)
 python3 scripts/audit_traces.py          # traces des conversations JSONL
 python3 scripts/audit_memoire.py         # état de la mémoire en base
+python3 scripts/amorcer_compteur_messages.py  # amorce « messages traités » (UNE fois, bot arrêté)
 ```
 
 ### Ce qui demande un rebuild, et ce qui n'en demande pas
@@ -741,6 +742,15 @@ page n'exporte que `mount(el)` / `unmount()`.
   de l'écran, sans lever la moindre erreur JS.
 - ⚠️ `gallery.created_at` est un **datetime SQL UTC** (« 2026-08-27 22:38:20 »),
   pas un timestamp Unix.
+- ⚠️ **`total_messages` est un total de tous les temps**, persisté dans
+  `bot_state` (`messages_traites_total`) : report relu au boot +
+  `state.message_count` du cycle courant. Ce dernier repart de zéro à chaque
+  redémarrage — c'est voulu, et il reste publié à part sous
+  `messages_depuis_boot`. Le rangement se fait toutes les 5 min ET à l'arrêt
+  propre : un `kill -9` coûte au plus cinq minutes de comptage.
+  L'amorce (20 781, du 2026-06-23 au 2026-08-29) vient des `message_in` du
+  journal de conversations, qui date du 2026-06-23 : c'est un PLANCHER, rien
+  n'existe avant.
 - `smoke_front.py --public` est le SEUL test qui exécute ce JavaScript.
 
 ## Dashboard Design System — Glassmorphism

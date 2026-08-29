@@ -164,11 +164,11 @@ function bandeauStats() {
     return h('div', { class: 'stat-cell' }, h('div', { class: 'label', text: libelle }), valeur);
   };
   return h('div', { class: 'stat-strip' },
-    // « MESSAGES TRAITÉS » laissait croire à un total de tous les temps.
-    // `state.message_count` est un compteur EN MÉMOIRE, remis à zéro à chaque
-    // redémarrage, et aucune table ne porte le cumul : quinze minutes après un
-    // rebuild, la vitrine du site annonçait « 1 ». On dit ce qu'on compte.
-    cellule('MESSAGES DEPUIS LE BOOT', 'statMsg'),
+    // `total_messages` est bien un total de tous les temps depuis que le
+    // compteur est persisté dans `bot_state` (report relu au boot + cycle
+    // courant). Il l'a longtemps annoncé sans l'être : quinze minutes après un
+    // rebuild, la vitrine affichait « 1 ».
+    cellule('MESSAGES TRAITÉS', 'statMsg'),
     cellule('VIEWERS (LIVE)', 'statViewers'),
     cellule('TEMPS DE RÉPONSE', 'statLatence'),
     cellule('UPTIME', 'statUptime'),

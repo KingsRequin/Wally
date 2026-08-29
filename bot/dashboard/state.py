@@ -85,6 +85,12 @@ class AppState:
     voice_event_store: object = None
     start_time: float = field(default_factory=time.time)
     message_count: int = 0
+    # Ce que les cycles PRÉCÉDENTS ont traité, relu de `bot_state` au démarrage.
+    # `message_count` juste au-dessus repart de zéro à chaque redémarrage : c'est
+    # voulu (le dashboard veut savoir ce qui s'est passé depuis le boot), mais
+    # la vitrine publique, elle, annonçait « 1 » un quart d'heure après un
+    # rebuild. Le total de tous les temps est la SOMME des deux.
+    messages_avant_boot: int = 0
     message_count_discord: int = 0
     message_count_twitch: int = 0
     message_count_web: int = 0

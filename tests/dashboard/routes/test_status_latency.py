@@ -8,7 +8,7 @@ def _client(avg):
     app = FastAPI()
     app.include_router(status.router, prefix="/api/public")
     app.state.wally = SimpleNamespace(
-        start_time=0.0, message_count=0, message_count_discord=0,
+        start_time=0.0, message_count=0, messages_avant_boot=0, message_count_discord=0,
         message_count_twitch=0, message_count_web=0,
         discord_bot=None, twitch_bot=None, config=SimpleNamespace(),
         avg_response_ms=avg,

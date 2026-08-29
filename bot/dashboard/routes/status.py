@@ -29,7 +29,10 @@ async def get_status(request: Request) -> dict:
         "uptime_seconds": uptime,
         "discord_online": discord_online,
         "twitch_online": twitch_online,
-        "total_messages": state.message_count,
+        # Total de tous les temps : le report des cycles précédents plus ce
+        # que celui-ci a traité. C'est ce que la vitrine publique affiche.
+        "total_messages": state.messages_avant_boot + state.message_count,
+        "messages_depuis_boot": state.message_count,
         "messages_discord": state.message_count_discord,
         "messages_twitch": state.message_count_twitch,
         "messages_web": state.message_count_web,
