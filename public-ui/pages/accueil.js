@@ -22,6 +22,8 @@ let _chargeEnCours = false;
 let _historiqueEmo = null;
 let _refs = {};
 let _observerCourbe = null;
+let _observerRail = null;
+let _surDefilement = null;
 
 // ── Constantes d'affichage ────────────────────────────────────────────────
 const EMO_LABELS = {
@@ -170,7 +172,7 @@ function bandeauStats() {
 }
 
 function heros() {
-  return h('section', { class: 'section hero' },
+  return h('section', { class: 'section hero', id: 'a-top' },
     h('div', { class: 'hero-ring r1', 'data-px': '0.30' }),
     h('div', { class: 'hero-ring r2', 'data-px': '0.46' }),
     h('div', { class: 'hero-ring r3', 'data-px': '0.62' }),
@@ -196,6 +198,11 @@ function sectionCerveau() {
   corps.addEventListener('scroll', () => { if (corps.scrollTop < 40) chargerPlusDeFil(corps); });
   _refs.feed = corps;
 
+  // Le fil qui se remplit au-dessus des cinq étapes : il DIT que la boucle
+  // tourne, là où cinq cartes immobiles disent qu'elle est un schéma.
+  const fil = h('div', { class: 'wire-fill' });
+  _refs.wire = fil;
+
   return h('section', { class: 'section', id: 'a-cerveau' },
     h('div', { class: 'section-inner' },
       sectionHead('01 · BOUCLE COGNITIVE',
@@ -203,14 +210,15 @@ function sectionCerveau() {
         "Cinq étapes, en permanence. Il évalue ce qui mérite son attention, réfléchit, décide s'il a "
         + 'quelque chose à dire, puis parle ou agit. Le droit au silence est une étape à part entière.'),
       h('div', { class: 'grid grid-5 loop-grid mt-48' },
-        ...BOUCLE.map((s) => h('div', { class: 'loop-card reveal' },
+        h('div', { class: 'wire' }, fil),
+        ...BOUCLE.map((s) => h('div', { class: 'loop-card reveal', 'data-tilt': '1' },
           h('div', { class: 'label', text: s.n }),
           h('div', { class: 'loop-key', text: s.k }),
           h('div', { class: 'loop-desc', text: s.d }),
           h('div', { class: 'loop-underline' }),
         )),
       ),
-      h('div', { class: 'feed mt-16 reveal' },
+      h('div', { class: 'feed mt-16 reveal', 'data-tilt': '1' },
         h('div', { class: 'feed-head' },
           h('div', { class: 'feed-live' }, h('span', { class: 'dot' }), 'FLUX COGNITIF EN DIRECT'),
           h('div', { class: 'label', style: 'letter-spacing:.04em', text: '/api/public/sse/cognitive' }),
@@ -219,7 +227,7 @@ function sectionCerveau() {
       ),
       h('div', { class: 'grid grid-3 mt-16' },
         ...TROIS_VERBES.map((v) => h('div', {
-          class: 'card reveal',
+          class: 'card reveal', 'data-tilt': '1',
           style: `background:linear-gradient(180deg, ${v.fond}, rgba(255,255,255,.015))`,
         },
         h('div', { class: 'h3', text: v.t }),
@@ -342,11 +350,13 @@ function sectionEmotions() {
   _refs.tete = tete;
 
   return h('section', { class: 'section', id: 'a-statut' },
+    h('div', { class: 'section-halos', 'aria-hidden': 'true' },
+      h('div', { class: 'section-halo halo-cyan', 'data-px': '0.20' })),
     h('div', { class: 'section-inner' },
       sectionHead('02 · ÉTAT ÉMOTIONNEL',
         'Cinq émotions qui décroissent, se suppriment et se disputent le micro.'),
       h('div', { class: 'grid grid-emo mt-48' },
-        h('div', { class: 'card reveal', style: 'padding:30px 30px 34px' },
+        h('div', { class: 'card reveal', 'data-tilt': '1', style: 'padding:30px 30px 34px' },
           h('div', { class: 'card-top' },
             h('div', { class: 'label', text: 'HUMEUR DOMINANTE' }),
             h('div', { style: 'font-size:13px; color:var(--dim)', text: 'maintenant' }),
@@ -355,11 +365,11 @@ function sectionEmotions() {
           jauges,
         ),
         h('div', { style: 'display:flex; flex-direction:column; gap:16px' },
-          h('div', { class: 'card reveal', style: 'padding:26px' },
+          h('div', { class: 'card reveal', 'data-tilt': '1', style: 'padding:26px' },
             h('div', { class: 'label', text: '24 DERNIÈRES HEURES' }),
             courbe,
           ),
-          h('div', { class: 'card reveal', style: 'padding:26px' },
+          h('div', { class: 'card reveal', 'data-tilt': '1', style: 'padding:26px' },
             h('div', { class: 'label', text: 'DANS SA TÊTE, LÀ' }),
             tete,
           ),
@@ -493,7 +503,7 @@ function sectionChat() {
       sectionHead('03 · CHAT WEB', 'La même mémoire, depuis le navigateur.',
         `Connecte ton compte Discord : ${nomBot()} te reconnaît, retrouve ce qu'il sait de toi, `
         + "et continue la conversation là où elle s'était arrêtée."),
-      h('div', { class: 'chat-band mt-48 reveal' },
+      h('div', { class: 'chat-band mt-48 reveal', 'data-tilt': '1' },
         h('div', { class: 'who' },
           h('video', { src: '/wally.webm', autoplay: true, loop: true, muted: true, playsInline: true, 'aria-hidden': 'true' }),
           h('div', {},
@@ -558,6 +568,8 @@ function sectionJournal() {
   _refs.jours = jours;
   _refs.entree = entree;
   return h('section', { class: 'section', id: 'a-journal' },
+    h('div', { class: 'section-halos', 'aria-hidden': 'true' },
+      h('div', { class: 'section-halo halo-rose', 'data-px': '0.22' })),
     h('div', { class: 'section-inner' },
       sectionHead('05 · JOURNAL', "Chaque soir à 21 h, il écrit sa journée."),
       jours,
@@ -660,13 +672,13 @@ function sectionCapot() {
         ...PILE.map((s) => h('span', { class: 'stack-tag', text: s })),
       ),
       h('div', { class: 'grid grid-3 mt-48' },
-        ...PILIERS.map((p) => h('div', { class: 'card reveal' },
+        ...PILIERS.map((p) => h('div', { class: 'card reveal', 'data-tilt': '1' },
           h('div', { class: 'label', style: `color:${p.c}`, text: p.tag }),
           h('div', { class: 'h3 mt-20', text: p.t }),
           h('p', { class: 'lead lead-sm', text: p.d }),
         )),
       ),
-      h('div', { class: 'keeps mt-16 reveal' },
+      h('div', { class: 'keeps mt-16 reveal', 'data-tilt': '1' },
         h('div', {},
           h('div', { class: 'label', style: 'color:var(--green)', text: 'CE QU\'IL RETIENT' }),
           h('ul', {}, ...RETIENT.map((t) => h('li', { text: t }))),
@@ -678,6 +690,60 @@ function sectionCapot() {
       ),
     ),
   );
+}
+
+// ── Rail de sections ──────────────────────────────────────────────────────
+// Sept traits à droite de l'écran. Survolés ils se nomment, atteints ils
+// s'allument : c'est le seul repère de position sur une page de 8 000 px.
+const RAIL = [
+  ['a-top', 'HAUT'],
+  ['a-cerveau', 'CERVEAU'],
+  ['a-statut', 'ÉMOTIONS'],
+  ['a-chat', 'CHAT'],
+  ['a-galerie', 'GALERIE'],
+  ['a-journal', 'JOURNAL'],
+  ['a-propos', 'CAPOT'],
+];
+
+function rail() {
+  const nav = h('nav', { class: 'rail', 'aria-label': 'Sections de la page' });
+  RAIL.forEach(([id, nom]) => {
+    nav.appendChild(h('a', { href: '#' + id, title: nom, 'data-rail': id },
+      h('span', { class: 'lbl', text: nom }),
+      h('span', { class: 'tick' }),
+    ));
+  });
+  _refs.rail = nav;
+  return nav;
+}
+
+/** Allume l'entrée du rail dont la section occupe le milieu de l'écran. */
+function suivreRail() {
+  if (!window.IntersectionObserver) return null;
+  const obs = new IntersectionObserver((entrees) => {
+    entrees.forEach((e) => {
+      if (!e.isIntersecting || !_refs.rail) return;
+      _refs.rail.querySelectorAll('a').forEach((a) => {
+        a.classList.toggle('active', a.dataset.rail === e.target.id);
+      });
+    });
+  }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+  RAIL.forEach(([id]) => {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el);
+  });
+  return obs;
+}
+
+/** Remplit le fil au rythme où la grille des cinq étapes traverse l'écran. */
+function majFil() {
+  const fil = _refs.wire;
+  if (!fil || !fil.parentElement) return;
+  const r = fil.parentElement.getBoundingClientRect();
+  const vh = window.innerHeight || 800;
+  // 0 quand la grille entre par le bas, 1 quand elle a franchi le tiers haut.
+  const p = Math.max(0, Math.min(1, (vh * 0.85 - r.top) / (vh * 0.5)));
+  fil.style.width = (p * 100).toFixed(1) + '%';
 }
 
 // ── Statut en direct ──────────────────────────────────────────────────────
@@ -722,6 +788,7 @@ export function mount(el) {
   _avantId = null;
   _chargeEnCours = false;
 
+  el.appendChild(rail());
   el.appendChild(heros());
   el.appendChild(sectionCerveau());
   el.appendChild(bandeauDefilant());
@@ -750,6 +817,20 @@ export function mount(el) {
     _observerCourbe.observe(_refs.courbe);
   }
 
+  _observerRail = suivreRail();
+  // Une seule mesure par image, jamais une par événement de molette : avec
+  // Lenis, `scroll` part à 120 Hz et `getBoundingClientRect()` force un
+  // recalcul de style à chaque appel.
+  let filDemande = false;
+  _surDefilement = () => {
+    if (filDemande) return;
+    filDemande = true;
+    requestAnimationFrame(() => { filDemande = false; majFil(); });
+  };
+  window.addEventListener('scroll', _surDefilement, { passive: true });
+  window.addEventListener('resize', _surDefilement);
+  majFil();
+
   // Le bandeau défile en continu, indépendamment du scroll : c'est un ruban,
   // pas un indicateur de progression.
   const piste = _refs.marquee;
@@ -776,6 +857,12 @@ export function unmount() {
   if (_desabonnerEmo) { _desabonnerEmo(); _desabonnerEmo = null; }
   if (_sseCognitif) { _sseCognitif.close(); _sseCognitif = null; }
   if (_observerCourbe) { _observerCourbe.disconnect(); _observerCourbe = null; }
+  if (_observerRail) { _observerRail.disconnect(); _observerRail = null; }
+  if (_surDefilement) {
+    window.removeEventListener('scroll', _surDefilement);
+    window.removeEventListener('resize', _surDefilement);
+    _surDefilement = null;
+  }
   _evenements = [];
   _historiqueEmo = null;
   _refs = {};

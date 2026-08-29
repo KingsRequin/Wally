@@ -74,11 +74,18 @@ body {
   overflow-x: hidden;
 }
 
+/* Lenis pose ces classes lui-même sur <html>. */
+html.lenis, html.lenis body { height: auto; }
+html.lenis:not(.lenis-autoToggle) { scroll-behavior: auto !important; }
+html.lenis-stopped { overflow: clip; }
+
 /* Le chat occupe exactement le viewport : c'est la page qui le déclare, pas
  * le module — sinon un retour arrière depuis /chat laisse `overflow:hidden`
- * collé au body et l'accueil devient inscrollable. */
+ * collé au body et l'accueil devient inscrollable.
+ * APRÈS les règles Lenis : `html.lenis { height:auto }` gagnerait sinon, et
+ * la colonne de droite du chat déborderait sous le pied de page. */
 body.vue-chat { height: 100%; overflow: hidden; }
-html.vue-chat { height: 100%; }
+html.vue-chat, html.lenis.vue-chat, html.lenis.vue-chat body { height: 100%; }
 
 a { color: var(--ember-lit); text-decoration: none; }
 a:hover { color: var(--gold); }
@@ -229,6 +236,103 @@ input:focus, textarea:focus {
 }
 .nav-state.off { color: var(--dim); }
 .nav-state.off .dot { background: var(--faint); box-shadow: none; animation: none; }
+
+/* ─────────────────────  relief au survol (tilt 3D)  ───────────────────── */
+
+/* Trois transitions, dans cet ordre de spécificité croissante — une carte
+ * peut être `.reveal` ET `.tiltable`, et les deux veulent la propriété
+ * `transition` : l'entrée doit rester lente, l'inclinaison rapide. */
+.tiltable { transition: transform .28s var(--ease), box-shadow .28s ease, border-color .28s ease; }
+.reveal.tiltable { transition: opacity .8s ease, transform .8s cubic-bezier(.2, .7, .2, 1); }
+.reveal.on.tiltable {
+  transition: transform .28s var(--ease), box-shadow .28s ease, border-color .28s ease, opacity .8s ease;
+}
+.tiltable:hover { will-change: transform, box-shadow; }
+
+/* ─────────────────────  rail de sections (accueil)  ───────────────────── */
+
+.rail {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rail a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  justify-content: flex-end;
+  padding: 5px 6px;
+  border-radius: 8px;
+  color: var(--faint);
+}
+.rail a:hover { background: var(--surface-lift); color: var(--soft); }
+.rail .lbl {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  color: inherit;
+  opacity: 0;
+  transition: opacity .35s ease;
+}
+.rail a:hover .lbl { opacity: 1; }
+.rail .tick {
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .16);
+  transition: background .35s ease, width .35s ease;
+}
+.rail a:hover .tick { background: var(--soft); }
+.rail a.active .lbl { opacity: 1; color: var(--gold); }
+.rail a.active .tick { width: 26px; background: var(--gold); box-shadow: 0 0 10px rgba(255, 176, 46, .6); }
+
+/* ─────────────  halos posés DANS une section (et non en fond)  ───────────── */
+
+/* Ils appartiennent à leur section et se décalent avec elle (`data-px`), là
+ * où `.bg-halos` est une couche fixe commune à tout le site.
+ *
+ * Le calque qui clippe n'est PAS un détail : `body { overflow-x: hidden }` ne
+ * suffit pas — un enfant absolu débordant gonfle quand même le `scrollWidth`
+ * du document, et le halo à `right: -140px` ajoutait 140 px de vide à droite
+ * de CHAQUE écran, mobile compris. Le clip ne peut pas non plus vivre sur la
+ * `.section` : il mangerait les ombres portées des cartes inclinables. */
+.section-halos {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.section-halo {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+.halo-cyan { top: 10%; right: -140px; width: 520px; height: 520px; background: radial-gradient(circle, rgba(70, 180, 255, .08), transparent 66%); }
+.halo-rose { bottom: 0; left: -160px; width: 540px; height: 540px; background: radial-gradient(circle, rgba(255, 61, 110, .07), transparent 66%); }
+
+/* ───────────────  fil de progression de la boucle cognitive  ─────────────── */
+
+.wire {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: -14px;
+  height: 2px;
+  overflow: hidden;
+}
+.wire-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--ember), var(--gold), var(--rose));
+  box-shadow: 0 0 14px rgba(255, 106, 43, .7);
+}
 
 /* ───────────────────────────  boutons  ─────────────────────────── */
 
@@ -790,6 +894,10 @@ input:focus, textarea:focus {
 
 /* ────────────────────────────  responsive  ──────────────────────────── */
 
+@media (max-width: 1200px) {
+  .rail { display: none; }
+}
+
 @media (max-width: 1000px) {
   .nav-state { display: none; }
 }
@@ -1042,6 +1150,8 @@ body.vue-chat .companion { display: none; }
 .bubble .body p { margin: 0 0 10px; }
 .bubble .body p:last-child { margin-bottom: 0; }
 .bubble .body img { max-width: 100%; border-radius: 10px; display: block; margin-top: 8px; cursor: pointer; }
+.bubble > div > .body { transition: transform .24s var(--ease), box-shadow .24s ease; }
+.bubble:hover > div > .body { transform: translateY(-3px); box-shadow: 0 18px 36px -20px rgba(255, 106, 43, .5); }
 .bubble .meta { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
 
 .chat-typing { display: flex; align-items: center; gap: 12px; margin-left: 60px; font-family: var(--mono); font-size: 11.5px; color: var(--dim); }

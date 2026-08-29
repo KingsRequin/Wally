@@ -71,7 +71,7 @@ function etapes() {
     h('div', { class: 'section-inner' },
       sectionHead('CE QUI ARRIVE', 'Trois choses, dans cet ordre.'),
       h('div', { class: 'grid grid-3 mt-48' },
-        ...ETAPES.map((s) => h('div', { class: 'card card-lift reveal' },
+        ...ETAPES.map((s) => h('div', { class: 'card card-lift reveal', 'data-tilt': '1' },
           h('div', { class: 'card-top' },
             h('span', { class: 'label', text: s.n }),
             h('span', { class: 'tag', style: `border-color:${s.bord}; color:${s.couleur}; font-size:9.5px; letter-spacing:.12em`, text: s.tag }),

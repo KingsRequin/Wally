@@ -193,6 +193,47 @@ function observeReveals(root) {
   setTimeout(() => els.forEach((el) => el.classList.add('on')), 3500);
 }
 
+// ── Relief au survol ──────────────────────────────────────────────────────
+// La carte s'incline vers le curseur, son ombre suit, sa bordure s'allume.
+// C'est le geste qui distingue une carte d'un rectangle : sans lui, la page
+// est un empilement de blocs morts, quel que soit le soin mis au CSS.
+function brancherTilt(racine) {
+  // Sur un écran tactile il n'y a pas de survol : les gestionnaires ne
+  // serviraient qu'à faire clignoter la carte au moment du tap.
+  if (window.matchMedia('(hover: none)').matches) return;
+
+  (racine || document).querySelectorAll('[data-tilt]').forEach((el) => {
+    el.classList.add('tiltable');
+    const bordBase = el.style.borderColor;
+
+    el.addEventListener('mousemove', (e) => {
+      // Une carte pas encore révélée porte un `translateY(28px)` : l'incliner
+      // maintenant écraserait ce transform et elle n'apparaîtrait jamais.
+      if (el.classList.contains('reveal') && !el.classList.contains('on')) return;
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      el.style.zIndex = '8';
+      el.style.borderColor = 'rgba(255,140,60,.42)';
+      el.style.transform = 'perspective(900px)'
+        + ' rotateY(' + (x * 8).toFixed(2) + 'deg)'
+        + ' rotateX(' + (-y * 8).toFixed(2) + 'deg)'
+        + ' translateY(-6px) scale(1.022)';
+      el.style.boxShadow = (16 + x * 22).toFixed(0) + 'px ' + (26 - y * 14).toFixed(0)
+        + 'px 60px -28px rgba(255,106,43,.55), inset 0 0 0 1px rgba(255,176,46,.14)';
+    });
+
+    el.addEventListener('mouseleave', () => {
+      // On EFFACE la propriété au lieu d'y reposer une valeur : `.reveal.on`
+      // reprend la main, et une carte non révélée garde son décalage.
+      el.style.transform = '';
+      el.style.boxShadow = '';
+      el.style.borderColor = bordBase;
+      setTimeout(() => { el.style.zIndex = ''; }, 300);
+    });
+  });
+}
+
 // ── Routeur ───────────────────────────────────────────────────────────────
 const ROUTES = {
   '/':        { page: pageAccueil, plein: false },
@@ -235,6 +276,7 @@ function rendre(route) {
   syncNav(route);
   def.page.mount(_vue);
   observeReveals(_vue);
+  brancherTilt(_vue);
   window.scrollTo(0, 0);
   window.dispatchEvent(new CustomEvent('wally-vue-changed'));
 }
@@ -446,16 +488,24 @@ window.addEventListener('wally-auth-changed', renderAuth);
 
   let vh = window.innerHeight;
   let max = Math.max(1, document.body.scrollHeight - vh);
+  let listePx = Array.from(document.querySelectorAll('[data-px]'));
+
   window.addEventListener('resize', () => {
     vh = window.innerHeight;
     max = Math.max(1, document.body.scrollHeight - vh);
     listeIcons.forEach((el) => { el._y0 = null; });
+    // `_top` est une position ABSOLUE dans le document : un redimensionnement
+    // reflue tout et la valeur gardée devient fausse. Elle l'était : les
+    // couches se figeaient à leur profondeur d'avant le redimensionnement.
+    listePx.forEach((el) => { el._top = null; });
   });
-  // La hauteur du document change à chaque changement de page : sans ce
-  // recalcul, `prog` reste calé sur l'ancienne page et le fond ne bouge plus.
+
+  // La hauteur du document et les éléments à décaler changent à chaque page.
+  // Sans ce recalcul, `prog` reste calé sur l'ancienne et le fond ne bouge plus.
   window.addEventListener('wally-vue-changed', () => {
     max = Math.max(1, document.body.scrollHeight - vh);
     listeIcons.forEach((el) => { el._y0 = null; });
+    listePx = Array.from(document.querySelectorAll('[data-px]'));
   });
 
   const boucle = (ts) => {
@@ -470,7 +520,7 @@ window.addEventListener('wally-auth-changed', renderAuth);
     }
     aSy = sy; aMx = mx; aMy = my;
 
-    document.querySelectorAll('[data-px]').forEach((el) => {
+    listePx.forEach((el) => {
       const sp = parseFloat(el.dataset.px) || 0;
       if (el._top == null) el._top = el.getBoundingClientRect().top + sy;
       const rel = el._top - vh * 0.5;
@@ -498,6 +548,43 @@ window.addEventListener('wally-auth-changed', renderAuth);
     requestAnimationFrame(boucle);
   };
   requestAnimationFrame(boucle);
+}());
+
+// ── Défilement inertiel ───────────────────────────────────────────────────
+(function scrollInertiel() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const L = window.Lenis;
+  // Le script vendoré n'a pas chargé : on garde le défilement natif plutôt que
+  // de casser la page. Ça se voit (le parallaxe redevient saccadé), donc on
+  // le DIT — un site muet qui a perdu la moitié de son mouvement, personne
+  // ne remonte le fil jusqu'à un 404.
+  if (!L) { console.warn('Lenis absent — défilement natif, parallaxe saccadé'); return; }
+
+  const lenis = new L({
+    duration: 0.55,
+    easing: (x) => 1 - Math.pow(1 - x, 3),
+    wheelMultiplier: 1.25,
+  });
+  const raf = (ts) => { lenis.raf(ts); requestAnimationFrame(raf); };
+  requestAnimationFrame(raf);
+
+  window.addEventListener('wally-vue-changed', () => {
+    // Le chat ne défile PAS au niveau du document : son fil défile dans un
+    // conteneur. Lenis y volerait la molette et les messages seraient figés.
+    if (document.body.classList.contains('vue-chat')) lenis.stop();
+    else { lenis.start(); lenis.scrollTo(0, { immediate: true }); }
+  });
+
+  // Les ancres internes (« Voir son cerveau penser ») : `scrollIntoView` et
+  // Lenis se disputeraient la position et la page tremblerait.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const cible = document.querySelector(a.getAttribute('href'));
+    if (!cible) return;
+    e.preventDefault();
+    lenis.scrollTo(cible, { offset: -90, duration: 1.1 });
+  });
 }());
 
 // Les vidéos `autoplay muted` sont bloquées par certains navigateurs tant

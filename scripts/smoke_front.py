@@ -159,6 +159,8 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
 # Les quatre pages du site public, et le sélecteur d'un élément que SEULE cette
 # page monte. Un `<main>` non vide ne prouve rien : le routeur pourrait rendre
 # l'accueil sur les quatre routes sans que personne ne le voie.
+RAIL_ATTENDU = ["HAUT", "CERVEAU", "ÉMOTIONS", "CHAT", "GALERIE", "JOURNAL", "CAPOT"]
+
 PAGES_PUBLIQUES = [
     ("Accueil", "/", "#a-cerveau .feed-body"),
     ("Chat", "/chat", ".chat-vue"),
@@ -203,9 +205,71 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         actifs = page.locator(".nav-link.active").all_inner_texts()
         rap.dire(len(actifs) == 1, f"page {nom} : un seul onglet actif", " · ".join(actifs))
 
+        trop = page.evaluate(
+            "document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        rap.dire(trop <= 0, f"page {nom} : pas de débordement horizontal", f"{trop} px")
+
         if captures:
             page.screenshot(path=str(captures / f"public-{route.strip('/') or 'accueil'}.png"),
                             full_page=(route != "/chat"))
+
+    # Le MOUVEMENT. Il ne lève aucune erreur, ne vide aucun panneau, et ne
+    # laisse aucune trace dans le DOM une fois disparu : quatre mécaniques de
+    # la maquette avaient été oubliées à la refonte et rien ne l'a signalé.
+    page.goto(f"{BASE}/", wait_until="networkidle", timeout=40000)
+    page.wait_for_timeout(2500)
+
+    rap.dire(page.evaluate("typeof window.Lenis") == "function",
+             "Lenis est servi (défilement inertiel)", "vendor/lenis.min.js")
+    rap.dire(page.evaluate("document.documentElement.classList.contains('lenis')"),
+             "Lenis s'est branché sur le document")
+
+    liens_rail = page.locator(".rail a").count()
+    rap.dire(liens_rail == len(RAIL_ATTENDU), f"le rail porte {liens_rail} sections",
+             f"attendu {len(RAIL_ATTENDU)}")
+    libelles = [t.strip() for t in page.locator(".rail .lbl").all_inner_texts()]
+    rap.dire(libelles == RAIL_ATTENDU, "et ce sont les bonnes", " · ".join(libelles))
+
+    # Le fil de la boucle cognitive se remplit au défilement : à 0 il est vide.
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(600)
+    vide = page.locator(".wire-fill").evaluate("e => e.style.width")
+    page.evaluate("window.scrollTo(0, 1200)")
+    page.wait_for_timeout(800)
+    plein = page.locator(".wire-fill").evaluate("e => e.style.width")
+    rap.dire(vide == "0%" and plein == "100%",
+             "le fil de la boucle se remplit au défilement", f"{vide} → {plein}")
+    rap.dire(page.locator(".rail a.active").count() == 1,
+             "et le rail suit la section atteinte")
+
+    # Le relief au survol. Le compte importe autant que le mécanisme : neuf
+    # cartes de l'accueil le portent, en perdre une ne se voit pas à l'œil.
+    tilt = page.locator("[data-tilt]").count()
+    tiltable = page.locator("[data-tilt].tiltable").count()
+    rap.dire(tilt >= 20, f"{tilt} cartes déclarent le relief au survol", "attendu ≥ 20")
+    rap.dire(tilt == tiltable, "et toutes ont été branchées", f"{tiltable} branchées")
+
+    page.evaluate("document.querySelectorAll('.reveal').forEach(e => e.classList.add('on'))")
+    page.wait_for_timeout(400)
+    carte = page.locator(".loop-card").first
+    carte.hover()
+    page.wait_for_timeout(400)
+    forme = carte.evaluate("e => e.style.transform")
+    rap.dire("perspective(" in forme, "et une carte survolée s'incline", forme[:60])
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(500)
+    rap.dire(carte.evaluate("e => e.style.transform") == "",
+             "elle se remet à plat en sortant", "sinon `.reveal.on` perd la main")
+
+    # Les couches du fond se décalent : sans ça, `data-px` est décoratif.
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(700)
+    haut = page.locator("#bg-halos").evaluate("e => e.style.transform")
+    page.evaluate("window.scrollTo(0, 2500)")
+    page.wait_for_timeout(900)
+    bas = page.locator("#bg-halos").evaluate("e => e.style.transform")
+    rap.dire(bool(haut) and haut != bas, "les halos du fond suivent le défilement",
+             f"{haut or 'vide'} → {bas or 'vide'}")
 
     # Navigation interne : c'est le routeur qu'on teste, pas le serveur. Un
     # `pushState` cassé rendrait le site utilisable seulement au rechargement.
