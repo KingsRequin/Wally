@@ -94,7 +94,7 @@ python3 scripts/lint_mort.py             # cliquet : le code mort ne monte pas
 
 ```bash
 python3 scripts/lint_js.py               # porte dure + cliquet sur les 16 k lignes de front
-python3 scripts/smoke_front.py           # le front MONTE-T-IL ? (Playwright, ~40 s)
+python3 scripts/smoke_front.py           # le front MONTE-T-IL ? (Playwright, ~90 s)
 ```
 
 ⚠️ `lint_js.py` ne prouve PAS qu'un panneau monte, et les tests « front » du
@@ -167,7 +167,7 @@ python3 scripts/lint_ruff.py [--liste|--maj]
 python3 scripts/lint_js.py [--liste|--maj]
 python3 scripts/lint_logs.py [--liste|--maj|--corriger]
 python3 scripts/lint_mort.py [--liste|--maj]
-python3 scripts/smoke_front.py [--overlay|--admin] [--captures /tmp]
+python3 scripts/smoke_front.py [--overlay|--public|--admin] [--captures /tmp]
 python3 scripts/audit_deps.py            # CVE des paquets DE L'IMAGE (pas de l'hôte)
 python3 scripts/installer_hooks.py       # pose le hook pre-push (à faire une fois)
 
@@ -310,7 +310,8 @@ bot/
     └── mixins/          # actions, apex, chat, costs, emotion, gallery, memory,
                          #   rss, social, state, trust
 
-public-ui/               # Site public « arcade » (bind-mount) : app.js + tabs/
+public-ui/               # Site public « braise » (bind-mount) : app.js (coquille +
+                         #   routeur) + pages/{accueil,chat,galerie,tcg}.js
 extension-musique/       # Extension Chrome installée chez Azraël (hors Web Store)
 scripts/                 # Outils d'audit, de rattrapage et cliquets qualité
 tests/                   # pytest — racine + dashboard/ discord/ intelligence/ scripts/
@@ -715,6 +716,33 @@ exécute ce que Wally vient de déclarer raté).
 
 ---
 
+## Site public
+
+`public-ui/` — quatre pages, un routeur d'historique posé sur le catch-all SPA
+de `SPAStaticFiles` (`/`, `/chat`, `/galerie`, `/tcg`). `app.js` tient la
+coquille : nav, décor parallax, flux SSE partagés, auth Discord, modale. Chaque
+page n'exporte que `mount(el)` / `unmount()`.
+
+- **Thème « braise »** : sombre, Space Grotesk + JetBrains Mono, une seule
+  couleur saturée. Les tokens vivent dans `:root` de `style.css` — ne pas
+  redéfinir une couleur en dur dans un module JS. Ni le glassmorphism du
+  dashboard, ni l'encre/papier de l'overlay : trois surfaces distinctes.
+- Les anciennes ancres du site arcade (`#status`, `#chat`, `#gallery`,
+  `#journal`, `#about`) redirigent vers leur page. Elles sont partagées et
+  mises en favori.
+- Le retour OAuth atterrit sur `/?chat_code=…` (le serveur ne sait rediriger
+  que vers la racine) ; le routeur le renvoie sur `/chat`, qui consomme le code.
+- ⚠️ **`is_owner` est SIGNÉ dans le JWT**, il ne vient PAS de
+  `/api/public/status` — `owner_discord_id` en a été retiré (le snowflake du
+  propriétaire partait à tout visiteur). Le site n'a rien à comparer.
+- ⚠️ **Un `grid-template-columns` posé en style EN LIGNE bat la media query.**
+  Une grille responsive se déclare en CLASSE, jamais en attribut : la section
+  des émotions gardait deux colonnes jusqu'à 320 px et débordait de 43 px hors
+  de l'écran, sans lever la moindre erreur JS.
+- ⚠️ `gallery.created_at` est un **datetime SQL UTC** (« 2026-08-27 22:38:20 »),
+  pas un timestamp Unix.
+- `smoke_front.py --public` est le SEUL test qui exécute ce JavaScript.
+
 ## Dashboard Design System — Glassmorphism
 
 Pour le dashboard admin et le site public (**pas** l'overlay OBS, cf. plus haut) :
@@ -837,7 +865,7 @@ cette signature, pas les bugs un par un.
 | `scripts/lint_types.py` | Erreurs mypy (cliquet). Les tests ne les voient pas, mypy si |
 | `scripts/lint_ruff.py` | Nom indéfini, `print()`, bloquant dans une coroutine (porte DURE, zéro toléré) + `datetime` naïf et bugbear (cliquet) |
 | `scripts/lint_js.py` | Le MÊME filet sur les 16 k lignes de front. Il n'y en avait aucun : `catch (e) {}` y était invisible |
-| `scripts/smoke_front.py` | Le front MONTE-t-il ? Charge overlay + les 7 onglets + les sous-onglets, échoue sur une erreur JS OU un panneau vide. Le seul outil qui exécute le JavaScript |
+| `scripts/smoke_front.py` | Le front MONTE-t-il ? Charge l'overlay, les 4 pages du site public et les 11 pages admin, échoue sur une erreur JS, un panneau vide OU un débordement horizontal en 390 px. Le seul outil qui exécute le JavaScript |
 | `scripts/lint_logs.py` | Une exception journalisée sans `!r`. `ConnectError('')` a un `str()` VIDE : la ligne s'arrête sur le deux-points et ne dit RIEN (599 lignes en août, dont 205 en un jour) |
 | `scripts/audit_deps.py` | CVE des paquets **de l'image**. Auditer l'hôte donne une liste fausse : son environnement Python date de l'installation de CT100 |
 | `scripts/lint_mort.py` | Une fonction, une méthode ou un paramètre que plus personne ne lit. Ruff ne voit QUE l'intra-fichier (`F401`/`F841`) ; il a fallu qu'un ajout soit greffé dans 253 lignes de JS mort et ne s'affiche pas pour qu'on le remarque |
