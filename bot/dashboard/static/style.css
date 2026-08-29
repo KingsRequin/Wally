@@ -6549,18 +6549,51 @@ body.is-mobile .mobile-back-btn {
    * contenu qui déborde à l'intérieur de son propre conteneur passait
    * inaperçu, alors que c'est précisément lui qu'on ne peut pas lire. */
 
-  /* Voix — la ligne du flux empilait six éléments `flex-shrink: 0` : la somme
-   * dépassait 390 px, le texte était écrasé à une lettre par ligne et la
-   * latence sortait de l'écran de 98 px. */
-  .v-row { flex-wrap: wrap; }
-  .v-text { flex: 1 0 100%; }
+  /* ── Les flux : la METADONNÉE AU-DESSUS, le texte en pleine largeur ──
+   *
+   * Au bureau, `15:16:12  INFO  Musique : morceau — …` se lit d'un trait :
+   * l'heure et le niveau tiennent dans deux colonnes étroites et il reste
+   * 900 px pour le message. Sur 390 px, ces deux colonnes en mangent la
+   * moitié — le message se retrouve dans un couloir de 165 px, où « Musique :
+   * morceau — CloudKid — Confetti » prend trois lignes.
+   *
+   * On empile : l'heure et le type sur leur ligne, le texte sur la sienne.
+   * Deux lignes courtes valent mieux qu'une colonne de quatre.
+   */
+
+  /* Journal */
+  .log-entry { flex-wrap: wrap; gap: 0 10px; padding-bottom: 4px; }
+  .log-entry .log-niveau { width: auto; }
+  .log-entry .log-message { flex: 1 0 100%; }
+
+  /* Voix — la ligne empilait six éléments `flex-shrink: 0` : leur somme
+   * dépassait 390 px, le texte était écrasé à un mot par ligne et la latence
+   * sortait de l'écran de 98 px. */
+  .v-row { flex-wrap: wrap; gap: 0 8px; padding-bottom: 7px; }
   .v-who, .v-lat, .v-reason, .v-chan, .v-time { flex-shrink: 1; min-width: 0; }
+  /* La latence et le motif d'un rejet sont de la MÉTADONNÉE : ils remontent
+   * sur la ligne du haut, poussés à droite, plutôt que d'occuper une
+   * troisième ligne sous le texte. Une ligne gagnée par réplique, sur un flux
+   * qu'on fait défiler. */
+  .v-lat, .v-reason { order: 1; margin-left: auto; }
+  .v-text { flex: 1 0 100%; order: 2; margin-top: 2px; }
 
   /* Médias — la ligne de son est une grille `1fr auto` posée en style INLINE,
    * d'où le `!important` : la colonne des trois boutons ne tenait pas, et
    * « Écouter / Enregistrer / Supprimer » sortaient du cadre. */
   .son-ligne { grid-template-columns: 1fr !important; }
-  .son-ligne > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Les trois boutons repassent en RANGÉE. Empilés en colonne, chaque son
+   * mangeait sept lignes d'écran pour trois gestes. Leur conteneur porte
+   * `flex-direction: column` en style INLINE — d'où les `!important` : une
+   * règle de classe, si tardive soit-elle, ne bat jamais un attribut `style`. */
+  .son-ligne > div:last-child {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .son-ligne > div:last-child .btn { flex: 1 1 auto; }
 
   /* Les valeurs techniques sans espace — « safeword_coupe_circuit_elsalvador »,
    * une URL, une clé d'élément — ne se coupent nulle part et poussent leur

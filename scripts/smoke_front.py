@@ -401,6 +401,26 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
         fautifs = page.evaluate(sonde)
         rap.dire(not fautifs, f"{nom} tient dans 390 px", " · ".join(fautifs))
 
+    # ── La métadonnée AU-DESSUS, le texte en pleine largeur ────────────
+    #
+    # Au bureau, `15:16:12  INFO  Musique : morceau — …` se lit d'un trait.
+    # Sur 390 px, l'heure et le niveau mangent la moitié de la ligne et le
+    # message se retrouve dans un couloir de 165 px, où trois mots prennent
+    # quatre lignes. On vérifie donc que le texte commence bien au BORD de sa
+    # ligne, et non après les colonnes de métadonnée.
+    for route, ligne, texte in (("systeme/journal", ".log-entry", ".log-message"),
+                                ("live/voix", ".v-row", ".v-text")):
+        page.evaluate(f"location.hash = '#/{route}'")
+        page.wait_for_timeout(2000)
+        decalage = page.evaluate(
+            "([l, t]) => {const r = document.querySelector(l);"
+            " const x = r && r.querySelector(t);"
+            " return r && x ? Math.round(x.getBoundingClientRect().left"
+            "   - r.getBoundingClientRect().left) : -1;}",
+            [ligne, texte])
+        rap.dire(0 <= decalage <= 20, f"{route} : le texte prend la largeur",
+                 f"décalé de {decalage} px")
+
     rap.dire(not erreurs, "aucune erreur JS en mobile", " · ".join(erreurs[:2]))
     page.set_viewport_size({"width": 1600, "height": 1000})
 
