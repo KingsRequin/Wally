@@ -168,5 +168,9 @@ def test_le_serveur_borne_et_complete_ce_quun_fichier_bricole_apporte():
     assert elements["bingo"]["scale"] == 2.0      # borné
     assert elements["bingo"]["anchor"] == "top-left"   # défaut, ancrage inconnu
     assert "widget_qui_nexiste_pas" not in elements
-    # Complété : les trente-trois autres éléments sont là, à leur défaut.
-    assert elements["avatar"] == layout_par_defaut()["scenes"][0]["elements"]["avatar"]
+    # Complété : les autres éléments sont là, à leur défaut — mais MASQUÉS.
+    # Un fichier d'import qui ne mentionne que deux widgets a été écrit par
+    # quelqu'un : les trente-cinq qu'il tait n'ont été voulus sur cette scène par
+    # personne, et depuis le 2026-08-29 ils ne s'affichent pas d'office.
+    assert elements["avatar"] == {
+        **layout_par_defaut()["scenes"][0]["elements"]["avatar"], "hidden": True}

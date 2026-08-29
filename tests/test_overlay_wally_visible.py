@@ -114,7 +114,9 @@ def test_un_element_absent_du_json_reprend_son_defaut():
     elements = fusionner(brut)["scenes"][0]["elements"]
     assert elements["meme"]["x"] == 10.0                       # le réglé est gardé
     assert elements["meme"]["wally_visible"] is False          # défaut repris
-    assert elements["bingo"] == ELEMENTS["bingo"]              # l'absent entier
+    # L'absent entier, `hidden` mis à part : depuis le 2026-08-29, un widget que
+    # la scène ne connaît pas naît masqué plutôt que de s'afficher en plein live.
+    assert elements["bingo"] == {**ELEMENTS["bingo"], "hidden": True}
 
 
 def test_une_valeur_aberrante_est_ramenee_a_un_booleen():

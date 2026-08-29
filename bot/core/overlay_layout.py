@@ -789,8 +789,29 @@ def _fusionner_scene(brut: dict) -> dict | None:
     elements_bruts = brut.get("elements")
     if not isinstance(elements_bruts, dict):
         elements_bruts = {}
+    # ── Un widget NEUF ne s'invite pas en plein live ──────────────────────
+    #
+    # Cette boucle parcourt `ELEMENTS`, pas ce que la scène a enregistré : un
+    # widget ajouté au code apparaissait donc sur les TROIS scènes, à sa
+    # position par défaut et VISIBLE, dès le rebuild. En clair, on ne pouvait
+    # pas ajouter un widget sans le montrer aux viewers pour l'essayer.
+    #
+    # Une scène qui a déjà des éléments enregistrés a été placée par quelqu'un.
+    # Ce qu'elle ne connaît pas est donc arrivé APRÈS elle, et n'a été voulu par
+    # personne à cet endroit : il naît masqué, et s'active depuis le panneau
+    # — sur une scène d'essai, tranquillement, avant de le montrer.
+    #
+    # `elements_bruts` vide = première écriture du layout : on garde alors les
+    # défauts livrés, sinon un tout premier boot rendrait un overlay vide.
+    deja_placee = bool(elements_bruts)
+
+    def _defaut_de(cle: str, defaut: dict) -> dict:
+        if deja_placee and cle not in elements_bruts:
+            return {**defaut, "hidden": True}
+        return defaut
+
     elements = {
-        cle: _fusionner_element(cle, elements_bruts.get(cle), defaut)
+        cle: _fusionner_element(cle, elements_bruts.get(cle), _defaut_de(cle, defaut))
         for cle, defaut in ELEMENTS.items()
     }
     ordre_brut = brut.get("ordre")

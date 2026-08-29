@@ -69,7 +69,14 @@ def test_fusion_dun_json_corrompu_rend_les_defauts():
 
 def test_un_element_absent_reprend_son_defaut():
     """Ajouter un dix-huitième widget dans six mois ne doit pas faire exploser
-    la disposition existante."""
+    la disposition existante.
+
+    ⚠️ Ce test EXIGEAIT `hidden: False` sur l'absent — c'est-à-dire le défaut
+    qu'on corrige le 2026-08-29 : un widget neuf s'affichait sur les trois
+    scènes en plein live dès le rebuild. Il vérifie désormais ce qui compte
+    vraiment ici, la POSITION reprise du défaut ; le masquage a ses propres
+    tests plus bas.
+    """
     brut = {"version": 1, "defaut": "jeu", "scenes": [
         {"slug": "jeu", "nom": "En jeu", "ordre": [],
          "elements": {"avatar": {"x": 10.0, "y": 20.0, "anchor": "top-left",
@@ -78,7 +85,9 @@ def test_un_element_absent_reprend_son_defaut():
     ]}
     scene = fusionner(brut)["scenes"][0]
     assert scene["elements"]["avatar"]["x"] == 10.0        # le réglé est gardé
-    assert scene["elements"]["bingo"] == ELEMENTS["bingo"] # l'absent revient
+    # L'absent revient avec ses réglages livrés — mais masqué : personne ne l'a
+    # placé sur CETTE scène, et il ne s'invite pas devant les viewers.
+    assert scene["elements"]["bingo"] == {**ELEMENTS["bingo"], "hidden": True}
 
 
 def test_un_element_inconnu_est_ignore():
@@ -470,3 +479,67 @@ def test_le_defaut_livre_ne_change_rien_a_ce_qui_est_rendu():
     rot = layout_par_defaut()["scenes"][0]["elements"]["rotator"]
     assert rot["duree"] == ROTATEUR_DUREE_DEFAUT
     assert rot["pause"] == ROTATEUR_PAUSE_DEFAUT
+
+
+# ── Un widget NEUF ne s'invite pas en plein live ───────────────────────────
+
+def test_un_widget_neuf_nait_masque_sur_une_scene_deja_placee():
+    """Le défaut qui empêchait d'essayer quoi que ce soit.
+
+    La fusion parcourt `ELEMENTS`, pas ce que la scène a enregistré : un widget
+    ajouté au code apparaissait donc sur les trois scènes, à sa position par
+    défaut et VISIBLE, dès le rebuild — devant les viewers, sans qu'on l'ait
+    demandé. On ne pouvait pas ajouter un widget sans le montrer.
+    """
+    from bot.core.overlay_layout import ELEMENTS, fusionner
+
+    connu, neuf = list(ELEMENTS)[0], list(ELEMENTS)[-1]
+    assert connu != neuf
+    range_ = fusionner({"scenes": [{
+        "slug": "en-jeu", "nom": "En jeu",
+        "elements": {connu: dict(ELEMENTS[connu])},
+    }]})
+    elements = range_["scenes"][0]["elements"]
+    assert elements[neuf]["hidden"] is True
+    assert elements[connu]["hidden"] is False
+
+
+def test_un_widget_masque_doffice_garde_tout_le_reste():
+    """Masqué, pas déplacé : sa position, son ancrage et ses réglages restent
+    ceux qu'on a écrits dans `ELEMENTS`. Sinon l'activer d'un clic le ferait
+    apparaître n'importe où."""
+    from bot.core.overlay_layout import ELEMENTS, fusionner
+
+    connu, neuf = list(ELEMENTS)[0], list(ELEMENTS)[-1]
+    range_ = fusionner({"scenes": [{
+        "slug": "en-jeu", "elements": {connu: dict(ELEMENTS[connu])},
+    }]})
+    rendu = range_["scenes"][0]["elements"][neuf]
+    for champ in ("x", "y", "anchor", "scale"):
+        assert rendu[champ] == ELEMENTS[neuf][champ], champ
+
+
+def test_un_tout_premier_layout_garde_les_defauts_livres():
+    """La scène VIERGE est le cas opposé : personne ne l'a placée, et masquer
+    tout d'office rendrait un overlay entièrement vide au premier boot."""
+    from bot.core.overlay_layout import fusionner, layout_par_defaut
+
+    vierge = fusionner({"scenes": [{"slug": "en-jeu", "nom": "En jeu"}]})
+    livre = layout_par_defaut()["scenes"][0]["elements"]
+    rendu = vierge["scenes"][0]["elements"]
+    assert [c for c, v in rendu.items() if v["hidden"]] == \
+           [c for c, v in livre.items() if v["hidden"]]
+
+
+def test_un_widget_que_lowner_a_active_le_reste():
+    """Une fois activé et enregistré, il est CONNU de la scène : la règle ne
+    doit plus s'appliquer, sinon chaque rechargement le remasquerait."""
+    from bot.core.overlay_layout import ELEMENTS, fusionner
+
+    connu, neuf = list(ELEMENTS)[0], list(ELEMENTS)[-1]
+    range_ = fusionner({"scenes": [{
+        "slug": "en-jeu",
+        "elements": {connu: dict(ELEMENTS[connu]),
+                     neuf: {**ELEMENTS[neuf], "hidden": False}},
+    }]})
+    assert range_["scenes"][0]["elements"][neuf]["hidden"] is False
