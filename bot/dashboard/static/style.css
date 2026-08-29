@@ -545,6 +545,22 @@ body {
   display: block;
 }
 
+/* Cacher un panneau n'est PAS négociable.
+ *
+ * Une page qui pose sa propre classe de mise en page sur son panneau —
+ * `.ovl-panneau { display: flex }` pour la Scène — a la même spécificité que
+ * `.tab-content` (0,1,0), et gagne pour la seule raison qu'elle est déclarée
+ * plus bas dans le fichier. Résultat vu à l'écran le 2026-08-29 : on quittait
+ * la Scène, l'URL changeait, la sidebar suivait, et le panneau restait affiché
+ * PAR-DESSUS la page d'arrivée. Deux panneaux à l'écran, aucune erreur, aucune
+ * trace.
+ *
+ * Le `!important` est ici le bon outil et non un aveu : la visibilité d'un
+ * panneau appartient au ROUTEUR, et aucune feuille de page ne doit pouvoir la
+ * lui reprendre. La règle ne mord que sur les panneaux inactifs — celui qui
+ * est actif garde toute liberté de mise en page. */
+.tab-content:not(.active) { display: none !important; }
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -4130,205 +4146,6 @@ button:focus-visible {
 
 /* ── Responsive ───────────────────────────────────────────────── */
 
-@media (max-width: 768px) {
-  /* La sidebar disparaît : la navigation passe par la barre du BAS, quatre
-   * destinations au lieu de onze. Sur 390 px de large, une liste de onze
-   * entrées ne se lit pas — et les libellés seuls, sans icône, ne se
-   * distinguent pas au pouce. */
-  .sidebar { display: none !important; }
-
-  .app-wrapper { flex-direction: column !important; }
-
-  .barre-bas { display: flex; }
-
-  /* La rangée de puces remplace la sidebar : les pages du thème courant,
-   * scrollables horizontalement sous le titre. */
-  .theme-puces { display: flex; }
-
-
-  .main-content {
-    padding: 16px !important;
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
-    height: 100vh;
-  }
-
-  .control-bar {
-    left: 0 !important;
-    top: 0;
-  }
-
-  .chat-container {
-    height: calc(100vh - 56px - 32px) !important;
-    max-height: none !important;
-  }
-
-  .chat-hero { padding: 10px !important; gap: 10px !important; }
-  .chat-hero-side { display: none !important; }
-  .chat-mem-mobile-btn { display: flex !important; }
-  .chat-hero-avatar { width: 56px !important; height: 56px !important; }
-  .chat-hero-name { font-size: 0.9rem !important; }
-
-  .log-stream { height: calc(100vh - 200px); max-height: 400px; }
-
-  .graph-range-btn {
-    min-width: 40px;
-    min-height: 36px;
-    padding: 6px 12px;
-  }
-
-  .prompt-editor-wrap { flex-direction: column; height: auto; }
-  .prompt-file-list { width: 100%; max-height: 120px; }
-
-  .mem-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .mem-search { max-width: none; min-width: 0; }
-
-  .mem-toolbar-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .mem-platform-pills { flex: 1; min-width: 0; }
-  .mem-sort-select { flex-shrink: 0; }
-  .mem-toggle span { display: none; }
-  .mem-card-name { font-size: 12px; }
-  .mem-card-sub { font-size: 10px; }
-  .mem-card { padding: 10px; }
-  .mem-card-avatar { width: 40px; height: 40px; font-size: 16px; }
-
-  .mem-modal {
-    width: 95%;
-    padding: 14px;
-    max-height: 85vh;
-  }
-
-  .mem-modal-actions { flex-wrap: wrap; }
-
-  /* ── Les listes deviennent des cartes empilées ──────────────────
-   *
-   * Une grille de quatre colonnes sur 390 px donne quatre colonnes de 90 px :
-   * un pseudo y tient sur trois lignes et les chiffres se touchent. Chaque
-   * ligne passe donc en carte, avec sa cible tactile et son chevron.
-   */
-  .liste-ligne,
-  .pers-ligne,
-  .auto-ligne,
-  .mod-ligne {
-    display: flex !important;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 14px !important;
-    padding: 14px !important;
-    min-height: 44px;
-  }
-
-  /* L'identité prend toute la largeur ; les chiffres se rangent dessous, en
-   * ligne. En grille de quatre colonnes sur 390 px, un pseudo tient sur trois
-   * lignes et les valeurs se touchent. */
-  .pers-qui,
-  .auto-ligne > div:first-child,
-  .mod-usage { flex: 1 0 100%; }
-
-  /* Les en-têtes de colonnes n'ont plus de colonnes à nommer. */
-  .liste-tete { display: none !important; }
-
-  /* La deuxième moitié de la ligne se range à droite, en petit. */
-  .pers-trust, .pers-love, .pers-apex,
-  .auto-quand, .auto-qui,
-  .mod-modele, .mod-nb, .mod-cout {
-    text-align: left;
-    font-size: 11px;
-  }
-
-  .pastille { justify-self: auto; }
-
-  .pers-avatar { width: 38px; height: 38px; font-size: 15px; }
-
-  /* Un chevron dit que la ligne s'ouvre. Au bureau, le survol le disait. */
-  .pers-ligne::after {
-    content: '›';
-    margin-left: auto;
-    color: var(--text-faint);
-    font-size: 18px;
-    line-height: 1;
-  }
-
-  /* ── Rien ne doit déborder en largeur ──────────────────────────
-   * Une page qui glisse de côté au doigt est une page qu'on ne lit pas. */
-  .control-bar {
-    height: auto !important;
-    flex-wrap: wrap;
-    gap: 8px !important;
-    padding: 10px 14px !important;
-    margin: 0 -16px !important;
-  }
-  .control-bar-spacer { display: none; }
-  .control-bar-build { flex: 1 0 100%; order: 9; }
-
-  /* Un segmented plus large que l'écran se fait défiler, il ne se coupe pas. */
-  .segmented {
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .segmented::-webkit-scrollbar { display: none; }
-
-  .champ-recherche { min-width: 0 !important; }
-  .auto-barre, .journal-filtres { gap: 8px !important; }
-
-  /* Dans l'en-tête devenu une colonne, la rangée de puces et les commandes de
-   * page prennent chacune leur ligne — les serrer à droite du titre sur 390 px
-   * ne laisserait la place ni à l'un ni à l'autre. */
-  .theme-puces, .page-actions { flex: 1 0 100%; margin-left: 0; }
-  .ovl-source-url { max-width: 150px; }
-
-  .cockpit-colonnes { grid-template-columns: 1fr !important; }
-  .cockpit-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
-  .fiche-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
-  .cnx-cartes { grid-template-columns: 1fr !important; }
-  .galerie { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important; }
-
-  .page-title { font-size: 20px !important; }
-  .fiche-onglets { gap: 14px !important; }
-  .fiche-tete { gap: 12px !important; }
-
-  /* Le flux du journal occupe ce qui reste, barre du bas déduite. */
-  .log-stream {
-    height: calc(100vh - 300px) !important;
-    min-height: 200px;
-  }
-
-  /* ── La scène est en LECTURE SEULE au doigt ─────────────────────
-   *
-   * Placer un widget au pixel demande une souris : au doigt, on déplacerait
-   * ce qu'on voulait seulement regarder, en direct, sur ce que voient les
-   * viewers. On garde l'aperçu et les interrupteurs, on retire la prise.
-   */
-  #tab-admin-scene::before {
-    content: 'Le placement se règle au bureau. Ici, on regarde.';
-    display: block;
-    background: rgba(255, 176, 32, 0.07);
-    border: 1px solid rgba(255, 176, 32, 0.28);
-    color: var(--warning-text);
-    border-radius: 9px;
-    padding: 11px 13px;
-    margin-bottom: 14px;
-    font-size: 12.5px;
-    line-height: 1.5;
-  }
-
-  #tab-admin-scene .overlay-canvas,
-  #tab-admin-scene canvas,
-  #tab-admin-scene [data-cadre] {
-    pointer-events: none !important;
-  }
-}
 
 @media (max-width: 480px) {
   .card { padding: 16px; border-radius: 8px; }
@@ -6505,3 +6322,283 @@ body.is-mobile .mobile-back-btn {
 /* Dans le volet, un champ occupe sa cellule : les libellés s'alignent d'une
    ligne à l'autre au lieu de flotter au gré de la longueur des valeurs. */
 .ovl-insp-volet .ovl-insp-champ { justify-content: space-between; }
+
+
+/* ══ RESPONSIVE ═══════════════════════════════════════════════════════════
+ *
+ * EN FIN DE FICHIER, et c'est structurel. Une surcharge responsive n'ajoute
+ * AUCUNE spécificité : à sélecteur égal, seule la position dans le fichier
+ * départage. Ce bloc vivait au milieu, avant quatre cents règles de
+ * composants — `.v-text { flex: 1 }`, déclarée plus bas, annulait donc le
+ * `.v-text { flex: 1 0 100% }` du mobile, et le flux vocal restait écrasé à
+ * trois mots par ligne malgré la règle. Constaté à l'écran le 2026-08-29.
+ *
+ * Tout ce qui surcharge pour un petit écran se met ICI, après le reste.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* La sidebar disparaît : la navigation passe par la barre du BAS, quatre
+   * destinations au lieu de onze. Sur 390 px de large, une liste de onze
+   * entrées ne se lit pas — et les libellés seuls, sans icône, ne se
+   * distinguent pas au pouce. */
+  .sidebar { display: none !important; }
+
+  .app-wrapper { flex-direction: column !important; }
+
+  .barre-bas { display: flex; }
+
+  /* La rangée de puces remplace la sidebar : les pages du thème courant,
+   * scrollables horizontalement sous le titre. */
+  .theme-puces { display: flex; }
+
+
+  .main-content {
+    padding: 16px !important;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    height: 100vh;
+  }
+
+  .control-bar {
+    left: 0 !important;
+    top: 0;
+  }
+
+  .chat-container {
+    height: calc(100vh - 56px - 32px) !important;
+    max-height: none !important;
+  }
+
+  .chat-hero { padding: 10px !important; gap: 10px !important; }
+  .chat-hero-side { display: none !important; }
+  .chat-mem-mobile-btn { display: flex !important; }
+  .chat-hero-avatar { width: 56px !important; height: 56px !important; }
+  .chat-hero-name { font-size: 0.9rem !important; }
+
+  .log-stream { height: calc(100vh - 200px); max-height: 400px; }
+
+  .graph-range-btn {
+    min-width: 40px;
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .prompt-editor-wrap { flex-direction: column; height: auto; }
+  .prompt-file-list { width: 100%; max-height: 120px; }
+
+  .mem-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .mem-search { max-width: none; min-width: 0; }
+
+  .mem-toolbar-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .mem-platform-pills { flex: 1; min-width: 0; }
+  .mem-sort-select { flex-shrink: 0; }
+  .mem-toggle span { display: none; }
+  .mem-card-name { font-size: 12px; }
+  .mem-card-sub { font-size: 10px; }
+  .mem-card { padding: 10px; }
+  .mem-card-avatar { width: 40px; height: 40px; font-size: 16px; }
+
+  .mem-modal {
+    width: 95%;
+    padding: 14px;
+    max-height: 85vh;
+  }
+
+  .mem-modal-actions { flex-wrap: wrap; }
+
+  /* ── Les listes deviennent des cartes empilées ──────────────────
+   *
+   * Une grille de quatre colonnes sur 390 px donne quatre colonnes de 90 px :
+   * un pseudo y tient sur trois lignes et les chiffres se touchent. Chaque
+   * ligne passe donc en carte, avec sa cible tactile et son chevron.
+   */
+  .liste-ligne,
+  .pers-ligne,
+  .auto-ligne,
+  .mod-ligne {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px !important;
+    padding: 14px !important;
+    min-height: 44px;
+  }
+
+  /* L'identité prend toute la largeur ; les chiffres se rangent dessous, en
+   * ligne. En grille de quatre colonnes sur 390 px, un pseudo tient sur trois
+   * lignes et les valeurs se touchent. */
+  .pers-qui,
+  .auto-ligne > div:first-child,
+  .mod-usage { flex: 1 0 100%; }
+
+  /* Les en-têtes de colonnes n'ont plus de colonnes à nommer. */
+  .liste-tete { display: none !important; }
+
+  /* La deuxième moitié de la ligne se range à droite, en petit. */
+  .pers-trust, .pers-love, .pers-apex,
+  .auto-quand, .auto-qui,
+  .mod-modele, .mod-nb, .mod-cout {
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .pastille { justify-self: auto; }
+
+  .pers-avatar { width: 38px; height: 38px; font-size: 15px; }
+
+  /* Un chevron dit que la ligne s'ouvre. Au bureau, le survol le disait. */
+  .pers-ligne::after {
+    content: '›';
+    margin-left: auto;
+    color: var(--text-faint);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* ── Rien ne doit déborder en largeur ──────────────────────────
+   * Une page qui glisse de côté au doigt est une page qu'on ne lit pas. */
+  .control-bar {
+    height: auto !important;
+    flex-wrap: wrap;
+    gap: 8px !important;
+    padding: 10px 14px !important;
+    margin: 0 -16px !important;
+  }
+  .control-bar-spacer { display: none; }
+  .control-bar-build { flex: 1 0 100%; order: 9; }
+
+  /* Un segmented plus large que l'écran se fait défiler, il ne se coupe pas. */
+  .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .segmented::-webkit-scrollbar { display: none; }
+
+  .champ-recherche { min-width: 0 !important; }
+  .auto-barre, .journal-filtres { gap: 8px !important; }
+
+  /* Dans l'en-tête devenu une colonne, la rangée de puces et les commandes de
+   * page prennent chacune leur ligne — les serrer à droite du titre sur 390 px
+   * ne laisserait la place ni à l'un ni à l'autre. */
+  .theme-puces, .page-actions { flex: 1 0 100%; margin-left: 0; }
+  .ovl-source-url { max-width: 150px; }
+
+  .cockpit-colonnes { grid-template-columns: 1fr !important; }
+  .cockpit-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
+  .fiche-tuiles { grid-template-columns: repeat(2, 1fr) !important; }
+  .cnx-cartes { grid-template-columns: 1fr !important; }
+  .galerie { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important; }
+
+  .page-title { font-size: 20px !important; }
+  .fiche-onglets { gap: 14px !important; }
+  .fiche-tete { gap: 12px !important; }
+
+  /* Le flux du journal occupe ce qui reste, barre du bas déduite. */
+  .log-stream {
+    height: calc(100vh - 300px) !important;
+    min-height: 200px;
+  }
+
+  /* ── Sur mobile, la Scène perd sa zone de travail ───────────────
+   *
+   * Placer un widget au pixel demande une souris. Au doigt, on déplace en
+   * direct ce qu'on voulait seulement regarder — sur ce que voient les
+   * viewers.
+   *
+   * La première version posait `pointer-events: none` sur `.overlay-canvas`,
+   * `canvas` et `[data-cadre]` : trois sélecteurs DEVINÉS, qui n'existent pas
+   * dans `overlay_admin.js`. Le bandeau annonçait donc une lecture seule que
+   * rien n'appliquait, et on pouvait toujours tout déplacer. Signalé à
+   * l'écran le 2026-08-29.
+   *
+   * On ne verrouille plus : on RETIRE. Toute la zone de travail — barre
+   * d'outils, bandeau de chevauchement, canevas, raccourcis, inspecteur —
+   * disparaît, et il reste la liste des éléments avec ses interrupteurs et son
+   * bouton d'essai. C'est ce qu'on vient faire depuis un téléphone.
+   */
+  #tab-admin-scene::before {
+    content: 'Le placement se règle au bureau. Ici, on affiche, on masque, on essaie.';
+    display: block;
+    background: rgba(255, 176, 32, 0.07);
+    border: 1px solid rgba(255, 176, 32, 0.28);
+    color: var(--warning-text);
+    border-radius: 9px;
+    padding: 11px 13px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  #tab-admin-scene .ovl-travail { display: none !important; }
+
+  /* ── Ce qui débordait, page par page ────────────────────────────
+   *
+   * Relevé au navigateur sur les onze pages à 390 px, le 2026-08-29. Le
+   * parcours ne mesurait jusque-là que le débordement de la COLONNE : un
+   * contenu qui déborde à l'intérieur de son propre conteneur passait
+   * inaperçu, alors que c'est précisément lui qu'on ne peut pas lire. */
+
+  /* Voix — la ligne du flux empilait six éléments `flex-shrink: 0` : la somme
+   * dépassait 390 px, le texte était écrasé à une lettre par ligne et la
+   * latence sortait de l'écran de 98 px. */
+  .v-row { flex-wrap: wrap; }
+  .v-text { flex: 1 0 100%; }
+  .v-who, .v-lat, .v-reason, .v-chan, .v-time { flex-shrink: 1; min-width: 0; }
+
+  /* Médias — la ligne de son est une grille `1fr auto` posée en style INLINE,
+   * d'où le `!important` : la colonne des trois boutons ne tenait pas, et
+   * « Écouter / Enregistrer / Supprimer » sortaient du cadre. */
+  .son-ligne { grid-template-columns: 1fr !important; }
+  .son-ligne > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* Les valeurs techniques sans espace — « safeword_coupe_circuit_elsalvador »,
+   * une URL, une clé d'élément — ne se coupent nulle part et poussent leur
+   * conteneur. */
+  .mem-dash-q-row, .mem-question-row, .fiche-memoire, .mc-sujet,
+  .liste-ligne, .cnx-fait, .ovl-el { overflow-wrap: anywhere; }
+
+  /* Personnalité — la ligne de coût du prompt et l'en-tête de l'éditeur. */
+  #prompt-token-info { flex-wrap: wrap; gap: 8px !important; }
+  #perso-prompts [style*="display:flex"] { flex-wrap: wrap; }
+
+  /* Scène — la liste occupe toute la largeur une fois la zone de travail
+   * retirée : tronquer un nom d'élément n'a plus de raison d'être, et
+   * « Courbe de progression » perdait 69 px de son libellé. */
+  .ovl-el-nom, .ovl-groupe-nom {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  /* Médias — l'URL OBS se replie au lieu d'être coupée. On copie au bouton,
+   * mais il faut pouvoir VOIR laquelle on copie. */
+  .overlay-url-code {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    flex: 1 0 100%;
+  }
+
+  /* Modèles — quatorze dates sous quatorze barres de 20 px ne tiennent pas.
+   * La forme de la courbe reste lisible, et le sous-titre porte déjà la
+   * période et les totaux. */
+  .mod-barre > em { display: none; }
+
+  /* Le sélecteur de fichier natif porte sa propre largeur minimale — celle du
+   * libellé « Choisir un fichier / Aucun fichier sélectionné » — et dépasse
+   * 390 px à lui seul. Le `flex-wrap` de sa ligne n'y peut rien : ce n'est pas
+   * la ligne qui déborde, c'est le champ. */
+  #son-fichier { max-width: 100%; flex: 1 0 100%; }
+}

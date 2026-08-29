@@ -176,9 +176,20 @@ def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
         # partageable et le rechargement fidèle. Un `onclick` qui monte le
         # panneau sans toucher l'URL passerait le reste du test sans broncher.
         hash_vu = page.evaluate("location.hash")
-        rap.dire(not erreurs and hash_vu == f"#/{route}",
+        # UN SEUL panneau visible. Le parcours ne vérifiait que l'absence de
+        # panneau VIDE, jamais l'absence de panneau EN TROP : une page qui pose
+        # sa propre classe de mise en page (`.ovl-panneau { display: flex }`)
+        # bat `.tab-content { display: none }` à spécificité égale, et reste
+        # affichée par-dessus la page d'arrivée. Vu à l'écran le 2026-08-29 —
+        # l'URL changeait, la sidebar suivait, deux panneaux se superposaient,
+        # et rien ne le disait.
+        vus = page.evaluate(
+            "Array.from(document.querySelectorAll('.tab-content'))"
+            ".filter(e => e.offsetParent !== null).map(e => e.id)")
+        rap.dire(not erreurs and hash_vu == f"#/{route}" and len(vus) == 1,
                  f"page {nom}",
-                 f"hash {hash_vu!r}" + (" · " + erreurs[0] if erreurs else ""))
+                 f"hash {hash_vu!r} · {len(vus)} panneau(x) : {', '.join(vus)}"
+                 + (" · " + erreurs[0] if erreurs else ""))
 
     for route, enfants in SOUS_ONGLETS:
         print(f"\n── sous-onglets derrière {route} ──")
@@ -233,6 +244,19 @@ def _verifier_scene(page, rap: Rapport, erreurs: list[str]) -> None:
     rap.dire(elements > 0, "la liste d'éléments est intacte", f"{elements} élément(s)")
     canevas = page.locator("#tab-admin-scene .ovl-zone-canvas").count()
     rap.dire(canevas == 1, "le canevas est intact", f"{canevas}")
+
+    # Sur mobile, la zone de travail entière DISPARAÎT. La première version
+    # posait `pointer-events: none` sur trois sélecteurs devinés qui n'existent
+    # pas : le bandeau annonçait une lecture seule que rien n'appliquait, et on
+    # déplaçait toujours les éléments en direct. Signalé à l'écran.
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(900)
+    rap.dire(page.locator("#tab-admin-scene .ovl-travail").is_hidden(),
+             "au doigt, la zone de travail disparaît")
+    rap.dire(page.locator("#tab-admin-scene .ovl-el").count() > 0,
+             "la liste et ses interrupteurs restent")
+    page.set_viewport_size({"width": 1600, "height": 1000})
+    page.wait_for_timeout(900)
 
     # Le bandeau des chevauchements est passé de pastille noyée dans la barre
     # d'outils à ligne pleine largeur au-dessus du canevas. Il ne se tait
@@ -335,19 +359,47 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
     # mobile est une page qu'on ne peut pas lire.
     page.locator('.barre-bas-item[data-theme="cockpit"]').click()
     page.wait_for_timeout(1800)
-    # `documentElement.scrollWidth` ne voit RIEN : la colonne de contenu a son
-    # propre `overflow`, et c'est elle qui glisse. Il faut mesurer chaque
-    # conteneur défilable, sur plusieurs pages — le débordement vient d'un
-    # segmented ou d'une barre d'outils, pas de la coquille.
-    for route in ("cerveau/personnes", "systeme/journal", "live/automatisations",
-                  "cockpit"):
+    # ── Le débordement, page par page ──────────────────────────────────
+    #
+    # Deux mesures successives se sont révélées trop faibles, et les DEUX ont
+    # laissé passer des pages illisibles signalées par l'owner :
+    #
+    #   · `documentElement.scrollWidth` ne voit rien — c'est `.main-content`
+    #     qui a son propre `overflow`, et c'est elle qui glisse ;
+    #   · `.main-content` seule ne voit pas le contenu qui déborde À
+    #     L'INTÉRIEUR de son propre conteneur. Le flux vocal était écrasé à
+    #     trois mots par ligne, la latence sortait de 98 px, et la colonne,
+    #     elle, ne débordait pas d'un pixel.
+    #
+    # On regarde donc chaque élément FEUILLE de la page active : dépasse-t-il
+    # le bord droit de la colonne, ou coupe-t-il son propre contenu ? Et sur
+    # les onze pages, pas quatre.
+    sonde = """(() => {
+      const m = document.querySelector('.main-content');
+      const lim = m.getBoundingClientRect().right;
+      const out = [];
+      document.querySelectorAll('.tab-content.active *').forEach(e => {
+        const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const d = Math.round(r.right - lim);
+        const c = Math.round(e.scrollWidth - e.clientWidth);
+        if (d <= 2 && c <= 2) return;
+        // Un parent déborde parce qu'un enfant déborde : on ne garde que les
+        // feuilles, sinon un seul défaut remonte toute la chaîne.
+        if (e.querySelector('*') && [...e.children].some(x => {
+          const xr = x.getBoundingClientRect();
+          return xr.right - lim > 2 || x.scrollWidth - x.clientWidth > 2; })) return;
+        out.push((e.tagName + '.' + (e.className||'').toString().split(' ')[0])
+                 .slice(0, 34)
+                 + (d > 2 ? ' déborde ' + d : '') + (c > 2 ? ' coupe ' + c : ''));
+      });
+      return [...new Set(out)].slice(0, 4);
+    })()"""
+    for nom, route in ONGLETS:
         page.evaluate(f"location.hash = '#/{route}'")
-        page.wait_for_timeout(1500)
-        large = page.evaluate(
-            "(() => {const m = document.querySelector('.main-content');"
-            "return m ? m.scrollWidth - m.clientWidth : 0;})()")
-        rap.dire(large <= 1, f"{route} ne déborde pas en largeur",
-                 f"{large} px de trop")
+        page.wait_for_timeout(1800)
+        fautifs = page.evaluate(sonde)
+        rap.dire(not fautifs, f"{nom} tient dans 390 px", " · ".join(fautifs))
 
     rap.dire(not erreurs, "aucune erreur JS en mobile", " · ".join(erreurs[:2]))
     page.set_viewport_size({"width": 1600, "height": 1000})
