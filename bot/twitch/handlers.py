@@ -40,6 +40,7 @@ from bot.discord.handlers import (
 )
 from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
 from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
@@ -549,6 +550,11 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # appartient au stream maison, comme les widgets.
     if overlay and getattr(bot, "duel_runner", None) is not None:
         tools.append(_DUEL_TOOL)
+    # Le jeu s'affiche sur l'overlay et se dépouille sur le live : hors live, il
+    # ne pourrait que refuser. Même garde que le shoutout, pour la même raison —
+    # un outil qui ne sait que dire non coûte du contexte à chaque tour.
+    if _narrateur_so is not None and _narrateur_so.is_active():
+        tools.append(DEUX_VERITES_TOOL)
     return tools
 
 
@@ -762,6 +768,10 @@ def make_tool_executor(
                                          user_id=user_id, author=author)
         if name == "shoutout":
             return await run_shoutout_tool(bot, args)
+        if name == "deux_verites_un_mensonge":
+            # `channel` EST la clé du prélude côté Twitch (`channel_id=channel`
+            # dans `handle_message`) : c'est elle qui dit qui vient d'écrire.
+            return await run_deux_verites_tool(bot, args, canal_id=channel)
         if name == "predict":
             return await run_predict_tool(bot, args)
         if name in ("start_counting", "stop_counting", "list_counters"):

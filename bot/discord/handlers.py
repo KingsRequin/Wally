@@ -19,6 +19,7 @@ from bot.tools.notes_tool import (
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.secret_guard import redact
@@ -1472,6 +1473,13 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         tools.append(_QUOTE_TOOL)
     if _presence_service(bot) is not None:
         tools.append(_PRESENCE_TOOL)
+    # Le jeu s'affiche sur l'overlay du live et s'y dépouille : hors live, il ne
+    # saurait que refuser, et un outil qui ne dit que non coûte du contexte à
+    # chaque tour. Offert sur Discord AUSSI parce que la communauté est la même
+    # des deux côtés — c'est de là que l'owner lance la plupart des widgets.
+    _narrateur_jeu = _overlay_narrator(bot)
+    if _narrateur_jeu is not None and _narrateur_jeu.is_active():
+        tools.append(DEUX_VERITES_TOOL)
     # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
     # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
@@ -2952,6 +2960,9 @@ async def _respond(
                     author=str(message.author.display_name))
             if name == "predict":
                 return await run_predict_tool(bot, args)
+            if name == "deux_verites_un_mensonge":
+                return await run_deux_verites_tool(
+                    bot, args, canal_id=str(message.channel.id))
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
             if name == "music_control":

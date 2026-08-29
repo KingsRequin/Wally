@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from bot.core import fiction
 from bot.intelligence.identity import bot_name, render_identity
 
 if TYPE_CHECKING:
@@ -1309,6 +1310,25 @@ class EmotionEngine:
                         trigger_user=trigger_user, trigger_message=text,
                         channel_id=channel_id, platform=platform,
                     ))
+            # ── Le cloisonnement de la fiction ────────────────────────
+            #
+            # LE point de fuite, et il est unique. `context_messages` est la
+            # fenêtre glissante du canal, où `append_prelude` a déposé les
+            # répliques de WALLY : le LLM d'analyse voit donc ce qu'il vient
+            # d'inventer pour un jeu, et le rend volontiers en `user_facts`,
+            # qui part droit en `memory.add(source="post_process")`.
+            #
+            # La garde est ICI et pas dans les deux `_post_process` : c'est le
+            # seul endroit où `channel_id` et `user_facts` se rencontrent, donc
+            # le seul qui couvre Discord et Twitch sans avoir à y penser deux
+            # fois. Voir `bot/core/fiction.py` pour pourquoi on ferme large au
+            # lieu de comparer les textes.
+            if user_facts and fiction.en_cours(channel_id):
+                logger.info(
+                    "Fiction en cours sur {c} : {n} fait(s) écarté(s) plutôt "
+                    "que mémorisé(s)", c=channel_id, n=len(user_facts),
+                )
+                user_facts = []
             return {"trust_delta": trust_delta, "love_delta": love_delta, "user_facts": user_facts}
         # Fallback : NRCLex + FR_EMOTION_WORDS
         deltas = await self.analyze_message(text, trust_score)

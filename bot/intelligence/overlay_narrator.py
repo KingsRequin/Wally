@@ -780,7 +780,7 @@ class OverlayNarrator:
         # Posé APRÈS coup par `set_annonceur_fin`, comme `stream_feed.set_observer` :
         # le narrateur naît côté Discord, l'annonceur a besoin du bot Twitch, qui
         # n'existe qu'après.
-        self._annoncer_fin: Optional[Callable] = None
+        self._hook_fin: Optional[Callable] = None
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
@@ -962,17 +962,22 @@ class OverlayNarrator:
 
     def set_annonceur_fin(self, hook: Optional[Callable]) -> None:
         """Branche la sortie CHAT des fins de partie — `(genre, fait)`, async."""
-        self._annoncer_fin = hook
+        self._hook_fin = hook
 
-    def _annoncer(self, genre: str, fait: str) -> None:
+    def annoncer_fin(self, genre: str, fait: str) -> None:
         """Pousse une fin de partie vers le chat, sans attendre.
+
+        Publique parce que le narrateur n'est plus seul à conclure une partie :
+        « deux vérités, un mensonge » vit dans `bot/tools/`, où sa mémoire lui
+        est accessible, et sa révélation EST une fin de partie comme les autres
+        — même ton, même fond coloré, même journal.
 
         Les fins de partie sont détectées dans du code SYNCHRONE — un vote
         compté, une lettre proposée — alors que publier est asynchrone. Même
         référence forte que `_planifier_flush` : la boucle ne garde qu'une
         référence faible, et une tâche collectée en vol perdrait l'annonce.
         """
-        if self._annoncer_fin is None or not fait:
+        if self._hook_fin is None or not fait:
             return
         try:
             loop = asyncio.get_running_loop()
@@ -981,7 +986,7 @@ class OverlayNarrator:
         taches = getattr(self, "_flush_tasks", None)
         if taches is None:
             taches = self._flush_tasks = set()
-        tache = loop.create_task(self._annoncer_fin(genre, fait))
+        tache = loop.create_task(self._hook_fin(genre, fait))
         taches.add(tache)
         tache.add_done_callback(taches.discard)
 
@@ -3032,7 +3037,7 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=True)
             logger.info("Overlay: pendu gagné d'un coup par le chat ({w})",
                         w=game["display"])
-            self._annoncer("pendu", f"{author} a trouvé le mot du pendu du "
+            self.annoncer_fin("pendu", f"{author} a trouvé le mot du pendu du "
                                     f"premier coup : « {game['display']} ».")
             self._hangman = None
             self._planifier_flush()
@@ -3052,7 +3057,7 @@ class OverlayNarrator:
             self._publish_hangman(last=token, won=won)
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
-                self._annoncer("pendu", f"{author} a complété le mot du pendu : "
+                self.annoncer_fin("pendu", f"{author} a complété le mot du pendu : "
                                         f"« {game['display']} ».")
                 self._hangman = None
             # Chaque coup compte : reprendre la partie au redémarrage sans les
@@ -3069,7 +3074,7 @@ class OverlayNarrator:
             # Perdu, le mot n'est plus un secret — c'est même tout l'intérêt de
             # l'annonce : le chat apprend enfin ce qu'il cherchait. Le filet de
             # sortie a été levé juste au-dessus, il ne le masquera pas.
-            self._annoncer("pendu", "Personne n'a trouvé le mot du pendu : "
+            self.annoncer_fin("pendu", "Personne n'a trouvé le mot du pendu : "
                                     f"c'était « {game['display']} ».")
             self._hangman = None
         self._planifier_flush()
@@ -3235,7 +3240,7 @@ class OverlayNarrator:
         logger.info("Overlay: sondage clos — {r}", r=self.poll_result_line())
         # Le dépouillement mourait à l'écran : sans ça, seul qui regardait
         # l'overlay à la bonne seconde apprenait le résultat.
-        self._annoncer("sondage", self.poll_result_line())
+        self.annoncer_fin("sondage", self.poll_result_line())
         # Le résultat est ce que Wally répondra à « ça a donné quoi ? » : il doit
         # survivre au rebuild autant que le sondage lui-même.
         self._planifier_flush()
