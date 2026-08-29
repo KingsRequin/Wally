@@ -29,6 +29,10 @@ def _sink():
     s._frames_jetees = {}
     s._fenetre_debut = {}
     s._fenetre_frames = {}
+    # Les frames de REMPLISSAGE jetées : l'audio que la bibliothèque invente
+    # pour combler un trou de numérotation RTP, et qu'elle rend par milliers.
+    s._remplissage_consecutif = {}
+    s._remplissage_jete = {}
     s._now = time.monotonic
     return s
 
@@ -37,7 +41,7 @@ def test_le_pouls_compte_ce_qui_entre_et_ce_qui_sort():
     s = _sink()
     s._frames_recues, s._segments_emis = 150, 2
     s._frames_par_locuteur = {7: 150}
-    assert s.pouls() == (150, 2, {7: 150}, {})
+    assert s.pouls() == (150, 2, {7: 150}, {}, {})
 
 
 def test_le_pouls_repart_de_zero_a_chaque_releve():
@@ -47,7 +51,7 @@ def test_le_pouls_repart_de_zero_a_chaque_releve():
     s._frames_recues, s._segments_emis = 150, 2
     s._frames_par_locuteur = {7: 150}
     s.pouls()
-    assert s.pouls() == (0, 0, {}, {})
+    assert s.pouls() == (0, 0, {}, {}, {})
 
 
 def test_de_l_audio_sans_aucun_enonce_se_voit():
@@ -56,7 +60,7 @@ def test_de_l_audio_sans_aucun_enonce_se_voit():
     s = _sink()
     s._frames_recues = 3000          # une minute d'audio
     s._frames_par_locuteur = {7: 3000}
-    assert s.pouls() == (3000, 0, {7: 3000}, {})
+    assert s.pouls() == (3000, 0, {7: 3000}, {}, {})
 
 
 # ── Le plafond de débit par locuteur ────────────────────────────────────────
@@ -118,3 +122,86 @@ def test_un_locuteur_qui_deborde_nempeche_pas_les_autres_de_parler():
     for _ in range(_MAX_FRAMES_PAR_SECONDE + 500):
         s._depasse_le_plafond(7)
     assert s._depasse_le_plafond(9) is False
+
+
+# ----------------------------------------------------------------------
+# Le remplissage inventé par la bibliothèque
+# ----------------------------------------------------------------------
+#
+# `discord.ext.voice_recv` comble les trous de numérotation RTP en fabriquant
+# des paquets SYNTHÉTIQUES (`FakePacket`, dissimulation de perte) — un par
+# paquet manquant, dans une boucle sans horloge. Un saut de séquence de 9 999
+# paquets lui fait donc rendre 9 999 frames d'audio inventé d'affilée, soit
+# 200 SECONDES, aussi vite que le CPU les produit. Reproduit à l'identique le
+# 2026-08-29 sur la version installée (0.5.3a).
+#
+# C'est la cause du flot du 2026-08-28 (137× le débit physique) et de sa
+# récidive le 2026-08-28 à 23:51 sur un AUTRE locuteur — lequel ne parlait
+# même pas à la minute précédente.
+
+
+class _Vrai:
+    """Un paquet réel : la bibliothèque le rend vrai au sens booléen."""
+
+
+class _Invente:
+    """Un `FakePacket` : la bibliothèque le rend FAUX au sens booléen, et c'est
+    à ce test-là qu'elle-même reconnaît son propre remplissage."""
+
+    def __bool__(self):
+        return False
+
+
+def test_une_perte_reseau_breve_passe_entierement():
+    """LE risque du filtre. Combler deux ou trois paquets perdus est le travail
+    légitime de la dissimulation de perte : couper là rendrait Wally sourd sur
+    un simple hoquet réseau."""
+    s = _sink()
+    jetees = [s._est_du_remplissage(7, _Invente()) for _ in range(3)]
+    assert jetees == [False, False, False]
+
+
+def test_une_rafale_de_remplissage_est_jetee():
+    from bot.discord.voice.sink import _MAX_REMPLISSAGE_CONSECUTIF
+
+    s = _sink()
+    total = _MAX_REMPLISSAGE_CONSECUTIF + 500
+    jetees = sum(s._est_du_remplissage(7, _Invente()) for _ in range(total))
+    assert jetees == 500
+
+
+def test_une_vraie_frame_remet_le_compteur_a_zero():
+    """Un locuteur qui perd un paquet toutes les dix frames n'est pas en
+    rafale : le filtre ne doit jamais se refermer sur lui."""
+    from bot.discord.voice.sink import _MAX_REMPLISSAGE_CONSECUTIF
+
+    s = _sink()
+    jetees = 0
+    for _ in range(200):
+        for _ in range(_MAX_REMPLISSAGE_CONSECUTIF):
+            jetees += s._est_du_remplissage(7, _Invente())
+        jetees += s._est_du_remplissage(7, _Vrai())
+    assert jetees == 0
+
+
+def test_le_remplissage_jete_se_voit_au_releve():
+    """Un flot qu'on écarte en silence est un flot qu'on ne diagnostique
+    jamais — et celui-là a coûté vingt minutes de CPU saturé avant qu'on sache
+    qu'il existait."""
+    from bot.discord.voice.sink import _MAX_REMPLISSAGE_CONSECUTIF
+
+    s = _sink()
+    for _ in range(_MAX_REMPLISSAGE_CONSECUTIF + 42):
+        s._est_du_remplissage(7, _Invente())
+    assert s.pouls()[4] == {7: 42}
+
+
+def test_la_rafale_dun_locuteur_nempeche_pas_les_autres_de_parler():
+    """Le compte est PAR locuteur : le saut de séquence d'un seul client ne
+    doit pas couper le salon entier."""
+    from bot.discord.voice.sink import _MAX_REMPLISSAGE_CONSECUTIF
+
+    s = _sink()
+    for _ in range(_MAX_REMPLISSAGE_CONSECUTIF + 500):
+        s._est_du_remplissage(7, _Invente())
+    assert s._est_du_remplissage(9, _Invente()) is False

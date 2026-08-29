@@ -19,8 +19,14 @@ class _User:
 
 
 class _VoiceData:
-    def __init__(self, pcm):
+    """Le vrai `VoiceData` porte TOUJOURS son paquet (attribut de `__slots__`),
+    et sa véracité booléenne est ce qui distingue une frame réelle du
+    remplissage inventé par la bibliothèque. Un double sans paquet faisait
+    tomber `write()` dans son garde-fou : sourd, mais tests verts."""
+
+    def __init__(self, pcm, packet=None):
         self.pcm = pcm
+        self.packet = packet if packet is not None else object()
 
 
 def _stereo_48k(n_frames_16k: int) -> bytes:

@@ -35,6 +35,29 @@ _PREROLL_FRAMES = 15
 # Au-delà du plafond, ce n'est plus de la voix : on jette, et on le DIT.
 _MAX_FRAMES_PAR_SECONDE = 200
 
+# Combien de frames de REMPLISSAGE consécutives on accepte d'un locuteur.
+#
+# `discord.ext.voice_recv` comble les trous de numérotation RTP en fabriquant
+# des paquets synthétiques (`FakePacket`) : un par paquet manquant, décodés en
+# dissimulation de perte. Utile sur un hoquet réseau d'un ou deux paquets.
+#
+# Mais la génération n'est bornée QUE par la taille du trou, et son tampon
+# accepte un saut de séquence allant jusqu'à dix mille paquets — que sa boucle
+# de routage, dépourvue de toute horloge, rend alors d'un seul trait. Un unique
+# saut suffit donc à faire descendre 9 998 frames, soit DEUX CENTS SECONDES
+# d'audio inventé, aussi vite que le CPU les produit. Reproduit à l'identique
+# le 2026-08-29 sur la version installée (0.5.3a).
+#
+# C'est la source du flot du 2026-08-28 laissée ouverte par le plafond
+# ci-dessus : celui-ci bornait la casse, il n'expliquait pas le débit. La
+# récidive du 2026-08-28 à 23:51 l'a montrée — 232 s d'audio en une minute au
+# nom d'un locuteur qui ne parlait pas à la minute précédente, et pas une seule
+# transcription : on ne transcrit pas du remplissage.
+#
+# Cinq frames valent cent millisecondes : de quoi couvrir une vraie perte sans
+# jamais laisser passer une rafale.
+_MAX_REMPLISSAGE_CONSECUTIF = 5
+
 
 class WallyAudioSink(voice_recv.AudioSink):
     """Reçoit le PCM par locuteur, segmente par VAD, déclenche un callback async par segment.
@@ -96,6 +119,10 @@ class WallyAudioSink(voice_recv.AudioSink):
         self._fenetre_debut: dict[int, float] = {}
         self._fenetre_frames: dict[int, int] = {}
         self._frames_jetees: dict[int, int] = {}
+        # Le filtre de remplissage, par locuteur : combien de frames inventées
+        # se suivent en ce moment, et combien on en a jeté depuis le relevé.
+        self._remplissage_consecutif: dict[int, int] = {}
+        self._remplissage_jete: dict[int, int] = {}
 
     def _frames_a_relayer(self, uid: int, frame: bytes, en_parole: bool) -> tuple:
         """Ce qui part au STT distant pour cette frame — souvent rien.
@@ -121,6 +148,29 @@ class WallyAudioSink(voice_recv.AudioSink):
         anneau.clear()
         return debut + (frame,)
 
+    def _est_du_remplissage(self, uid: int, paquet) -> bool:
+        """Cette frame est-elle de l'audio INVENTÉ qu'il faut jeter ?
+
+        Un paquet fabriqué par la bibliothèque est FAUX au sens booléen — c'est
+        à ce test-là qu'elle reconnaît elle-même son propre remplissage, et il
+        vaut mieux que `isinstance` : il suit la bibliothèque si elle change de
+        classe, au lieu de laisser le filtre s'ouvrir en silence.
+
+        Le compte est PAR locuteur et remis à zéro par la moindre frame réelle :
+        un client qui perd un paquet de temps en temps n'est pas en rafale.
+
+        Appelé sous `self._lock`.
+        """
+        if paquet is None or paquet:
+            self._remplissage_consecutif[uid] = 0
+            return False
+        compte = self._remplissage_consecutif.get(uid, 0) + 1
+        self._remplissage_consecutif[uid] = compte
+        if compte <= _MAX_REMPLISSAGE_CONSECUTIF:
+            return False
+        self._remplissage_jete[uid] = self._remplissage_jete.get(uid, 0) + 1
+        return True
+
     def _depasse_le_plafond(self, uid: int) -> bool:
         """Ce locuteur a-t-il dépassé son débit physique sur la seconde en cours ?
 
@@ -138,18 +188,24 @@ class WallyAudioSink(voice_recv.AudioSink):
         self._fenetre_frames[uid] += 1
         return False
 
-    def pouls(self) -> tuple[int, int, dict[int, int], dict[int, int]]:
-        """(frames reçues, énoncés clos, frames par locuteur, frames jetées).
+    def pouls(self) -> tuple[int, int, dict[int, int], dict[int, int], dict[int, int]]:
+        """(frames reçues, énoncés clos, frames par locuteur, frames jetées par
+        le plafond, frames de remplissage jetées).
 
         Les frames JETÉES comptent autant que les autres : un flot qu'on écarte
-        en silence est un flot qu'on ne diagnostique jamais.
+        en silence est un flot qu'on ne diagnostique jamais. Les deux causes
+        sont comptées SÉPARÉMENT parce qu'elles ne se corrigent pas au même
+        endroit : le plafond borne un débit quelle qu'en soit l'origine, le
+        remplissage nomme celle qu'on connaît.
         """
         with self._lock:
             valeurs = (self._frames_recues, self._segments_emis,
-                       dict(self._frames_par_locuteur), dict(self._frames_jetees))
+                       dict(self._frames_par_locuteur), dict(self._frames_jetees),
+                       dict(self._remplissage_jete))
             self._frames_recues = self._segments_emis = 0
             self._frames_par_locuteur.clear()
             self._frames_jetees.clear()
+            self._remplissage_jete.clear()
         return valeurs
 
     def wants_opus(self) -> bool:
@@ -168,6 +224,15 @@ class WallyAudioSink(voice_recv.AudioSink):
         try:
             if not data.pcm:
                 return
+            # AVANT le rééchantillonnage, et surtout avant `_last_frame_ts` :
+            # une rafale de remplissage rafraîchissait cette horloge en
+            # permanence, donc `flush_idle` ne fermait plus AUCUN énoncé le
+            # temps qu'elle durait. C'est pourquoi le relevé du 2026-08-28
+            # montrait « 232 s d'audio, 0 transcrit » — la parole réelle des
+            # autres restait ouverte, sans jamais partir au modèle.
+            with self._lock:
+                if self._est_du_remplissage(user.id, data.packet):
+                    return
             pcm16 = to_stt_format(data.pcm)  # 48k stéréo → 16k mono
             streaming = self._on_frame is not None
             with self._lock:
@@ -246,3 +311,4 @@ class WallyAudioSink(voice_recv.AudioSink):
             self._users.clear()
             self._preroll.clear()
             self._relaye.clear()
+            self._remplissage_consecutif.clear()

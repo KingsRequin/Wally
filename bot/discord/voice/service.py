@@ -31,7 +31,11 @@ from bot.discord.voice.brain import (
 from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import resolve_style
-from bot.discord.voice.sink import _MAX_FRAMES_PAR_SECONDE, WallyAudioSink
+from bot.discord.voice.sink import (
+    _MAX_FRAMES_PAR_SECONDE,
+    _MAX_REMPLISSAGE_CONSECUTIF,
+    WallyAudioSink,
+)
 from bot.discord.voice.tools import VOICE_TOOLS, make_voice_tool_executor
 
 
@@ -1114,7 +1118,7 @@ class VoiceService:
                 if loop.time() < prochain_pouls:
                     continue
                 prochain_pouls = loop.time() + self._POULS_INTERVALLE_S
-                frames, enonces, par_locuteur, jetees = sink.pouls()
+                frames, enonces, par_locuteur, jetees, remplissage = sink.pouls()
                 transcriptions = self._transcriptions_abouties
                 self._transcriptions_abouties = 0
                 # Des énoncés découpés mais aucun transcrit : Wally est sourd, et
@@ -1123,9 +1127,27 @@ class VoiceService:
                 # Rien reçu ET rien produit : personne ne parlait. On se tait —
                 # une ligne par minute de silence, toute la nuit, ferait de ce
                 # relevé un bruit qu'on apprend à ne plus lire.
-                if not frames and not enonces and not jetees:
+                if not frames and not enonces and not jetees and not remplissage:
                     continue
 
+                # La cause CONNUE du flot, nommée à part : la bibliothèque
+                # d'écoute fabrique un paquet par trou de numérotation RTP, et
+                # un seul saut de séquence lui en fait rendre dix mille — deux
+                # cents secondes d'audio inventé, d'un trait. Le dire par son
+                # nom évite de rechercher vingt minutes un client fautif qui
+                # n'existe pas : le 2026-08-28, deux personnes différentes ont
+                # porté le même flot, dont une qui ne parlait pas.
+                if remplissage:
+                    pire_r = max(remplissage.items(), key=lambda kv: kv[1])
+                    logger.warning(
+                        "voice: REMPLISSAGE — {n} frame(s) d'audio inventé "
+                        "jetée(s) sur {d:.0f} s, surtout {qui} ({p}). "
+                        "discord.ext.voice_recv comble un trou de numérotation "
+                        "RTP ; au-delà de {max} d'affilée ce n'est plus de la "
+                        "dissimulation de perte, c'est une rafale.",
+                        n=sum(remplissage.values()), d=self._POULS_INTERVALLE_S,
+                        qui=self._nom_locuteur(pire_r[0]), p=pire_r[1],
+                        max=_MAX_REMPLISSAGE_CONSECUTIF)
                 # Un locuteur au-delà de son débit physique n'est pas un
                 # bavard : c'est un flux qui s'emballe. Le dire nommément, et
                 # tout de suite — c'est resté vingt minutes invisible le
