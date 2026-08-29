@@ -5706,6 +5706,26 @@ body.is-mobile .mobile-back-btn {
      plutôt que de la faire grandir. Sept lignes de champs faisaient tomber la
      surface de 65 % à 48 % d'échelle. */
   position: relative;
+  /* ── L'étage, et pourquoi il est posé ICI et pas sur le volet ─────────
+   *
+   * `backdrop-filter` crée un CONTEXTE D'EMPILEMENT. Le `z-index: 25` du
+   * volet est donc enfermé dans cette bande, qui elle-même vivait en
+   * `z-index: auto` — c'est-à-dire au niveau ZÉRO parmi ses frères. Chaque
+   * repère du canevas, qui porte un `z-index` en ligne allant jusqu'à 39 et
+   * jusqu'à 50 au survol depuis la liste, passait donc DEVANT le volet.
+   *
+   * À l'écran : « Aspect & rythme » s'ouvrait bien, on le voyait à travers
+   * les widgets — et `elementFromPoint` rendait un `.ovl-rect` sur SIX
+   * points sondés sur six. Aucun des dix réglages par widget n'était
+   * cliquable, sur les trois scènes. Signalé par l'owner le 2026-08-29.
+   *
+   * D'où les trois étages, que le panneau n'avait jamais posés :
+   *   1–70  le CANEVAS et ses repères (rangs, poignées, guides, coords)
+   *   80    la chrome FLOTTANTE posée dessus (ce volet, le panneau Outils)
+   *   90    l'infobulle, qui doit passer devant tout le reste
+   * Monter le volet à 100 n'aurait servi à RIEN : le nombre n'a de sens que
+   * dans son contexte, et le sien s'arrête à cette bande. */
+  z-index: 80;
   display: flex;
   align-items: center;
   gap: 10px 16px;
@@ -5868,7 +5888,11 @@ body.is-mobile .mobile-back-btn {
      sur deux. */
   left: 0;
   margin-top: 6px;
-  z-index: 35;
+  /* Le même étage que le volet des réglages, et pour la même raison : posé sur
+     le canevas, il était à 35 pour des repères qui montent à 39 en rang normal
+     et à 50 au survol depuis la liste. Il tenait par chance — celle que
+     l'élément survolé ne soit pas sous lui. */
+  z-index: 80;
   width: 430px;
   display: flex;
   align-items: center;
@@ -6135,7 +6159,10 @@ body.is-mobile .mobile-back-btn {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 60;
+  /* Le dernier étage. À 60, elle passait déjà DERRIÈRE le relevé de
+     coordonnées du canevas (70) ; elle serait passée derrière la bande des
+     réglages en montant celle-ci à 80. Une bulle d'aide masquée n'aide pas. */
+  z-index: 90;
   max-width: 300px;
   padding: 9px 11px;
   font-size: 0.72rem;

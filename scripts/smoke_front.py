@@ -294,6 +294,37 @@ def _verifier_scene(page, rap: Rapport, erreurs: list[str]) -> None:
         url2 = page.locator("#control-bar-page .ovl-source-url").inner_text()
         rap.dire(url2 != url, "changer de scène change l'adresse OBS", url2)
 
+    # ── La chrome flottante est-elle CLIQUABLE ? ──────────────────────
+    #
+    # Le seul test qui aurait attrapé le défaut du 2026-08-29 : « Aspect &
+    # rythme » s'ouvrait, se voyait, et ses dix réglages étaient inatteignables
+    # — les repères du canevas recevaient le clic à leur place. `backdrop-filter`
+    # sur la bande crée un contexte d'empilement qui enfermait le `z-index` du
+    # volet ; monter le nombre du volet n'y aurait rien changé.
+    #
+    # Un panneau MONTÉ n'est donc pas un panneau UTILISABLE : on sonde ce que
+    # `elementFromPoint` rend vraiment, aux quatre coins du volet et de son
+    # voisin le panneau Outils.
+    sonde = """(sel) => {
+      const v = document.querySelector(sel);
+      if (!v || v.hidden || !v.offsetParent) return ['absent'];
+      const r = v.getBoundingClientRect();
+      return [[0.1,0.15],[0.9,0.15],[0.1,0.85],[0.9,0.85]].map(([fx,fy]) => {
+        const t = document.elementFromPoint(r.x + r.width*fx, r.y + r.height*fy);
+        return v.contains(t) ? 'ok'
+          : (t ? t.tagName + '.' + String(t.className).slice(0, 24) : 'rien');
+      });
+    }"""
+    page.locator(".ovl-inspecteur .ovl-insp-plus").first.click()
+    page.wait_for_timeout(600)
+    vole = [c for c in page.evaluate(sonde, ".ovl-insp-volet") if c != "ok"]
+    rap.dire(not vole, "les réglages « Aspect & rythme » reçoivent le clic",
+             " · ".join(vole))
+    page.locator('#tab-admin-scene .ovl-outils-coin button').first.click()
+    page.wait_for_timeout(600)
+    vole = [c for c in page.evaluate(sonde, ".ovl-outils") if c != "ok"]
+    rap.dire(not vole, "le panneau « Outils » reçoit le clic", " · ".join(vole))
+
     # LE piège de cette phase : la chrome vit hors du panneau, et le routeur la
     # vide à chaque changement de route. `monter()` ne s'exécutant qu'une fois,
     # revenir sur la Scène la laisserait vide sans la moindre erreur.
