@@ -1,5 +1,6 @@
 """Tests du WallyAudioSink en mode streaming : émission des frames brutes + fin de parole VAD."""
 import asyncio
+import threading
 import warnings
 
 import pytest
@@ -216,3 +217,36 @@ def test_cleanup_sur_sink_non_initialise_ne_leve_pas():
     """
     sink = WallyAudioSink.__new__(WallyAudioSink)  # __init__ jamais exécuté
     sink.cleanup()  # ne doit pas lever
+
+
+def test_cleanup_sur_sink_a_moitie_initialise_ne_leve_pas():
+    """Le cas que le garde sur `_lock` laissait passer, et qui a coûté cher.
+
+    `__init__` n'est pas tout ou rien : entre son premier attribut et son
+    dernier, `_lock` existe et les tampons pas encore. `cleanup()` levait alors
+    un `AttributeError: '_segmenters'` DANS `__del__`. Sur le Python 3.11.2 de
+    l'hôte, cette exception levée pendant un ramassage déclenché à l'intérieur
+    de `compile()` faisait partir pytest en `INTERNALERROR> SystemError: AST
+    constructor recursion depth mismatch` (bug CPython gh-106905) : le rapport
+    du vrai échec disparaissait au moment de l'afficher.
+    """
+    sink = WallyAudioSink.__new__(WallyAudioSink)
+    sink._lock = threading.Lock()  # init interrompue juste après le verrou
+    sink.cleanup()  # ne doit pas lever
+
+
+async def test_cleanup_vide_bien_les_tampons_dun_sink_complet():
+    """Le risque du correctif ci-dessus : un `getattr(..., {})` qui ne vide plus
+    RIEN parce qu'un tampon a été renommé passerait inaperçu — le nettoyage
+    deviendrait un no-op silencieux, et le sink garderait ses locuteurs."""
+    sink = WallyAudioSink(
+        service=None, aggressiveness=2, on_segment=None,
+        loop=asyncio.get_running_loop(),
+    )
+    for nom in WallyAudioSink._TAMPONS_A_VIDER:
+        assert hasattr(sink, nom), nom
+        getattr(sink, nom)[7] = "quelque chose"
+
+    sink.cleanup()
+
+    assert all(getattr(sink, nom) == {} for nom in WallyAudioSink._TAMPONS_A_VIDER)

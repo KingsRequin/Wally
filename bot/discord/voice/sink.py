@@ -295,20 +295,42 @@ class WallyAudioSink(voice_recv.AudioSink):
         else:
             asyncio.run_coroutine_threadsafe(self._on_segment(user, segment), self._loop)
 
+    # Ce que `cleanup()` vide. Nommer les tampons plutôt que les toucher un par
+    # un est ce qui rend le nettoyage insensible à l'endroit où `__init__` s'est
+    # arrêté : `getattr(..., {})` rend un dictionnaire jetable pour un attribut
+    # qui n'a pas encore été posé, et le vider ne coûte rien.
+    _TAMPONS_A_VIDER = (
+        "_segmenters",
+        "_frame_buf",
+        "_last_frame_ts",
+        "_users",
+        "_preroll",
+        "_relaye",
+        "_remplissage_consecutif",
+    )
+
     def cleanup(self) -> None:
-        # `AudioSink.__del__` (twitchio/voice_recv) appelle `cleanup()` sur TOUT
-        # objet collecté, y compris un sink dont `__init__` n'a pas abouti. Sans
-        # ce garde, la vraie cause de l'échec d'init part en fumée derrière un
-        # `AttributeError: '_lock'` levé dans un `__del__` — donc « Exception
-        # ignored », sans traceback exploitable. Rien à nettoyer de toute façon :
-        # aucun attribut n'a encore été posé.
-        if not hasattr(self, "_lock"):
+        # `AudioSink.__del__` (voice_recv) appelle `cleanup()` sur TOUT objet
+        # collecté, y compris un sink dont `__init__` s'est arrêté EN CHEMIN.
+        # Une exception levée ici part en « Exception ignored », sans traceback
+        # exploitable, au moment précis où on aurait besoin de la cause.
+        #
+        # Le garde ne portait que sur `_lock`, en supposant l'init tout ou rien.
+        # Elle ne l'est pas : entre le premier attribut et le dernier, `_lock`
+        # existe et les tampons pas encore. `__del__` levait alors un
+        # `AttributeError: '_segmenters'` — douze fois par passe de tests, et à
+        # chaque init interrompue en prod.
+        #
+        # Le coût réel n'était pas le bruit : sur le Python 3.11.2 de l'hôte,
+        # une exception levée pendant un ramassage déclenché DANS `compile()`
+        # désynchronise le compteur de récursion de l'AST (bug CPython
+        # gh-106905, corrigé en 3.11.5 ; Debian 12 est figé en 3.11.2). pytest
+        # compile le source des cadres pour afficher un traceback d'échec : il
+        # partait donc en `INTERNALERROR> SystemError: AST constructor
+        # recursion depth mismatch`, et le rapport du VRAI échec disparaissait.
+        verrou = getattr(self, "_lock", None)
+        if verrou is None:
             return
-        with self._lock:
-            self._segmenters.clear()
-            self._frame_buf.clear()
-            self._last_frame_ts.clear()
-            self._users.clear()
-            self._preroll.clear()
-            self._relaye.clear()
-            self._remplissage_consecutif.clear()
+        with verrou:
+            for nom in self._TAMPONS_A_VIDER:
+                getattr(self, nom, {}).clear()
