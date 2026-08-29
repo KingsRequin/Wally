@@ -7,7 +7,7 @@
 
 import {
   connectCognitiveSSE, emotions, h, nomBot,
-  onEmotionUpdate, openModal, pageFooter, sectionHead,
+  onEmotionUpdate, openModal, pageFooter, sectionHead, surAnimation,
 } from '../app.js';
 import { renderMarkdown } from '../markdown.js';
 
@@ -22,8 +22,8 @@ let _chargeEnCours = false;
 let _historiqueEmo = null;
 let _refs = {};
 let _observerCourbe = null;
-let _observerRail = null;
-let _surDefilement = null;
+let _desabonnerAnim = null;
+let _premierStatut = true;
 
 // ── Constantes d'affichage ────────────────────────────────────────────────
 const EMO_LABELS = {
@@ -164,7 +164,11 @@ function bandeauStats() {
     return h('div', { class: 'stat-cell' }, h('div', { class: 'label', text: libelle }), valeur);
   };
   return h('div', { class: 'stat-strip' },
-    cellule('MESSAGES TRAITÉS', 'statMsg'),
+    // « MESSAGES TRAITÉS » laissait croire à un total de tous les temps.
+    // `state.message_count` est un compteur EN MÉMOIRE, remis à zéro à chaque
+    // redémarrage, et aucune table ne porte le cumul : quinze minutes après un
+    // rebuild, la vitrine du site annonçait « 1 ». On dit ce qu'on compte.
+    cellule('MESSAGES DEPUIS LE BOOT', 'statMsg'),
     cellule('VIEWERS (LIVE)', 'statViewers'),
     cellule('TEMPS DE RÉPONSE', 'statLatence'),
     cellule('UPTIME', 'statUptime'),
@@ -717,33 +721,58 @@ function rail() {
   return nav;
 }
 
-/** Allume l'entrée du rail dont la section occupe le milieu de l'écran. */
-function suivreRail() {
-  if (!window.IntersectionObserver) return null;
-  const obs = new IntersectionObserver((entrees) => {
-    entrees.forEach((e) => {
-      if (!e.isIntersecting || !_refs.rail) return;
-      _refs.rail.querySelectorAll('a').forEach((a) => {
-        a.classList.toggle('active', a.dataset.rail === e.target.id);
-      });
-    });
-  }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
-  RAIL.forEach(([id]) => {
+/** Une image d'animation : le bandeau, le fil et le rail, dans cet ordre.
+ *
+ *  Les trois lisent la MÊME position de défilement. Séparés, ils la mesuraient
+ *  chacun de leur côté et se décalaient d'une image les uns des autres — ce qui
+ *  se voit exactement là où on ne veut pas : entre le trait allumé du rail et
+ *  la section qu'on est en train de lire.
+ */
+function image(sy, vh) {
+  // Le bandeau défile AVEC la page, il ne tourne pas tout seul : c'est ce qui
+  // le relie au geste du lecteur au lieu d'en faire une décoration.
+  const piste = _refs.marquee;
+  if (piste) {
+    const moitie = piste.scrollWidth / 2;   // la liste de mots est doublée
+    const x = moitie > 0 ? -((((sy * 0.45) % moitie) + moitie) % moitie) : 0;
+    piste.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
+  }
+
+  // Le fil se remplit pendant que la section de la boucle traverse l'écran.
+  const fil = _refs.wire;
+  const section = document.getElementById('a-cerveau');
+  if (fil && section) {
+    const r = section.getBoundingClientRect();
+    const p = Math.max(0, Math.min(1, (vh * 0.8 - r.top) / (vh * 0.7)));
+    fil.style.width = (p * 100).toFixed(1) + '%';
+  }
+
+  // Le rail : la DERNIÈRE section dont le haut a passé les 42 % de l'écran.
+  // Toujours exactement une active — un `IntersectionObserver` avec une bande
+  // centrale n'en allume aucune quand deux sections se relaient hors de cette
+  // bande, et le rail s'éteint en plein milieu de la page.
+  const nav = _refs.rail;
+  if (!nav) return;
+  let actif = 0;
+  RAIL.forEach(([id], i) => {
+    if (i === 0) return;
     const el = document.getElementById(id);
-    if (el) obs.observe(el);
+    if (el && el.getBoundingClientRect().top < vh * 0.42) actif = i;
   });
-  return obs;
+  Array.from(nav.children).forEach((a, i) => a.classList.toggle('active', i === actif));
 }
 
-/** Remplit le fil au rythme où la grille des cinq étapes traverse l'écran. */
-function majFil() {
-  const fil = _refs.wire;
-  if (!fil || !fil.parentElement) return;
-  const r = fil.parentElement.getBoundingClientRect();
-  const vh = window.innerHeight || 800;
-  // 0 quand la grille entre par le bas, 1 quand elle a franchi le tiers haut.
-  const p = Math.max(0, Math.min(1, (vh * 0.85 - r.top) / (vh * 0.5)));
-  fil.style.width = (p * 100).toFixed(1) + '%';
+/** Les compteurs montent depuis zéro, une fois, à l'arrivée de la vraie valeur. */
+function compter(el, cible) {
+  const t0 = performance.now();
+  const pas = (t) => {
+    if (!_refs.statMsg) return;   // page démontée entre deux images
+    const k = Math.min(1, (t - t0) / 1600);
+    const e = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(cible * e).toLocaleString('fr-FR');
+    if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
 }
 
 // ── Statut en direct ──────────────────────────────────────────────────────
@@ -762,10 +791,22 @@ async function rafraichirStatut() {
     });
   };
 
-  poser('statMsg', (statut.total_messages || 0).toLocaleString('fr-FR'));
-  poser('statViewers', stream && stream.live
-    ? (stream.viewers || stream.viewer_count || 0).toLocaleString('fr-FR')
-    : '—');
+  // Au PREMIER chargement les compteurs montent depuis zéro : un nombre qui
+  // grimpe se lit comme une activité, le même nombre posé d'un coup se lit
+  // comme une étiquette. Aux rafraîchissements suivants (toutes les 30 s), on
+  // pose la valeur — la faire remonter de zéro serait un mensonge sur ce qui
+  // vient de changer.
+  const messages = statut.total_messages || 0;
+  const viewers = (stream && stream.live) ? (stream.viewers || stream.viewer_count || 0) : null;
+  if (_premierStatut && _refs.statMsg) {
+    _premierStatut = false;
+    compter(_refs.statMsg, messages);
+    if (viewers !== null) compter(_refs.statViewers, viewers);
+    else poser('statViewers', '—');
+  } else {
+    poser('statMsg', messages.toLocaleString('fr-FR'));
+    poser('statViewers', viewers === null ? '—' : viewers.toLocaleString('fr-FR'));
+  }
   const ms = statut.avg_response_ms;
   poser('statLatence', (ms === null || ms === undefined)
     ? '—'
@@ -787,6 +828,7 @@ export function mount(el) {
   _evenements = [];
   _avantId = null;
   _chargeEnCours = false;
+  _premierStatut = true;
 
   el.appendChild(rail());
   el.appendChild(heros());
@@ -817,36 +859,9 @@ export function mount(el) {
     _observerCourbe.observe(_refs.courbe);
   }
 
-  _observerRail = suivreRail();
-  // Une seule mesure par image, jamais une par événement de molette : avec
-  // Lenis, `scroll` part à 120 Hz et `getBoundingClientRect()` force un
-  // recalcul de style à chaque appel.
-  let filDemande = false;
-  _surDefilement = () => {
-    if (filDemande) return;
-    filDemande = true;
-    requestAnimationFrame(() => { filDemande = false; majFil(); });
-  };
-  window.addEventListener('scroll', _surDefilement, { passive: true });
-  window.addEventListener('resize', _surDefilement);
-  majFil();
+  _desabonnerAnim = surAnimation(image);
+  image(window.scrollY || 0, window.innerHeight);
 
-  // Le bandeau défile en continu, indépendamment du scroll : c'est un ruban,
-  // pas un indicateur de progression.
-  const piste = _refs.marquee;
-  let x = 0;
-  let dernier = 0;
-  const defiler = (ts) => {
-    if (!_refs.marquee) return;   // page démontée
-    if (dernier) {
-      x -= (ts - dernier) * 0.03;
-      if (x <= -piste.scrollWidth / 2) x = 0;
-      piste.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`;
-    }
-    dernier = ts;
-    requestAnimationFrame(defiler);
-  };
-  requestAnimationFrame(defiler);
 }
 
 export function unmount() {
@@ -857,12 +872,7 @@ export function unmount() {
   if (_desabonnerEmo) { _desabonnerEmo(); _desabonnerEmo = null; }
   if (_sseCognitif) { _sseCognitif.close(); _sseCognitif = null; }
   if (_observerCourbe) { _observerCourbe.disconnect(); _observerCourbe = null; }
-  if (_observerRail) { _observerRail.disconnect(); _observerRail = null; }
-  if (_surDefilement) {
-    window.removeEventListener('scroll', _surDefilement);
-    window.removeEventListener('resize', _surDefilement);
-    _surDefilement = null;
-  }
+  if (_desabonnerAnim) { _desabonnerAnim(); _desabonnerAnim = null; }
   _evenements = [];
   _historiqueEmo = null;
   _refs = {};

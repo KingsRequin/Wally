@@ -261,6 +261,32 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(carte.evaluate("e => e.style.transform") == "",
              "elle se remet à plat en sortant", "sinon `.reveal.on` perd la main")
 
+    # Le bandeau défile AVEC la page, il ne tourne pas sur une horloge. La
+    # nuance ne se voit sur aucune capture : les deux bougent. On la mesure —
+    # immobile, il ne doit pas avancer d'un pixel.
+    piste = page.locator(".marquee-track")
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(700)
+    repos_a = piste.evaluate("e => e.style.transform")
+    page.wait_for_timeout(1500)
+    repos_b = piste.evaluate("e => e.style.transform")
+    rap.dire(bool(repos_a) and repos_a == repos_b,
+             "le bandeau est immobile quand la page l'est", f"{repos_a} → {repos_b}")
+    page.evaluate("window.scrollTo(0, 2000)")
+    page.wait_for_timeout(800)
+    bouge = piste.evaluate("e => e.style.transform")
+    rap.dire(bouge != repos_a, "et défile avec le défilement", f"{repos_a} → {bouge}")
+
+    # Le compagnon flotte et change de phrase selon l'endroit de la page.
+    haut_c = page.locator(".companion-label").inner_text()
+    forme_c = page.locator("#companion").evaluate("e => e.style.transform")
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_timeout(1000)
+    bas_c = page.locator(".companion-label").inner_text()
+    rap.dire(haut_c != bas_c, "le compagnon change de phrase en descendant",
+             f"{haut_c!r} → {bas_c!r}")
+    rap.dire("translateY" in forme_c, "et flotte au rythme de la descente", forme_c)
+
     # Les couches du fond se décalent : sans ça, `data-px` est décoratif.
     page.evaluate("window.scrollTo(0, 0)")
     page.wait_for_timeout(700)
@@ -270,6 +296,51 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     bas = page.locator("#bg-halos").evaluate("e => e.style.transform")
     rap.dire(bool(haut) and haut != bas, "les halos du fond suivent le défilement",
              f"{haut or 'vide'} → {bas or 'vide'}")
+
+    # Lenis intercepte la molette du DOCUMENT : les conteneurs qui défilent
+    # eux-mêmes doivent lui échapper. Quand ils n'y échappent pas, ils sont
+    # figés sous le curseur — sans erreur, sans rien dans la console.
+    roue = nav.new_page(viewport={"width": 1440, "height": 900})
+    roue.goto(f"{BASE}/", wait_until="networkidle", timeout=40000)
+    roue.wait_for_timeout(2500)
+
+    roue.evaluate("document.querySelector('#a-cerveau').scrollIntoView()")
+    roue.wait_for_timeout(1200)
+    roue.evaluate("document.querySelector('.feed-body').scrollTop = 400")
+    boite = roue.locator(".feed-body").bounding_box()
+    roue.mouse.move(boite["x"] + boite["width"] / 2, boite["y"] + boite["height"] / 2)
+    roue.mouse.wheel(0, -300)
+    roue.wait_for_timeout(900)
+    dedans = roue.evaluate("document.querySelector('.feed-body').scrollTop")
+    rap.dire(dedans < 400, "la molette atteint le flux cognitif", f"400 → {dedans}")
+
+    roue.evaluate("window.scrollTo(0, 0)")
+    roue.wait_for_timeout(700)
+    roue.mouse.move(720, 300)
+    roue.mouse.wheel(0, 900)
+    roue.wait_for_timeout(1200)
+    page_sy = roue.evaluate("window.scrollY")
+    rap.dire(page_sy > 300, "et la page défile toujours ailleurs", f"scrollY {page_sy}")
+    roue.close()
+
+    # Les compteurs montent depuis zéro au premier chargement. On sert la
+    # valeur nous-mêmes : `message_count` est remis à zéro à chaque
+    # redémarrage, et à 3 messages une montée est indistincte d'une pose.
+    compte = nav.new_page(viewport={"width": 1440, "height": 900})
+    compte.route("**/api/public/status", lambda r: r.fulfill(
+        status=200, content_type="application/json",
+        body='{"uptime_seconds":38306,"total_messages":24187,"avg_response_ms":1420,'
+             '"bot_name":"Wally","discord_online":true,"twitch_online":true}'))
+    compte.goto(f"{BASE}/", wait_until="domcontentloaded", timeout=40000)
+    compte.wait_for_timeout(450)
+    milieu = compte.locator("#vue .stat-value").first.inner_text()
+    compte.wait_for_timeout(2200)
+    arrivee = compte.locator("#vue .stat-value").first.inner_text()
+    chiffres = lambda t: "".join(c for c in t if c.isdigit())
+    rap.dire(chiffres(arrivee) == "24187", "le compteur arrive sur la vraie valeur", arrivee)
+    rap.dire(chiffres(milieu) not in ("", "24187"),
+             "et il y est monté depuis zéro", f"à 450 ms : {milieu!r}")
+    compte.close()
 
     # Navigation interne : c'est le routeur qu'on teste, pas le serveur. Un
     # `pushState` cassé rendrait le site utilisable seulement au rechargement.

@@ -66,6 +66,28 @@ export function ensureFreshToken() {
   return _refreshPromise;
 }
 
+// ── Horloge d'animation ───────────────────────────────────────────────────
+// UN seul `requestAnimationFrame` pour tout le site. Les pages s'y abonnent
+// pour ce qui leur appartient — deux boucles, ce sont deux mesures du viewport
+// qui divergent d'une image, et un bandeau qui ne colle plus au défilement.
+//
+// DÉCLARÉ ICI, avant les imports, pour la même raison que `NOM_BOT` juste
+// au-dessus : le routeur monte la première page pendant l'évaluation de ce
+// module, et le `mount()` de l'accueil s'abonne aussitôt. Déclaré plus bas,
+// `surAnimation()` levait « Cannot access '_abonnesAnim' before
+// initialization » — et un `throw` dans un `mount()` ne casse pas seulement
+// l'animation : il laisse la page à moitié montée, compteurs figés compris.
+const _abonnesAnim = [];
+
+/** Abonne `fn(sy, vh, prog)` à l'horloge. Rend la fonction de désabonnement. */
+export function surAnimation(fn) {
+  _abonnesAnim.push(fn);
+  return () => {
+    const i = _abonnesAnim.indexOf(fn);
+    if (i !== -1) _abonnesAnim.splice(i, 1);
+  };
+}
+
 import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
 import * as pageGalerie from './pages/galerie.js';
@@ -430,6 +452,42 @@ ensureFreshToken().then(chargerStatutGlobal);
 // sans recharger la page.
 window.addEventListener('wally-auth-changed', renderAuth);
 
+// ── Compagnon ─────────────────────────────────────────────────────────────
+// Il ne se contente pas d'apparaître : il flotte au rythme de la descente et
+// change de phrase selon l'endroit de la page où on est arrivé. Sans ça, c'est
+// un autocollant.
+const COMPAGNON_PHRASES = [
+  'il te regarde lire',
+  'il retient ce passage',
+  'il a une idée',
+  'il attend ton message',
+  'il pense à autre chose',
+];
+let _phraseCompagnon = -1;
+
+function majCompagnon(el, sy, prog) {
+  if (!el) return;
+  // Le chat occupe tout l'écran : le compagnon s'y poserait sur le champ de
+  // saisie.
+  if (document.body.classList.contains('vue-chat')) { el.classList.remove('on'); return; }
+
+  el.classList.toggle('on', sy > 300);
+  el.style.transform = 'translateY(' + (-Math.sin(prog * Math.PI) * 24).toFixed(1) + 'px)'
+    + ' scale(' + (0.94 + prog * 0.06).toFixed(3) + ')';
+
+  const k = Math.min(COMPAGNON_PHRASES.length - 1, Math.floor(prog * COMPAGNON_PHRASES.length));
+  if (k === _phraseCompagnon) return;
+  _phraseCompagnon = k;
+  const lab = el.querySelector('.companion-label');
+  if (!lab) return;
+  // Couper l'animation, forcer un reflow, la relancer : sans le reflow le
+  // navigateur regroupe les deux écritures et l'animation ne rejoue pas.
+  lab.style.animation = 'none';
+  void lab.offsetWidth;
+  lab.textContent = COMPAGNON_PHRASES[k];
+  lab.style.animation = 'wTick 4s ease';
+}
+
 // ── Décor animé : halos, emojis, parallaxe, compagnon ─────────────────────
 (function decor() {
   const reduit = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -472,40 +530,49 @@ window.addEventListener('wally-auth-changed', renderAuth);
     }
   });
 
-  if (reduit) return;
-
   const mobile = window.matchMedia('(max-width: 900px)').matches;
   let listeIcons = Array.from(icons.children);
   if (mobile) listeIcons.forEach((el, i) => { if (i % 2) el.style.display = 'none'; });
   listeIcons = listeIcons.filter((el) => el.style.display !== 'none');
   listeIcons.forEach((el, i) => { el._ph = i * 1.7; });
 
+  // Le décalage est plus discret sur un téléphone : à 390 px de large, la même
+  // amplitude fait sortir les couches de l'écran.
+  const K = mobile ? 0.55 : 1;
+
   let mx = 0, my = 0, tmx = 0, tmy = 0, aSy = -1, aMx = 99, aMy = 99;
-  window.addEventListener('mousemove', (e) => {
-    tmx = (e.clientX / window.innerWidth - 0.5) * 2;
-    tmy = (e.clientY / window.innerHeight - 0.5) * 2;
-  });
+  if (!reduit) {
+    window.addEventListener('mousemove', (e) => {
+      tmx = (e.clientX / window.innerWidth - 0.5) * 2;
+      tmy = (e.clientY / window.innerHeight - 0.5) * 2;
+    });
+  }
 
   let vh = window.innerHeight;
   let max = Math.max(1, document.body.scrollHeight - vh);
   let listePx = Array.from(document.querySelectorAll('[data-px]'));
 
-  window.addEventListener('resize', () => {
+  const remesurer = () => {
     vh = window.innerHeight;
     max = Math.max(1, document.body.scrollHeight - vh);
     listeIcons.forEach((el) => { el._y0 = null; });
-    // `_top` est une position ABSOLUE dans le document : un redimensionnement
-    // reflue tout et la valeur gardée devient fausse. Elle l'était : les
-    // couches se figeaient à leur profondeur d'avant le redimensionnement.
+    // `_top` est une position ABSOLUE dans le document : dès que la hauteur
+    // bouge, la valeur gardée devient fausse. Elle l'était : les couches se
+    // figeaient à leur profondeur d'avant.
     listePx.forEach((el) => { el._top = null; });
-  });
+    aSy = -1;   // force un rendu, sinon le garde « rien n'a bougé » l'annule
+  };
+  window.addEventListener('resize', remesurer);
 
-  // La hauteur du document et les éléments à décaler changent à chaque page.
-  // Sans ce recalcul, `prog` reste calé sur l'ancienne et le fond ne bouge plus.
+  // La hauteur du document change SANS redimensionnement : le journal, la
+  // galerie et le fil cognitif arrivent en asynchrone et rallongent la page de
+  // plusieurs milliers de pixels. Sans cet observateur, `max` reste calé sur la
+  // page vide et le fond a fini sa course au premier tiers.
+  if (window.ResizeObserver) new ResizeObserver(remesurer).observe(document.body);
+
   window.addEventListener('wally-vue-changed', () => {
-    max = Math.max(1, document.body.scrollHeight - vh);
-    listeIcons.forEach((el) => { el._y0 = null; });
     listePx = Array.from(document.querySelectorAll('[data-px]'));
+    remesurer();
   });
 
   const boucle = (ts) => {
@@ -514,36 +581,47 @@ window.addEventListener('wally-auth-changed', renderAuth);
     my += (tmy - my) * 0.06;
     const sy = window.scrollY || 0;
     const prog = Math.min(1, sy / max);
+    // Rien n'a bougé : on ne touche pas au DOM. C'est ce garde qui rend la
+    // boucle gratuite quand la page est immobile.
     if (Math.abs(sy - aSy) < 0.4 && Math.abs(mx - aMx) < 0.0015 && Math.abs(my - aMy) < 0.0015) {
       requestAnimationFrame(boucle);
       return;
     }
     aSy = sy; aMx = mx; aMy = my;
 
-    listePx.forEach((el) => {
-      const sp = parseFloat(el.dataset.px) || 0;
-      if (el._top == null) el._top = el.getBoundingClientRect().top + sy;
-      const rel = el._top - vh * 0.5;
-      el.style.transform = 'translate3d('
-        + (mx * sp * 12).toFixed(2) + 'px,'
-        + (-(sy - Math.max(0, rel)) * sp * 0.16 + my * sp * 8).toFixed(2) + 'px,0)';
-    });
+    if (!reduit) {
+      listePx.forEach((el) => {
+        const sp = parseFloat(el.dataset.px) || 0;
+        if (el._top == null) el._top = el.getBoundingClientRect().top + sy;
+        const rel = el._top - vh * 0.5;
+        el.style.transform = 'translate3d('
+          + (mx * sp * 12 * K).toFixed(2) + 'px,'
+          + ((-(sy - Math.max(0, rel)) * sp * 0.16 + my * sp * 8) * K).toFixed(2) + 'px,0)';
+      });
 
-    listeIcons.forEach((el) => {
-      const sp = parseFloat(el.dataset.sp) || 0;
-      if (el._y0 == null) el._y0 = el.offsetTop;
-      const ht = el.offsetHeight || 30;
-      const bob = Math.sin(ts * 0.00028 + el._ph) * 9;
-      const brut = -prog * vh * 0.42 * sp;
-      const course = Math.max(-(el._y0 + ht * 0.25), Math.min(vh - ht - el._y0, brut));
-      el.style.transform = 'translate3d('
-        + (mx * sp * 22 + bob * 0.5).toFixed(1) + 'px,'
-        + (course + my * sp * 16 + bob).toFixed(1) + 'px,0) rotate(' + (bob * 0.5).toFixed(2) + 'deg)';
-    });
+      listeIcons.forEach((el) => {
+        const sp = parseFloat(el.dataset.sp) || 0;
+        if (el._y0 == null) el._y0 = el.offsetTop;
+        const ht = el.offsetHeight || 30;
+        const bob = Math.sin(ts * 0.00028 + el._ph) * 9;
+        const brut = -prog * vh * 0.42 * sp * K;
+        const course = Math.max(-(el._y0 + ht * 0.25), Math.min(vh - ht - el._y0, brut));
+        el.style.transform = 'translate3d('
+          + (mx * sp * 22 * K + bob * 0.5).toFixed(1) + 'px,'
+          + (course + my * sp * 16 * K + bob).toFixed(1) + 'px,0) rotate(' + (bob * 0.5).toFixed(2) + 'deg)';
+      });
 
-    halos.style.transform = 'translate3d(' + (mx * -10).toFixed(1) + 'px,' + (-prog * vh * 0.2 + my * -8).toFixed(1) + 'px,0)';
+      halos.style.transform = 'translate3d('
+        + (mx * -10 * K).toFixed(1) + 'px,'
+        + ((-prog * vh * 0.2 + my * -8) * K).toFixed(1) + 'px,0)';
+    }
 
-    if (companion) companion.classList.toggle('on', sy > vh * 0.6 && !document.body.classList.contains('vue-chat'));
+    majCompagnon(companion, sy, prog);
+
+    // La page courante s'abonne pour ce qui lui appartient : le bandeau, le
+    // fil de la boucle, le rail. Un seul rAF pour tout le site — deux boucles,
+    // c'est deux mesures de viewport qui divergent d'une image.
+    for (let i = 0; i < _abonnesAnim.length; i++) _abonnesAnim[i](sy, vh, prog);
 
     requestAnimationFrame(boucle);
   };
@@ -551,19 +629,31 @@ window.addEventListener('wally-auth-changed', renderAuth);
 }());
 
 // ── Défilement inertiel ───────────────────────────────────────────────────
+// Sans lui, chaque cran de molette est un saut, et toutes les couches sautent
+// avec : le parallaxe, le bandeau, le fil, le compagnon.
 (function scrollInertiel() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const L = window.Lenis;
   // Le script vendoré n'a pas chargé : on garde le défilement natif plutôt que
-  // de casser la page. Ça se voit (le parallaxe redevient saccadé), donc on
-  // le DIT — un site muet qui a perdu la moitié de son mouvement, personne
-  // ne remonte le fil jusqu'à un 404.
+  // de casser la page. Mais on le DIT — un site muet qui a perdu la moitié de
+  // son mouvement, personne ne remonte le fil jusqu'à un 404.
   if (!L) { console.warn('Lenis absent — défilement natif, parallaxe saccadé'); return; }
 
+  // Les conteneurs qui défilent EUX-MÊMES. Lenis intercepte la molette du
+  // document entier : sans cette liste, le fil du chat, le flux cognitif de
+  // l'accueil et la fiche image de la lightbox sont FIGÉS sous le curseur —
+  // sans erreur, sans rien dans la console, juste une page qui ne répond pas.
+  // Une liste en UN seul endroit, jamais un attribut semé dans chaque page :
+  // le prochain conteneur qui défile se déclare ici ou nulle part.
+  const SANS_LENIS = '.chat-scroll, .chat-side, .feed-body, .modal';
+
   const lenis = new L({
+    prevent: (noeud) => !!noeud.matches?.(SANS_LENIS),
     duration: 0.55,
     easing: (x) => 1 - Math.pow(1 - x, 3),
     wheelMultiplier: 1.25,
+    touchMultiplier: 1.6,
+    smoothWheel: true,
   });
   const raf = (ts) => { lenis.raf(ts); requestAnimationFrame(raf); };
   requestAnimationFrame(raf);

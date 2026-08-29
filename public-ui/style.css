@@ -890,6 +890,7 @@ input:focus, textarea:focus {
 @keyframes wPulse { 0%, 100% { opacity: .35; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
 @keyframes wDrift { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -14px, 0); } }
 @keyframes wIn    { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes wTick  { 0% { opacity: 0; transform: translateY(6px); } 12% { opacity: 1; transform: translateY(0); } 88% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
 @keyframes wFloat { 0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); } 50% { transform: translateY(-14px) rotate(var(--r, 0deg)); } }
 
 /* ────────────────────────────  responsive  ──────────────────────────── */
