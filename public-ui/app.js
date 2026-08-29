@@ -1,8 +1,11 @@
-// public-ui/app.js — arcade theme
+// public-ui/app.js — coquille du site public (thème braise)
+//
+// Rôle : le décor, la nav, l'auth, les flux partagés et le ROUTEUR. Les quatre
+// pages (`pages/*.js`) n'exportent que `mount(el)` / `unmount()`.
 
 // DÉCLARÉ AVANT LES IMPORTS, et c'est la seule chose qui compte ici : un
-// `let` reste en zone morte temporelle jusqu'à sa ligne, et les modules
-// d'onglets s'évaluent AVANT elle. Placé plus bas, `nomBot()` levait
+// `let` reste en zone morte temporelle jusqu'à sa ligne, et les modules de
+// page s'évaluent AVANT elle. Placé plus bas, `nomBot()` levait
 // « Cannot access 'NOM_BOT' before initialization » et cassait le site
 // entier — que ni `node --check` ni le lint JS ne voient.
 //
@@ -19,105 +22,20 @@ export function nomBot() { return NOM_BOT; }
 /** Applique le nom partout où il s'affiche. Idempotent : rappelable. */
 function appliquerNom() {
   document.title = NOM_BOT;
-  // Les emplacements se DÉCLARENT dans le HTML (`data-nom-bot`), ils ne sont
+  // Les emplacements se DÉCLARENT dans le DOM (`data-nom-bot`), ils ne sont
   // pas listés ici : un nouvel endroit qui porte le nom se sert tout seul.
   document.querySelectorAll('[data-nom-bot]').forEach((el) => {
     el.textContent = el.dataset.nomBot === 'maj' ? NOM_BOT.toUpperCase() : NOM_BOT;
   });
 }
 
-import { mount as mountStatus } from './tabs/status.js';
-import { mount as mountChat } from './tabs/chat.js';
-import { mount as mountGallery } from './tabs/gallery.js';
-import { mount as mountJournal } from './tabs/journal.js';
-import { mount as mountAbout } from './tabs/about.js';
-
-// ── Shared emotion state ──
-export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
-const emotionListeners = [];
-export function onEmotionUpdate(fn) {
-  emotionListeners.push(fn);
-  return () => {
-    const i = emotionListeners.indexOf(fn);
-    if (i !== -1) emotionListeners.splice(i, 1);
-  };
-}
-function notifyEmotions() { emotionListeners.forEach(fn => fn({ ...emotions })); }
-
-// ── SSE emotions ──
-function connectSSE() {
-  const es = new EventSource('/api/public/sse/emotions');
-  es.onmessage = (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      Object.assign(emotions, data);
-      notifyEmotions();
-    } catch (err) {
-      // Muet, les cinq jauges se figent sur leur dernière valeur et le site a
-      // l'air vivant alors qu'il ne reçoit plus rien.
-      console.warn('flux émotions : message ignoré', err, e.data);
-    }
-  };
-  es.onerror = () => setTimeout(connectSSE, 5000);
-}
-connectSSE();
-
-// ── Cognitive SSE (live brain feed) ──
-export function connectCognitiveSSE(onEvent) {
-  const es = new EventSource('/api/public/sse/cognitive');
-  es.onmessage = (e) => {
-    try { onEvent(JSON.parse(e.data)); }
-    catch (err) { console.warn('flux cognitif : message ignoré', err, e.data); }
-  };
-  return es; // caller closes on unmount
-}
-
-// ── Modal ──
-const overlay = document.getElementById('modal-overlay');
-const modalImg = document.getElementById('modal-img');
-const modalCaption = document.getElementById('modal-caption');
-document.getElementById('modal-close').addEventListener('click', closeModal);
-overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-
-export function openModal(src, caption) {
-  modalImg.src = src;
-  modalImg.alt = caption || '';
-  modalCaption.textContent = caption || '';
-  overlay.classList.add('open');
-}
-function closeModal() { overlay.classList.remove('open'); }
-
-// ── Pixel flame sprite (box-shadow art) ──
-export function drawFlame(id, P = 4) {
-  const bm = [
-    ".....O.....", "....OOO....", "....OYO....", "...OOYOO...", "...OYYYO...",
-    "..OOYYYOO..", "..OYYWYYO..", ".OOYYWWYOO.", ".OYYWWWYYO.", ".OYYWWWYYO.",
-    ".OOYYWYYOO.", "..OYYYYYO..", "..OOYYYOO..", "...OOOOO.."
-  ];
-  const pal = { O: "#ff4d1f", Y: "#ffb020", W: "#fff2c2" };
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.position = "relative"; el.style.display = "inline-block";
-  el.style.width = (P * 11) + "px"; el.style.height = (P * 14) + "px";
-  const dot = document.createElement('i');
-  dot.style.position = "absolute"; dot.style.left = "0"; dot.style.top = "0";
-  dot.style.width = P + "px"; dot.style.height = P + "px";
-  const s = [];
-  for (let r = 0; r < bm.length; r++)
-    for (let c = 0; c < bm[r].length; c++) {
-      const ch = bm[r][c];
-      if (ch !== ".") s.push(`${c * P}px ${r * P}px 0 0 ${pal[ch]}`);
-    }
-  dot.style.boxShadow = s.join(",");
-  el.innerHTML = ''; el.appendChild(dot);
-}
-
-// Le JWT expire après 1h mais le refresh token vit 30 jours. Au chargement,
+// Même précaution de TDZ que ci-dessus : `mount()` d'une page peut appeler
+// `ensureFreshToken()` pendant l'évaluation du module.
+//
+// Le JWT expire après 1 h mais le refresh token vit 30 jours. Au chargement,
 // si le JWT est absent/expiré, on le rafraîchit silencieusement pour rester
-// connecté après un reload. La promesse est mémoïsée : app.js et chat.js
+// connecté après un reload. La promesse est mémoïsée : app.js et la page chat
 // partagent le même appel (le refresh token est à usage unique côté serveur).
-// Défini AVANT buildSections() : mountChat() peut l'appeler pendant l'éval du
-// module — sinon `_refreshPromise` (let) serait dans sa TDZ → ReferenceError.
 let _refreshPromise = null;
 export function ensureFreshToken() {
   if (_refreshPromise) return _refreshPromise;
@@ -148,101 +66,220 @@ export function ensureFreshToken() {
   return _refreshPromise;
 }
 
-// ── Single-page sections ──
-// Toutes les sections sont montées en même temps et empilées verticalement.
-// La nav fait défiler (ancres) ; un scroll-spy met en surbrillance l'onglet actif.
-const TABS_ORDER = ['status', 'chat', 'gallery', 'journal', 'about'];
-const TABS = {
-  status:    mountStatus,
-  chat:      mountChat,
-  gallery:   mountGallery,
-  journal:   mountJournal,
-  about:     mountAbout,
+import * as pageAccueil from './pages/accueil.js';
+import * as pageChat from './pages/chat.js';
+import * as pageGalerie from './pages/galerie.js';
+import * as pageTcg from './pages/tcg.js';
+
+// ── Fabrique de DOM ───────────────────────────────────────────────────────
+// Les pages construisent leur arbre avec `h()` : jamais d'innerHTML, jamais de
+// chaîne HTML interpolée. Un titre d'image ou un pseudo peut contenir du code
+// (vécu : un nom de fichier de son exécutait un `onclick` interpolé).
+export function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k === 'style') el.style.cssText = v;
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k.startsWith('data-') || k === 'role' || k.startsWith('aria-')) el.setAttribute(k, v);
+      else el[k] = v;
+    }
+  }
+  kids.flat().forEach((k) => {
+    if (k === null || k === undefined || k === false) return;
+    el.appendChild(typeof k === 'string' || typeof k === 'number' ? document.createTextNode(String(k)) : k);
+  });
+  return el;
+}
+
+/** Bandeau de titre d'une section : « 03 · CHAT WEB » + h2 + chapô facultatif. */
+export function sectionHead(eyebrow, titre, chapo) {
+  return h('div', { class: 'reveal' },
+    h('div', { class: 'eyebrow', text: eyebrow }),
+    h('h2', { class: 'h2', text: titre }),
+    chapo ? h('p', { class: 'lead', text: chapo }) : null,
+  );
+}
+
+/** Pied de page commun aux trois pages qui défilent (le chat n'en a pas). */
+export function pageFooter() {
+  return h('footer', { class: 'footer' },
+    h('div', { class: 'brand' },
+      h('video', { src: '/wally.webm', autoplay: true, loop: true, muted: true, playsInline: true, 'aria-hidden': 'true' }),
+      h('span', {}, 'fait avec une petite flamme · © 2026 ', h('span', { 'data-nom-bot': '' }, NOM_BOT)),
+    ),
+    h('a', { class: 'repo', href: 'https://github.com/KingsRequin/Wally', target: '_blank', rel: 'noopener', text: 'github.com/KingsRequin/Wally' }),
+  );
+}
+
+// ── État émotionnel partagé ───────────────────────────────────────────────
+export const emotions = { anger: 0, joy: 0, curiosity: 0, sadness: 0, boredom: 0 };
+const emotionListeners = [];
+export function onEmotionUpdate(fn) {
+  emotionListeners.push(fn);
+  return () => {
+    const i = emotionListeners.indexOf(fn);
+    if (i !== -1) emotionListeners.splice(i, 1);
+  };
+}
+function notifyEmotions() { emotionListeners.forEach((fn) => fn({ ...emotions })); }
+
+function connectSSE() {
+  const es = new EventSource('/api/public/sse/emotions');
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      Object.assign(emotions, data);
+      notifyEmotions();
+    } catch (err) {
+      // Muet, les cinq jauges se figent sur leur dernière valeur et le site a
+      // l'air vivant alors qu'il ne reçoit plus rien.
+      console.warn('flux émotions : message ignoré', err, e.data);
+    }
+  };
+  es.onerror = () => setTimeout(connectSSE, 5000);
+}
+connectSSE();
+
+/** Flux cognitif en direct. L'appelant ferme l'EventSource à son démontage. */
+export function connectCognitiveSSE(onEvent) {
+  const es = new EventSource('/api/public/sse/cognitive');
+  es.onmessage = (e) => {
+    try { onEvent(JSON.parse(e.data)); }
+    catch (err) { console.warn('flux cognitif : message ignoré', err, e.data); }
+  };
+  return es;
+}
+
+// ── Modale d'image ────────────────────────────────────────────────────────
+const _modal = document.getElementById('modal');
+const _modalImg = document.getElementById('modal-img');
+const _modalCaption = document.getElementById('modal-caption');
+document.getElementById('modal-close').addEventListener('click', closeModal);
+_modal.addEventListener('click', (e) => { if (e.target === _modal) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+/** Ouvre la lightbox. `legende` accepte une chaîne ou un nœud (fiche complète). */
+export function openModal(src, legende) {
+  _modalImg.src = src;
+  _modalImg.alt = typeof legende === 'string' ? legende : '';
+  _modalCaption.textContent = '';
+  if (legende instanceof Node) _modalCaption.appendChild(legende);
+  else if (legende) _modalCaption.textContent = legende;
+  _modal.classList.add('open');
+}
+function closeModal() { _modal.classList.remove('open'); }
+
+// ── Apparition au défilement ──────────────────────────────────────────────
+// Une seule instance pour tout le site : les pages appellent `observeReveals()`
+// après avoir monté leur DOM.
+const _revealObserver = window.IntersectionObserver
+  ? new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add('on'); _revealObserver.unobserve(e.target); }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 })
+  : null;
+
+function observeReveals(root) {
+  const els = (root || document).querySelectorAll('.reveal:not(.on)');
+  if (!_revealObserver) { els.forEach((el) => el.classList.add('on')); return; }
+  els.forEach((el) => _revealObserver.observe(el));
+  // Filet : un `IntersectionObserver` qui ne se déclenche jamais (onglet en
+  // arrière-plan au chargement, viewport de 0 px) laisserait la page INVISIBLE.
+  setTimeout(() => els.forEach((el) => el.classList.add('on')), 3500);
+}
+
+// ── Routeur ───────────────────────────────────────────────────────────────
+const ROUTES = {
+  '/':        { page: pageAccueil, plein: false },
+  '/chat':    { page: pageChat,    plein: true },
+  '/galerie': { page: pageGalerie, plein: false },
+  '/tcg':     { page: pageTcg,     plein: false },
 };
 
-function syncNav(tabName) {
-  document.querySelectorAll('.arc-nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
+// Les ancres de l'ancien site arcade. Un lien partagé ou un marque-page ne doit
+// pas tomber sur une page blanche.
+const HASH_LEGACY = {
+  status: '/', chat: '/chat', gallery: '/galerie', galerie: '/galerie',
+  journal: '/', about: '/', tcg: '/tcg',
+};
+
+const _vue = document.getElementById('vue');
+let _routeActive = null;
+
+function normaliser(pathname) {
+  const p = (pathname || '/').replace(/\/+$/, '') || '/';
+  return ROUTES[p] ? p : '/';
+}
+
+function syncNav(route) {
+  document.querySelectorAll('.nav-link').forEach((a) => {
+    a.classList.toggle('active', a.dataset.route === route);
   });
 }
 
-const _sections = {};
-(function buildSections() {
-  const main = document.getElementById('tab-content');
-  main.innerHTML = '';
-  TABS_ORDER.forEach(name => {
-    const sec = document.createElement('section');
-    sec.id = 'sec-' + name;
-    sec.className = 'arc-section';
-    main.appendChild(sec);
-    _sections[name] = sec;
-    TABS[name](sec);
-  });
-})();
+function rendre(route) {
+  if (_routeActive === route) return;
+  const precedent = _routeActive ? ROUTES[_routeActive] : null;
+  if (precedent && typeof precedent.page.unmount === 'function') precedent.page.unmount();
+  _routeActive = route;
 
-function scrollToSection(name) {
-  const sec = _sections[name];
-  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const def = ROUTES[route];
+  document.documentElement.classList.toggle('vue-chat', def.plein);
+  document.body.classList.toggle('vue-chat', def.plein);
+  _vue.textContent = '';
+  syncNav(route);
+  def.page.mount(_vue);
+  observeReveals(_vue);
+  window.scrollTo(0, 0);
+  window.dispatchEvent(new CustomEvent('wally-vue-changed'));
 }
 
-document.querySelectorAll('[data-tab]').forEach(el => {
-  el.addEventListener('click', () => {
-    const name = el.dataset.tab;
-    if (!_sections[name]) return;
-    scrollToSection(name);
-    history.replaceState(null, '', '#' + name);
-  });
+/** Navigation interne : pousse l'URL puis rend. Exporté pour les boutons. */
+export function naviguer(route, remplacer) {
+  const cible = normaliser(route);
+  if (remplacer) history.replaceState({}, '', cible);
+  else history.pushState({}, '', cible);
+  rendre(cible);
+}
+
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-route]');
+  if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+  e.preventDefault();
+  naviguer(a.dataset.route);
 });
 
-// Scroll-spy : surligne l'onglet de la section au centre du viewport
-if (window.IntersectionObserver) {
-  const spy = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) syncNav(e.target.id.replace('sec-', '')); });
-  }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
-  TABS_ORDER.forEach(n => spy.observe(_sections[n]));
-}
+window.addEventListener('popstate', () => rendre(normaliser(location.pathname)));
 
-// Empêcher le browser de restaurer automatiquement la position de scroll
-// (évite le conflit entre restauration + smooth scroll + scroll anchoring Chrome).
-history.scrollRestoration = 'manual';
-
-// Position initiale : ancre dans l'URL, ou section chat si retour OAuth Discord
-const _initial = (location.hash.slice(1) && _sections[location.hash.slice(1)])
-  ? location.hash.slice(1)
-  : (new URLSearchParams(location.search).get('chat_code') ? 'chat' : null);
-if (_initial) {
-  // Attendre 'load' (polices + images stables) avant de scroller,
-  // sinon les layout shifts post-chargement décalent la destination.
-  const _doScroll = () => requestAnimationFrame(() => scrollToSection(_initial));
-  if (document.readyState === 'complete') _doScroll();
-  else window.addEventListener('load', _doScroll, { once: true });
-}
-syncNav(_initial || 'status');
-
-drawFlame('spx-nav', 4);
-
-// ── Auth widget (Discord) ──
-// Bouton de connexion Discord en haut à droite. Si l'owner est connecté,
-// un bouton ADMIN apparaît (token récupéré via le JWT, sans mot de passe).
-let OWNER_DISCORD_ID = '';
-
-async function loadOwnerId() {
-  try {
-    const r = await fetch('/api/public/status');
-    if (r.ok) {
-      const d = await r.json();
-      OWNER_DISCORD_ID = String(d.owner_discord_id || '');
-      if (d.bot_name) { NOM_BOT = String(d.bot_name); }
-    }
-  } catch (err) {
-    // Repli explicite : sans id d'owner, `renderAuth()` juste en dessous
-    // n'affichera pas le bouton ADMIN. Le site reste utilisable.
-    console.warn('id de l\'owner indisponible', err);
+// Position initiale. Trois entrées possibles, dans cet ordre :
+//   1. le retour OAuth (`/?chat_code=…`) — le serveur ne sait rediriger que
+//      vers la racine, c'est ici qu'on le remet sur le chat ;
+//   2. une ancre de l'ancien site (`#chat`, `#gallery`…) ;
+//   3. le chemin demandé.
+(function routeInitiale() {
+  history.scrollRestoration = 'manual';
+  const params = new URLSearchParams(location.search);
+  if (params.get('chat_code')) {
+    history.replaceState({}, '', '/chat' + location.search);
+    rendre('/chat');
+    return;
   }
-  appliquerNom();
-  renderAuth();
-}
+  const hash = location.hash.slice(1);
+  if (hash && HASH_LEGACY[hash]) {
+    const cible = HASH_LEGACY[hash];
+    history.replaceState({}, '', cible);
+    rendre(cible);
+    return;
+  }
+  rendre(normaliser(location.pathname));
+}());
 
+// ── Auth Discord ──────────────────────────────────────────────────────────
 function decodeJwt(t) {
   try {
     const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -250,44 +287,77 @@ function decodeJwt(t) {
   } catch (_) { return null; }
 }
 
+/** Payload du JWT si présent ET non expiré, sinon `null`. */
+export function utilisateur() {
+  const jwt = localStorage.getItem('discord_jwt');
+  const p = jwt ? decodeJwt(jwt) : null;
+  return (p && (!p.exp || p.exp * 1000 > Date.now())) ? p : null;
+}
+
+async function chargerStatutGlobal() {
+  try {
+    const r = await fetch('/api/public/status');
+    if (r.ok) {
+      const d = await r.json();
+      if (d.bot_name) NOM_BOT = String(d.bot_name);
+      majPastilleEnLigne(d);
+    } else {
+      majPastilleEnLigne(null);
+    }
+  } catch (err) {
+    // Repli explicite : la pastille passe à HORS LIGNE plutôt que de mentir.
+    majPastilleEnLigne(null);
+    console.warn('statut public indisponible', err);
+  }
+  appliquerNom();
+  renderAuth();
+}
+
+function majPastilleEnLigne(status) {
+  const el = document.getElementById('nav-state');
+  if (!el) return;
+  // `uptime_seconds` renseigné = le process répond, donc il est en ligne. Une
+  // pastille verte codée en dur mentirait pendant les 15 s d'un rebuild.
+  const enLigne = !!(status && status.uptime_seconds);
+  el.classList.toggle('off', !enLigne);
+  el.textContent = '';
+  el.appendChild(h('span', { class: 'dot' }));
+  el.appendChild(document.createTextNode(enLigne ? 'EN LIGNE' : 'HORS LIGNE'));
+}
+
 function renderAuth() {
-  const host = document.getElementById('arc-auth');
+  const host = document.getElementById('auth');
   if (!host) return;
   host.textContent = '';
 
-  const jwt = localStorage.getItem('discord_jwt');
-  const p = jwt ? decodeJwt(jwt) : null;
-  const valid = p && (!p.exp || p.exp * 1000 > Date.now());
-
-  if (!valid) {
-    const btn = document.createElement('button');
-    btn.className = 'arc-auth-btn';
-    btn.textContent = 'CONNEXION DISCORD';
-    btn.addEventListener('click', () => { window.location.href = '/api/chat/auth/login'; });
-    host.appendChild(btn);
+  const p = utilisateur();
+  if (!p) {
+    // Deux libellés, un seul visible : sous 620 px, « Connexion Discord »
+    // poussait la nav à 404 px de large sur un écran de 360 et le bouton
+    // sortait de l'écran, hors de portée du pouce.
+    host.appendChild(h('button', {
+      class: 'btn btn-sm btn-ghost',
+      onclick: () => { window.location.href = '/api/chat/auth/login'; },
+    }, h('span', { class: 'lbl-long', text: 'Connexion Discord' }),
+       h('span', { class: 'lbl-court', text: 'Discord' })));
     return;
   }
 
-  const who = document.createElement('span');
-  who.className = 'arc-auth-user';
-  if (p.avatar_url) {
-    const img = document.createElement('img');
-    img.className = 'arc-auth-av';
-    img.src = p.avatar_url;
-    img.alt = '';
-    who.appendChild(img);
-  }
-  who.appendChild(document.createTextNode(p.username || 'connecté'));
+  const who = h('div', { class: 'auth-user' });
+  if (p.avatar_url) who.appendChild(h('img', { class: 'auth-avatar', src: p.avatar_url, alt: '' }));
+  who.appendChild(h('span', { text: p.username || 'connecté' }));
   host.appendChild(who);
 
-  if (OWNER_DISCORD_ID && String(p.discord_id) === OWNER_DISCORD_ID) {
-    const adm = document.createElement('button');
-    adm.className = 'arc-auth-btn admin';
-    adm.textContent = 'ADMIN';
+  // `is_owner` est SIGNÉ dans le JWT par `chat_auth.create_jwt` : le site n'a
+  // rien à comparer, et le snowflake du propriétaire ne circule plus.
+  if (p.is_owner) {
+    const adm = h('button', { class: 'auth-icon auth-admin', text: 'ADMIN' });
     adm.addEventListener('click', async () => {
       adm.disabled = true;
       try {
-        const r = await fetch('/api/chat/auth/admin-token', { headers: { Authorization: 'Bearer ' + jwt } });
+        const r = await fetch('/api/chat/auth/admin-token', {
+          headers: { Authorization: 'Bearer ' + localStorage.getItem('discord_jwt') },
+        });
         if (!r.ok) throw new Error('denied');
         const d = await r.json();
         localStorage.setItem('wally_token', d.token);
@@ -299,159 +369,149 @@ function renderAuth() {
     host.appendChild(adm);
   }
 
-  const out = document.createElement('button');
-  out.className = 'arc-auth-btn ghost';
-  out.textContent = '✕';
-  out.title = 'Déconnexion';
-  out.addEventListener('click', () => {
-    localStorage.removeItem('discord_jwt');
-    localStorage.removeItem('discord_refresh');
-    renderAuth();
-  });
-  host.appendChild(out);
+  host.appendChild(h('button', {
+    class: 'auth-icon',
+    text: '✕',
+    title: 'Déconnexion',
+    onclick: () => {
+      localStorage.removeItem('discord_jwt');
+      localStorage.removeItem('discord_refresh');
+      renderAuth();
+    },
+  }));
 }
 
-ensureFreshToken().then(loadOwnerId);
+ensureFreshToken().then(chargerStatutGlobal);
 
-// Retour OAuth : chat.js échange le code de façon asynchrone puis émet
+// Retour OAuth : la page chat échange le code de façon asynchrone puis émet
 // `wally-auth-changed` quand le JWT est posé — on re-render le widget aussitôt,
 // sans recharger la page.
 window.addEventListener('wally-auth-changed', renderAuth);
 
-// ── Animated arcade background (canvas) ──
-(function initBg() {
-  const cv = document.getElementById('bg-canvas');
-  if (!cv) return;
-  const ctx = cv.getContext('2d');
-  let W = 0, H = 0, mpx = null, mpy = null, raf = 0;
-  let embers = [], nodes = [], orbs = [];
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+// ── Décor animé : halos, emojis, parallaxe, compagnon ─────────────────────
+(function decor() {
+  const reduit = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const halos = document.getElementById('bg-halos');
+  const icons = document.getElementById('bg-icons');
+  const companion = document.getElementById('companion');
+  if (!halos || !icons) return;
 
-  function currentMfx() {
-    try {
-      const v = localStorage.getItem('wally_mfx');
-      return ['grille', 'constellation', 'aimant', 'vortex', 'onde'].includes(v) ? v : 'aimant';
-    } catch (_) { return 'aimant'; }
-  }
+  halos.appendChild(h('div', { class: 'bg-halo ember' }));
+  halos.appendChild(h('div', { class: 'bg-halo cyan' }));
 
-  function newEmber() {
-    return { x: Math.random() * W, y: H + Math.random() * H, vy: 0.3 + Math.random() * 1.0,
-      size: 1 + Math.floor(Math.random() * 3), hue: Math.random(), drift: (Math.random() - 0.5) * 0.4, life: Math.random() * 6 };
+  // Quatre plans de profondeur, semés au hasard à chaque chargement : deux
+  // visites ne voient jamais le même fond. Les cellules sont tirées sans
+  // remise, sinon deux emojis se superposent une fois sur trois.
+  const R = (a, b) => a + Math.random() * (b - a);
+  const plans = [
+    { es: ['📺', '💬', '🕹️', '✨', '🎲'], n: 4, s: [15, 19], o: [0.09, 0.13], b: [2.2, 2.7], sp: [0.10, 0.22] },
+    { es: ['🎮', '🧠', '🎙️', '🃏'],       n: 3, s: [25, 31], o: [0.13, 0.17], b: [1.1, 1.5], sp: [0.42, 0.58] },
+    { es: ['🤖', '📺', '💬'],             n: 2, s: [38, 46], o: [0.18, 0.23], b: [0.3, 0.5], sp: [0.95, 1.20] },
+    { es: ['🔥'],                          n: 2, s: [56, 80], o: [0.32, 0.48], b: [0, 0],    sp: [1.80, 2.30] },
+  ];
+  const cells = [];
+  for (let cx = 0; cx < 4; cx++) for (let cy = 0; cy < 3; cy++) cells.push([cx, cy]);
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = cells[i]; cells[i] = cells[j]; cells[j] = t;
   }
-  function initParticles() {
-    embers = Array.from({ length: 64 }, newEmber);
-    nodes = Array.from({ length: 56 }, () => ({ x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5 }));
-    const cols = ["#ffd400", "#ff3b6b", "#43e0ff", "#bf94ff"];
-    orbs = Array.from({ length: 120 }, () => ({ ang: Math.random() * Math.PI * 2, rad: 24 + Math.random() * 250,
-      spd: (0.004 + Math.random() * 0.016) * (Math.random() < 0.5 ? 1 : -1),
-      size: 2 + Math.floor(Math.random() * 3), col: cols[Math.floor(Math.random() * cols.length)] }));
-  }
+  let k = 0;
+  plans.forEach((p) => {
+    for (let i = 0; i < p.n; i++) {
+      const [cx, cy] = cells[k++ % cells.length];
+      const el = h('div', { class: 'bg-icon', text: p.es[Math.floor(Math.random() * p.es.length)] });
+      el.style.left = Math.round(R(cx * 25 + 3, cx * 25 + 20)) + '%';
+      el.style.top = Math.round(R(cy * 30 + 6, cy * 30 + 26)) + '%';
+      el.style.fontSize = Math.round(R(p.s[0], p.s[1])) + 'px';
+      el.style.opacity = R(p.o[0], p.o[1]).toFixed(2);
+      el.style.filter = 'blur(' + R(p.b[0], p.b[1]).toFixed(1) + 'px) saturate(.8)';
+      el.dataset.sp = R(p.sp[0], p.sp[1]).toFixed(2);
+      icons.appendChild(el);
+    }
+  });
 
-  function fxGrille(ts, mx, my, sy) {
-    const step = 46;
-    const ox = (mx / W - 0.5) * -30, oy = (my / H - 0.5) * -30 - sy * 0.05;
-    ctx.lineWidth = 1;
-    for (let x = (ox % step) - step; x < W + step; x += step) {
-      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(x - mx) / 380)})`;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (let y = (oy % step) - step; y < H + step; y += step) {
-      ctx.strokeStyle = `rgba(124,77,255,${0.05 + 0.20 * Math.max(0, 1 - Math.abs(y - my) / 320)})`;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-    const g = ctx.createRadialGradient(mx, my, 0, mx, my, 220);
-    g.addColorStop(0, "rgba(124,77,255,0.18)"); g.addColorStop(1, "rgba(124,77,255,0)");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  }
-  function fxConstellation(ts, mx, my) {
-    const ns = nodes, D = 124;
-    for (const n of ns) {
-      n.x += n.vx; n.y += n.vy;
-      if (n.x < 0 || n.x > W) n.vx *= -1;
-      if (n.y < 0 || n.y > H) n.vy *= -1;
-    }
-    ctx.lineWidth = 1;
-    for (let i = 0; i < ns.length; i++) {
-      const a = ns[i], dm = Math.hypot(a.x - mx, a.y - my);
-      if (dm < 190) { ctx.strokeStyle = `rgba(67,224,255,${0.45 * (1 - dm / 190)})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(mx, my); ctx.stroke(); }
-      for (let j = i + 1; j < ns.length; j++) {
-        const b = ns[j], d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d < D) {
-          const lit = dm < 170 || Math.hypot(b.x - mx, b.y - my) < 170;
-          ctx.strokeStyle = lit ? `rgba(67,224,255,${0.28 * (1 - d / D)})` : `rgba(124,77,255,${0.12 * (1 - d / D)})`;
-          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        }
-      }
-    }
-    for (const n of ns) {
-      const lit = Math.hypot(n.x - mx, n.y - my) < 170, s = lit ? 4 : 3;
-      ctx.fillStyle = lit ? "#43e0ff" : "rgba(190,148,255,.85)";
-      ctx.fillRect(n.x - s / 2, n.y - s / 2, s, s);
-    }
-  }
-  function fxAimant(ts, mx, my) {
-    const step = 42, R = 140;
-    for (let x = step / 2; x < W; x += step)
-      for (let y = step / 2; y < H; y += step) {
-        const dx = x - mx, dy = y - my, d = Math.hypot(dx, dy) || 1;
-        if (d < R) {
-          const t = 1 - d / R, f = t * 42;
-          const px = x + dx / d * f, py = y + dy / d * f, gg = Math.round(59 + 153 * t);
-          ctx.fillStyle = `rgba(255,${gg},${Math.round(107 * (1 - t))},${0.5 + 0.5 * t})`;
-          const s = 2 + 2.5 * t; ctx.fillRect(px - s / 2, py - s / 2, s, s);
-        } else {
-          ctx.fillStyle = "rgba(170,150,230,0.22)";
-          ctx.fillRect(x - 1, y - 1, 2, 2);
-        }
-      }
-  }
-  function fxVortex(ts, mx, my) {
-    for (const o of orbs) {
-      o.ang += o.spd;
-      const x = mx + Math.cos(o.ang) * o.rad, y = my + Math.sin(o.ang) * o.rad * 0.62;
-      ctx.fillStyle = o.col; ctx.fillRect(x - o.size / 2, y - o.size / 2, o.size, o.size);
-    }
-  }
-  function fxOnde(ts, mx, my) {
-    const step = 40;
-    for (let x = step / 2; x < W; x += step)
-      for (let y = step / 2; y < H; y += step) {
-        const d = Math.hypot(x - mx, y - my);
-        const f = Math.max(0, Math.sin(d / 26 - ts / 260)) * Math.max(0, 1 - d / 540);
-        const s = 1.5 + 2.4 * f;
-        ctx.fillStyle = `rgba(67,224,255,${0.05 + 0.28 * f})`;
-        ctx.fillRect(x - s / 2, y - s / 2, s, s);
-      }
-  }
-  const FX = { grille: fxGrille, constellation: fxConstellation, aimant: fxAimant, vortex: fxVortex, onde: fxOnde };
+  if (reduit) return;
 
-  function draw(ts) {
+  const mobile = window.matchMedia('(max-width: 900px)').matches;
+  let listeIcons = Array.from(icons.children);
+  if (mobile) listeIcons.forEach((el, i) => { if (i % 2) el.style.display = 'none'; });
+  listeIcons = listeIcons.filter((el) => el.style.display !== 'none');
+  listeIcons.forEach((el, i) => { el._ph = i * 1.7; });
+
+  let mx = 0, my = 0, tmx = 0, tmy = 0, aSy = -1, aMx = 99, aMy = 99;
+  window.addEventListener('mousemove', (e) => {
+    tmx = (e.clientX / window.innerWidth - 0.5) * 2;
+    tmy = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  let vh = window.innerHeight;
+  let max = Math.max(1, document.body.scrollHeight - vh);
+  window.addEventListener('resize', () => {
+    vh = window.innerHeight;
+    max = Math.max(1, document.body.scrollHeight - vh);
+    listeIcons.forEach((el) => { el._y0 = null; });
+  });
+  // La hauteur du document change à chaque changement de page : sans ce
+  // recalcul, `prog` reste calé sur l'ancienne page et le fond ne bouge plus.
+  window.addEventListener('wally-vue-changed', () => {
+    max = Math.max(1, document.body.scrollHeight - vh);
+    listeIcons.forEach((el) => { el._y0 = null; });
+  });
+
+  const boucle = (ts) => {
+    if (document.hidden) { requestAnimationFrame(boucle); return; }
+    mx += (tmx - mx) * 0.06;
+    my += (tmy - my) * 0.06;
     const sy = window.scrollY || 0;
-    ctx.clearRect(0, 0, W, H);
-    ctx.globalCompositeOperation = "lighter";
-    for (const e of embers) {
-      e.y -= e.vy; e.x += e.drift;
-      if (e.y < -10) { Object.assign(e, newEmber()); e.y = H + 10; }
-      const col = e.hue < 0.5 ? "255,90,30" : (e.hue < 0.8 ? "255,180,40" : "255,60,120");
-      const a = 0.28 + 0.38 * Math.abs(Math.sin(ts / 500 + e.life));
-      ctx.fillStyle = `rgba(${col},${a})`;
-      ctx.fillRect(e.x, e.y, e.size, e.size);
+    const prog = Math.min(1, sy / max);
+    if (Math.abs(sy - aSy) < 0.4 && Math.abs(mx - aMx) < 0.0015 && Math.abs(my - aMy) < 0.0015) {
+      requestAnimationFrame(boucle);
+      return;
     }
-    ctx.globalCompositeOperation = "source-over";
-    const mx = mpx == null ? W / 2 : mpx, my = mpy == null ? H / 2 : mpy;
-    (FX[currentMfx()] || fxAimant)(ts, mx, my, sy);
-  }
+    aSy = sy; aMx = mx; aMy = my;
 
-  function resize() {
-    W = window.innerWidth; H = window.innerHeight;
-    cv.width = W * dpr; cv.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    initParticles();
-  }
-  window.addEventListener('resize', resize);
-  window.addEventListener('mousemove', (e) => { mpx = e.clientX; mpy = e.clientY; });
-  resize();
-  const loop = (ts) => { draw(ts || 0); raf = requestAnimationFrame(loop); };
-  raf = requestAnimationFrame(loop);
+    document.querySelectorAll('[data-px]').forEach((el) => {
+      const sp = parseFloat(el.dataset.px) || 0;
+      if (el._top == null) el._top = el.getBoundingClientRect().top + sy;
+      const rel = el._top - vh * 0.5;
+      el.style.transform = 'translate3d('
+        + (mx * sp * 12).toFixed(2) + 'px,'
+        + (-(sy - Math.max(0, rel)) * sp * 0.16 + my * sp * 8).toFixed(2) + 'px,0)';
+    });
+
+    listeIcons.forEach((el) => {
+      const sp = parseFloat(el.dataset.sp) || 0;
+      if (el._y0 == null) el._y0 = el.offsetTop;
+      const ht = el.offsetHeight || 30;
+      const bob = Math.sin(ts * 0.00028 + el._ph) * 9;
+      const brut = -prog * vh * 0.42 * sp;
+      const course = Math.max(-(el._y0 + ht * 0.25), Math.min(vh - ht - el._y0, brut));
+      el.style.transform = 'translate3d('
+        + (mx * sp * 22 + bob * 0.5).toFixed(1) + 'px,'
+        + (course + my * sp * 16 + bob).toFixed(1) + 'px,0) rotate(' + (bob * 0.5).toFixed(2) + 'deg)';
+    });
+
+    halos.style.transform = 'translate3d(' + (mx * -10).toFixed(1) + 'px,' + (-prog * vh * 0.2 + my * -8).toFixed(1) + 'px,0)';
+
+    if (companion) companion.classList.toggle('on', sy > vh * 0.6 && !document.body.classList.contains('vue-chat'));
+
+    requestAnimationFrame(boucle);
+  };
+  requestAnimationFrame(boucle);
+}());
+
+// Les vidéos `autoplay muted` sont bloquées par certains navigateurs tant
+// qu'aucun geste n'a eu lieu : on relance, puis on réessaie au premier clic.
+(function lancerVideos() {
+  const kick = () => {
+    document.querySelectorAll('video').forEach((v) => {
+      v.muted = true; v.loop = true; v.playsInline = true;
+      const p = v.play();
+      if (p && p.catch) p.catch(() => {});
+    });
+  };
+  kick();
+  [200, 800, 2000].forEach((t) => setTimeout(kick, t));
+  document.addEventListener('pointerdown', kick, { once: true });
+  window.addEventListener('wally-vue-changed', kick);
 }());

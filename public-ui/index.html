@@ -6,44 +6,47 @@
   <title>Wally</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <canvas id="bg-canvas"></canvas>
-  <div class="crt-scanlines"></div>
-  <div class="crt-vignette"></div>
+  <!-- Décor : trois couches fixes peuplées par app.js. -->
+  <div class="bg-halos" id="bg-halos"></div>
+  <div class="bg-icons" id="bg-icons"></div>
+  <div class="bg-veil"></div>
 
-  <nav class="arc-nav">
-    <div class="arc-brand" data-tab="status">
-      <span class="flame" id="spx-nav"></span>
-      <span class="arc-wordmark" data-nom-bot="maj">WALLY</span>
+  <nav class="nav">
+    <a class="nav-brand" href="/" data-route="/">
+      <video class="avatar" src="/wally.webm" aria-hidden="true" autoplay loop muted playsinline preload="auto"></video>
+      <span class="wordmark" data-nom-bot="maj">WALLY</span>
+    </a>
+    <div class="nav-links" id="nav-links">
+      <a class="nav-link" href="/" data-route="/">ACCUEIL</a>
+      <a class="nav-link" href="/chat" data-route="/chat">CHAT</a>
+      <a class="nav-link" href="/galerie" data-route="/galerie">GALERIE</a>
+      <a class="nav-link" href="/tcg" data-route="/tcg">TCG<span class="soon">BIENTÔT</span></a>
     </div>
-    <div class="arc-nav-tabs">
-      <button class="arc-nav-btn" data-tab="status">STATUT</button>
-      <button class="arc-nav-btn" data-tab="chat">CHAT</button>
-      <button class="arc-nav-btn" data-tab="gallery">GALERIE</button>
-      <button class="arc-nav-btn" data-tab="journal">JOURNAL</button>
-      <button class="arc-nav-btn" data-tab="about">À PROPOS</button>
+    <div class="nav-right">
+      <div class="nav-state" id="nav-state"><span class="dot"></span>EN LIGNE</div>
+      <div class="auth" id="auth"></div>
     </div>
-    <div class="arc-online"><span class="dot"></span>EN LIGNE</div>
-    <div class="arc-auth" id="arc-auth"></div>
   </nav>
 
-  <main id="tab-content" class="arc-main"></main>
+  <main class="vue" id="vue"></main>
 
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal-box" id="modal-box">
-      <button class="modal-close" id="modal-close">✕</button>
+  <div class="modal" id="modal">
+    <div class="modal-box">
+      <button class="modal-close" id="modal-close" aria-label="Fermer">✕</button>
       <img class="modal-img" id="modal-img" src="" alt="">
       <div class="modal-caption" id="modal-caption"></div>
     </div>
   </div>
 
-  <footer class="arc-footer">
-    fait avec une petite flamme · © 2026 <span data-nom-bot>Wally</span> ·
-    <span class="arc-link">github.com/KingsRequin/wally-ai</span>
-  </footer>
+  <div class="companion" id="companion" aria-hidden="true">
+    <div class="halo"></div>
+    <video src="/wally.webm" autoplay loop muted playsinline></video>
+    <div class="companion-label">il te regarde lire</div>
+  </div>
 
   <script type="module" src="/app.js"></script>
 </body>

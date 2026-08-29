@@ -30,6 +30,7 @@ Prérequis (hôte seulement, JAMAIS dans l'image — 115 Mo de navigateur) :
 Usage :
     python3 scripts/smoke_front.py                 # tout
     python3 scripts/smoke_front.py --overlay        # overlay seul
+    python3 scripts/smoke_front.py --public         # site public seul
     python3 scripts/smoke_front.py --captures /tmp  # écrit les PNG
 """
 from __future__ import annotations
@@ -153,6 +154,100 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     if captures:
         page.screenshot(path=str(captures / "overlay.png"))
     page.close()
+
+
+# Les quatre pages du site public, et le sélecteur d'un élément que SEULE cette
+# page monte. Un `<main>` non vide ne prouve rien : le routeur pourrait rendre
+# l'accueil sur les quatre routes sans que personne ne le voie.
+PAGES_PUBLIQUES = [
+    ("Accueil", "/", "#a-cerveau .feed-body"),
+    ("Chat", "/chat", ".chat-vue"),
+    ("Galerie", "/galerie", ".gal-grid"),
+    ("TCG", "/tcg", ".tcg-hero"),
+]
+
+
+def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
+    """Le site public n'avait AUCUN test navigateur — ni ici, ni ailleurs.
+
+    Les tests « front » du projet lisent les fichiers en TEXTE : ils voient une
+    classe CSS, jamais un module qui ne s'évalue pas. La refonte du 2026-08-29 a
+    remplacé 3 700 lignes de JS d'un coup ; sans ce parcours, la seule preuve
+    qu'une page monte serait de la charger à la main.
+    """
+    print("\n── site public ──")
+    page = nav.new_page(viewport={"width": 1440, "height": 1000})
+    erreurs = _brancher_erreurs(page)
+
+    for nom, route, marqueur in PAGES_PUBLIQUES:
+        del erreurs[:]
+        page.goto(f"{BASE}{route}", wait_until="networkidle", timeout=40000)
+        page.wait_for_timeout(2000)
+
+        try:
+            page.wait_for_selector(marqueur, timeout=_ATTENTE_PANNEAU_MS, state="attached")
+            monte = True
+        except Exception as exc:
+            monte = False
+            rap.dire(False, f"page {nom} : {marqueur} monté", repr(exc)[:120])
+        if monte:
+            rap.dire(True, f"page {nom} : {marqueur} monté")
+
+        texte = len(page.locator("#vue").inner_text())
+        rap.dire(texte >= _CONTENU_MIN, f"page {nom} : {texte} caractères rendus",
+                 f"attendu ≥ {_CONTENU_MIN}")
+        rap.dire(not erreurs, f"page {nom} : aucune erreur JS", " · ".join(erreurs[:2]))
+
+        # L'onglet actif de la nav DOIT suivre la route : c'est le seul repère
+        # visuel du visiteur sur un site sans rechargement.
+        actifs = page.locator(".nav-link.active").all_inner_texts()
+        rap.dire(len(actifs) == 1, f"page {nom} : un seul onglet actif", " · ".join(actifs))
+
+        if captures:
+            page.screenshot(path=str(captures / f"public-{route.strip('/') or 'accueil'}.png"),
+                            full_page=(route != "/chat"))
+
+    # Navigation interne : c'est le routeur qu'on teste, pas le serveur. Un
+    # `pushState` cassé rendrait le site utilisable seulement au rechargement.
+    del erreurs[:]
+    page.goto(f"{BASE}/", wait_until="networkidle", timeout=40000)
+    page.wait_for_timeout(1200)
+    page.locator('.nav-link[data-route="/galerie"]').click()
+    page.wait_for_timeout(1500)
+    rap.dire(page.url.endswith("/galerie"), "un clic dans la nav pose l'URL", page.url)
+    rap.dire(page.locator(".gal-grid").count() == 1, "et monte la galerie")
+    page.go_back()
+    page.wait_for_timeout(1500)
+    rap.dire(page.locator("#a-cerveau").count() == 1, "le retour arrière remonte l'accueil", page.url)
+    rap.dire(not erreurs, "aucune erreur JS pendant la navigation", " · ".join(erreurs[:2]))
+
+    # Les anciennes ancres du site arcade sont partagées et mises en favori.
+    # Le détour par /tcg n'est pas cosmétique : depuis `/`, aller à `/#gallery`
+    # est une navigation DANS le document — la page ne se recharge pas et la
+    # redirection, qui vit au premier chargement du module, ne s'exécute jamais.
+    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.goto(f"{BASE}/#gallery", wait_until="networkidle", timeout=40000)
+    page.wait_for_timeout(1500)
+    rap.dire(page.url.endswith("/galerie"), "l'ancre héritée #gallery redirige", page.url)
+    page.close()
+
+    # Téléphone. Le débordement horizontal ne se voit sur AUCUNE capture de
+    # bureau et ne lève aucune erreur JS : la page s'affiche, simplement un
+    # bout part hors de l'écran. Un `grid-template-columns` posé en style EN
+    # LIGNE bat la media query — 43 px perdus sur la section des émotions, et
+    # le bouton de connexion hors de portée du pouce.
+    mob = nav.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+    erreurs_mob = _brancher_erreurs(mob)
+    for nom, route, _ in PAGES_PUBLIQUES:
+        del erreurs_mob[:]
+        mob.goto(f"{BASE}{route}", wait_until="networkidle", timeout=40000)
+        mob.wait_for_timeout(1800)
+        trop = mob.evaluate(
+            "document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        rap.dire(trop <= 0, f"390 px · {nom} : pas de débordement horizontal", f"{trop} px")
+        rap.dire(not erreurs_mob, f"390 px · {nom} : aucune erreur JS",
+                 " · ".join(erreurs_mob[:2]))
+    mob.close()
 
 
 def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
@@ -810,6 +905,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--overlay", action="store_true", help="overlay seulement")
     ap.add_argument("--admin", action="store_true", help="dashboard seulement")
+    ap.add_argument("--public", action="store_true", help="site public seulement")
     ap.add_argument("--captures", metavar="DOSSIER", help="y écrire les PNG")
     args = ap.parse_args()
 
@@ -823,7 +919,7 @@ def main() -> int:
         return 1
 
     captures = pathlib.Path(args.captures) if args.captures else None
-    tout = not (args.overlay or args.admin)
+    tout = not (args.overlay or args.admin or args.public)
     rap = Rapport()
 
     with sync_playwright() as p:
@@ -831,6 +927,8 @@ def main() -> int:
         try:
             if tout or args.overlay:
                 verifier_overlay(nav, rap, captures)
+            if tout or args.public:
+                verifier_site_public(nav, rap, captures)
             if tout or args.admin:
                 verifier_admin(nav, rap, captures)
         finally:
@@ -842,7 +940,7 @@ def main() -> int:
         for e in rap.echecs:
             print(f"   · {e}", file=sys.stderr)
         return 1
-    print("✅ le front monte — overlay et dashboard, sans erreur JS ni panneau vide")
+    print("✅ le front monte — overlay, site public et dashboard, sans erreur JS ni panneau vide")
     return 0
 
 
