@@ -260,13 +260,13 @@ async def restart_twitch_container(request: Request) -> dict:
         logger.error("Twitch restart: pont hôte non configuré (BRIDGE_SECRET absent)")
         raise HTTPException(
             status_code=503,
-            detail="Pont hôte non configuré (BRIDGE_SECRET absent) — redémarrage impossible depuis le container.",
+            detail="Pont hôte non configuré (BRIDGE_SECRET absent), redémarrage impossible depuis le container.",
         )
     if not await bridge.health():
         logger.error("Twitch restart: pont hôte injoignable")
         raise HTTPException(
             status_code=503,
-            detail="Pont hôte injoignable — le service wally-bridge est-il actif sur l'hôte ?",
+            detail="Pont hôte injoignable, le service wally-bridge est-il actif sur l'hôte ?",
         )
 
     service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")

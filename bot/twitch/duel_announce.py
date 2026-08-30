@@ -48,7 +48,7 @@ def avertissement_mixtape(mode_jeu: str = "") -> str:
     dit ce qui reste vrai sans l'inventer.
     """
     if mode_jeu:
-        return (f"Rappel : le duel se joue en {mode_jeu} — la Mixtape ne compte "
+        return (f"Rappel : le duel se joue en {mode_jeu}, la Mixtape ne compte "
                 "AUCUN kill.")
     return "Rappel : la Mixtape ne compte AUCUN kill, elle ne peut pas servir de manche."
 
@@ -152,7 +152,7 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         cause = str(d.get("cause") or "")
         if cause == "api":
             return (f"L'API d'Apex ne répond pas en ce moment : impossible de "
-                    f"vérifier le compte de {viewer}. Rien à voir avec lui — "
+                    f"vérifier le compte de {viewer}. Rien à voir avec lui, "
                     f"qu'il redonne son identifiant dans un moment. Pour le "
                     f"retrouver : {etapes}").strip()
         if cause == "sans_tracker":
@@ -195,14 +195,14 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
             return (f"Duel clos à la main depuis le chat{avant}, "
                     f"sur {d.get('manches_comptees')} manche(s) comptée(s) sur "
                     f"{d.get('manches')} : Azraël {d.get('azrael')}, {viewer} "
-                    f"{d.get('viewer')} — {issue}. {points}")
+                    f"{d.get('viewer')}, {issue}. {points}")
         if d.get("abandon"):
             # Le duel s'est arrêté en route. Les DEUX faits doivent être dits,
             # sans quoi l'annonce ment par omission : le verdict tient sur les
             # manches jouées, mais les points restent dépensés même pour qui
             # mène — sinon quitter en tête serait la meilleure stratégie.
             return (f"Duel interrompu. Sur les manches jouées : Azraël "
-                    f"{d.get('azrael')}, {viewer} {d.get('viewer')} — {issue}. "
+                    f"{d.get('azrael')}, {viewer} {d.get('viewer')}, {issue}. "
                     f"Les points de {viewer} restent dépensés : il n'est pas "
                     "allé au bout du duel.")
         # Le sort des points fait partie du résultat, pas d'un post-scriptum :
@@ -212,7 +212,7 @@ def _fait(evt: Evenement, viewer_connu: str = "") -> str:
         points = (_points_rendus(d, viewer) if d.get("rembourser")
                   else f"Les points de {viewer} sont consommés.")
         return (f"Duel terminé : Azraël {d.get('azrael')}, {viewer} "
-                f"{d.get('viewer')} — {issue}. {points}")
+                f"{d.get('viewer')}, {issue}. {points}")
     if evt.type == "refus":
         return (f"Le duel ne peut pas commencer : {d.get('motif')}. "
                 f"{_points_rendus(d)}")
@@ -408,15 +408,15 @@ class DuelAnnonceur:
             if d.get("manches_jouees") and not d.get("total_mesurable"):
                 return
             gauche, droite = d.get("total_azrael"), d.get("total_viewer")
-            label = f"Duel — manche {d.get('manche')}/{d.get('sur')}"
+            label = f"Duel, manche {d.get('manche')}/{d.get('sur')}"
         elif evt.type == "manche_fin":
             if not d.get("mesurable"):
                 return          # rien de comparable : pas de tableau
             gauche, droite = d.get("total_azrael"), d.get("total_viewer")
-            label = f"Duel — manche {d.get('manche')}/{d.get('sur')}"
+            label = f"Duel, manche {d.get('manche')}/{d.get('sur')}"
         elif evt.type == "verdict":
             gauche, droite = d.get("azrael"), d.get("viewer")
-            label = "Duel — score final"
+            label = "Duel, score final"
         else:
             return
 

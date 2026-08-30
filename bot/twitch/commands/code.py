@@ -31,8 +31,8 @@ _PP_MSG = (
 
 def _code_display_msg(code: str) -> str:
     return (
-        f"ON DIT BONJOUR AVANT DE METTRE LE CODE — "
-        f"Le code est {code} — RAPPEL : si votre niveau est trop élevé "
+        f"ON DIT BONJOUR AVANT DE METTRE LE CODE, "
+        f"Le code est {code}, RAPPEL : si votre niveau est trop élevé "
         "donnez-vous des défis ou lâchez cette vilaine manette, "
         "on est pas là pour rouler sur la commu."
     )

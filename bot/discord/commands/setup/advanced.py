@@ -466,7 +466,7 @@ class AdvancedTabSelect(discord.ui.Select):
                 "**Bot Général**",
                 f"Langue : {cfg.language_default}",
                 f"Contexte : {cfg.context_window_size} messages / {cfg.context_token_threshold} tokens",
-                f"Journal : {cfg.journal_time} — channel : {cfg.journal_channel_id or 'non défini'}",
+                f"Journal : {cfg.journal_time}, channel : {cfg.journal_channel_id or 'non défini'}",
                 f"Prélude : {cfg.prelude_window_size}",
             ]
             view = BotGeneralView(self.bot)
@@ -475,7 +475,7 @@ class AdvancedTabSelect(discord.ui.Select):
             cfg = self.bot.config.discord
             lines = [
                 "**Paramètres Discord**",
-                f"Seuil colère : {cfg.anger_trigger_threshold} — Timeout : {cfg.timeout_minutes} min",
+                f"Seuil colère : {cfg.anger_trigger_threshold}, Timeout : {cfg.timeout_minutes} min",
                 f"Mode filtre : **{cfg.channel_filter_mode}**",
                 f"Blacklist : {len(cfg.channel_blacklist)} channel(s)",
                 f"Whitelist : {len(cfg.channel_whitelist)} channel(s)",

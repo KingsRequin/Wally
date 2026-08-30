@@ -167,6 +167,6 @@ def expurger(texte: str | None) -> str:
 # Tempo » ne tente rien de louche, elle ignore juste la règle.
 REFUS = (
     "Refusé : je n'enregistre pas de surnom, ni pour toi ni pour quelqu'un "
-    "d'autre. J'appelle chacun par son pseudo — c'est le seul nom que la "
+    "d'autre. J'appelle chacun par son pseudo, c'est le seul nom que la "
     "personne a choisi elle-même. Dis-le simplement, sans en faire un drame."
 )

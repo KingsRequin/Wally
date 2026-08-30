@@ -43,7 +43,7 @@ class VoiceCog(commands.Cog):
         description="Wally rejoint le vocal du stream en écoute seule (il n'y parle pas)",
     )
     @app_commands.describe(
-        salon="Salon à écouter — par défaut celui du stream, sinon le tien",
+        salon="Salon à écouter, par défaut celui du stream, sinon le tien",
     )
     async def ecoute(
         self,
@@ -87,7 +87,7 @@ class VoiceCog(commands.Cog):
             )
             return
         await interaction.followup.send(
-            f"J'écoute **{channel.name}** 👂 — je ne parlerai pas ici, "
+            f"J'écoute **{channel.name}** 👂, je ne parlerai pas ici, "
             "je réagis sur l'overlay.",
             ephemeral=True,
         )

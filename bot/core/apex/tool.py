@@ -16,22 +16,22 @@ APEX_LEGENDS_TOOL = {
             "ACTIONS : progression → ce qu'un joueur a GAGNÉ sur une période, "
             "avec sa COURBE jointe en image à ta réponse. C'est CETTE action "
             "qu'il faut quand on te demande une courbe, un graphe ou une "
-            "progression dans la conversation — elle marche partout, live ou "
+            "progression dans la conversation, elle marche partout, live ou "
             "pas. Là où le canal porte les images (Discord), la courbe voyage "
             "avec ta réponse. Dans le CHAT TWITCH, qui ne porte que du texte, "
             "elle n'a qu'une sortie : l'écran du stream, via `show_apex` "
-            "panel=progress — la réponse de cet outil te le dira quand c'est le "
+            "panel=progress, la réponse de cet outil te le dira quand c'est le "
             "cas, et alors tu l'affiches au lieu de t'excuser. "
             "Exemples : « combien de kills depuis le début du stream ? », "
             "« donne-moi la courbe de kills d'azra aujourd'hui », « et ce "
-            "mois-ci ? ». Demande 'player_name' — LE JOUEUR VISÉ, à remplir dès "
+            "mois-ci ? ». Demande 'player_name', LE JOUEUR VISÉ, à remplir dès "
             "que la question nomme quelqu'un (« la courbe d'azra » → "
             "player_name=azra) ; ne le laisse vide que pour la personne à qui "
             "tu réponds, sinon tu obtiens SA progression à elle et pas celle "
             "dont on parle. Demande aussi 'period' (live/jour/semaine/mois) et "
             "'notion' (kills par défaut). Ce chiffre vient de relevés que je "
             "prends au fil du temps, pas de l'API : il ne remonte pas avant le "
-            "premier relevé, et la réponse le dit quand c'est le cas — reprends "
+            "premier relevé, et la réponse le dit quand c'est le cas, reprends "
             "cette nuance, ne la gomme pas. · "
             "player_stats → profil d'un joueur (rang, niveau, état en "
             "jeu, kills et rang mondial, ET ses chiffres PAR LÉGENDE). Demande "
@@ -44,16 +44,16 @@ APEX_LEGENDS_TOOL = {
             "server_status → état des serveurs.\n"
             "CE QUE CETTE API NE DONNE PAS : le classement en tant que TABLEAU "
             "(top 500, palmarès par légende), l'historique des matchs, la "
-            "boutique, les nouveautés du jeu — et AUCUN classement par PAYS, "
+            "boutique, les nouveautés du jeu, et AUCUN classement par PAYS, "
             "quelle que soit la formulation : cette notion n'existe nulle part "
             "dans les données. Ne la cherche pas ailleurs, dis-le franchement. "
             "En revanche tu as, pour chaque chiffre d'un joueur, sa position "
-            "MONDIALE et sa position sur SA PLATEFORME (PC, PS4, Xbox) — c'est "
+            "MONDIALE et sa position sur SA PLATEFORME (PC, PS4, Xbox), c'est "
             "le classement le plus fin dont tu disposes, propose-le à la place. "
             "Les kills d'un joueur AVEC une légende donnée sont eux aussi "
-            "disponibles — ne les confonds pas avec un palmarès. Si on te le demande, dis-le "
+            "disponibles, ne les confonds pas avec un palmarès. Si on te le demande, dis-le "
             "simplement et propose à la place la position et le top % du joueur "
-            "via player_stats — ne cherche pas ailleurs, aucun site ne te le "
+            "via player_stats, ne cherche pas ailleurs, aucun site ne te le "
             "donnera dans un format exploitable.\n"
             "UTILISE : « c'est quoi le rank de Daltoosh ? » → player_stats · "
             "« quelle map en ce moment ? » → map_rotation · "
@@ -88,7 +88,7 @@ APEX_LEGENDS_TOOL = {
                     "description": (
                         "Sur quelle période compter, en clair : « stream » (le "
                         "live en cours, ou le dernier s'il est fini), « jour », "
-                        "« semaine », « mois », ou une DURÉE libre — « 5m », "
+                        "« semaine », « mois », ou une DURÉE libre, « 5m », "
                         "« 30min », « 2h », « 1h30 », « 3j ». Reprends ce qui "
                         "est demandé : « la courbe des 10 dernières minutes » "
                         "→ period=10m. Défaut « stream »."
@@ -102,7 +102,7 @@ APEX_LEGENDS_TOOL = {
                 "player_name": {
                     "type": "string",
                     "description": (
-                        "Le pseudo du joueur visé — requis pour player_stats, "
+                        "Le pseudo du joueur visé, requis pour player_stats, "
                         "et tout aussi utile pour progression : « la courbe "
                         "d'azra » se demande avec player_name=azra. Vide = la "
                         "personne à qui tu réponds."
@@ -120,7 +120,7 @@ APEX_LEGENDS_TOOL = {
                         "quand la recherche par pseudo a échoué : l'API rate "
                         "des comptes bien réels, ce n'est pas une faute de "
                         "frappe. Il se lit sur apexlegendsstatus.com dans "
-                        "l'adresse de la forme profile/uid/PC/1234567890 — tu "
+                        "l'adresse de la forme profile/uid/PC/1234567890, tu "
                         "peux d'ailleurs me passer ce lien entier, j'en tire "
                         "le numéro. L'autre forme (profile/PC/pseudo) ne "
                         "contient pas d'uid et n'aide en rien. Donne aussi "
@@ -168,7 +168,7 @@ APEX_OVERLAY_TOOL = {
         "name": "show_apex",
         "description": (
             "Affiche des données Apex RÉELLES sur l'overlay du stream. Ne "
-            "fonctionne que pendant un live — l'outil te le dira sinon. Tu n'as "
+            "fonctionne que pendant un live, l'outil te le dira sinon. Tu n'as "
             "aucun chiffre à fournir : nomme le panneau, le reste est allé le "
             "chercher. ⚠️ L'overlay est vu par les SPECTATEURS : ton `comment` "
             "s'adresse à eux. Ne prétends jamais avoir affiché sans appeler cet "
@@ -201,7 +201,7 @@ APEX_OVERLAY_TOOL = {
                     "type": "string",
                     "description": (
                         "Le pseudo du joueur visé, pour rank/status/stats ET "
-                        "progress — « affiche la courbe d'azra » se demande "
+                        "progress, « affiche la courbe d'azra » se demande "
                         "avec player=azra. Laisse vide UNIQUEMENT pour la "
                         "personne à qui tu réponds : sinon c'est SON compte qui "
                         "part à l'écran, pas celui dont on parle."
@@ -211,7 +211,7 @@ APEX_OVERLAY_TOOL = {
                     "type": "string",
                     "description": (
                         "Pour le panneau progress : la fenêtre de la courbe, en "
-                        "clair — « stream » (défaut), « jour », « semaine », "
+                        "clair, « stream » (défaut), « jour », « semaine », "
                         "« mois », ou une durée libre (« 10m », « 2h », « 3j »). "
                         "Colle à la demande : « la courbe de ce stream » ne doit "
                         "pas rendre une image de quinze heures."
@@ -219,7 +219,7 @@ APEX_OVERLAY_TOOL = {
                 },
                 "comment": {
                     "type": "string",
-                    "description": "Ta réplique, quelques mots — c'est elle qu'on lit.",
+                    "description": "Ta réplique, quelques mots, c'est elle qu'on lit.",
                 },
             },
             "required": ["panel"],

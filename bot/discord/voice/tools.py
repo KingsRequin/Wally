@@ -58,7 +58,7 @@ SAY_IN_VOICE_TOOL = {
         "name": "say_in_voice",
         "description": (
             "Quand un MODÉRATEUR ou le streamer te demande depuis le chat de "
-            "dire quelque chose à voix haute dans le salon vocal — par exemple "
+            "dire quelque chose à voix haute dans le salon vocal, par exemple "
             "« wally dis à Azra qu'il a plus de balles », « préviens-les que le "
             "raid arrive ». Tu le dis DANS LE VOCAL, avec tes mots à toi : "
             "reformule, ne récite pas. N'appelle cet outil que si on te demande "

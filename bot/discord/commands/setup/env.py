@@ -69,7 +69,7 @@ class EnvDiscordModal(discord.ui.Modal, title="Variables Discord"):
         )
 
 
-class EnvTwitchIdModal(discord.ui.Modal, title="Twitch — Identité"):
+class EnvTwitchIdModal(discord.ui.Modal, title="Twitch, Identité"):
     twitch_client_id: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_CLIENT_ID", max_length=50)
     twitch_client_secret: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_CLIENT_SECRET", max_length=50)
     twitch_broadcaster_id: discord.ui.TextInput = discord.ui.TextInput(label="TWITCH_BROADCASTER_ID", max_length=20)
@@ -100,7 +100,7 @@ class EnvTwitchIdModal(discord.ui.Modal, title="Twitch — Identité"):
         )
 
 
-class EnvTwitchTokensModal(discord.ui.Modal, title="Twitch — Tokens"):
+class EnvTwitchTokensModal(discord.ui.Modal, title="Twitch, Tokens"):
     bot_access_token: discord.ui.TextInput = discord.ui.TextInput(label="BOT_ACCESS_TOKEN", max_length=200)
     bot_refresh_token: discord.ui.TextInput = discord.ui.TextInput(label="BOT_REFRESH_TOKEN", max_length=200)
     streamer_access_token: discord.ui.TextInput = discord.ui.TextInput(label="STREAMER_ACCESS_TOKEN", max_length=200)
@@ -148,7 +148,7 @@ class EnvDiscordButton(discord.ui.Button):
 
 class EnvTwitchIdButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Twitch — Identité", style=discord.ButtonStyle.primary, row=2)
+        super().__init__(label="Twitch, Identité", style=discord.ButtonStyle.primary, row=2)
 
     async def callback(self, interaction: discord.Interaction):
         values = read_env_values()
@@ -157,7 +157,7 @@ class EnvTwitchIdButton(discord.ui.Button):
 
 class EnvTwitchTokensButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Twitch — Tokens", style=discord.ButtonStyle.primary, row=3)
+        super().__init__(label="Twitch, Tokens", style=discord.ButtonStyle.primary, row=3)
 
     async def callback(self, interaction: discord.Interaction):
         values = read_env_values()
@@ -175,7 +175,7 @@ class EnvView(discord.ui.View):
 
 async def _send_env_tab(bot: "WallyDiscord", interaction: discord.Interaction) -> None:
     missing = is_env_complete()
-    lines = ["**Variables d'environnement** — Sélectionnez un groupe à modifier :"]
+    lines = ["**Variables d'environnement**, Sélectionnez un groupe à modifier :"]
     if missing:
         lines.append(f"⚠️ Clés manquantes : {', '.join(missing)}")
     view = EnvView()

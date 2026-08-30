@@ -91,7 +91,7 @@ async def progression_png(
         rp = []
 
     fenetre = libelle_de(libelle, depuis, maintenant=maintenant)
-    titre = f"{libelle_notion(notion).capitalize()} — {fenetre}"
+    titre = f"{libelle_notion(notion).capitalize()}, {fenetre}"
     # En thread : matplotlib bloque, et cette route partage la boucle avec tout
     # le reste du bot.
     buf = await asyncio.to_thread(render, progression.points, notion, titre, rp=rp)

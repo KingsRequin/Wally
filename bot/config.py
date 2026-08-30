@@ -783,7 +783,7 @@ class Config:
 
     def save(self) -> None:
         if not self._path:
-            raise RuntimeError("Config.save() called before Config.load() — no path set")
+            raise RuntimeError("Config.save() called before Config.load(), no path set")
         data = {
             "bot": asdict(self.bot),
             "openai": asdict(self.openai),

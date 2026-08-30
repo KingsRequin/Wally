@@ -570,12 +570,12 @@ class AttentionAgent:
             title = (rss_article or {}).get("title", "")
             if rss_article and title and not _seed_overlaps_focus(title, preoccupation):
                 lang_note = (
-                    " (article en anglais — réagis en français)"
+                    " (article en anglais, réagis en français)"
                     if rss_article.get("lang") and rss_article["lang"] != "fr" else ""
                 )
                 summary = rss_article.get("summary") or ""
                 rss_seed = (
-                    f"Une actu qui passe dans ton fil{lang_note} — "
+                    f"Une actu qui passe dans ton fil{lang_note}, "
                     f"{rss_article.get('feed_name', '')} : « {title} ». {summary}"
                 ).strip()
                 rich_seeds.append(rss_seed)

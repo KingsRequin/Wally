@@ -86,7 +86,7 @@ def sections_from_item(item: dict[str, Any]) -> list[dict]:
         if not corps:
             continue
         for n, morceau in enumerate(_chunks(corps, MAX_SECTION_CHARS)):
-            suffixe = f" — {titre}" if titre else ""
+            suffixe = f", {titre}" if titre else ""
             if n:
                 suffixe += f" ({n + 1})"
             sections.append({

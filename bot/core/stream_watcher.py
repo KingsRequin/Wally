@@ -56,7 +56,7 @@ def current_stream_awareness() -> Optional[str]:
     cat = st.get("category") or "un jeu inconnu"
     line = (
         f"{_active.streamer_name} (le streamer) est EN LIVE sur Twitch en ce moment "
-        f"— jeu : {cat}"
+        f", jeu : {cat}"
     )
     if title := st.get("title"):
         line += f", titre : « {title} »"

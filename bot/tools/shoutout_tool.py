@@ -34,7 +34,7 @@ SHOUTOUT_TOOL = {
             "raid pour renvoyer l'ascenseur. Twitch n'en accepte qu'un toutes "
             "les 2 minutes, et un seul par heure sur la même chaîne : ce n'est "
             "pas à toi de compter, l'outil te le dira. Ça ne remplace pas ce "
-            "que tu as à dire sur la personne — la carte montre, toi tu parles."
+            "que tu as à dire sur la personne, la carte montre, toi tu parles."
         ),
         "parameters": {
             "type": "object",
@@ -66,7 +66,7 @@ async def run_shoutout_tool(bot: Any, args: dict) -> str:
     pseudo = str(args.get("user") or "").strip().lstrip("@").lower()
     if not pseudo:
         return json.dumps({"status": "need_user", "message": (
-            "Dis-moi QUI mettre en avant — il me faut un pseudo Twitch.")})
+            "Dis-moi QUI mettre en avant, il me faut un pseudo Twitch.")})
 
     cible = await api.get_broadcaster_id(pseudo)
     if not cible:
@@ -83,5 +83,5 @@ async def run_shoutout_tool(bot: Any, args: dict) -> str:
     note_act(f"tu as fait un shoutout Twitch officiel pour {pseudo}")
     return json.dumps({"status": "ok", "message": (
         f"La carte de {pseudo} est affichée dans le chat de tout le monde. "
-        "Dis maintenant pourquoi il faut aller la voir — la carte montre, "
+        "Dis maintenant pourquoi il faut aller la voir, la carte montre, "
         "toi tu parles.")})

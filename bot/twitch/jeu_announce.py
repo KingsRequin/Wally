@@ -34,7 +34,7 @@ MAX_ANNONCE = 500
 _SOCLE = (
     "Une partie vient de se terminer sur le live. On te donne le RÉSULTAT : tu "
     "l'habilles d'une phrase, tu ne le changes pas, tu n'inventes ni chiffre ni "
-    "nom. UNE phrase courte, adressée aux SPECTATEURS du live — jamais au "
+    "nom. UNE phrase courte, adressée aux SPECTATEURS du live, jamais au "
     "streamer, il ne te lit pas pendant qu'il joue. Réponds uniquement par la "
     "phrase, sans guillemets."
 )

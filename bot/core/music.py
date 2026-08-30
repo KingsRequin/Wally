@@ -262,7 +262,7 @@ class MusicService:
         if not change:
             return
 
-        morceau = f"{nouveau['artiste']} — {nouveau['titre']}".strip(" —")
+        morceau = f"{nouveau['artiste']}, {nouveau['titre']}".strip(" ,")
         logger.info("Musique : {q} — {m}",
                     q="l'extension parle" if muet else "morceau",
                     m=morceau or "aucun lecteur sur cette page")

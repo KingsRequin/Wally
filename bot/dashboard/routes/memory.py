@@ -438,19 +438,19 @@ async def list_global_memories(request: Request):
 @router.post("/memory/global")
 async def add_global_memory(body: AddMemoryRequest, request: Request):
     """Ajoute une connaissance globale (communauté)."""
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    raise HTTPException(status_code=501, detail="Mémoire en refonte, indisponible")
 
 
 @router.put("/memory/global/{memory_id}")
 async def update_global_memory(memory_id: str, body: UpdateMemoryRequest, request: Request):
     """Modifie une mémoire globale."""
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    raise HTTPException(status_code=501, detail="Mémoire en refonte, indisponible")
 
 
 @router.delete("/memory/global/{memory_id}")
 async def delete_global_memory(memory_id: str, request: Request):
     """Supprime une mémoire globale."""
-    raise HTTPException(status_code=501, detail="Mémoire en refonte — indisponible")
+    raise HTTPException(status_code=501, detail="Mémoire en refonte, indisponible")
 
 
 # ── GET /memory/aliases ───────────────────────────────────────────────────────

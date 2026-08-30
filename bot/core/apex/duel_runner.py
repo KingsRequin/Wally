@@ -38,7 +38,7 @@ URL_APEX_STATUS = "https://apexlegendsstatus.com"
 ETAPES_UID = (
     "cherche ton pseudo sur le site, ouvre ton profil, et regarde l'URL : si "
     "elle ne contient pas de numéro, clique sur « Not the profile you are "
-    "looking for? Try deep search », puis reclique sur ton compte — l'URL "
+    "looking for? Try deep search », puis reclique sur ton compte, l'URL "
     "devient une adresse en profile/uid/… C'est ce numéro qu'il me faut."
 )
 
@@ -1047,7 +1047,7 @@ class DuelRunner:
         # quand une seule a pu être lue serait un chiffre inventé de plus.
         scores = d.get("scores") or duel.scores
         comptees = sum(1 for s in scores if s.get("azrael") is not None)
-        manches = f"{comptees} manche{'s' if comptees > 1 else ''} comptée" \
+        manches = f"{comptees} manche{'s' if comptees > 1 else ''} comptée"\
                   f"{'s' if comptees > 1 else ''}"
         if evt.type != "verdict":
             # Aucun verdict : personne n'a gagné, et la trace ne doit surtout
@@ -1071,7 +1071,7 @@ class DuelRunner:
                 fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
                         f"points de chaîne, mais le duel a été CLOS À LA MAIN "
                         f"depuis le chat avant son terme : sur {manches}, Azraël "
-                        f"{d.get('azrael')} — {nom} {d.get('viewer')}, {issue} sur "
+                        f"{d.get('azrael')}, {nom} {d.get('viewer')}, {issue} sur "
                         f"ce qui a été compté.")
             elif d.get("abandon"):
                 # Le verdict porte sur les seules manches jouées : le dire
@@ -1079,11 +1079,11 @@ class DuelRunner:
                 # jamais eu lieu en entier.
                 fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
                         f"points de chaîne, mais le duel a été INTERROMPU avant la "
-                        f"fin : sur {manches}, Azraël {d.get('azrael')} — {nom} "
+                        f"fin : sur {manches}, Azraël {d.get('azrael')}, {nom} "
                         f"{d.get('viewer')}, {issue} sur ce qui a été joué.")
             else:
                 fait = (f"{nom} a joué un duel Apex contre Azraël, acheté avec ses "
-                        f"points de chaîne : Azraël {d.get('azrael')} — {nom} "
+                        f"points de chaîne : Azraël {d.get('azrael')}, {nom} "
                         f"{d.get('viewer')} sur {manches}, {issue}.")
         try:
             # Id BRUT, jamais préfixé : `memory.add()` construit `twitch:<id>`
@@ -1135,7 +1135,7 @@ class DuelRunner:
         self._muet_depuis = None
         await self._appliquer(duel, duel.abandonner(
             f"l'API Apex ne répond plus depuis {duree} {ou}, plus rien ne peut "
-            "être compté — une panne, pas un abandon du duelliste"))
+            "être compté, une panne, pas un abandon du duelliste"))
         return True
 
     async def _stream_coupe(self, duel: Duel, maintenant: float) -> bool:
@@ -1181,7 +1181,7 @@ class DuelRunner:
         logger.error("Duel Apex : stream coupé en cours de duel — abandon et "
                      "remboursement")
         await self._appliquer(duel, duel.abandonner(
-            "le stream d'Azraël s'est coupé en cours de duel — une panne, pas "
+            "le stream d'Azraël s'est coupé en cours de duel, une panne, pas "
             "un abandon du duelliste"))
         return True
 

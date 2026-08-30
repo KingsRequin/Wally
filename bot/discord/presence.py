@@ -104,7 +104,7 @@ class PresenceService:
             label = f"statut perso : « {text} »"
             return f"{label} ({since})" if since else label
         if isinstance(act, discord.Spotify):
-            return f"écoute {act.title} — {act.artist}"
+            return f"écoute {act.title}, {act.artist}"
         name = getattr(act, "name", None)
         if not name:
             return None

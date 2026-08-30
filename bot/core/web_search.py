@@ -21,7 +21,7 @@ IMAGE_SEARCH_TOOL = {
             "Find an image on the web. Use ONLY when the user explicitly asks "
             "to SEE something: 'montre-moi', 'envoie une photo de', 'une image de', "
             "'à quoi ça ressemble'. "
-            "NEVER use for factual questions — use web_search instead. "
+            "NEVER use for factual questions, use web_search instead. "
             "NEVER use when nobody asked for an image."
         ),
         "parameters": {
@@ -45,7 +45,7 @@ WEB_SEARCH_TOOL = {
         "description": (
             "Search the web for factual information. "
             "DEFAULT TO SEARCHING whenever you're not fully certain: it's always better to "
-            "check than to invent or stay vague. Don't hesitate — search at the slightest doubt. "
+            "check than to invent or stay vague. Don't hesitate, search at the slightest doubt. "
             "Search whenever ANY of these is true: the answer could depend on recent/current "
             "info, OR you simply need more details to answer well, OR you're not 100% sure that "
             "what you think you know is accurate and up to date. When unsure, SEARCH. "
@@ -192,7 +192,7 @@ class WebSearchService:
                 # cliquable PRÊT À COLLER par source ([¹](<url>)), URL entre <>
                 # pour neutraliser l'aperçu de lien Discord qui gâche le message.
                 guidance = (
-                    "Sources — quand une info de ta réponse vient d'une de ces "
+                    "Sources : quand une info de ta réponse vient d'une de ces "
                     "sources, COLLE son marqueur cliquable juste après la phrase "
                     "concernée (ex. « la PS5 Pro coûte 800€ [¹](<url>) »). Garde "
                     "les chevrons <> autour de l'URL (sinon Discord affiche un "

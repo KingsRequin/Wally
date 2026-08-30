@@ -54,7 +54,7 @@ def load_prompt(name: str, fallback: str = "", render: bool = True) -> str:
 _EMBALLAGE = " \t\r\n`*_\"'«»<>"
 # Pour COMPARER à un marqueur, la ponctuation finale s'ajoute : « RIEN. » et
 # « RIEN » sont le même refus.
-_PONCTUATION = _EMBALLAGE + "[]().,;:!?…-—–"
+_PONCTUATION = _EMBALLAGE + "[]().,;:!?…-, –"
 
 
 def nettoyer_decorations(texte: str) -> str:
@@ -299,7 +299,7 @@ class PromptBuilder:
             # pseudo comme celui d'un tiers présent dans le salon.
             if handle := situation.get("self_handle"):
                 lines.append(
-                    f"Ton pseudo ici : {handle} — c'est TOI. Quand quelqu'un "
+                    f"Ton pseudo ici : {handle}, c'est TOI. Quand quelqu'un "
                     f"écrit @{handle}, il s'adresse à toi."
                 )
             if server := situation.get("server"):
@@ -327,7 +327,7 @@ class PromptBuilder:
         if host_metrics := cached_host_metrics():
             body_lines.append(
                 f"Ta machine (ton « corps ») en ce moment : {host_metrics}. "
-                f"C'est TA température et TA charge réelles — n'en parle que si "
+                f"C'est TA température et TA charge réelles, n'en parle que si "
                 f"la conversation s'y prête."
             )
         if weather := cached_weather():
@@ -625,10 +625,10 @@ def bloc_duel_en_cours(duel) -> str:
         else:
             lignes.append(
                 f"Manche {i} : Azraël {s['azrael'] if s['azrael'] is not None else '?'}"
-                f" — {duel.viewer_nom} {s['viewer'] if s['viewer'] is not None else '?'}")
+                f", {duel.viewer_nom} {s['viewer'] if s['viewer'] is not None else '?'}")
     if duel.mesurable:
         lignes.append(
-            f"Total : Azraël {duel.total_azrael} — {duel.viewer_nom} {duel.total_viewer}.")
+            f"Total : Azraël {duel.total_azrael}, {duel.viewer_nom} {duel.total_viewer}.")
     else:
         # Un négatif explicite, jamais un silence : sans cette ligne, le modèle
         # comblerait le trou tout seul — et le comblerait par un zéro.

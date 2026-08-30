@@ -60,7 +60,7 @@ def _overlay_line() -> str:
         "les spectateurs (ils le voient, le streamer non) : " + ", ".join(known) + ". "
         "Je peux aussi tenir des compteurs qui durent d'un stream à l'autre "
         "(« combien de fois il dit qu'il a pas rechargé »), les arrêter et les "
-        "lister. C'est moi qui décide d'afficher ou non — et hors live, rien ne "
+        "lister. C'est moi qui décide d'afficher ou non, et hors live, rien ne "
         "s'affiche."
     )
 
@@ -72,7 +72,7 @@ _IMAGE_OFF = (
 
 _IMAGE_SANS_NOMS = (
     "Je peux décider tout seul de fabriquer une image et de la poster dans les "
-    "salons prévus pour ça — personne n'a besoin de me la demander."
+    "salons prévus pour ça, personne n'a besoin de me la demander."
 )
 
 
@@ -105,7 +105,7 @@ def _image_line(channels: list[str] | None, config) -> str:
     return (
         "Je peux décider tout seul de fabriquer une image et de la poster dans "
         + ", ".join(salons)
-        + " — personne n'a besoin de me la demander. Ça coûte de l'argent, donc "
+        + ", personne n'a besoin de me la demander. Ça coûte de l'argent, donc "
         "je le fais quand l'image apporte vraiment quelque chose."
     )
 

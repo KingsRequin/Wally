@@ -82,12 +82,12 @@ PLANNING_TOOL_SPEC = {
     "function": {
         "name": "show_planning",
         "description": (
-            "Donne le planning des streams — les jours et horaires où le "
+            "Donne le planning des streams, les jours et horaires où le "
             "streamer est en live. Appelle-le dès qu'on demande quand est le "
             "prochain stream, les horaires, le programme de la semaine. Il te "
             "rend le LIEN de l'image : donne-le tel quel, Discord en fait un "
             "aperçu tout seul. Si un live est en cours, l'image s'affiche EN "
-            "PLUS sur l'overlay — l'outil te dit si ça a été le cas. Ne "
+            "PLUS sur l'overlay, l'outil te dit si ça a été le cas. Ne "
             "prétends jamais l'avoir affichée s'il te dit le contraire, et "
             "n'invente jamais d'horaires : tu ne connais que cette image."
         ),
@@ -114,7 +114,7 @@ _TALLY_TOOLS = [
                 "Ouvrir un compteur quand on te demande de compter quelque chose "
                 "(« compte combien de fois Azra dit qu'il a pas rechargé »). Tu "
                 "traduis la demande en FORMULATIONS : les tournures exactes qu'on "
-                "entendra vraiment. C'est le seul moment où tu réfléchis — ensuite "
+                "entendra vraiment. C'est le seul moment où tu réfléchis, ensuite "
                 "le comptage est automatique, y compris d'un live à l'autre. "
                 "Relancer un compteur existant reprend son total, il ne repart pas "
                 "de zéro."
@@ -155,7 +155,7 @@ _TALLY_TOOLS = [
             "name": "list_counters",
             "description": (
                 "Lister ce que tu comptes et où en sont les totaux. À utiliser dès "
-                "qu'on te demande « tu comptes quoi ? » ou « ça en est où ? » — "
+                "qu'on te demande « tu comptes quoi ? » ou « ça en est où ? », "
                 "n'invente jamais un total de mémoire."
             ),
             "parameters": {"type": "object", "properties": {}},
@@ -172,11 +172,11 @@ _PREDICT_TOOL = {
             "Parier sur l'issue d'une partie, puis trancher quand tu la connais. "
             "Sans `outcome`, tu ouvres un pari (`bet`). Avec `outcome`, tu tranches "
             "celui en cours : « right » si tu avais vu juste, « wrong » sinon. "
-            "AUCUNE source ne te dit si une partie est gagnée — c'est toi qui "
+            "AUCUNE source ne te dit si une partie est gagnée, c'est toi qui "
             "constates, en écoutant le vocal et en lisant le chat. Tranche quand tu "
             "es sûr, et assume : ton score cumulé se voit à l'écran. Ne t'attribue "
             "jamais un point sans avoir parié avant. ⚠️ Un seul pari à la fois : en "
-            "ouvrir un nouveau ABANDONNE celui en cours, qui ne comptera plus — "
+            "ouvrir un nouveau ABANDONNE celui en cours, qui ne comptera plus, "
             "l'outil te dira lequel tu viens de perdre. Tranche avant d'en relancer un."
         ),
         "parameters": {
@@ -206,7 +206,7 @@ async def run_predict_tool(bot, args: dict) -> str:
             row = await predictions.resolve(outcome == "right")
             if row is None:
                 return json.dumps({"status": "no_bet", "message": (
-                    "Tu n'as aucun pari en cours — tu ne peux pas trancher."
+                    "Tu n'as aucun pari en cours, tu ne peux pas trancher."
                 )})
             # Retour vérifié : hors live rien ne s'affiche, et l'annoncer serait
             # une hallucination (cf. `show_quote`).
@@ -296,7 +296,7 @@ def run_presence_tool(bot, args: dict) -> str:
            "parce qu'il n'y figure pas." if tronque else
            " C'est la liste COMPLÈTE : qui n'y est pas est hors ligne.")
     return json.dumps({"status": "ok", "message": (
-        "Connectés à l'instant — " + " · ".join(lignes) + "." + fin)})
+        "Connectés à l'instant, " + " · ".join(lignes) + "." + fin)})
 
 
 _QUOTE_TOOL = {
@@ -306,7 +306,7 @@ _QUOTE_TOOL = {
         "description": (
             "Retenir une réplique marquante entendue en vocal, ou en ressortir "
             "une d'avant. Sans `recall`, tu enregistres ET affiches ce que "
-            "quelqu'un vient de dire — cite ses mots tels que tu les as ENTENDUS, "
+            "quelqu'un vient de dire, cite ses mots tels que tu les as ENTENDUS, "
             "n'invente jamais une phrase qu'on n'a pas prononcée. Avec "
             "`recall: true`, tu ressors une citation plus ancienne : c'est le "
             "décalage qui fait rire, surtout quand plus personne n'y pense."
@@ -356,12 +356,12 @@ async def run_quote_tool(bot, args: dict) -> str:
             if not shown:
                 return json.dumps({"status": "offline", "message": (
                     f"Rien à l'écran (pas de live). Tu te souviens de : "
-                    f"« {row['text']} » — {row['author']}, {when}."
+                    f"« {row['text']} », {row['author']}, {when}."
                 )})
             if row.get("id") is not None:
                 await book.mark_shown(row["id"])
             return json.dumps({"status": "ok", "message": (
-                f"À l'écran : « {row['text']} » — {row['author']}, {when}."
+                f"À l'écran : « {row['text']} », {row['author']}, {when}."
             )})
         row = await book.add(asked_author, str(args.get("text") or ""))
         if row is None:
@@ -467,14 +467,14 @@ def _overlay_outcome(shown: dict) -> str:
             return f"La roue s'arrête sur « {options[index]} ». Annonce-le."
     if widget == "poll":
         return ("Le sondage est ouvert, le chat vote en tapant le numéro. Tu "
-                "auras le résultat à la fin du décompte — ne l'invente pas d'ici là.")
+                "auras le résultat à la fin du décompte, ne l'invente pas d'ici là.")
     if widget == "countdown":
         return f"Compte à rebours lancé sur {shown.get('seconds')} secondes."
     if widget == "gauge":
         return f"Jauge affichée à {shown.get('percent')}%."
     if widget == "stats":
         return (f"Les stats de {shown.get('player') or 'ce joueur'} sont à l'écran. "
-                "Commente-les — ne les répète pas telles quelles.")
+                "Commente-les, ne les répète pas telles quelles.")
     if widget == "versus":
         left, right = shown.get("left_value", 0), shown.get("right_value", 0)
         if left == right:
@@ -488,14 +488,14 @@ def _overlay_outcome(shown: dict) -> str:
     if widget == "talkers":
         rows = shown.get("rows") or []
         podium = ", ".join(f"{r['name']} ({r['count']})" for r in rows)
-        return f"Le podium est à l'écran : {podium}. Annonce-le." if podium else \
+        return f"Le podium est à l'écran : {podium}. Annonce-le." if podium else\
                "Le podium est à l'écran."
     if widget == "rps":
         adversaire = shown.get("opponent") or "le chat"
         verdict = {"wally": "tu gagnes", "opponent": f"{adversaire} gagne",
                    "draw": "égalité"}.get(shown.get("outcome"), "")
         return (f"Chifoumi tranché : {adversaire} a joué {shown.get('theirs')}, "
-                f"toi {shown.get('mine')} — {verdict}. Annonce-le.")
+                f"toi {shown.get('mine')}, {verdict}. Annonce-le.")
     if widget == "bingo":
         # `done` n'est renvoyé par AUCUN des trois retours possibles, et le
         # troisième — la coche d'une case — ne renvoie même pas `cells` : il
@@ -650,7 +650,7 @@ def _clip_en_texte(clip: dict, quoi: str) -> str:
     return json.dumps({"status": "texte", "message": (
         f"{quoi} : « {titre} », clippé par {clippeur} "
         f"({int(clip.get('view_count') or 0)} vues). "
-        f"Donne ce lien tel quel : {clip.get('url') or ''} — il n'y a pas "
+        f"Donne ce lien tel quel : {clip.get('url') or ''}, il n'y a pas "
         "d'écran là, donc ne dis PAS que tu l'as affiché. Tu ne l'as pas vu "
         "non plus : commente le titre, jamais le contenu."
     )})
@@ -681,7 +681,7 @@ async def _clip_sans_ecran(bot, args: dict) -> str:
                 f"« {c.get('title')} » par {c.get('creator_name')} "
                 f"({int(c.get('view_count') or 0)} vues)" for c in clips)
             return json.dumps({"status": "texte", "message": (
-                f"Podium des plus vus : {lignes}. Pas d'écran ici — ne dis pas "
+                f"Podium des plus vus : {lignes}. Pas d'écran ici, ne dis pas "
                 "que tu l'as affiché.")})
         if mode == "titre":
             clip = await api.find_clip(str(args.get("query") or "").strip()[:80], days=30)
@@ -728,7 +728,7 @@ async def run_last_clip_tool(bot, args: dict) -> str:
                     "Aucun clip à classer. Dis-le, n'invente pas de podium."
                 )})
             return json.dumps({"status": "ok", "message": (
-                f"Podium affiché — {podium['count']} clips, en tête « {podium['best']} »."
+                f"Podium affiché, {podium['count']} clips, en tête « {podium['best']} »."
             )})
         shown = await narrator.play_last_clip(
             auteur,
@@ -744,7 +744,7 @@ async def run_last_clip_tool(bot, args: dict) -> str:
         quoi = "Le clip est lancé" if shown["played"] else "La carte du clip est affichée"
         return json.dumps({"status": "ok", "message": (
             f"{quoi} : « {shown['title']} », clippé par {shown['author']}. "
-            "Tu ne l'as pas vu — ne raconte pas ce qu'il contient."
+            "Tu ne l'as pas vu, ne raconte pas ce qu'il contient."
         )})
     if auteur:
         # Distinguer les deux vides : « la chaîne n'a aucun clip » ferait dire
@@ -793,8 +793,8 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
             message = (
                 "Rien affiché : il n'y a pas de live en cours. Mais la personne "
                 "veut la DONNÉE, pas l'écran du stream : appelle `apex_legends` "
-                "action=progression MAINTENANT — elle joint la courbe en image "
-                "et marche hors live — puis commente le résultat. N'annonce "
+                "action=progression MAINTENANT, elle joint la courbe en image "
+                "et marche hors live, puis commente le résultat. N'annonce "
                 "surtout pas que tu peux le faire : fais-le."
             )
         else:
@@ -804,7 +804,7 @@ async def run_apex_overlay_tool(bot, args: dict, requester: str | None = None) -
     # le compte visé n'a pas assez de relevés. Le dire évite qu'on annonce une
     # absence de mesures qui ne concerne pas la personne dont on parle.
     precision = (
-        " Le compte visé n'a pas assez de relevés sur cette période — si tu "
+        " Le compte visé n'a pas assez de relevés sur cette période, si tu "
         "visais quelqu'un d'autre que la personne à qui tu réponds, recommence "
         "en remplissant `player`."
         if str(args.get("panel") or "").strip() == "progress" else ""
@@ -862,7 +862,7 @@ def run_overlay_cancel_tool(bot, args: dict) -> str:
             "simplement, ne prétends pas l'avoir retiré."
         )})
     return json.dumps({"status": "ok", "message": (
-        "C'est fait — " + ", ".join(_CANCEL_LABELS.get(d, d) for d in done) + "."
+        "C'est fait, " + ", ".join(_CANCEL_LABELS.get(d, d) for d in done) + "."
     )})
 
 
@@ -878,7 +878,7 @@ _SELF_MODIFY_TOOL = {
             "Demande une modification de ton PROPRE code source. À utiliser UNIQUEMENT "
             "quand ton créateur te demande explicitement d'ajouter, corriger ou changer "
             "une de tes capacités/fonctionnalités (ex. « ajoute la lecture des réactions "
-            "emoji »). Tu décris le BUT recherché — pas le comment, Claude Code écrira le "
+            "emoji »). Tu décris le BUT recherché, pas le comment, Claude Code écrira le "
             "code. Ton créateur recevra une demande d'autorisation 🧠 en DM (✅/❌) ; sur ✅, "
             "Claude Code modifie le code et le bot redémarre. N'utilise JAMAIS "
             "save_persistent_note pour ça, et ne prétends jamais avoir « envoyé la demande » "
@@ -894,7 +894,7 @@ _SELF_MODIFY_TOOL = {
                         "concret (le comportement voulu, pas les détails techniques), le "
                         "périmètre exact (Discord/Twitch, DM ou serveur), UNE seule "
                         "intention. Ne suppose JAMAIS l'état du code : ne prétends pas "
-                        "qu'une fonction ou un fichier 'existe déjà' — Claude vérifiera."
+                        "qu'une fonction ou un fichier 'existe déjà', Claude vérifiera."
                     ),
                 },
             },
@@ -1081,7 +1081,7 @@ def _presence_line(bot: "WallyDiscord", user_id: str, display_name: str) -> str:
         # laisser un vide que le LLM comblerait en inventant un statut.
         return (
             f"Tu ne vois aucun statut ni activité pour {display_name} là "
-            "(hors ligne, invisible, ou hors du serveur principal) — ne l'invente pas."
+            "(hors ligne, invisible, ou hors du serveur principal), ne l'invente pas."
         )
     except Exception:
         return ""
@@ -1744,7 +1744,7 @@ async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
         self_name = bot.config.bot.name
         await bot.memory.add(
             "discord", user_id,
-            f"{self_name} a coupé {username} pour spam — trop de messages en peu de temps. "
+            f"{self_name} a coupé {username} pour spam, trop de messages en peu de temps. "
             f"Il en a eu marre et a arrêté de lui répondre.",
             username=username,
             origin=_channel_origin(message.channel),
@@ -1835,11 +1835,11 @@ async def _rss_ancre_connaissance(bot) -> str:
     # donnait « date de il y a 6 jours ».
     age = _rss_age({"published_ts": ts}).strip().strip("()") or "de date inconnue"
     return (
-        f"IMPORTANT — le patch note le plus RÉCENT que tu connaisses est {age}. "
+        f"IMPORTANT, le patch note le plus RÉCENT que tu connaisses est {age}. "
         "Ta connaissance s'arrête là, et elle est à jour jusque-là. Donc si on te "
         "demande un changement récent sur une arme ou une légende et que rien "
         "ci-dessous n'en parle dans un patch récent, la réponse est qu'il n'y a EU "
-        "AUCUN changement depuis — dis-le franchement, en précisant de quand date le "
+        "AUCUN changement depuis, dis-le franchement, en précisant de quand date le "
         "dernier que tu connaisses sur ce sujet. Ne présente jamais un vieux patch "
         "comme une nouveauté : « ça remonte à telle date, et depuis, rien » est une "
         "bonne réponse."
@@ -1889,7 +1889,7 @@ async def _rss_knowledge_context(bot, text: str, *, citations: bool = True) -> s
         "brut, une URL y est illisible. Dis l'info, c'est tout :"
     )
     lines = [
-        "Actus que tu CONNAIS DÉJÀ sur ce sujet — inutile de chercher sur le web, tu "
+        "Actus que tu CONNAIS DÉJÀ sur ce sujet, inutile de chercher sur le web, tu "
         "as l'info ci-dessous. Elles sont classées par PERTINENCE, pas par date : "
         "l'âge de chacune est indiqué, fie-toi à lui et pas à l'ordre. Pour un "
         "« dernier patch note », prends donc le plus récent du lot, et dis de quand il "
@@ -2079,7 +2079,7 @@ async def _third_party_mention_context(
                 pct = int(best_ratio * 100)
                 parts.append(
                     f"Note interne : '{token}' ressemble à {best_username} (confiance {pct}%) "
-                    f"— si c'est bien lui, mentionne-le naturellement"
+                    f", si c'est bien lui, mentionne-le naturellement"
                 )
                 processed += 1
 
@@ -2688,8 +2688,8 @@ async def _respond(
                 topics_block = "--- Sujets de la communauté ---"
                 for t in topics:
                     names = ", ".join(p["name"] for p in t["participants"]) if t["participants"] else ""
-                    who = f" — {names} en parlent" if names else ""
-                    topics_block += f'\n- {t["name"]}{who} — ton avis : "{t["opinion"]}"'
+                    who = f", {names} en parlent" if names else ""
+                    topics_block += f'\n- {t["name"]}{who}, ton avis : "{t["opinion"]}"'
                 memory_parts.append((5, topics_block, "topics"))
         except Exception as exc:  # noqa: BLE001 — bloc optionnel
             logger.warning("Mémoire : bloc « sujets de la communauté » ignoré : {e!r}", e=exc)
@@ -2880,7 +2880,7 @@ async def _respond(
                     )
                 if image_analysis:
                     image_analysis_context = (
-                        "\n[ANALYSE VISUELLE de l'image jointe — ce que tu VOIS "
+                        "\n[ANALYSE VISUELLE de l'image jointe, ce que tu VOIS "
                         "réellement, des faits vérifiés ; commente-les, n'invente "
                         f"rien d'autre] :\n{image_analysis}\n"
                     )
@@ -2891,12 +2891,12 @@ async def _respond(
 
         target_notice = (
             f"\n⚠️ Tu réponds à {author_label}. "
-            "Le contexte ci-dessus contient des messages de PLUSIEURS personnes — "
+            "Le contexte ci-dessus contient des messages de PLUSIEURS personnes, "
             "attribue chaque propos à son auteur (indiqué entre crochets). "
             "Ne confonds JAMAIS les propos d'un utilisateur avec ceux d'un autre. "
-            f"Si tu nommes ton interlocuteur, appelle-le par SON pseudo exact ({author_label}) — "
+            f"Si tu nommes ton interlocuteur, appelle-le par SON pseudo exact ({author_label}), "
             "n'utilise JAMAIS le nom d'une autre personne présente dans le contexte à sa place. "
-            "Réponds UNIQUEMENT avec ton propre texte — ne répète jamais le message auquel tu réponds."
+            "Réponds UNIQUEMENT avec ton propre texte, ne répète jamais le message auquel tu réponds."
         )
         auto_scrape_block = await _auto_scrape_block(bot, message)
         mention_block = _build_mention_directory(message)
@@ -3114,7 +3114,7 @@ async def _respond(
                 _fire(bot.self_fix.request_upgrade(UpgradeRequest(goal=goal), force=True))
                 return json.dumps({
                     "status": "ok",
-                    "message": "Je t'envoie une demande d'autorisation 🧠 en DM avec le but reformulé — réagis ✅ pour que Claude Code s'en charge, ❌ pour annuler.",
+                    "message": "Je t'envoie une demande d'autorisation 🧠 en DM avec le but reformulé, réagis ✅ pour que Claude Code s'en charge, ❌ pour annuler.",
                 })
             if name == "join_voice":
                 voice = getattr(message.author, "voice", None)
@@ -3131,7 +3131,7 @@ async def _respond(
                 return json.dumps({"status": "ok", "message": "Pas en vocal."})
             return json.dumps({"status": "no_such_tool", "message": (
                 f"L'outil '{name}' n'existe pas. N'invente pas d'outil : "
-                "utilise ceux qu'on te donne, ou réponds simplement — ton texte est déjà envoyé dans la conversation."
+                "utilise ceux qu'on te donne, ou réponds simplement, ton texte est déjà envoyé dans la conversation."
             )})
 
         async def _tool_executor(name: str, arguments: str) -> str:
@@ -3503,7 +3503,7 @@ async def _veiller_questions(
         if maintenant - _spontaneous_cooldowns.get(chan_id, 0) < cfg.spontaneous_cooldown_seconds:
             _clog(bot, _conv_channel(message), "gate_decision",
                   triggered=False, spontaneous=True, decision="silence",
-                  reason="question sans réponse — intervention en cooldown")
+                  reason="question sans réponse, intervention en cooldown")
             return
 
         source = question.get("charge")
@@ -3520,7 +3520,7 @@ async def _veiller_questions(
         _clog(bot, _conv_channel(message), "gate_decision",
               trace_id=str(source.id), triggered=False, spontaneous=True,
               decision="question_relevee" if repondre else "silence",
-              reason=motif or "question sans réponse — rien à apporter",
+              reason=motif or "question sans réponse, rien à apporter",
               question=question["texte"][:200], question_age_s=int(question.get("age_s", 0)))
         if not repondre:
             return
@@ -3531,7 +3531,7 @@ async def _veiller_questions(
                 f"[CONTEXTE: Tu n'as PAS été mentionné. {question['auteur']} a posé "
                 f"cette question dans le salon il y a {int(question.get('age_s', 0))} "
                 f"secondes et personne n'y a répondu. Tu interviens parce que tu SAIS. "
-                f"Donne l'information, court et direct — si finalement tu n'es sûr de "
+                f"Donne l'information, court et direct, si finalement tu n'es sûr de "
                 f"rien, dis-le en une ligne plutôt que d'inventer.]"
             ),
         )

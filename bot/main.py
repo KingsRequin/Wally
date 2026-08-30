@@ -92,7 +92,7 @@ async def _run_discord(
     # dashboard, qui répond 200). C'est la classe de bug de `fa66572`, dont le
     # correctif ne traitait que l'échec de *login*. On lève : le `gather` remonte
     # et Docker relance.
-    raise RuntimeError("Discord: connexion terminée — le process doit redémarrer")
+    raise RuntimeError("Discord: connexion terminée, le process doit redémarrer")
 
 
 # Objets créés en cours de démarrage qu'il faut rendre même si l'arrêt survient
@@ -616,7 +616,7 @@ async def main() -> None:
             elif not _duel_conf.active:
                 _raison = "coupé en configuration (apex.duel.active: false)"
             elif apex_api is None or not apex_api.available:
-                _raison = "APEX_API_KEY absente — aucun relevé ne serait mesurable"
+                _raison = "APEX_API_KEY absente, aucun relevé ne serait mesurable"
             else:
                 _raison = "aucune section apex dans config.yaml"
             logger.info("Duel Apex non armé : {r}", r=_raison)

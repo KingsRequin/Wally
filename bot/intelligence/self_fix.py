@@ -54,7 +54,7 @@ def _motif_de_blocage(hit) -> str:
     elif hit.status == REQUESTED:
         etat = (
             f"C'est la demande #{hit.id}, déjà émise"
-            f"{f' le {depuis}' if depuis else ''} et en attente d'autorisation — "
+            f"{f' le {depuis}' if depuis else ''} et en attente d'autorisation, "
             "inutile de la réémettre, il faut laisser à ton créateur le temps de répondre."
         )
     elif hit.status == DECLINED:
@@ -62,7 +62,7 @@ def _motif_de_blocage(hit) -> str:
         # créateur a dit non, et tu lui as promis de ne pas y revenir.
         etat = (
             f"Ton créateur a REFUSÉ cette demande (#{hit.id})"
-            f"{f' le {depuis}' if depuis else ''} — tu lui as répondu que tu ne la "
+            f"{f' le {depuis}' if depuis else ''}, tu lui as répondu que tu ne la "
             "reproposerais pas. Tiens parole."
         )
     else:
@@ -70,7 +70,7 @@ def _motif_de_blocage(hit) -> str:
     return (
         f"{etat} Elle disait : « {extrait} ». Ne la redemande pas telle quelle. "
         "Si tu penses viser autre chose, formule d'abord EN QUOI ta demande diffère "
-        "de celle-là — sinon considère le sujet comme réglé."
+        "de celle-là, sinon considère le sujet comme réglé."
     )
 
 
@@ -79,7 +79,7 @@ def _motif_de_blocage(hit) -> str:
 # « la fonction existe déjà » : on force la vérification de l'état réel du code).
 _GOAL_PREAMBLE = (
     "Tu modifies le code du bot Discord/Twitch « {{BOT_NAME}} » (Python, asyncio). "
-    "AVANT de coder : vérifie l'état RÉEL du code — ne te fie PAS aux suppositions "
+    "AVANT de coder : vérifie l'état RÉEL du code, ne te fie PAS aux suppositions "
     "de la demande (une fonction ou un fichier présenté comme « déjà prêt » peut très "
     "bien ne pas exister). Implémente DIRECTEMENT, ne te contente pas d'analyser ou de "
     "proposer. Lance la suite de tests (python3 -m pytest -q) et ne casse rien (échecs "
@@ -88,7 +88,7 @@ _GOAL_PREAMBLE = (
     "du projet : loguru (jamais print), async. Ne touche pas à public-ui/.\n"
     "Ne t'occupe PAS du commit, du push ni du build : ils sont faits AUTOMATIQUEMENT "
     "après ton run (commit + push + rebuild sont obligatoires pour un selfix). Ne "
-    "demande donc jamais l'autorisation de committer, pousser ou builder — implémente, "
+    "demande donc jamais l'autorisation de committer, pousser ou builder, implémente, "
     "teste, c'est tout.\n\n"
     "=== Objectif demandé ===\n"
 )
@@ -208,7 +208,7 @@ class SelfFix:
         t = _next_threshold_crossed(pct, self._last_feed_pct)
         if t is not None:
             self._last_feed_pct = t
-            self._publish_feed(f"auto-modif en cours — avancement estimé ~{t} %")
+            self._publish_feed(f"auto-modif en cours, avancement estimé ~{t} %")
 
     def _owner_id(self) -> str:
         """Lit l'ID Discord du créateur depuis config.bot.owner_discord_id."""
@@ -252,7 +252,7 @@ class SelfFix:
         if not force and self._gate is not None and self._gate.is_blocked():
             logger.info("self-fix différé : une sollicitation owner est déjà en attente")
             await self._record_outcome(
-                goal, "Différé — une autre sollicitation vers le créateur attend déjà sa "
+                goal, "Différé, une autre sollicitation vers le créateur attend déjà sa "
                 "réponse ; à re-soulever plus tard."
             )
             return
@@ -273,7 +273,7 @@ class SelfFix:
             await self._set_status(upgrade_id, ABANDONED)
             await self._notify(f"❌ Ma tentative d'auto-modification a échoué : {e}")
             await self._record_outcome(
-                goal, f"A échoué techniquement ({e}) — non déployé, demande close."
+                goal, f"A échoué techniquement ({e}), non déployé, demande close."
             )
         finally:
             self._pending = False
@@ -457,9 +457,9 @@ class SelfFix:
             # Plus d'auto-refus : la demande n'est ni refusée ni blacklistée. Elle
             # est simplement mise de côté (re-proposable). Pas de message « j'abandonne ».
             await self._set_status(upgrade_id, ABANDONED)
-            self._remember_in_dm(dm, f"[self-fix en attente — pas encore de réponse] {goal}")
+            self._remember_in_dm(dm, f"[self-fix en attente, pas encore de réponse] {goal}")
             await self._record_outcome(
-                goal, f"Pas encore de réponse de {creator_name()} — demande mise de côté, "
+                goal, f"Pas encore de réponse de {creator_name()}, demande mise de côté, "
                 "ni refusée ni abandonnée définitivement ; à re-soulever plus tard."
             )
             return
@@ -485,18 +485,18 @@ class SelfFix:
             await self._set_status(upgrade_id, DECLINED)
             self._remember_in_dm(dm, f"[self-fix refusé] {goal}")
             await self._record_outcome(
-                goal, f"Refusé par {creator_name()} — abandonné, ne plus le reproposer ni l'attendre."
+                goal, f"Refusé par {creator_name()}, abandonné, ne plus le reproposer ni l'attendre."
             )
             return
 
         await dm.send("👍 C'est parti, Claude Code travaille… (ça peut prendre quelques minutes)")
         self._remember_in_dm(dm, f"[self-fix accepté] {goal}")
         await self._record_outcome(
-            goal, f"Accepté par {creator_name()} — Claude Code l'implémente. Ce n'est plus "
+            goal, f"Accepté par {creator_name()}, Claude Code l'implémente. Ce n'est plus "
             "en attente d'autorisation."
         )
         job_id = await self._bridge.claude_run(render_identity(_GOAL_PREAMBLE + goal))
-        self._publish_feed("validé par le créateur — Claude Code démarre")
+        self._publish_feed("validé par le créateur, Claude Code démarre")
 
         # Message d'avancement unique, édité au fil de l'eau (pas de spam).
         prog_msg = await dm.send("⏳ Avancement estimé : ~5 %")
@@ -511,11 +511,11 @@ class SelfFix:
 
         status = await self._poll(job_id, progress=_progress)
         if status is None:
-            await dm.send("❌ Claude Code n'a pas répondu à temps — j'abandonne.")
+            await dm.send("❌ Claude Code n'a pas répondu à temps, j'abandonne.")
             await self._set_status(upgrade_id, ABANDONED)
-            self._remember_in_dm(dm, f"[self-fix abandonné — Claude Code n'a pas répondu] {goal}")
+            self._remember_in_dm(dm, f"[self-fix abandonné, Claude Code n'a pas répondu] {goal}")
             await self._record_outcome(
-                goal, "Accepté mais Claude Code n'a pas répondu à temps — non déployé, à reproposer."
+                goal, "Accepté mais Claude Code n'a pas répondu à temps, non déployé, à reproposer."
             )
             return
         if status.get("state") != "done":
@@ -526,7 +526,7 @@ class SelfFix:
             await self._set_status(upgrade_id, ABANDONED)
             self._remember_in_dm(dm, f"[self-fix échoué] {goal}")
             await self._record_outcome(
-                goal, "Accepté mais Claude Code a échoué — non déployé, à reproposer."
+                goal, "Accepté mais Claude Code a échoué, non déployé, à reproposer."
             )
             return
         if not status.get("changed") and not status.get("head_changed"):
@@ -537,15 +537,15 @@ class SelfFix:
             await self._set_status(upgrade_id, DELIVERED)
             self._remember_in_dm(dm, f"[self-fix sans changement] {goal}")
             await self._record_outcome(
-                goal, "Accepté mais aucun changement de code n'était nécessaire — clôturé."
+                goal, "Accepté mais aucun changement de code n'était nécessaire, clôturé."
             )
             return
 
         try:
-            await prog_msg.edit(content="⏳ Claude a fini — application + rebuild… ~100 %")
+            await prog_msg.edit(content="⏳ Claude a fini, application + rebuild… ~100 %")
         except Exception:  # noqa: BLE001
             pass
-        self._publish_feed("Claude a fini — application + rebuild en cours")
+        self._publish_feed("Claude a fini, application + rebuild en cours")
         await self._bridge.claude_commit(job_id)
         # Tout selfix se publie : commit + push + build sont obligatoires, jamais
         # laissés à une décision. Best-effort — un push qui échoue (réseau/creds)
@@ -558,7 +558,7 @@ class SelfFix:
             )
         except Exception as e:  # noqa: BLE001 — le push ne bloque jamais le déploiement
             logger.warning("self-fix: git push échoué (déploiement local poursuivi): {!r}", e)
-            self._publish_feed("push public échoué — déploiement local seul")
+            self._publish_feed("push public échoué, déploiement local seul")
         await self._bridge.docker_rebuild(self._service())
         prefix = (
             "✅ **C'est implémenté et déployé !** Je redémarre avec la nouvelle "
@@ -573,7 +573,7 @@ class SelfFix:
         self._remember_in_dm(dm, f"[self-fix déployé] {goal}")
         await self._record_outcome(
             goal, f"Accepté par {creator_name()}, implémenté par Claude Code et déployé. "
-            "Objectif ATTEINT — ne plus l'attendre ni le considérer en attente d'autorisation."
+            "Objectif ATTEINT, ne plus l'attendre ni le considérer en attente d'autorisation."
         )
 
     async def _poll(self, job_id: str, progress=None, max_wait: float = 1800.0) -> dict | None:
@@ -619,7 +619,7 @@ class SelfFix:
             now = datetime.utcnow()
             await store.add(AtomicFact(
                 user_id="wally:self",
-                content=f"[code_fix] {outcome} — demande : « {goal[:200]} »",
+                content=f"[code_fix] {outcome}, demande : « {goal[:200]} »",
                 category=FactCategory.THOUGHT,
                 source="self_fix",
                 importance=0.9,

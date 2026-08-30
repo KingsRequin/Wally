@@ -38,7 +38,7 @@ SCRAPE_TOOL = {
             "Lis le contenu COMPLET d'une page web précise à partir de son URL. "
             "Utilise quand tu as une URL et que tu dois en connaître le contenu détaillé "
             "(article, patch notes, documentation). N'utilise PAS pour chercher une info "
-            "générale — utilise web_search pour ça."
+            "générale, utilise web_search pour ça."
         ),
         "parameters": {
             "type": "object",

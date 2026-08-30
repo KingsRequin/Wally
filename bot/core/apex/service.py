@@ -73,7 +73,7 @@ def _classements(stat) -> str:
         morceaux.append(f"top {stat.top_percent} % mondial")
     if stat.platform_pos is not None:
         morceaux.append(f"{_rang(stat.platform_pos)} sur sa plateforme")
-    return f" ({' — '.join(morceaux)})" if morceaux else ""
+    return f" ({', '.join(morceaux)})" if morceaux else ""
 
 
 # La page d'un profil sur apexlegendsstatus.com. Deux formes existent :
@@ -377,7 +377,7 @@ class ApexLegendsService:
             # d'interroger, faute de pseudo, celui de la personne qui parle —
             # et Wally annonce au chat une absence de données qui est fausse.
             qui = f"du compte {nom_cible}" if nom_cible else "de ce compte"
-            texte = (f"Je n'ai aucun relevé {qui} sur cette période — "
+            texte = (f"Je n'ai aucun relevé {qui} sur cette période, "
                      f"je ne peux pas inventer sa progression.")
             if not player_name.strip() and not _uid_valide(uid):
                 texte += (" C'est le compte de la personne à qui tu réponds, "
@@ -398,7 +398,7 @@ class ApexLegendsService:
             # déjà à éviter pour le panneau.
             self._retenir_courbe(
                 requester, progression.points, notion,
-                f"{libelle_notion(notion).capitalize()} — {libelle_periode}",
+                f"{libelle_notion(notion).capitalize()}, {libelle_periode}",
                 rp=await historique.rp_de_la_fenetre(cible, fenetre.depuis),
             )
         texte = (f"{libelle_periode.capitalize()} : "
@@ -407,7 +407,7 @@ class ApexLegendsService:
         # mois-ci » alors qu'on ne mesure que depuis le 12 serait un chiffre
         # faux présenté comme complet.
         if progression.couverture_partielle:
-            texte += (f" — mais je ne mesure ce compte que depuis le "
+            texte += (f", mais je ne mesure ce compte que depuis le "
                       f"{progression.depuis.strftime('%d/%m à %Hh%M')}, "
                       f"donc c'est un minimum, pas le total de la période")
         texte += "."
@@ -431,7 +431,7 @@ class ApexLegendsService:
                 " [Ce chat ne porte pas d'image, mais le live tourne : mets la "
                 f"courbe SUR L'ÉCRAN maintenant avec `show_apex` panel=progress"
                 f"{qui}, puis commente-la. N'invente aucun lien et ne t'excuse "
-                "pas de ne pas pouvoir montrer d'image — tu peux.]"
+                "pas de ne pas pouvoir montrer d'image, tu peux.]"
             )
         else:
             texte += (
@@ -491,10 +491,10 @@ class ApexLegendsService:
             )
         return (
             f"{cherche} : introuvable par pseudo ({erreur or 'compte inconnu'}). "
-            "La recherche par nom de l'API rate des comptes pourtant bien réels — "
+            "La recherche par nom de l'API rate des comptes pourtant bien réels, "
             "ce n'est pas forcément une faute de frappe. Demande le lien de sa "
             "page sur apexlegendsstatus.com dans sa forme qui contient l'uid "
-            f"({_ALS}/PC/1234567890 — un nombre, pas un pseudo) et rappelle-moi "
+            f"({_ALS}/PC/1234567890, un nombre, pas un pseudo) et rappelle-moi "
             "avec le paramètre `uid`. Une fois vu, je retiens le compte et son "
             "pseudo : tu n'auras pas à le redonner."
         )
@@ -627,14 +627,14 @@ class ApexLegendsService:
             logger.warning("Apex: impossible de mémoriser le compte: {e!r}", e=e)
 
     def _render_profile(self, p: PlayerProfile, legend: str = "") -> str:
-        lignes = [f"{p.name} — niveau {_fr(p.level)} ({p.platform})"]
+        lignes = [f"{p.name}, niveau {_fr(p.level)} ({p.platform})"]
         if p.rank:
             rang = f"Rang BR : {p.rank.name}"
             if p.rank.div:
                 rang += f" {p.rank.div}"
             rang += f" ({_fr(p.rank.score)} RP)"
             if p.rank.top_percent is not None:
-                rang += f" — top {p.rank.top_percent} % du ladder"
+                rang += f", top {p.rank.top_percent} % du ladder"
             lignes.append(rang)
         etat = p.state or "état inconnu"
         if p.legend:
@@ -669,7 +669,7 @@ class ApexLegendsService:
             if trouvee is None:
                 suivies = ", ".join(sorted(p.legend_stats))
                 return [
-                    f"Pas de compteur pour {legende} chez {p.name} — il ne l'a pas "
+                    f"Pas de compteur pour {legende} chez {p.name}, il ne l'a pas "
                     f"épinglé en jeu, ce n'est pas un zéro. Légendes suivies : {suivies}."
                 ]
             detail = []

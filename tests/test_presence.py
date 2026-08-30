@@ -176,7 +176,7 @@ def test_spotify_activity_described():
     act.artist = "deadmau5"
     member = _make_member(status="online", activities=[act])
     svc = PresenceService(_make_client(member), guild_id=42)
-    assert svc.describe("610", "Bob") == "Bob est en ligne — écoute Strobe — deadmau5."
+    assert svc.describe("610", "Bob") == "Bob est en ligne — écoute Strobe, deadmau5."
 
 
 def test_unknown_activity_ignored():
@@ -249,7 +249,7 @@ def test_roster_listening_music_is_not_busy():
     svc = PresenceService(_make_roster_client(members), guild_id=42)
     assert svc.roster() == [
         "Gamer est en ligne — joue à Apex.",
-        "Listener est en ligne — écoute Strobe — deadmau5.",
+        "Listener est en ligne — écoute Strobe, deadmau5.",
     ]
 
 

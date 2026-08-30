@@ -368,7 +368,7 @@ class ApexWatcher:
             ligne += f", sur {p.legend}"
         if p.rank:
             rang = p.rank.name + (f" {p.rank.div}" if p.rank.div else "")
-            ligne += f" — {rang}, {p.rank.score} RP"
+            ligne += f", {rang}, {p.rank.score} RP"
         lignes = ["--- Apex (perception passive) ---", ligne]
         gains = self.progress()
         if gains:

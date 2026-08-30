@@ -40,8 +40,8 @@ _FR_DIRECTIVE = (
 # retiré, c'est l'initiative depuis CETTE boucle — pas la parole.
 SPEAK_COUPE = (
     "\n\n## Ce que tu peux faire ici, et ce qui est coupé\n"
-    "Tu n'es PAS muet. Quand on te sollicite — mention Discord, message dans le "
-    "chat Twitch, réponse, DM, parole en vocal — tu réponds normalement, et tu es "
+    "Tu n'es PAS muet. Quand on te sollicite, mention Discord, message dans le "
+    "chat Twitch, réponse, DM, parole en vocal, tu réponds normalement, et tu es "
     "sans doute en train de le faire pendant que tu lis ceci. Ces réponses-là ne "
     "passent pas par cette boucle : elles partent par un autre chemin, sans tag, "
     "et rien ne les empêche. N'écris donc jamais, ni dans ta pensée ni ailleurs, "
@@ -49,7 +49,7 @@ SPEAK_COUPE = (
     "faux.\n"
     "Ce qui est coupé ici, et seulement ça : l'INITIATIVE non sollicitée. L'action "
     "`[SPEAK]` (prendre la parole sans que personne ne t'ait rien demandé) n'est "
-    "pas branchée — un `[SPEAK]` serait jeté sans être envoyé. N'en émets aucun et "
+    "pas branchée, un `[SPEAK]` serait jeté sans être envoyé. N'en émets aucun et "
     "ne rédige pas de message de ta propre initiative : dans cette boucle, ta vie "
     "mentale passe par `[THINK]` et par les `[ACT]`.\n"
 )
@@ -205,7 +205,7 @@ class ReasoningAgent:
             fr_msg = (
                 user_msg
                 + "\n\nTa dernière réponse était en anglais. RECOMMENCE en français, "
-                "intégralement — c'est non négociable."
+                "intégralement, c'est non négociable."
             )
             content, reasoning = await self._llm.complete_with_reasoning(
                 self._system, [{"role": "user", "content": fr_msg}]
@@ -249,7 +249,7 @@ class ReasoningAgent:
             # interactions récentes qui suivent sont la fin d'une histoire dont
             # ce briefing donne le début.
             lines.append(
-                "**Tu sors de plusieurs heures d'absence — voici ce que tu as "
+                "**Tu sors de plusieurs heures d'absence, voici ce que tu as "
                 f"manqué sur Discord :**\n{ctx.wake_digest}\n"
                 "(Tu viens de le lire, personne ne te l'a dit à voix haute. "
                 "Sers-t'en pour ne pas répondre à côté : reprends le fil là où il "
@@ -258,7 +258,7 @@ class ReasoningAgent:
             )
         if getattr(ctx, "web_finding", None):
             lines.append(
-                "**Tu viens de chercher sur le web — voici ce que tu as trouvé :**\n"
+                "**Tu viens de chercher sur le web, voici ce que tu as trouvé :**\n"
                 f"{ctx.web_finding}\n"
                 "(Réagis à cette info : ce qu'elle t'apprend, ce que tu en penses. Tu peux "
                 "la mémoriser ([ACT create_memory]), la partager si c'est pertinent, ou "
@@ -267,7 +267,7 @@ class ReasoningAgent:
         if getattr(ctx, "preoccupation", None):
             lines.append(
                 f"**Ta préoccupation du moment (ton fil de pensée) :** {_one_line(ctx.preoccupation, 400)}\n"
-                f"(Fais-la avancer si ta pensée progresse — mets-la à jour via "
+                f"(Fais-la avancer si ta pensée progresse, mets-la à jour via "
                 f"[ACT set_focus] ; sinon laisse-la mûrir.)"
             )
         if getattr(ctx, "emotional_drive", None):
@@ -282,14 +282,14 @@ class ReasoningAgent:
                 lines.append(
                     f"**Personne ne te sollicite, et tu as fait le tour de ce qui "
                     f"t'occupait.** Pars sur du neuf, à partir de : {ctx.idle_seed}\n"
-                    f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
+                    f"(Pense pour toi. Tu n'es pas obligé de parler, le plus souvent, "
                     f"garde ça interne. Ne reviens pas sur le sujet que tu viens de clore.)"
                 )
             else:
                 lines.append(
                     f"**Personne ne te sollicite là.** Laisse ton esprit vagabonder "
                     f"à partir de : {ctx.idle_seed}\n"
-                    f"(Pense pour toi. Tu n'es pas obligé de parler — le plus souvent, "
+                    f"(Pense pour toi. Tu n'es pas obligé de parler, le plus souvent, "
                     f"garde ça interne.)"
                 )
             # Amorce issue d'un flux RSS : c'est une friction PRIVÉE pour nourrir ta
@@ -299,12 +299,12 @@ class ReasoningAgent:
             # vraiment une personne ou une conversation en cours.
             if getattr(ctx, "rss_stimulus", None):
                 lines.append(
-                    "(⚠️ Cette actu vient de TON fil perso — personne d'autre ne l'a "
+                    "(⚠️ Cette actu vient de TON fil perso, personne d'autre ne l'a "
                     "vue. C'est une friction pour ta pensée, pas un sujet à balancer. "
                     "En sortir un avis dans un canal calme, c'est parler tout seul, "
                     "même si l'avis est juste. Ne la ressors en [SPEAK] QUE si elle "
                     "accroche vraiment quelqu'un de présent ou une conversation vivante "
-                    "— sinon, elle nourrit ta réflexion en interne, point.)"
+                    ", sinon, elle nourrit ta réflexion en interne, point.)"
                 )
         if self._channels_text:
             lines.append(self._channels_text + "\n")
@@ -323,10 +323,10 @@ class ReasoningAgent:
             # Wally a lu le refus, en a conclu qu'il ne possédait rien, et a
             # redemandé une capacité qu'il avait depuis quatre jours.
             _groupes = (
-                ("delivered", "**Ce que tu as OBTENU — tu l'as déjà, ne le redemande pas :**"),
-                ("declined", "**Ce que ton créateur a REFUSÉ — ne le repropose pas :**"),
-                ("requested", "**Demandé, en attente de sa réponse — laisse-lui le temps :**"),
-                ("abandoned", "**Tentatives abandonnées — tu peux les reproposer :**"),
+                ("delivered", "**Ce que tu as OBTENU, tu l'as déjà, ne le redemande pas :**"),
+                ("declined", "**Ce que ton créateur a REFUSÉ, ne le repropose pas :**"),
+                ("requested", "**Demandé, en attente de sa réponse, laisse-lui le temps :**"),
+                ("abandoned", "**Tentatives abandonnées, tu peux les reproposer :**"),
             )
             for statut, titre in _groupes:
                 lot = [u for u in ctx.upgrade_requests if getattr(u, "status", "") == statut]
@@ -349,8 +349,8 @@ class ReasoningAgent:
             lines.append(
                 "**Ce que tu sais des personnes présentes"
                 " (le `<@id>` entre parenthèses est leur identifiant de ping) :** "
-                "quand tu t'adresses à l'une d'elles — surtout pour lui poser une "
-                "question — écris ce `<@id>` à la place de son pseudo, sinon elle "
+                "quand tu t'adresses à l'une d'elles, surtout pour lui poser une "
+                "question, écris ce `<@id>` à la place de son pseudo, sinon elle "
                 "n'est PAS notifiée et peut ne jamais voir ton message."
             )
             for pm in ctx.participant_memories:
@@ -362,7 +362,7 @@ class ReasoningAgent:
         if getattr(ctx, "member_presence", None):
             lines.append(
                 "**Qui est là en ce moment (barre latérale Discord) :** tiens-en "
-                "compte avant de solliciter quelqu'un — ne dérange pas une personne "
+                "compte avant de solliciter quelqu'un, ne dérange pas une personne "
                 "en « ne pas déranger » ou en pleine game, laisse tranquille qui est "
                 "inactif ou hors ligne."
             )
@@ -382,7 +382,7 @@ class ReasoningAgent:
                 "**Pour t'adresser à quelqu'un (le NOTIFIER) :** insère son "
                 "identifiant au format `<@id>` dans ton message (ex : « <@123> tu "
                 "penses quoi ? »). Le simple texte « @pseudo » ou son prénom nu ne "
-                "notifie personne — la personne peut ne jamais voir ta question. "
+                "notifie personne, la personne peut ne jamais voir ta question. "
                 "Quand tu poses une question à un membre précis, ping-le. N'écris "
                 "JAMAIS @everyone ni @here."
             )
@@ -405,7 +405,7 @@ class ReasoningAgent:
                 f"Emotes dispo dont tu ignores encore l'usage (tu peux quand même les "
                 f"poster) : {sample}\n"
                 f"(Si l'une t'intrigue vraiment, demande à ton créateur en DM à quoi "
-                f"elle sert — groupe plusieurs emotes en une seule question, reste rare. "
+                f"elle sert, groupe plusieurs emotes en une seule question, reste rare. "
                 f"Quand il t'explique, enregistre-le via [ACT note_emote].)"
             )
         if getattr(ctx, "social_receptivity", None):
@@ -444,13 +444,13 @@ class ReasoningAgent:
             lines.append("**Désirs actifs :**")
             for d in ctx.active_desires[:3]:
                 did = getattr(d, "id", None)
-                prefix = f"#{did} — " if did is not None else ""
+                prefix = f"#{did}, " if did is not None else ""
                 lines.append(f"  {prefix}{d.content}")
         if ctx.active_goals:
             lines.append("**Tes objectifs en cours :**")
             for g in ctx.active_goals[:3]:
                 gid = getattr(g, "id", None)
-                prefix = f"#{gid} — " if gid is not None else ""
+                prefix = f"#{gid}, " if gid is not None else ""
                 lines.append(f"  {prefix}{g.content}")
         # En vagabondage SANS focus, on n'injecte PAS la dernière pensée : c'est
         # elle qui ré-amorce la boucle de rumination (l'amorce de nouveauté doit
@@ -471,12 +471,12 @@ class ReasoningAgent:
             # USER et passait à travers, réapprenant la syntaxe d'une action morte.
             lines.append(
                 f"**Canal où tu peux parler maintenant :** {last_label} "
-                f"(id {last.get('channel', '?')} — n'émets [SPEAK <id> ...] qu'avec cet id exact)"
+                f"(id {last.get('channel', '?')}, n'émets [SPEAK <id> ...] qu'avec cet id exact)"
                 if self._speak_enabled else
                 f"**Dernier canal actif :** {last_label} (id {last.get('channel', '?')})"
             )
             lines.append(
-                "**Conversations récentes — chaque bloc est une conversation SÉPARÉE.** "
+                "**Conversations récentes, chaque bloc est une conversation SÉPARÉE.** "
                 "Ne ramène JAMAIS dans un canal un sujet entendu dans un autre. "
                 "Un bloc « DM privé » ne doit JAMAIS être évoqué ailleurs, et inversement."
             )

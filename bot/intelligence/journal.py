@@ -42,7 +42,7 @@ _JOURNAL_SYSTEM = load_prompt(
     fallback=(
         "Tu es {{BOT_NAME}}, un bot de chat Discord. Chaque soir tu écris ton journal intime.\n\n"
         "Rédige une entrée de journal à la première personne, ton sincère, écriture relâchée. "
-        "Respecte la consigne de longueur indiquée dans le contexte — n'étire jamais pour remplir."
+        "Respecte la consigne de longueur indiquée dans le contexte, n'étire jamais pour remplir."
     ),
     render=False,
 )
@@ -218,7 +218,7 @@ def _get_length_guidance(message_count: int) -> str:
     if message_count < 10:
         return (
             "Il ne s'est presque rien passé aujourd'hui. Deux ou trois lignes suffisent, "
-            "et c'est très bien — n'étire pas, n'invente pas de matière. 80 mots maximum."
+            "et c'est très bien, n'étire pas, n'invente pas de matière. 80 mots maximum."
         )
     if message_count < 50:
         return (
@@ -368,9 +368,9 @@ def _build_emotion_arc(snapshots: list[dict]) -> str:
             if (phrase := _emotion_phrase(emotion, snap[emotion])) is not None
         ]
         if parts:
-            lines.append(f"{ts.strftime('%Hh%M')} — {', '.join(parts)}")
+            lines.append(f"{ts.strftime('%Hh%M')}, {', '.join(parts)}")
         else:
-            lines.append(f"{ts.strftime('%Hh%M')} — neutre")
+            lines.append(f"{ts.strftime('%Hh%M')}, neutre")
     return "Arc émotionnel de la journée :\n" + "\n".join(lines)
 
 
@@ -384,11 +384,11 @@ def _emotion_tone_hint(emotions: dict) -> str:
     if emotions[dominant] < 0.30:
         return ""
     hints = {
-        "anger": "Ce soir ta colère domine — entrée courte, cassante, quelques lignes suffisent.",
-        "joy": "Ce soir tu es plutôt joyeux — tu peux te laisser aller, plus léger et spontané.",
-        "sadness": "Ce soir ta tristesse domine — écriture plus lente, introspective, quelques silences.",
-        "curiosity": "Ce soir ta curiosité domine — laisse-toi partir dans les digressions si l'envie t'en prend.",
-        "boredom": "Ce soir c'est l'ennui qui domine — t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
+        "anger": "Ce soir ta colère domine, entrée courte, cassante, quelques lignes suffisent.",
+        "joy": "Ce soir tu es plutôt joyeux, tu peux te laisser aller, plus léger et spontané.",
+        "sadness": "Ce soir ta tristesse domine, écriture plus lente, introspective, quelques silences.",
+        "curiosity": "Ce soir ta curiosité domine, laisse-toi partir dans les digressions si l'envie t'en prend.",
+        "boredom": "Ce soir c'est l'ennui qui domine, t'as pas forcément grand chose à dire, et c'est ok. Court et honnête.",
     }
     return hints.get(dominant, "")
 
@@ -589,7 +589,7 @@ def _build_style_avoidance_block(journals: list[dict]) -> str:
         return ""
 
     lines = [
-        "Ce que tes entrées récentes ont déjà usé. Continue de parler à ton journal — "
+        "Ce que tes entrées récentes ont déjà usé. Continue de parler à ton journal, "
         "c'est la formule qu'il faut changer, pas la façon de t'adresser à lui :"
     ]
     if incipits:
@@ -976,7 +976,7 @@ class DailyJournal:
                         msg = p.get("trigger_message") or ""
                         msg_short = msg[:80] + "…" if len(msg) > 80 else msg
                         peak_lines.append(
-                            f"- {ts.strftime('%Hh%M')} — pic de {name_fr} "
+                            f"- {ts.strftime('%Hh%M')}, pic de {name_fr} "
                             f"déclenché par {user} : \"{msg_short}\""
                         )
                     peaks_block = "Moments forts émotionnels :\n" + "\n".join(peak_lines)
@@ -1023,7 +1023,7 @@ class DailyJournal:
                     # a inventé un bot rival (« picolo »), l'entrée du 23 l'a relu comme
                     # un fait acquis et la boucle cognitive l'a poursuivi trois jours.
                     yesterday_block = (
-                        "Ton journal d'hier — ton récit, pas un relevé de faits. Tu peux y "
+                        "Ton journal d'hier, ton récit, pas un relevé de faits. Tu peux y "
                         "avoir été de mauvaise foi, t'être trompé de personne ou avoir brodé. "
                         "Reprends-en les fils, mais ne traite jamais ce qu'on n'y retrouve "
                         f"nulle part ailleurs comme quelque chose qui a eu lieu :\n{yesterday['content']}"
@@ -1168,7 +1168,7 @@ class DailyJournal:
                 # pass n'a aucun moyen de savoir qu'il doit couper. Étiquetée,
                 # parce qu'elle est écrite comme une phrase de journal : nue en
                 # tête de message, « Grosse journée. » repartait en ouverture.
-                voice_sections = [f"Consigne de longueur — ne la recopie pas : {length_guidance}"]
+                voice_sections = [f"Consigne de longueur, ne la recopie pas : {length_guidance}"]
                 if style_block:
                     voice_sections.append(style_block)
                 voice_sections.append(f"{_VOICE_DRAFT_MARKER}\n{journal_text}")
@@ -1212,7 +1212,7 @@ class DailyJournal:
             except Exception as exc:  # noqa: BLE001 — le journal passe sans graphe
                 logger.warning("Journal : graphe des émotions non rendu : {e!r}", e=exc)
 
-        formatted = f"# Journal de {self._config.bot.name} — {display_date}\n\n{journal_text}"
+        formatted = f"# Journal de {self._config.bot.name}, {display_date}\n\n{journal_text}"
         if self._send_cb:
             for chunk in _split_for_discord(formatted):
                 await self._send_cb(chunk)

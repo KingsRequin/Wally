@@ -52,4 +52,4 @@ def test_web_content_is_wrapped_untrusted():
 def test_citation_guidance_stays_trusted_outside_wrapper():
     """La consigne de citation (de confiance) reste AVANT le bloc non fiable."""
     out = _service()._format_results(_resp_with_injection(), platform="discord")
-    assert out.index("Sources —") < out.index("DÉBUT CONTENU EXTERNE")
+    assert out.index("Sources :") < out.index("DÉBUT CONTENU EXTERNE")

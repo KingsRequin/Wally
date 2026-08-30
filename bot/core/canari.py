@@ -51,7 +51,7 @@ async def _verifier_index(db_path: str) -> list[str]:
         return [f"index illisibles ({exc})"]
     for nom, (table, consequence) in _INDEX_ATTENDUS.items():
         if nom not in presents:
-            alertes.append(f"index {nom} absent sur {table} — {consequence}")
+            alertes.append(f"index {nom} absent sur {table}, {consequence}")
     return alertes
 
 
@@ -74,7 +74,7 @@ async def _verifier_formats_de_date(db_path: str) -> list[str]:
     melanges = ligne[0] if ligne else 0
     if melanges:
         return [
-            f"{melanges} dates en format aware dans atomic_facts — "
+            f"{melanges} dates en format aware dans atomic_facts, "
             "un point d'écriture a divergé, toute soustraction directe lèvera "
             "(cf. scripts/normaliser_dates_faits.py)"
         ]
@@ -101,13 +101,13 @@ def _verifier_identite(config) -> list[str]:
     bot_cfg = getattr(config, "bot", None)
     if bot_cfg is not None and not getattr(bot_cfg, "owner_discord_id", ""):
         alertes.append(
-            "owner_discord_id vide — self-fix, DM cognitifs et bouton ADMIN "
+            "owner_discord_id vide, self-fix, DM cognitifs et bouton ADMIN "
             "resteront inaccessibles, sans message d'erreur"
         )
     openai_cfg = getattr(config, "openai", None)
     if openai_cfg is not None and not getattr(openai_cfg, "vision_model", ""):
         alertes.append(
-            "openai.vision_model vide — la vision retombera sur un repli, "
+            "openai.vision_model vide, la vision retombera sur un repli, "
             "et une mauvaise valeur la rendrait aveugle en silence"
         )
     return alertes
@@ -142,7 +142,7 @@ def _verifier_memes(racine: Path) -> list[str]:
         noms = ", ".join(p.name for p in muets[:5])
         suite = f" (+{len(muets) - 5})" if len(muets) > 5 else ""
         alertes.append(
-            f"{len(muets)} meme(s) sans description — introuvables par mot-clé et "
+            f"{len(muets)} meme(s) sans description, introuvables par mot-clé et "
             f"commentés à l'aveugle : {noms}{suite}"
         )
 

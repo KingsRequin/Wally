@@ -248,7 +248,7 @@ _ANALYSIS_SYSTEM_TEMPLATE = (
     "Retourne aussi \"user_facts\" : une liste de faits durables sur l'utilisateur "
     "qui envoie le message déclencheur (centres d'intérêt, préférences, faits "
     "biographiques, opinions exprimées). Liste vide si rien de durable.\n"
-    "Ignore les GIF, mèmes, liens média (Tenor, Giphy, Imgur, etc.) — "
+    "Ignore les GIF, mèmes, liens média (Tenor, Giphy, Imgur, etc.), "
     "partager un GIF n'est PAS un fait durable.\n\n"
 
     "## Exemple\n"

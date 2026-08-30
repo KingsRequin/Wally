@@ -567,7 +567,7 @@ async def test_act_note_relation_adds_rel_fact(tmp_fact_store):
     ))
     facts = await tmp_fact_store.get_by_user("wally:self", categories=[FactCategory.REL])
     assert len(facts) == 1
-    assert facts[0].content == "Kaelis — drôle mais lourd quand il insiste"
+    assert facts[0].content == "Kaelis, drôle mais lourd quand il insiste"
     assert facts[0].category == FactCategory.REL
     assert facts[0].source == "opinion"
     assert facts[0].confidence == 1.0

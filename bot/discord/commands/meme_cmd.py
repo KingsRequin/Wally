@@ -366,7 +366,7 @@ class VueRangement(discord.ui.View):
                 await interaction.response.edit_message(content=message, view=None)
                 return
             poids = f"{resultat.octets / 1024:.0f} Ko"
-            converti = " (converti en WebP)" if resultat.converti or self.entrees[0].converti \
+            converti = " (converti en WebP)" if resultat.converti or self.entrees[0].converti\
                 else ""
             message = f"Rangé sous **{resultat.nom}**{converti}, {poids}."
         else:
@@ -475,7 +475,7 @@ class MemeCog(commands.Cog):
             formats = " ".join(sorted({s for _, s in trouves}))
             attendus = " ".join(sorted(_EXTENSIONS_MEDIA))
             await interaction.followup.send(
-                content=f"Format `{formats}` non admis — attendus : {attendus}.",
+                content=f"Format `{formats}` non admis, attendus : {attendus}.",
                 ephemeral=True,
             )
             return
@@ -582,8 +582,8 @@ def _ligne_description(entree: Entree) -> str:
     if entree.description:
         return entree.description
     if entree.suffixe in _EXTENSIONS:
-        return "_(à écrire — l'analyse de l'image n'a rien rendu)_"
-    return f"_(à écrire — pas d'analyse possible sur un fichier {entree.suffixe})_"
+        return "_(à écrire, l'analyse de l'image n'a rien rendu)_"
+    return f"_(à écrire, pas d'analyse possible sur un fichier {entree.suffixe})_"
 
 
 def _apercu(entrees: list[Entree], doublons: list[str], refus: list[str],

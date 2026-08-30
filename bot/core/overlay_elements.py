@@ -12,7 +12,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     "apex_craft": {
         "nom": "Replicator Apex",
         "description": "Les lots d'objets actuellement proposés au replicator, "
-                       "tels que rendus par l'API Apex — Wally ne recopie aucun "
+                       "tels que rendus par l'API Apex, Wally ne recopie aucun "
                        "chiffre à la main.",
     },
     "apex_map": {
@@ -31,13 +31,13 @@ LIBELLES: dict[str, dict[str, str]] = {
         "nom": "Courbe de progression Apex",
         "description": "Un graphique de l'évolution d'une statistique (les "
                        "kills par défaut) du joueur suivi sur une période "
-                       "donnée, généré à la demande — absent tant qu'il n'y a "
+                       "donnée, généré à la demande, absent tant qu'il n'y a "
                        "pas assez de relevés pour tracer une courbe.",
     },
     "apex_rank": {
         "nom": "Rang Apex",
-        "description": "Le rang classé du joueur suivi — écusson, division et "
-                       "points — avec sa position dans le ladder mondial quand "
+        "description": "Le rang classé du joueur suivi, écusson, division et "
+                       "points, avec sa position dans le ladder mondial quand "
                        "elle est connue.",
     },
     "apex_servers": {
@@ -82,7 +82,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     "clip_top": {
         "nom": "Podium des clips",
         "description": "Le classement des cinq clips les plus vus du mois, "
-                       "affiché en tableau — sans lecture vidéo.",
+                       "affiché en tableau, sans lecture vidéo.",
     },
     "coinflip": {
         "nom": "Pile ou face",
@@ -97,7 +97,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     },
     "counter": {
         "nom": "Compteur affiché",
-        "description": "Un texte court affiché à l'écran — sert par exemple à "
+        "description": "Un texte court affiché à l'écran, sert par exemple à "
                        "montrer la durée du live ou le total d'un compteur "
                        "communautaire qui vient de monter.",
     },
@@ -108,7 +108,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     },
     "gauge": {
         "nom": "Jauge de progression",
-        "description": "Une barre qui se remplit vers un pourcentage — donné "
+        "description": "Une barre qui se remplit vers un pourcentage, donné "
                        "directement par Wally, ou alimenté tout seul par un "
                        "objectif de follows, d'abonnements ou de bits au fil "
                        "des vrais événements du live.",
@@ -195,7 +195,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     "stats": {
         "nom": "Fiche stats joueur",
         "description": "Une petite fiche de lignes « libellé : valeur » que "
-                       "Wally rédige lui-même à propos d'un joueur — à ne pas "
+                       "Wally rédige lui-même à propos d'un joueur, à ne pas "
                        "confondre avec les panneaux Apex, dont les chiffres "
                        "sont allés chercher automatiquement.",
     },
@@ -207,7 +207,7 @@ LIBELLES: dict[str, dict[str, str]] = {
     "versus": {
         "nom": "Face-à-face chiffré",
         "description": "Deux joueurs (ou deux camps) comparés sur une valeur "
-                       "chiffrée avec des barres proportionnelles — sert aussi "
+                       "chiffrée avec des barres proportionnelles, sert aussi "
                        "à suivre un duel Apex manche après manche.",
     },
     "virus_popup": {
@@ -215,7 +215,7 @@ LIBELLES: dict[str, dict[str, str]] = {
         "description": "De fausses fenêtres système et des memes en pièce "
                        "jointe s'ouvrent de plus en plus vite et s'empilent "
                        "jusqu'à saturer l'écran, puis un écran bleu nettoie "
-                       "tout. Variante de l'avalanche — il prend l'écran seul.",
+                       "tout. Variante de l'avalanche, il prend l'écran seul.",
     },
     "wave": {
         "nom": "Vague d'emotes",

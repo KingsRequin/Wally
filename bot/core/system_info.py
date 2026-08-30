@@ -154,7 +154,7 @@ async def fetch_weather_france() -> str | None:
         else:
             temp_qual = "froid"
 
-        result = f"{desc_fr}, {temp}°C (ressenti {feels}°C) — {temp_qual}"
+        result = f"{desc_fr}, {temp}°C (ressenti {feels}°C), {temp_qual}"
         _weather_cache = (time.time(), result)
         return result
     except Exception:

@@ -64,7 +64,7 @@ class ChannelDirectory:
             return ""
         lines = ["Canaux où tu peux écrire (serveur principal) :"]
         for c in speakable:
-            lines.append(f"  {c.id} {c.name} — {c.purpose}")
+            lines.append(f"  {c.id} {c.name}, {c.purpose}")
         forums = [c for c in self._channels if c.type == "forum"]
         if forums:
             names = ", ".join(c.name for c in forums)

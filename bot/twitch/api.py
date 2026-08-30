@@ -414,7 +414,7 @@ class TwitchAPI:
         # réémettre dans la seconde ne peut que rater à nouveau.
         if statut == 429:
             return ("Twitch impose 2 minutes entre deux shoutouts, et 60 minutes "
-                    "avant de refaire le même — c'est trop tôt.")
+                    "avant de refaire le même, c'est trop tôt.")
         if statut in (401, 403):
             return "je ne suis pas modérateur de la chaîne, je ne peux pas faire de shoutout."
         if statut == 400:
@@ -1086,7 +1086,7 @@ class TwitchAPI:
         Un chiffre asséné sans sa mesure se fait contredire par un autre chiffre.
         """
         geste = ("Il faut en SUPPRIMER une dans le tableau de bord Twitch "
-                 "(la désactiver ne libère aucune place), puis redémarrer — "
+                 "(la désactiver ne libère aucune place), puis redémarrer, "
                  "rien à corriger côté bot.")
         inventaire = await self.inventaire_recompenses()
         if inventaire is None:
@@ -1095,7 +1095,7 @@ class TwitchAPI:
         total, eteintes = inventaire
         return (f"Récompense « {titre} » impossible : la chaîne est à son PLAFOND "
                 f"de 50 récompenses de points de chaîne ({total} en tout, dont "
-                f"{eteintes} DÉSACTIVÉES — elles comptent, et le tableau de bord "
+                f"{eteintes} DÉSACTIVÉES, elles comptent, et le tableau de bord "
                 f"ne les affiche pas par défaut). {geste}")
 
     async def creer_recompense(self, titre: str, cout: int, prompt: str, *,

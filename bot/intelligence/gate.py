@@ -97,13 +97,13 @@ class ResponseGate:
         # DM 1:1 : l'utilisateur s'adresse forcément à Wally. Répondre est la règle ;
         # le gate (conçu pour filtrer le bruit d'un salon) n'a pas lieu d'être ici.
         if is_dm:
-            return GateDecision(decision="RESPOND", reason="DM 1:1 — réponse systématique")
+            return GateDecision(decision="RESPOND", reason="DM 1:1, réponse systématique")
 
         dominant_emotion, dominant_value = max(
             emotion_state.items(), key=lambda x: x[1], default=("boredom", 0.0)
         )
         if is_triggered:
-            trigger_line = f"L'utilisateur a appelé {bot_name()} par son nom — répondre est la norme, ignorer l'exception."
+            trigger_line = f"L'utilisateur a appelé {bot_name()} par son nom, répondre est la norme, ignorer l'exception."
         elif is_mentioned:
             trigger_line = f"@{bot_name()} mentionné directement."
         elif unanswered_question_age_s is not None:
@@ -158,7 +158,7 @@ class ResponseGate:
         if available_emojis:
             sample = ", ".join(f":{n}:" for n in available_emojis[:60])
             context_parts.append(
-                f"Emotes custom dispo (tous tes serveurs, animées incluses — tu peux "
+                f"Emotes custom dispo (tous tes serveurs, animées incluses, tu peux "
                 f"réagir avec : renvoie le nom entre deux-points, ex. :{available_emojis[0]}:) : {sample}"
             )
         if emoji_usage:
@@ -204,7 +204,7 @@ class ResponseGate:
                 # quelques heures, pas au-delà, d'où la péremption.
                 await self._fact_store.add(AtomicFact(
                     user_id=author_user_id,
-                    content=f"{bot_name()} a choisi d'ignorer ce message — {decision.reason}",
+                    content=f"{bot_name()} a choisi d'ignorer ce message, {decision.reason}",
                     category=FactCategory.EMOTION,
                     confidence=0.9,
                     source="gate",

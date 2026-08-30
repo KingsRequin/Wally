@@ -186,7 +186,7 @@ class MemoryService:
                 "\n--- Question en attente ---\n"
                 "Si l'occasion se présente naturellement dans la conversation, "
                 f"essaie de savoir : {q['question']}\n"
-                "Ne force pas — si le sujet ne vient pas, laisse tomber."
+                "Ne force pas, si le sujet ne vient pas, laisse tomber."
             )
         except Exception as exc:  # noqa: BLE001 — un bonus ne fait pas tomber un tour
             logger.warning("Question en attente illisible : {e!r}", e=exc)

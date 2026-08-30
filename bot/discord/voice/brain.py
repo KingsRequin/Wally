@@ -177,11 +177,11 @@ def _should_respond_voice(transcript: str, history: list[dict], named: bool) -> 
 
 _VOICE_CONTEXT_NOTICE = (
     "CONTEXTE : tu es actuellement connecté dans un salon VOCAL Discord et tu parles à voix "
-    "haute. Tu ENTENDS les gens parler (transcription) et tu leur réponds ORALEMENT — ce n'est "
+    "haute. Tu ENTENDS les gens parler (transcription) et tu leur réponds ORALEMENT, ce n'est "
     "pas du texte écrit. C'est une conversation de GROUPE : plusieurs personnes peuvent parler, "
     "et tu en fais partie comme un participant parmi les autres. Dans l'historique, chaque réplique "
     "est préfixée par le nom de la personne qui parle (ex 'Alex: ...'). Suis le fil GLOBAL de la "
-    "discussion, tiens compte de ce que se disent les gens entre eux, et interviens naturellement — "
+    "discussion, tiens compte de ce que se disent les gens entre eux, et interviens naturellement, "
     "tu n'as pas à répondre à chaque phrase ni à chaque personne séparément. "
     "Réponds en une à deux phrases courtes, naturelles à l'oral, sans "
     "formatage, sans markdown, sans emoji. Réponds UNIQUEMENT avec ton propre texte."
@@ -253,7 +253,7 @@ def _voice_system(bot, speaker_label: str = "", memory_context: str = "",
     if present_label:
         system_prompt += (
             f"\n\nPersonnes actuellement dans le salon vocal avec toi : {present_label}. "
-            "Tu es déjà présent avec elles depuis un moment — ne les re-salue pas à chaque message, "
+            "Tu es déjà présent avec elles depuis un moment, ne les re-salue pas à chaque message, "
             "discute normalement."
         )
     if activity_label:
@@ -293,7 +293,7 @@ async def generate_voice_greeting(bot, present_label: str = "", newcomer: str | 
             lines.append(
                 "Dis bonjour en arrivant, brièvement et naturellement, en une seule phrase, dans ton "
                 "style. Adresse-toi uniquement aux personnes réellement présentes listées ci-dessus, "
-                "n'en invente aucune, et n'emploie « vous » que s'il y a vraiment plusieurs personnes — "
+                "n'en invente aucune, et n'emploie « vous » que s'il y a vraiment plusieurs personnes, "
                 "sinon parle au singulier."
             )
             instruction = " ".join(lines)

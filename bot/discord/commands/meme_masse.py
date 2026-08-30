@@ -92,7 +92,7 @@ def fenetre(depuis: str) -> datetime | None:
         return datetime.strptime(valeur, "%Y-%m-%d").replace(tzinfo=PARIS)
     except ValueError:
         raise ValueError(
-            f"« {depuis} » n'est pas une fenêtre lisible — attendus : 7j, 12h, "
+            f"« {depuis} » n'est pas une fenêtre lisible, attendus : 7j, 12h, "
             f"tout, ou une date 2026-08-01"
         ) from None
 
@@ -268,7 +268,7 @@ def texte_progression(bilan: meme_import.Bilan, total: int, salon) -> str:
     traites = len(bilan.ranges) + len(bilan.doublons) + len(bilan.refus)
     lignes = [
         f"**{total} média{'s' if total > 1 else ''} trouvé{'s' if total > 1 else ''}** dans {ou}",
-        f"{barre(traites, total)} — {traites}/{total}",
+        f"{barre(traites, total)}, {traites}/{total}",
     ]
     # Tant que rien n'est traité, la ligne de comptes ne dirait que des zéros.
     if traites:
@@ -467,7 +467,7 @@ class MemeMasseCog(commands.Cog):
             await ou.send(embed=embed)
         except Exception as e:  # noqa: BLE001 — salon fermé en écriture, ou supprimé
             logger.warning("Rapport de ratissage non remis au salon, envoi en DM : {e!r}", e=e)
-            rapport = f"Ratissage de {cible.mention} ({depuis}) — {bilan.texte()}"
+            rapport = f"Ratissage de {cible.mention} ({depuis}), {bilan.texte()}"
             await _en_message_prive(interaction.user, rapport[:_MAX_CONTENU])
 
     # ── Boîte aux lettres ─────────────────────────────────────────────────────

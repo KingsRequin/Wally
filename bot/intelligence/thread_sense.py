@@ -69,7 +69,7 @@ _MOT_MIN = 5
 
 # Ponctuation de phrase. Un message qui finit par « . » ou « ! » ne porte aucun
 # marqueur : c'est de la ponctuation, pas une signature.
-_PONCTUATION = set(".…,;:!?-–—\"'«»()[]")
+_PONCTUATION = set(".…,;:!?-–, \"'«»()[]")
 
 # Mots-outils français. Ce n'est PAS une liste de formulations interdites — rien
 # ici n'est proscrit — mais un filtre lexical : sans lui, « toujours », « voilà »
@@ -276,7 +276,7 @@ def bloc_fil(
         lignes.append(
             "Ces mots reviennent d'un message à l'autre chez toi en ce moment : "
             + ", ".join(f"« {m} »" for m in repris)
-            + ". Une vanne ne marche qu'une fois — passe à autre chose plutôt que "
+            + ". Une vanne ne marche qu'une fois, passe à autre chose plutôt que "
             "de la resservir."
         )
 

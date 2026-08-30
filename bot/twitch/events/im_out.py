@@ -72,9 +72,9 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
         logger.error("« im out » : remboursement en erreur : {e!r}", e=exc)
     mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
     if rendu:
-        texte = f"{mention}{motif} — tes points t'ont été rendus."
+        texte = f"{mention}{motif}, tes points t'ont été rendus."
     else:
-        texte = (f"{mention}{motif} — et je n'ai PAS pu te rendre tes points "
+        texte = (f"{mention}{motif}, et je n'ai PAS pu te rendre tes points "
                  f"automatiquement, il faudra le faire manuellement "
                  f"(redemption {redemption_id}).")
     try:

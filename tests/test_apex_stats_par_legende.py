@@ -200,7 +200,7 @@ def test_not_calculated_yet_reste_une_absence(azrael):
 def test_les_deux_classements_sont_rendus(azrael):
     rendu = _service()._render_profile(azrael, legend="Fuse")
 
-    assert "3ᵉ mondial, top 0.01 % — 2ᵉ sur sa plateforme" in rendu
+    assert "3ᵉ mondial, top 0.01 %, 2ᵉ sur sa plateforme" in rendu
 
 
 def test_loutil_dit_que_le_rang_par_pays_nexiste_pas():

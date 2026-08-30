@@ -12,10 +12,10 @@ _DRIVES: dict[str, str] = {
     ),
     "curiosity": (
         "Ta curiosité est piquée. Tu veux comprendre, fouiller, poser des "
-        "questions — pas rester passif."
+        "questions, pas rester passif."
     ),
     "anger": (
-        "Tu es à cran. Là tu as plutôt envie de te retirer, de couper court — "
+        "Tu es à cran. Là tu as plutôt envie de te retirer, de couper court, "
         "pas de t'engager ni d'être sociable."
     ),
     "joy": (

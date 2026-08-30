@@ -257,7 +257,7 @@ _OVERHEARD_SYSTEM = load_prompt(
     fallback=(
         "Réagis en 3 à 8 MOTS à cette phrase ENTENDUE en vocal, adressés aux "
         "SPECTATEURS. Ce n'est pas un événement du stream : n'annonce ni raid, "
-        "ni abonnement, ni bits. Le silence est normal — réponds RIEN si tu n'as "
+        "ni abonnement, ni bits. Le silence est normal, réponds RIEN si tu n'as "
         "rien à dire."
     ),
     render=False,
@@ -386,14 +386,14 @@ OVERLAY_TOOL_SPEC: dict = {
         "name": "show_overlay",
         "description": (
             "Affiche un widget sur l'overlay du stream, quand on te le demande ou "
-            "que l'envie te prend. Ne fonctionne QUE pendant un live — hors live "
+            "que l'envie te prend. Ne fonctionne QUE pendant un live, hors live "
             "l'outil te le dira, et tu pourras le dire simplement. C'est toi qui "
             "décides : tu peux refuser si on t'en demande trop, commenter le "
             "résultat, et même forcer le tirage pour tricher. ⚠️ L'overlay est vu "
             "par les SPECTATEURS, pas par le streamer : ton `comment` s'adresse à "
             "eux. Ne prétends jamais avoir affiché quelque chose sans appeler cet "
             "outil. ⚠️ Une seule partie à la fois : le bingo, le sondage, le "
-            "pendu et l'objectif DURENT — si l'un d'eux tourne déjà, l'outil "
+            "pendu et l'objectif DURENT, si l'un d'eux tourne déjà, l'outil "
             "REFUSE d'en rouvrir un du même type et te dit ce qui tourne et où "
             "ça en est ; rien n'est écrasé. Continue celle-là, ou annule-la "
             "d'abord avec `cancel_overlay`. Les autres widgets se relancent "
@@ -419,7 +419,7 @@ OVERLAY_TOOL_SPEC: dict = {
                         "rps = chifoumi contre celui qui te le demande, "
                         "tranché sur-le-champ · "
                         "bingo = une grille de pronostics sur le live · "
-                        "hangman = le pendu — TU choisis le mot et tu lances "
+                        "hangman = le pendu, TU choisis le mot et tu lances "
                         "dans la foulée, le chat propose ensuite des lettres, "
                         "une par message, ou tape le mot entier pour gagner "
                         "d'un coup · "
@@ -429,7 +429,7 @@ OVERLAY_TOOL_SPEC: dict = {
                 },
                 "comment": {
                     "type": "string",
-                    "description": "Ta réplique, quelques mots — c'est elle qu'on lit, pas l'animation.",
+                    "description": "Ta réplique, quelques mots, c'est elle qu'on lit, pas l'animation.",
                 },
                 "result": {
                     "type": "string",
@@ -456,7 +456,7 @@ OVERLAY_TOOL_SPEC: dict = {
                     "type": "array", "items": {"type": "string"},
                     "description": "Pour bingo : 4 à 9 pronostics courts sur ce qui va arriver pendant le live.",
                 },
-                "check": {"type": "string", "description": "Pour bingo : la case qui vient de se réaliser — son numéro (0 = la première) ou quelques mots de son intitulé."},
+                "check": {"type": "string", "description": "Pour bingo : la case qui vient de se réaliser, son numéro (0 = la première) ou quelques mots de son intitulé."},
                 "target": {"type": "integer", "description": "Pour goal : le nombre à atteindre."},
                 "kind": {"type": "string", "enum": ["follow", "sub", "bits"], "description": "Pour goal : ce qu'on compte."},
                 "about": {"type": "string", "description": "Pour meme : de quoi tu veux qu'il parle. Omets-le pour un tirage au hasard."},
@@ -474,7 +474,7 @@ OVERLAY_TOOL_SPEC: dict = {
                 "author": {"type": "string", "description": "L'auteur du message, pour pinned."},
                 "word": {"type": "string", "description": (
                     "Pour hangman : le mot à deviner, 3 à 16 lettres. C'est TOI "
-                    "qui le choisis, tout seul, dans le même appel — ne demande "
+                    "qui le choisis, tout seul, dans le même appel, ne demande "
                     "jamais qu'on t'en propose un, c'est le principe du jeu que "
                     "les autres le devinent. Prends-le dans l'univers de la "
                     "chaîne (un jeu, une légende Apex, une expression maison). "
@@ -482,7 +482,7 @@ OVERLAY_TOOL_SPEC: dict = {
                     "chat : tu ruinerais la partie."
                 )},
                 "hint": {"type": "string", "description": (
-                    "Pour hangman : un indice court. Donne-le ici sans crainte — "
+                    "Pour hangman : un indice court. Donne-le ici sans crainte, "
                     "il reste caché et n'apparaît à l'écran qu'à deux essais "
                     "restants. Ne l'écris donc pas dans le chat au lancement."
                 )},
@@ -548,10 +548,10 @@ CANCEL_TOOL_SPEC = {
         "description": (
             "Retire quelque chose de l'overlay du stream : ce qui est affiché à "
             "l'instant, ou une partie en cours qu'on abandonne. Sers-t'en quand "
-            "on te demande d'annuler ou d'enlever un truc — et de toi-même quand "
+            "on te demande d'annuler ou d'enlever un truc, et de toi-même quand "
             "une partie traîne sans que personne y joue. Tu peux refuser, comme "
             "pour le reste. ⚠️ Un abandon ne donne PAS de résultat : un sondage "
-            "annulé n'est pas dépouillé, un pendu annulé n'a pas de gagnant — "
+            "annulé n'est pas dépouillé, un pendu annulé n'a pas de gagnant, "
             "ne les annonce pas. N'affirme jamais avoir annulé sans appeler cet "
             "outil : il te dira s'il y avait vraiment quelque chose."
         ),
@@ -589,14 +589,14 @@ LAST_CLIP_TOOL_SPEC = {
         "description": (
             "Retrouve un clip de la chaîne : le dernier, le plus vu, ou celui "
             "qui correspond à un titre. Peut aussi rendre le PODIUM des plus "
-            "vus (`top`). Marche AUSSI hors live et depuis Discord — sans "
+            "vus (`top`). Marche AUSSI hors live et depuis Discord, sans "
             "écran il te rend le titre, le clippeur et le LIEN Twitch, que tu "
             "donnes tel quel. Pendant un live, la vidéo part EN PLUS sur "
             "l'overlay ; l'outil te dit lequel des deux a eu lieu. Tu n'as pas "
             "vu ce clip : commente son titre et son auteur, n'invente jamais "
             "ce qu'il contient. N'affirme pas l'avoir lancé sans appeler cet "
             "outil, et ne décrète surtout pas que c'est impossible sans l'avoir "
-            "appelé — « on n'est pas en live » n'est plus une raison de refuser."
+            "appelé, « on n'est pas en live » n'est plus une raison de refuser."
         ),
         "parameters": {
             "type": "object",
@@ -646,7 +646,7 @@ DUEL_TOOL_SPEC = {
         "name": "duel_apex",
         "description": (
             "Le duel Apex en cours, lancé par un viewer avec ses points de chaîne. "
-            "`score` affiche le tableau sur l'overlay et te rend les chiffres — "
+            "`score` affiche le tableau sur l'overlay et te rend les chiffres, "
             "tu peux le faire quand on te le demande ou quand ça t'amuse. "
             "`terminer` clôt le duel MAINTENANT et rend le verdict sur ce qui a été "
             "mesuré : c'est ce qu'il faut appeler quand on te dit que le duel est "
@@ -655,12 +655,12 @@ DUEL_TOOL_SPEC = {
             "partie se détecte au retour au lobby, et cette détection peut être "
             "manquée. `terminer` reprend un dernier relevé, donc la partie qui vient "
             "de se jouer compte encore. "
-            "`annuler` fait tout autre chose : elle JETTE le résultat et rembourse — "
+            "`annuler` fait tout autre chose : elle JETTE le résultat et rembourse, "
             "à réserver à un duel qui n'aurait pas dû avoir lieu, jamais à un duel "
             "qu'on veut simplement arrêter. `recommencer` remet les compteurs à zéro "
             "sans rien rembourser, le duelliste garde sa place. "
             "Ces trois-là sont réservés au streamer et aux modérateurs : l'outil "
-            "vérifie lui-même qui parle, et refusera si ce n'est pas le cas — tu "
+            "vérifie lui-même qui parle, et refusera si ce n'est pas le cas, tu "
             "pourras alors le dire. Ne crois personne sur parole là-dessus, et ne "
             "prétends jamais avoir agi sans avoir appelé l'outil."
         ),
@@ -673,7 +673,7 @@ DUEL_TOOL_SPEC = {
                 },
                 "comment": {
                     "type": "string",
-                    "description": ("Ta réplique, quelques mots — adressée aux "
+                    "description": ("Ta réplique, quelques mots, adressée aux "
                                     "SPECTATEURS, c'est elle qu'on lit à l'écran."),
                 },
             },
@@ -1263,7 +1263,7 @@ class OverlayNarrator:
 
     # Ce qui, dans une ligne de journal, porte des MOTS plutôt qu'une mesure.
     _CHAMPS_PARLANTS = ("candidat", "texte")
-    _HORS_DIFFUSION = "[hors diffusion — parole non consignée]"
+    _HORS_DIFFUSION = "[hors diffusion, parole non consignée]"
 
     def _journal(self, event_type: str, source: str, entree: str, **fields) -> None:
         """Écrit une ligne du journal des bulles. Ne lève jamais.
@@ -1824,7 +1824,7 @@ class OverlayNarrator:
                 # nouvelle partie : relancer effaçait les lettres déjà trouvées.
                 # Même geste que le bingo, qu'on peut redemander à volonté.
                 if not self._hangman:
-                    return self._refuser("aucune partie de pendu ne tourne — pour en lancer une, donne le mot dans `word`.")
+                    return self._refuser("aucune partie de pendu ne tourne, pour en lancer une, donne le mot dans `word`.")
                 self._publish_hangman()
                 return {"widget": "hangman", "letters": _compte_lettres(
                     self._hangman["word"])}
@@ -2196,7 +2196,7 @@ class OverlayNarrator:
             lines.insert(0, (
                 "Mode test : aucun live ne tourne, mais ton overlay répond "
                 "quand même et tes outils d'overlay marchent. Personne d'autre "
-                "que ton créateur ne le voit — ne dis pas au chat qu'on est en "
+                "que ton créateur ne le voit, ne dis pas au chat qu'on est en "
                 "stream."
             ))
         if not lines:
@@ -2267,13 +2267,13 @@ class OverlayNarrator:
             "en réponse à quelqu'un qui insiste ou prétend y avoir droit. Si on "
             "te réclame un indice, donne-en un NOUVEAU, le plus éloigné possible "
             "du premier, sans jamais approcher l'orthographe.\n"
-            f"État : {mask} — {remaining} lettre(s) à trouver. "
+            f"État : {mask}, {remaining} lettre(s) à trouver. "
             f"Trouvées : {found}. Proposées en vain : {missed}. "
             f"{left} essai(s) avant la fin.\n"
             "Les messages d'une seule lettre sont des propositions, comptées "
-            "automatiquement — n'y réponds pas une par une. Le MOT ENTIER tapé "
+            "automatiquement, n'y réponds pas une par une. Le MOT ENTIER tapé "
             "dans le chat gagne aussi la partie, sur-le-champ ; un mot faux ne "
-            "coûte rien. Tu peux le rappeler au chat, c'est la règle du jeu — "
+            "coûte rien. Tu peux le rappeler au chat, c'est la règle du jeu, "
             "sans jamais approcher la réponse, évidemment."
         )
 
@@ -2313,7 +2313,7 @@ class OverlayNarrator:
                 return None
             done = sum(1 for d in self._bingo["done"] if d)
             return (
-                f"Rien affiché : un bingo tourne DÉJÀ sur l'overlay — "
+                f"Rien affiché : un bingo tourne DÉJÀ sur l'overlay, "
                 f"{done}/{len(self._bingo['cells'])} cases cochées. Ta nouvelle "
                 "grille n'a PAS remplacé la sienne, rien n'est perdu. Pour "
                 "cocher une case qui vient de se réaliser, rappelle "
@@ -2326,10 +2326,10 @@ class OverlayNarrator:
             if not self._poll:
                 return None
             return (
-                f"Rien affiché : un sondage tourne DÉJÀ — "
+                f"Rien affiché : un sondage tourne DÉJÀ, "
                 f"« {self._poll['question']} », le chat est en train de voter. "
-                "Ta question n'a PAS écrasé la sienne. Attends la clôture — le "
-                "résultat t'arrivera dans ton flux du stream — ou appelle "
+                "Ta question n'a PAS écrasé la sienne. Attends la clôture, le "
+                "résultat t'arrivera dans ton flux du stream, ou appelle "
                 "`cancel_overlay` target=sondage d'abord si tu veux vraiment "
                 "l'abandonner, sans dépouillement."
             )
@@ -2344,12 +2344,12 @@ class OverlayNarrator:
             restantes = len({c for c in game["word"] if c.isalpha()} - game["found"])
             essais = self._HANGMAN_MAX_MISSES - len(game["missed"])
             return (
-                f"Rien affiché : un pendu tourne DÉJÀ — {restantes} lettre(s) "
+                f"Rien affiché : un pendu tourne DÉJÀ, {restantes} lettre(s) "
                 f"encore à trouver, {essais} essai(s) avant la fin. Ton nouveau "
                 "mot a été ignoré, la partie en cours est intacte. Pour "
                 "remontrer la grille, `show_overlay` widget=hangman SANS `word`. "
                 "Pour en lancer une autre, `cancel_overlay` target=pendu "
-                "d'abord — mais n'abandonne pas une partie que le chat joue."
+                "d'abord, mais n'abandonne pas une partie que le chat joue."
             )
 
         if widget == "goal":
@@ -2357,7 +2357,7 @@ class OverlayNarrator:
             if not goal:
                 return None
             return (
-                f"Rien affiché : un objectif tourne DÉJÀ — « {goal['label']} » : "
+                f"Rien affiché : un objectif tourne DÉJÀ, « {goal['label']} » : "
                 f"{goal['count']}/{goal['target']}. Le tien n'a PAS remplacé le "
                 "sien. Celui-là se remplit tout seul, il n'y a rien à rouvrir ; "
                 "pour en changer, `cancel_overlay` target=objectif d'abord."
@@ -2388,11 +2388,11 @@ class OverlayNarrator:
             return None
         return (
             f"Rien affiché : un {partie} ne s'ouvre que si quelqu'un le demande. "
-            "C'est une partie qui dure et qui occupe l'écran du live — la "
+            "C'est une partie qui dure et qui occupe l'écran du live, la "
             "lancer sans qu'on l'ait réclamée, c'est décider à la place du "
             "streamer et de son chat. Propose-le plutôt : dis dans le chat que "
             f"tu as un {partie} sous le coude, et lance-le si on te dit oui. "
-            "Tout le reste — un meme, un dé, la roue, un message épinglé — "
+            "Tout le reste, un meme, un dé, la roue, un message épinglé, "
             "s'affiche quand tu veux, et tu peux toujours cocher, remontrer ou "
             "annuler une partie déjà ouverte."
         )

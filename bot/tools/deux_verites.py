@@ -93,7 +93,7 @@ DEUX_VERITES_TOOL: dict[str, Any] = {
             "inventes, et les viewers votent laquelle est fausse. Sers-t'en "
             "quand le live tourne au ralenti, qu'on te demande un jeu, ou que "
             "tu as envie de taquiner quelqu'un qui vient de parler. Tu ne "
-            "sauras pas toi-même laquelle est fausse avant la fin — c'est "
+            "sauras pas toi-même laquelle est fausse avant la fin, c'est "
             "voulu, le suspense t'appartient aussi. Ça ne marche que pendant "
             "un live, et seulement sur quelqu'un dont tu te souviens vraiment."
         ),
@@ -239,7 +239,7 @@ async def run_deux_verites_tool(bot, args: dict, canal_id: str = "") -> str:
     if not canal_id:
         return "Le jeu n'a pas pu démarrer : je ne sais pas sur quel canal jouer."
     if fiction.en_cours(canal_id):
-        return "Une partie est déjà en cours ici — laisse-la finir avant d'en lancer une autre."
+        return "Une partie est déjà en cours ici, laisse-la finir avant d'en lancer une autre."
 
     presents = _presents(bot, canal_id)
     if not presents:
@@ -248,7 +248,7 @@ async def run_deux_verites_tool(bot, args: dict, canal_id: str = "") -> str:
     if demande:
         cible = next((p for p in presents if _pseudo_nu(p) == _pseudo_nu(demande)), "")
         if not cible:
-            return (f"{demande} n'a pas écrit récemment ici — on ne joue pas sur "
+            return (f"{demande} n'a pas écrit récemment ici, on ne joue pas sur "
                     "quelqu'un qui n'est pas là pour se défendre.")
     else:
         cible = random.choice(presents)
@@ -288,7 +288,7 @@ async def run_deux_verites_tool(bot, args: dict, canal_id: str = "") -> str:
     note_act(f"j'ai lancé « deux vérités, un mensonge » sur {nom}")
     return (f"Le jeu est lancé sur {nom} : « {phrases[0]} », « {phrases[1]} », "
             f"« {phrases[2]} ». Le chat vote pendant {_DUREE_VOTE_S} secondes en "
-            "tapant le numéro. Tu ne sais PAS laquelle est fausse — ne fais pas "
+            "tapant le numéro. Tu ne sais PAS laquelle est fausse, ne fais pas "
             "semblant de le savoir, joue le suspense avec eux. Annonce le jeu "
             "aux viewers, sans répéter les trois phrases telles quelles : elles "
             "sont déjà à l'écran.")

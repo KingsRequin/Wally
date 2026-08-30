@@ -136,7 +136,7 @@ class SelfTrace:
         ]
         for ts, summary, count in acts:
             suffixe = f" (×{count})" if count > 1 else ""
-            lignes.append(f"· {_age(now - ts)} — {summary}{suffixe}")
+            lignes.append(f"· {_age(now - ts)}, {summary}{suffixe}")
         if not compact:
             lignes.append(
                 "Ces actes sont les TIENS, sur tous tes canaux à la fois. Quand "

@@ -162,7 +162,7 @@ class HistoryHit:
         content = self.content[:_MAX_CONTENT]
         if len(self.content) > _MAX_CONTENT:
             content += "…"
-        return f"[{when}] #{self.channel} — {self.author}: {content}"
+        return f"[{when}] #{self.channel}, {self.author}: {content}"
 
 
 def search_logs(
@@ -326,7 +326,7 @@ class HistorySearchService:
         if filters:
             header += f" ({filters})"
         if total > len(hits):
-            header += f" — voici les {len(hits)} plus récents"
+            header += f", voici les {len(hits)} plus récents"
         return header + " :\n" + "\n".join(h.render() for h in hits)
 
     @staticmethod

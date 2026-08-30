@@ -1042,7 +1042,7 @@ class ActionDispatcher:
             # surfaçage (get_by_user trie par last_seen_at DESC).
             await self._facts.add(AtomicFact(
                 user_id="wally:self",
-                content=f"{about} — {opinion}",
+                content=f"{about}, {opinion}",
                 category=FactCategory.REL,
                 source="opinion",
                 confidence=1.0,
@@ -1050,7 +1050,7 @@ class ActionDispatcher:
                 last_seen_at=now,
             ))
             logger.info("ACT note_relation: {} — {}", about, opinion[:50])
-            self._publish_act("opinion sur ", f"{about} — {opinion}")
+            self._publish_act("opinion sur ", f"{about}, {opinion}")
 
         elif act_name == "note_emote" and self._facts:
             emote = (args.get("emote") or "").strip().strip(":")

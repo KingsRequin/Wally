@@ -95,7 +95,7 @@ class PersonaManager:
         if after_len < max(20, before_len // 2):
             raise PersonaManagerError(
                 f"Réponse LLM inexploitable pour {section} "
-                f"({after_len} caractères contre {before_len}) — fichier inchangé"
+                f"({after_len} caractères contre {before_len}), fichier inchangé"
             )
         # Repli sur disque avant écriture : même en cas de contenu plausible mais
         # abîmé, la version précédente reste récupérable à la main.

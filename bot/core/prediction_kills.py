@@ -51,7 +51,7 @@ def verifier_tranches(tranches: list[dict] | None) -> str | None:
         return "il faut au moins deux choix pour un pari."
     propres.sort(key=lambda t: t["min"])
     if propres[0]["min"] != 0:
-        return ("il manque le cas ZÉRO kill — mourir sans tuer arrive, et c'est "
+        return ("il manque le cas ZÉRO kill, mourir sans tuer arrive, et c'est "
                 "même ce que le chat commente le plus.")
     # Une seule borne ouverte, et à la fin : sinon deux choix se recouvrent à
     # l'infini.
@@ -138,7 +138,7 @@ class PredictionKills:
         if faute:
             # AVANT tout appel à Twitch : une prédiction ouverte qu'on ne saurait
             # pas résoudre bloquerait les points de tout le monde.
-            return {"ok": False, "raison": f"découpage inutilisable — {faute}"}
+            return {"ok": False, "raison": f"découpage inutilisable, {faute}"}
 
         api = getattr(bot, "twitch_api", None)
         if api is None:
@@ -230,7 +230,7 @@ PREDICTION_TOOL = {
             "sur le nombre de kills que va faire le streamer dans sa prochaine "
             "partie (« combien de kills ? », « on parie ? »). Tu composes "
             "toi-même les tranches. Tu le RÉSOUS tout seul à la fin de la "
-            "partie — donc chaque choix doit porter ses bornes. Réservé aux "
+            "partie, donc chaque choix doit porter ses bornes. Réservé aux "
             "MODÉRATEURS et au streamer : appelle quand même l'outil si "
             "quelqu'un d'autre le demande, tu sauras quoi répondre."
         ),

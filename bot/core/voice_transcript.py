@@ -289,12 +289,12 @@ class VoiceTranscriptFeed:
     def render(self) -> str:
         """Bloc texte de la conversation vocale, ou "" si rien à montrer."""
         if self._broadcast_channel_id is None:
-            self._verdict("absent — aucune captation ouverte (hors live)")
+            self._verdict("absent, aucune captation ouverte (hors live)")
             return ""
         now = time.monotonic()
         lines = self._fresh(now)
         if not lines:
-            self._verdict("absent — aucune réplique fraîche au tampon")
+            self._verdict("absent, aucune réplique fraîche au tampon")
             return ""
 
         who = self._present_label()
@@ -313,7 +313,7 @@ class VoiceTranscriptFeed:
         ]
         last_age = now - lines[-1][0]
         if last_age > STALE_AFTER:
-            out.append(f"Dernier échange entendu {_age(last_age)} — ça s'est calmé depuis.")
+            out.append(f"Dernier échange entendu {_age(last_age)}, ça s'est calmé depuis.")
         for _ts, speaker, text in lines:
             out.append(f"· [{speaker}] {text}")
         out.append(

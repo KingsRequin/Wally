@@ -54,7 +54,7 @@ async def reminder_handler(
             composite_directives=persona.composite_directives,
         )
         user_content = (
-            f"[INSTRUCTION SYSTÈME — NE PAS CITER]\n"
+            f"[INSTRUCTION SYSTÈME, NE PAS CITER]\n"
             f"Tu dois envoyer un rappel à un utilisateur. "
             f"Voici le contenu du rappel : \"{raw_msg}\"\n"
             f"Formule ce rappel avec ta personnalité, ton humeur actuelle, "
@@ -99,7 +99,7 @@ async def join_twitch_channel_handler(
     if result == "already_added":
         return f"Je suis déjà dans la chaîne {channel}."
     if result is None:
-        return f"Impossible de rejoindre {channel} — chaîne introuvable ou API indisponible."
+        return f"Impossible de rejoindre {channel}, chaîne introuvable ou API indisponible."
     return f"J'ai rejoint la chaîne {channel}."
 
 

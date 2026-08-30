@@ -34,7 +34,7 @@ MUSIC_TOOL = {
             "1) Dire ce qui passe (`now`) : n'importe qui peut le demander "
             "(« c'est quoi la musique ? »). "
             "2) Piloter la lecture (`play`, `pause`, `next`, `prev`, "
-            "`play_query`) : seuls un MODÉRATEUR ou le streamer y ont droit — "
+            "`play_query`) : seuls un MODÉRATEUR ou le streamer y ont droit, "
             "appelle quand même l'outil si un viewer le demande, tu sauras quoi "
             "répondre. Utilise `play_query` avec le titre demandé pour lancer un "
             "morceau précis (« mets du Linkin Park »)."
@@ -69,12 +69,12 @@ def _dire_ce_qui_passe(etat: dict | None) -> str:
     ce cas, et on ne le traduit pas en silence.
     """
     if not etat:
-        return ("Tu ne sais pas ce qui passe en ce moment — le lecteur d'Azraël "
+        return ("Tu ne sais pas ce qui passe en ce moment, le lecteur d'Azraël "
                 "ne te dit rien (extension coupée, ou rien d'ouvert). Dis-le "
                 "franchement, ne devine pas.")
     titre = etat.get("titre") or ""
     artiste = etat.get("artiste") or ""
-    morceau = f"{artiste} — {titre}" if artiste else titre
+    morceau = f"{artiste}, {titre}" if artiste else titre
     if not etat.get("joue"):
         return (f"En pause sur « {morceau} ». Dis-le en une phrase, à ta sauce.")
     return f"Ça joue : « {morceau} ». Dis-le en une phrase, à ta sauce."

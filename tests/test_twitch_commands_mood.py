@@ -38,7 +38,7 @@ async def test_mood_uses_bot_name_from_config():
     bot = make_bot(channel_ids={}, bot_name="Cindy")
     await handle_mood_command(bot, "streamer")
     sent_text = bot.twitch_api.send_automatic.call_args.args[0]
-    assert sent_text.startswith("Humeur de Cindy —"), f"Attendu 'Humeur de Cindy —', obtenu: {sent_text}"
+    assert sent_text.startswith("Humeur de Cindy :"), f"Attendu 'Humeur de Cindy :', obtenu: {sent_text}"
     assert "Wally" not in sent_text, f"'Wally' hardcodé trouvé dans: {sent_text}"
 
 

@@ -160,7 +160,7 @@ class StreamFeed:
             f"coin de ton écran.",
         ]
         for ts, desc in events:
-            lines.append(f"· {_age(now - ts)} — {desc}")
+            lines.append(f"· {_age(now - ts)}, {desc}")
         if chat:
             lines.append("Dernières lignes du chat du stream :")
             for _ts, author, text in chat:

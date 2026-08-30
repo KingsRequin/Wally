@@ -33,7 +33,7 @@ FOLLOW_TOOL = {
                     "type": "string",
                     "description": (
                         "Le pseudo Twitch de la personne. Laisse VIDE pour "
-                        "celui qui te parle — c'est le cas courant."
+                        "celui qui te parle, c'est le cas courant."
                     ),
                 },
             },
@@ -107,7 +107,7 @@ async def run_follow_tool(bot: Any, args: dict, *,
     infos = await api.get_follow_date(cible_id)
     if infos is None:
         return json.dumps({"status": "error", "message": (
-            "Twitch n'a pas répondu — dis que tu n'arrives pas à vérifier, "
+            "Twitch n'a pas répondu, dis que tu n'arrives pas à vérifier, "
             "surtout ne conclus PAS qu'elle ne suit pas la chaîne.")})
     if not infos:
         return json.dumps({"status": "not_following",

@@ -157,7 +157,7 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             if demande is not None and demande not in SUPPORTED_TEXT_PROVIDERS:
                 raise HTTPException(
                     status_code=400,
-                    detail=(f"provider {demande!r} inconnu — "
+                    detail=(f"provider {demande!r} inconnu, "
                             f"supportés : {', '.join(SUPPORTED_TEXT_PROVIDERS)}"),
                 )
 
@@ -864,13 +864,13 @@ async def restart_container(request: Request) -> dict:
         logger.error("Container restart: pont hôte non configuré (BRIDGE_SECRET absent)")
         raise HTTPException(
             status_code=503,
-            detail="Pont hôte non configuré (BRIDGE_SECRET absent) — redémarrage impossible depuis le container.",
+            detail="Pont hôte non configuré (BRIDGE_SECRET absent), redémarrage impossible depuis le container.",
         )
     if not await bridge.health():
         logger.error("Container restart: pont hôte injoignable")
         raise HTTPException(
             status_code=503,
-            detail="Pont hôte injoignable — le service wally-bridge est-il actif sur l'hôte ?",
+            detail="Pont hôte injoignable, le service wally-bridge est-il actif sur l'hôte ?",
         )
 
     service_name = os.getenv("COMPOSE_PROJECT_NAME", "wally")

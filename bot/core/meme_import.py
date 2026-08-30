@@ -197,10 +197,10 @@ class SessionImport:
         suffixe = suffixe.lower()
         if suffixe not in _EXTENSIONS_MEDIA:
             admis = " ".join(sorted(_EXTENSIONS_MEDIA))
-            return Preparation(raison=f"format {suffixe} non admis — attendus : {admis}")
+            return Preparation(raison=f"format {suffixe} non admis, attendus : {admis}")
         if len(octets) > MAX_TELECHARGEMENT:
             return Preparation(
-                raison=f"{len(octets) / 1e6:.1f} Mo — au-delà de la limite de téléchargement"
+                raison=f"{len(octets) / 1e6:.1f} Mo, au-delà de la limite de téléchargement"
             )
 
         depuis = self._connu(octets)
@@ -223,7 +223,7 @@ class SessionImport:
             return Preparation(
                 raison=(
                     f"{len(finaux) / 1e6:.1f} Mo après conversion, au-dessus du plafond de "
-                    f"{_MAX_BYTES / 1e6:.0f} Mo — il serait rangé puis jamais montré"
+                    f"{_MAX_BYTES / 1e6:.0f} Mo, il serait rangé puis jamais montré"
                 )
             )
         # L'empreinte de l'ORIGINAL voyage avec la préparation : c'est elle que

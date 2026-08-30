@@ -83,7 +83,7 @@ def test_la_progression_dit_sur_combien_et_pas_seulement_combien():
     texte = meme_masse.texte_progression(bilan, 10, salon)
 
     assert "**10 médias trouvés** dans #memes" in texte
-    assert "— 3/10" in texte
+    assert ", 3/10" in texte
     assert "30 %" in texte
     assert "✅ 2 rangés · 🔁 1 doublon" in texte
 

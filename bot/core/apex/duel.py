@@ -473,7 +473,7 @@ class Duel:
             evts = [Evenement("abandon", {
                 "rembourser": False,
                 "motif": (f"le duel s'est arrêté en cours, après la manche "
-                          f"{len(self.scores)}/{self.manches} — pas de retour "
+                          f"{len(self.scores)}/{self.manches}, pas de retour "
                           f"dans le délai"),
                 "manches_jouees": len(self.scores),
             })]
@@ -691,7 +691,7 @@ class Duel:
             })
         return Evenement("abandon", {
             "rembourser": True,
-            "motif": (f"{prefixe}aucun kill n'a pu être compté d'aucun côté — "
+            "motif": (f"{prefixe}aucun kill n'a pu être compté d'aucun côté, "
                       "la Mixtape ne compte pas les kills, ou l'API n'a rien vu"),
             "manches_jouees": len(self.scores),
         })

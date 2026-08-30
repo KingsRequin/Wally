@@ -39,7 +39,7 @@ class MemoryPaginatedView(discord.ui.View):
     def _make_embed(self) -> discord.Embed:
         suffix = f" ({self.current + 1}/{len(self.pages)})" if len(self.pages) > 1 else ""
         return discord.Embed(
-            title=f"Mémoire de {bot_name()} — {self.user_name}{suffix}",
+            title=f"Mémoire de {bot_name()}, {self.user_name}{suffix}",
             description=self.pages[self.current],
             color=discord.Color.green(),
         )
@@ -92,7 +92,7 @@ class MemoryCog(commands.Cog):
                 # Still show trust+love even with no memories
                 await interaction.followup.send(
                     embed=discord.Embed(
-                        title=f"Mémoire de {bot_name()} — {target.display_name}",
+                        title=f"Mémoire de {bot_name()}, {target.display_name}",
                         description=f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\nAucun souvenir.",
                         color=discord.Color.green(),
                     ),

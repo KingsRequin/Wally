@@ -88,12 +88,12 @@ class LevelSelect(discord.ui.Select):
         if self.values[0] == "basic":
             view = BasicView(self.bot)
             await interaction.response.send_message(
-                "**Configuration — Niveau Basique**", view=view, ephemeral=True
+                "**Configuration, Niveau Basique**", view=view, ephemeral=True
             )
         else:
             view = AdvancedView(self.bot)
             await interaction.response.send_message(
-                "**Configuration — Niveau Avancé**", view=view, ephemeral=True
+                "**Configuration, Niveau Avancé**", view=view, ephemeral=True
             )
 
 
@@ -134,10 +134,10 @@ class SetupCog(commands.Cog):
         missing = is_env_complete()
         if missing:
             content = (
-                f"**Configuration de {bot_name()}** — Sélectionnez un niveau :\n"
+                f"**Configuration de {bot_name()}**, Sélectionnez un niveau :\n"
                 f"⚠️ Clés `.env` manquantes : {', '.join(missing)}"
             )
         else:
-            content = f"**Configuration de {bot_name()}** — Sélectionnez un niveau :"
+            content = f"**Configuration de {bot_name()}**, Sélectionnez un niveau :"
         view = SetupView(self.bot)
         await interaction.response.send_message(content, view=view, ephemeral=True)

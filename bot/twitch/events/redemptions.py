@@ -66,12 +66,12 @@ def _rendus_ou_pas(rendu: bool, redemption_id: str, motif: str) -> str:
     en direct, avec pour seule trace une ligne de log.
     """
     if rendu:
-        return f"{motif} — tes points t'ont été rendus."
+        return f"{motif}, tes points t'ont été rendus."
     logger.error(
         "Duel Apex : REMBOURSEMENT REFUSÉ par Twitch (redemption {i}) — les "
         "points du viewer ne sont pas revenus, il faut les rendre à la main",
         i=redemption_id or "?")
-    return (f"{motif}, et je n'ai pas réussi à te rendre tes points — préviens "
+    return (f"{motif}, et je n'ai pas réussi à te rendre tes points, préviens "
             "le streamer, il n'y a que lui qui puisse te les rendre à la main.")
 
 

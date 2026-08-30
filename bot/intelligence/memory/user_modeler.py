@@ -138,9 +138,9 @@ class UserModeler:
         present = "\n".join(f"- {f['content']}" for f in active)
         past = "\n".join(f"- {f['content']}" for f in superseded) or "(rien)"
         consigne_genre = (
-            f"Genre : {genre} — emploie ce genre, pronoms et accords compris."
+            f"Genre : {genre}, emploie ce genre, pronoms et accords compris."
             if genre
-            else "Genre : INCONNU — n'emploie ni « il », ni « elle », ni aucun accord genré. "
+            else "Genre : INCONNU, n'emploie ni « il », ni « elle », ni aucun accord genré. "
             "Reprends le pseudo, ou tourne la phrase autrement."
         )
         payload = (
