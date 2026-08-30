@@ -39,6 +39,7 @@ from bot.discord.handlers import (
     _PRESENCE_TOOL, run_presence_tool, _presence_service,
 )
 from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
+from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
@@ -518,6 +519,10 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
         # `moderator:read:followers` ne vaut que là, et « depuis quand tu me
         # suis » chez un invité parlerait de SA chaîne, pas de celle-ci.
         tools.append(FOLLOW_TOOL)
+    # Son humeur des jours passés. Inconditionnel : il porte son état émotionnel
+    # partout, chaîne maison comme invitée, en live comme hors live — et « t'étais
+    # énervé hier soir ? » se demande surtout quand il ne l'est plus.
+    tools.append(MOOD_HISTORY_TOOL)
     if overlay and _overlay_narrator(bot) is not None:
         # L'enum est relu ICI, juste avant que Wally décide : un widget masqué
         # sur TOUTES les scènes ne doit pas lui être proposé, sinon il l'affiche
@@ -766,6 +771,8 @@ def make_tool_executor(
         if name == "follow_date":
             return await run_follow_tool(bot, args, platform=platform,
                                          user_id=user_id, author=author)
+        if name == "mood_history":
+            return await run_mood_history_tool(bot, args)
         if name == "shoutout":
             return await run_shoutout_tool(bot, args)
         if name == "deux_verites_un_mensonge":

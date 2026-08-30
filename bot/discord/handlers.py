@@ -21,6 +21,7 @@ from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMI
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
+from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.core.secret_guard import redact
 from bot.core.text_clean import strip_stage_directions
@@ -1485,6 +1486,9 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
     if api_twitch(bot) is not None:
         tools.append(FOLLOW_TOOL)
+    # Son humeur des jours passés. Le même état émotionnel vaut des deux côtés :
+    # le conditionner à la plateforme le rendrait amnésique sur l'une des deux.
+    tools.append(MOOD_HISTORY_TOOL)
     # Le planning est offert INCONDITIONNELLEMENT : il rend un lien, pas un
     # affichage. Le conditionner à l'overlay priverait Wally de réponse hors
     # live — le moment où on demande justement quand est le prochain stream.
@@ -2958,6 +2962,8 @@ async def _respond(
                 return await run_follow_tool(
                     bot, args, platform="discord", user_id=str(message.author.id),
                     author=str(message.author.display_name))
+            if name == "mood_history":
+                return await run_mood_history_tool(bot, args)
             if name == "predict":
                 return await run_predict_tool(bot, args)
             if name == "deux_verites_un_mensonge":

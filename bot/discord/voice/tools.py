@@ -7,6 +7,7 @@ from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.notes_tool import (
     run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
 )
@@ -176,6 +177,11 @@ async def build_voice_tools(bot) -> list[dict]:
     # badge de modérateur, et `pilotable=False` l'ORIENTE plutôt que de refuser.
     if getattr(bot, "music", None) is not None:
         tools.append(MUSIC_TOOL)
+    # Son humeur des jours passés. « T'étais énervé hier soir non ? » se demande
+    # autant à voix haute qu'à l'écrit, et le catalogue vocal est justement
+    # l'endroit où un outil manque sans que rien ne le dise — trois refus muets
+    # en direct le 2026-08-25 avant qu'on le remarque.
+    tools.append(MOOD_HISTORY_TOOL)
     action_service = getattr(bot, "action_service", None)
     if action_service is not None:
         tools.extend(action_service.get_tool_definitions())
@@ -358,6 +364,9 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
             except Exception:  # noqa: BLE001 — un JSON tordu vaut une demande vide
                 pass
             return await run_music_tool(bot, args, roles=None, pilotable=False)
+
+        if name == "mood_history":
+            return await run_mood_history_tool(bot, json.loads(arguments or "{}"))
 
         if name == "save_persistent_note":
             return await run_save_note_tool(bot.db, json.loads(arguments or "{}"))
