@@ -26,6 +26,8 @@ def _bot_avec_apex():
     bot.db.update_love_score = AsyncMock()
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.db.get_memory_username = AsyncMock(return_value=None)
+    bot.memory.noter_renommage = AsyncMock(return_value=False)
     bot.db.get_last_interaction = AsyncMock(return_value=None)
     bot.db.get_recent_jokes = AsyncMock(return_value=[])
     bot.db.count_recent_triggers = AsyncMock(return_value=0)

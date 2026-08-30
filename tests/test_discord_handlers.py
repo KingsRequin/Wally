@@ -46,6 +46,8 @@ def make_bot(trigger_names=None, muted=False, welcomed=False, trust=0.5):
     bot.db.is_chat_user_banned = AsyncMock(return_value=False)
     bot.db.mark_welcomed = AsyncMock()
     bot.db.upsert_memory_user = AsyncMock()
+    bot.db.get_memory_username = AsyncMock(return_value=None)
+    bot.memory.noter_renommage = AsyncMock(return_value=False)
     bot.config.bot.love_decay_lambda = 0.02
 
     bot.emotion.get_state = MagicMock(

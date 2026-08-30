@@ -990,8 +990,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         except Exception as exc:  # noqa: BLE001 — jamais bloquant
             logger.debug("overlay: ancienneté spectateur indisponible: {e!r}", e=exc)
 
-    # Persiste le login Twitch pour que le dashboard affiche un nom lisible
-    await bot.db.upsert_memory_user(f"twitch:{user_id}", "twitch", username=author_display)
+    # Persiste le login Twitch pour que le dashboard affiche un nom lisible.
+    # Avant d'écraser : même ID + pseudo différent = la personne s'est renommée,
+    # et l'ancien nom ne survit nulle part ailleurs. On le range en alias ici,
+    # là où les deux informations se rencontrent.
+    _uid_memoire = f"twitch:{user_id}"
+    try:
+        _ancien_pseudo = await bot.db.get_memory_username(_uid_memoire)
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant pour un message
+        logger.debug("renommage: ancien pseudo illisible: {e!r}", e=exc)
+        _ancien_pseudo = None
+    if _ancien_pseudo:
+        await bot.memory.noter_renommage(
+            bot.db, _uid_memoire, _ancien_pseudo, author_display
+        )
+    await bot.db.upsert_memory_user(_uid_memoire, "twitch", username=author_display)
 
     # Flux passif du stream : pendant le live, les lignes du chat de la chaîne
     # home nourrissent le contexte d'ambiance de Wally — y compris quand il

@@ -136,6 +136,50 @@ class MemoryService:
         except Exception as e:
             logger.warning("Failed to load nickname aliases: {e!r}", e=e)
 
+    async def noter_renommage(
+        self, db, user_id: str, ancien: str, nouveau: str
+    ) -> bool:
+        """Range l'ancien pseudo en alias quand quelqu'un se renomme.
+
+        Même identifiant, pseudo différent : la personne s'est renommée. Les
+        faits, le portrait et la relation suivent l'ID — rien n'est cassé. Ce
+        qui se perd est l'ANCIEN nom, sous lequel les autres continuent de la
+        désigner pendant des mois. On le range en alias pour que Wally résolve
+        encore vers le bon dossier.
+
+        Point d'écriture UNIQUE : la base ET le cache d'alias en mémoire. Le
+        second est ce qui rend l'alias vivant avant le prochain redémarrage —
+        l'oublier donne un comportement mémoire qui change au reboot, sans un
+        log (piège déjà payé, cf. `load_aliases`).
+
+        Renvoie True si un alias a été posé.
+        """
+        ancien = (ancien or "").strip()
+        nouveau = (nouveau or "").strip()
+        # Comparaison en minuscules : `kingsrequin` → `KingsRequin` est un
+        # changement de casse, pas un renommage. Sans ça, la table d'alias se
+        # remplirait de doublons au premier message.
+        if not ancien or not nouveau or ancien.lower() == nouveau.lower():
+            return False
+
+        cle = ancien.lower()
+        try:
+            await db.upsert_alias(cle, user_id, nouveau, "renommage", 1.0)
+        except Exception as e:
+            logger.warning("Renommage non enregistré pour {uid}: {e!r}", uid=user_id, e=e)
+            return False
+
+        # Les DEUX clés, comme `load_aliases` : `nickname:` est lu par les
+        # handlers et le journal, `unknown:` est la seule forme atteignable
+        # depuis `_user_id()`.
+        self._alias_cache[f"nickname:{cle}"] = user_id
+        self._alias_cache[f"unknown:{cle}"] = user_id
+        logger.info(
+            "Renommage détecté: {ancien} → {nouveau} ({uid})",
+            ancien=ancien, nouveau=nouveau, uid=user_id,
+        )
+        return True
+
     def add_alias(self, alias_id: str, canonical_id: str) -> None:
         """Enregistre un alias dans le cache (après acceptation d'un lien)."""
         self._alias_cache[alias_id] = canonical_id
