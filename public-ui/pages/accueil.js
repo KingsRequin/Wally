@@ -133,16 +133,29 @@ function formatUptime(secondes) {
   return [String(m), h('span', { class: 'unit', text: 'm' })];
 }
 
+// Le CONTEXTE d'un événement : où, à qui, à propos de quoi. Il partait
+// autrefois en tête du texte, si bien qu'une pensée longue commençait par
+// « #general » puis se faisait couper à droite par le tag de type. Il monte
+// avec l'heure sur la ligne des métadonnées, et la sortie garde la largeur.
+function contexteEvenement(e) {
+  if (e.type === 'SPEAK') return e.channel ? '#' + e.channel : '→ chat';
+  if (e.type === 'REACT') return e.emoji || '';
+  if (e.type === 'DM') return '→ ' + (e.target || 'créateur');
+  if (e.type === 'DM_SUPPRESSED') return 'retenu : ' + (e.reason || '');
+  if (e.type === 'ATTN') return e.target || '';
+  if (e.type === 'EVOLVE') return 'persona';
+  if (e.type === 'RSS') return e.feed || '';
+  return e.channel ? '#' + e.channel : '';
+}
+
+// La SORTIE : ce que Wally a pensé, dit ou fait, et rien d'autre.
 function texteEvenement(e) {
   if (e.type === 'THINK') return e.text || '';
-  if (e.type === 'SPEAK') return (e.channel ? '#' + e.channel + ' ' : '→ ') + (e.detail || '');
-  if (e.type === 'REACT') return e.detail || ('a réagi ' + (e.emoji || ''));
-  if (e.type === 'DM') return '→ ' + (e.target || 'créateur') + ' : ' + (e.message || '');
-  if (e.type === 'DM_SUPPRESSED') return 'DM retenu (' + (e.reason || '') + ') : ' + (e.message || '');
-  if (e.type === 'ATTN') return (e.target || '—') + ' : ' + (e.content_snippet || '');
+  if (e.type === 'REACT') return e.detail || 'a réagi';
+  if (e.type === 'DM' || e.type === 'DM_SUPPRESSED') return e.message || '';
+  if (e.type === 'ATTN') return e.content_snippet || '';
   if (e.type === 'DECIDE') return (e.actions || []).join(' · ');
-  if (e.type === 'EVOLVE') return 'persona → ' + (e.detail || '');
-  if (e.type === 'RSS') return (e.feed ? e.feed + ' — ' : '') + (e.content_snippet || '');
+  if (e.type === 'RSS') return e.content_snippet || '';
   return e.detail || e.text || e.message || '';
 }
 
@@ -264,10 +277,20 @@ function rendreFil() {
     const meta = metaEvenement(e.type);
     const complet = texteComplet(e);
     const texte = (e._deplie && complet) ? complet : texteEvenement(e) + (complet ? ' …' : '');
-    const ligne = h('div', { class: 'feed-row' + (complet ? ' clickable' : '') },
+    const contexte = contexteEvenement(e);
+    // Deux lignes et non trois colonnes : à 390 px, l'heure et un tag de 92 px
+    // mangeaient la moitié de la largeur, et il restait une colonne de mots
+    // pour la pensée elle-même.
+    const ligne = h('div', {
+      class: 'feed-row' + (complet ? ' clickable' : ''),
+      style: `--type: ${meta.c}`,
+    },
+    h('div', { class: 'feed-meta' },
       h('span', { class: 'feed-time', text: e._t || '' }),
-      h('span', { class: 'feed-tag', style: `color:${meta.c}`, text: meta.k }),
-      h('span', { class: 'feed-text', text: texte }),
+      h('span', { class: 'feed-tag', text: meta.k }),
+      contexte ? h('span', { class: 'feed-ou', text: contexte }) : null,
+    ),
+    h('div', { class: 'feed-text', text: texte }),
     );
     if (complet) {
       ligne.title = 'cliquer pour ' + (e._deplie ? 'replier' : 'déplier');

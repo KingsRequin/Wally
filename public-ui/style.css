@@ -597,12 +597,40 @@ input:focus, textarea:focus {
   font-size: 13px;
   line-height: 1.9;
 }
-.feed-row { display: flex; gap: 14px; align-items: baseline; }
+/* Une entrée sur DEUX lignes, comme le journal du panneau d'administration :
+ * les métadonnées au-dessus, la sortie en dessous et sur toute la largeur.
+ * En trois colonnes, l'heure et un tag de 92 px mangeaient la moitié des
+ * 390 px d'un téléphone, et il restait une colonne de mots pour la pensée.
+ *
+ * La couleur du type est passée en variable (`--type`) par le JS, pour que la
+ * barre de gauche, le tag et le survol la partagent sans trois écritures. */
+.feed-row {
+  padding: 6px 0 8px 12px;
+  border-left: 2px solid var(--type, transparent);
+  margin-bottom: 2px;
+}
 .feed-row.clickable { cursor: pointer; }
 .feed-row.clickable:hover { background: rgba(255, 255, 255, .03); }
+.feed-meta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+}
 .feed-time { flex: 0 0 auto; color: var(--faint); }
-.feed-tag { flex: 0 0 92px; font-weight: 700; }
-.feed-text { color: var(--text-3); word-break: break-word; }
+.feed-tag { flex: 0 0 auto; font-weight: 700; color: var(--type, var(--soft)); }
+/* Le contexte cède la place le premier : c'est la moins utile des trois
+ * métadonnées, et un nom de salon long ne doit pas pousser l'heure dehors. */
+.feed-ou {
+  color: var(--faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-text { color: var(--text-3); word-break: break-word; line-height: 1.65; }
 
 /* ──────────────────────────  bandeau défilant  ────────────────────────── */
 

@@ -314,6 +314,29 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     dedans = roue.evaluate("document.querySelector('.feed-body').scrollTop")
     rap.dire(dedans < 400, "la molette atteint le flux cognitif", f"400 → {dedans}")
 
+    # Le flux rend les métadonnées AU-DESSUS de la sortie, comme le journal du
+    # panneau d'administration. En trois colonnes, l'heure et un tag de 92 px
+    # mangeaient la moitié d'un écran de téléphone : on mesure donc la part de
+    # largeur qui revient au texte, pas seulement la présence des nœuds.
+    forme = roue.evaluate(
+        """(() => {
+          const r = document.querySelector('.feed-row');
+          if (!r) return null;
+          const t = r.querySelector('.feed-text');
+          return {
+            meta: !!r.querySelector('.feed-meta'),
+            texte: !!t,
+            part: t ? t.getBoundingClientRect().width
+                      / r.getBoundingClientRect().width : 0,
+            teinte: getComputedStyle(r).borderLeftColor,
+          };
+        })()""")
+    rap.dire(bool(forme and forme["meta"] and forme["texte"]),
+             "le flux sépare les métadonnées de la sortie", str(forme))
+    rap.dire(bool(forme and forme["part"] > 0.9),
+             "et la sortie prend toute la largeur",
+             f"{round((forme or {}).get('part', 0) * 100)} %")
+
     roue.evaluate("window.scrollTo(0, 0)")
     roue.wait_for_timeout(700)
     roue.mouse.move(720, 300)
