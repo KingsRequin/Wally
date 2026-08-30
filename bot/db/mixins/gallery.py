@@ -52,13 +52,27 @@ class GalleryMixin:
         user_filter: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        sujet_seulement: bool = False,
     ) -> list[dict]:
+        """Les images de la galerie, filtrées et triées.
+
+        `sujet_seulement` retire `username` du champ de recherche. Le dashboard
+        veut l'y garder — on y cherche « les images de Machin » en tapant son
+        pseudo. L'outil du LLM, lui, cherche un SUJET : sans ce drapeau,
+        « remontre l'image du requin » ramenait tout ce que **KingsRequin**
+        avait commandé, son pseudo contenant le mot. Constaté en prod le
+        2026-08-30, sur trois résultats du haut.
+        """
         conditions = []
         params: list = []
         if search:
-            conditions.append("(gi.prompt LIKE ? OR gi.title LIKE ? OR gi.username LIKE ?)")
             like = f"%{search}%"
-            params.extend([like, like, like])
+            if sujet_seulement:
+                conditions.append("(gi.prompt LIKE ? OR gi.title LIKE ?)")
+                params.extend([like, like])
+            else:
+                conditions.append("(gi.prompt LIKE ? OR gi.title LIKE ? OR gi.username LIKE ?)")
+                params.extend([like, like, like])
         if user_filter:
             conditions.append("gi.username = ?")
             params.append(user_filter)

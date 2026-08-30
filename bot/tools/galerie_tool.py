@@ -107,7 +107,13 @@ async def run_gallery_tool(bot: Any, args: dict) -> str:
 
     sujet = str(args.get("sujet") or "").strip()
     try:
-        images = await db.get_gallery_images(search=sujet or None, limit=_MAX)
+        # `sujet_seulement` : sans lui, le LIKE porte aussi sur le pseudo du
+        # demandeur — « remontre l'image du requin » ramenait tout ce que
+        # KingsRequin avait commandé. Le dashboard, lui, garde le pseudo dans
+        # sa recherche, c'est ce qu'on y cherche.
+        images = await db.get_gallery_images(
+            search=sujet or None, limit=_MAX, sujet_seulement=True
+        )
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
         logger.warning("Galerie illisible : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": (

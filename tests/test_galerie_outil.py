@@ -44,6 +44,17 @@ async def test_le_sujet_devient_une_recherche():
     assert bot.db.get_gallery_images.await_args.kwargs["search"] == "pirate"
 
 
+async def test_la_recherche_ne_porte_pas_sur_le_pseudo_du_demandeur():
+    """« Remontre l'image du requin » ramenait tout ce que KingsRequin avait
+    commandé — son pseudo contient le mot. Constaté en prod, trois résultats du
+    haut sur sept images."""
+    bot = _bot([_image()])
+
+    await _appel(bot, sujet="requin")
+
+    assert bot.db.get_gallery_images.await_args.kwargs["sujet_seulement"] is True
+
+
 async def test_sans_sujet_ce_sont_les_dernieres():
     """`search=""` ferait un LIKE '%%' inutile ; `None` dit « pas de filtre »."""
     bot = _bot([_image()])
@@ -155,3 +166,16 @@ async def test_l_outil_est_offert_aux_deux_chats():
     bot = _bot_avec_tout()
     assert "my_images" in _noms(await discord(bot, author_id="42"))
     assert "my_images" in _noms(await twitch(bot))
+
+
+async def test_le_dashboard_garde_le_pseudo_dans_sa_recherche():
+    """Le drapeau est un OPT-IN : y taper un pseudo doit continuer d'y marcher."""
+    import inspect
+
+    from bot.db.mixins.gallery import GalleryMixin
+
+    defaut = inspect.signature(GalleryMixin.get_gallery_images).parameters
+    assert defaut["sujet_seulement"].default is False
+
+    source = inspect.getsource(GalleryMixin.get_gallery_images)
+    assert "gi.username LIKE ?" in source, "le dashboard a perdu sa recherche par pseudo"
