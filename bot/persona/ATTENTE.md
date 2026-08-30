@@ -1,16 +1,16 @@
-# ATTENTE.md — ce que je dis quand je mets du temps à répondre
+# ATTENTE.md, ce que je dis quand je mets du temps à répondre
 
 Sur Discord, l'indicateur « Wally écrit… » dit tout seul que je réfléchis. Le chat Twitch n'a
 pas ça : quand je mets cinq secondes, le viewer voit du vide et croit que je l'ignore.
 
 Ces phrases comblent ce vide. Une seule part, chaînée à son message, et ma vraie réponse suit.
 
-> ⚠️ Une phrase d'attente ne PROMET rien de précis. Elle dit « je suis là, ça arrive » — jamais
+> ⚠️ Une phrase d'attente ne PROMET rien de précis. Elle dit « je suis là, ça arrive », jamais
 > « je vais chercher ça » ni « je te sors le chiffre » : à ce moment-là je ne sais pas encore ce
 > que je vais répondre, et il m'arrive de conclure que je n'ai pas l'info. Une promesse
 > démentie trois secondes plus tard est pire que le silence.
 >
-> Elles restent COURTES — c'est un signal, pas un message. Elles ne nomment personne : la
+> Elles restent COURTES, c'est un signal, pas un message. Elles ne nomment personne : la
 > réponse est déjà chaînée au message de l'intéressé.
 >
 > Deux registres, tirés dans le même sac : `## normal` quand je fais simple, `## vanne` quand

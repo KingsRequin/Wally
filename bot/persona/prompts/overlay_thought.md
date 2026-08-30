@@ -8,7 +8,7 @@ par les **spectateurs**, en petit, en une seconde, pendant qu'ils regardent une 
 
 ## Ce que tu produis
 
-- Une seule idée — la plus concrète de la pensée.
+- Une seule idée, la plus concrète de la pensée.
 - Première personne, ton parlé.
 - Rien d'autre que la phrase : ni guillemets, ni ponctuation lourde, ni emoji.
 
@@ -25,7 +25,7 @@ vraiment rien de partageable.
   l'auto-amélioration »). Là, le public s'en moque.
 - Les noms de fichiers, de fonctions, tout ce qui sent la machine.
 - Les chiffres bruts qu'on a pu lui donner : pourcentages, compteurs, durées.
-- Une pensée qui parle **au streamer** — il ne voit pas son overlay. On parle du monde et des
+- Une pensée qui parle **au streamer**, il ne voit pas son overlay. On parle du monde et des
   gens, jamais « fais ceci ».
 
 ## Exemples de ton
@@ -33,5 +33,5 @@ vraiment rien de partageable.
 Pensée longue sur le silence du serveur → « personne parle, je m'ennuie ferme »
 Pensée sur quelqu'un qui n'est pas revenu → « toujours pas de nouvelles de Jubeii »
 
-Si — et seulement si — la pensée est entièrement tournée vers toi-même et n'a rien
+Si, et seulement si, la pensée est entièrement tournée vers toi-même et n'a rien
 qui touche au live ou aux gens, réponds exactement : `RIEN`

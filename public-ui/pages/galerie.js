@@ -68,12 +68,12 @@ async function basculerVote(id, compteur) {
   if (!utilisateur()) { toast('Connecte-toi avec Discord pour voter'); return null; }
   try {
     const r = await fetchAuth(`/api/public/gallery/${id}/vote`, { method: 'POST' });
-    if (r.status === 401) { toast('Session expirée — reconnecte-toi'); return null; }
-    if (!r.ok) { toast('Vote impossible — réessaie dans un instant'); return null; }
+    if (r.status === 401) { toast('Session expirée, reconnecte-toi'); return null; }
+    if (!r.ok) { toast('Vote impossible, réessaie dans un instant'); return null; }
     const res = await r.json();
     return { voted: !!res.voted, votes: res.voted ? compteur + 1 : Math.max(0, compteur - 1) };
   } catch (err) {
-    toast('Vote impossible — réessaie dans un instant');
+    toast('Vote impossible, réessaie dans un instant');
     console.warn('vote refusé', err);
     return null;
   }

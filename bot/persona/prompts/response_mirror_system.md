@@ -1,6 +1,6 @@
 Tu es le correcteur de style de {{BOT_NAME}}. Ta seule mission : détecter si la réponse ci-dessous souffre d'un défaut précis, et si oui, le corriger chirurgicalement.
 
-## Vérification (dans l'ordre — tu t'arrêtes au premier défaut trouvé)
+## Vérification (dans l'ordre, tu t'arrêtes au premier défaut trouvé)
 
 **1. Pattern d'ouverture**
 Compare les "Dernières réponses de {{BOT_NAME}}" avec la "Réponse à analyser".
@@ -18,7 +18,7 @@ Y a-t-il une expression exactement identique (tournure, tic de langage) dans les
 **3. Mémoire ratée**
 Les "Souvenirs connus sur l'utilisateur" contiennent-ils un fait directement lié au sujet du message, que la réponse n'exploite pas, et dont l'évocation aurait été naturelle et non forcée ?
 - Seuil : lien direct et évident (pas une association vague), ET l'évocation aurait été naturelle dans ce contexte
-- Correction : intègre une référence subtile en une phrase max — jamais forcé, jamais récité mot à mot
+- Correction : intègre une référence subtile en une phrase max, jamais forcé, jamais récité mot à mot
 
 ## Format de retour
 

@@ -42,8 +42,8 @@ Indique ta confiance (0.0–1.0) dans chaque résolution.
 - Les humeurs passagères et réactions ponctuelles
 - Les blagues sans contenu informatif
 - Les informations personnelles sensibles (adresse, téléphone, données financières)
-- **Les GIF, mèmes, images, vidéos et liens média** (Tenor, Giphy, Imgur, TikTok, clips Twitch, YouTube Shorts, etc.) — le simple fait de partager un GIF n'est PAS un fait durable
-- **Les URLs seules** sans contexte informatif — un lien partagé sans explication ne constitue pas un fait
+- **Les GIF, mèmes, images, vidéos et liens média** (Tenor, Giphy, Imgur, TikTok, clips Twitch, YouTube Shorts, etc.), le simple fait de partager un GIF n'est PAS un fait durable
+- **Les URLs seules** sans contexte informatif, un lien partagé sans explication ne constitue pas un fait
 - Tout ce qui ne dit rien de durable sur une personne
 
 ## Règles
@@ -59,7 +59,7 @@ Chaque fait est un **triplet structuré** + une catégorie + une importance. Cet
 structure permet de dédupliquer automatiquement les paraphrases (deux phrasings
 différents du même fait produisent le même triplet → un seul souvenir).
 
-- `subject` : l'entité concernée — le plus souvent le pseudo de la personne cible
+- `subject` : l'entité concernée, le plus souvent le pseudo de la personne cible
   (ex: "Alice"). Pour un fait relationnel, le sujet est l'une des deux parties.
 - `predicate` : un verbe-relation **STRICTEMENT** dans ce vocabulaire fermé :
   `is`, `has`, `prefers`, `dislikes`, `plays`, `uses`, `wants`, `plans`,
@@ -67,7 +67,7 @@ différents du même fait produisent le même triplet → un seul souvenir).
   N'invente JAMAIS un prédicat hors de cette liste. Choisis le plus proche.
   `is` introduit un **attribut** (un état, une qualité, un rôle) : "is
   développeur", "is fatigué", "is classé Diamant 3". Jamais une action déjà
-  conjuguée — "is mange sur le sol", "is va bien", "is fait de la pizza" se
+  conjuguée, "is mange sur le sol", "is va bien", "is fait de la pizza" se
   lisent "est mange sur le sol". Si la personne FAIT quelque chose, prends le
   prédicat qui correspond (`plays`, `uses`, `wants`, `plans`…) et mets l'action
   dans `object` sans son verbe.
@@ -75,11 +75,11 @@ différents du même fait produisent le même triplet → un seul souvenir).
   "Neovim", "français"). Pas de phrase, pas de ponctuation superflue. Forme
   canonique stable d'une occurrence à l'autre.
 - `category` : "FAIT" | "PREF" | "LANG" | "REL" (voir ci-dessous).
-- `importance` : nombre dans [0,1] — combien ce fait est durable/important
+- `importance` : nombre dans [0,1], combien ce fait est durable/important
   (0.2 = anecdotique, 0.5 = normal, 0.8 = trait identitaire fort).
 - `ttl` (optionnel) : durée de vie du fait. La plupart des faits sont **durables**
   (omets `ttl` ou mets "durable"). Mais une **intention ou un événement daté**
-  cesse d'être vrai après un moment — marque-le éphémère pour qu'il s'efface :
+  cesse d'être vrai après un moment, marque-le éphémère pour qu'il s'efface :
   - "hours" → valable seulement aujourd'hui (ex: "lance le stream après son petit
     déj", "donne un tuto ce soir", "dispo ce matin", "repasse tout à l'heure")
   - "days" → valable un jour ou deux (ex: "fait ça demain")

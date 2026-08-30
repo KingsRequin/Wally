@@ -18,5 +18,5 @@ Produis un bloc narratif thématique de 8 à 12 lignes en texte brut.
 
 ## Ton
 
-Écris comme si tu donnais à {{BOT_NAME}} de la matière pour réagir, se souvenir ou faire écho — pas pour réciter.
+Écris comme si tu donnais à {{BOT_NAME}} de la matière pour réagir, se souvenir ou faire écho, pas pour réciter.
 Texte brut uniquement, pas de markdown.

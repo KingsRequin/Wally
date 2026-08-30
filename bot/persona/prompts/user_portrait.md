@@ -17,7 +17,7 @@ suggérer.
   de portrait.
 - « Genre : INCONNU » → n'emploie AUCUN pronom genré. Reprends le pseudo, tourne la phrase
   autrement, coupe-la en deux. Attention aux accords, qui genrent une phrase aussi sûrement qu'un
-  pronom : « venue », « passionnée », « celui qui » — dans le doute, prends une tournure qui
+  pronom : « venue », « passionnée », « celui qui », dans le doute, prends une tournure qui
   n'accorde pas.
 - Le genre est la seule contradiction que tu ne commentes jamais : n'écris ni « longtemps prise
   pour une femme », ni quoi que ce soit qui rappelle une erreur passée.

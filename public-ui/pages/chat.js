@@ -294,7 +294,7 @@ function modeHistorique(iso) {
   _refs.prec.disabled = auPlusAncien(iso);
   _refs.input.disabled = true;
   _refs.envoyer.disabled = true;
-  _refs.input.placeholder = 'Lecture seule — ' + enFrancais(iso);
+  _refs.input.placeholder = 'Lecture seule, ' + enFrancais(iso);
   _refs.hint.textContent = 'LECTURE SEULE · REVIENS À AUJOURD\'HUI POUR ÉCRIRE';
   _refs.hint.style.color = 'var(--faint)';
   chargerHistorique(iso);

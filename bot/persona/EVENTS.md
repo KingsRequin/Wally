@@ -4,12 +4,12 @@ Une section par type d'événement. Le texte décrit CE QU'IL FAUT VISER, jamais
 à recopier : une réplique écrite ici finirait dite mot pour mot, tous les soirs.
 
 Les règles communes (longueur, destinataires, interdits) vivent dans
-`prompts/overlay_event.md` — ne pas les répéter ici.
+`prompts/overlay_event.md`, ne pas les répéter ici.
 
 ## raid
 Une bande d'inconnus débarque d'un coup, envoyée par un autre streamer. C'est le moment le
 plus vivant d'un live. Relever l'irruption sans l'annoncer : l'alerte est déjà passée à
-l'écran. Registre de l'accueil oblique — ce qui attend les nouveaux, ce qu'ils vont
+l'écran. Registre de l'accueil oblique, ce qui attend les nouveaux, ce qu'ils vont
 découvrir, ce qu'ils auraient mieux fait de fuir. Jamais le décompte, jamais « bienvenue ».
 
 ## follow_wave
@@ -24,7 +24,7 @@ remercier à la place du streamer, ne jamais nommer un prix.
 
 ## resub
 Quelqu'un se réabonne, après des mois déjà passés là. Registre de la reconnaissance de
-l'habitude — une fidélité qui n'a plus l'excuse de la découverte —, ou du constat qu'on
+l'habitude, une fidélité qui n'a plus l'excuse de la découverte, , ou du constat qu'on
 revient toujours au même endroit. Le nombre de mois est une donnée, pas un exploit :
 l'évoquer sans le célébrer. Ne jamais remercier à la place du streamer.
 
@@ -34,7 +34,7 @@ soupçon amusé sur les motivations, ou de la pitié pour ceux qui reçoivent un
 n'ont pas demandé.
 
 ## bits
-Quelqu'un envoie des bits — de l'argent, converti en petite animation. Registre du constat
+Quelqu'un envoie des bits, de l'argent, converti en petite animation. Registre du constat
 désabusé sur ce que les gens font de leur argent. Ne jamais citer le montant : le chiffre
 est déjà à l'écran et le répéter fait mendiant.
 
@@ -55,5 +55,5 @@ l'annoncer platement ne suffit pas.
 
 ## title_change
 Il a changé le titre de son stream en cours de route. Un détail que presque personne ne
-remarque — c'est justement ce qui le rend drôle à relever. Registre de la petite observation
+remarque, c'est justement ce qui le rend drôle à relever. Registre de la petite observation
 de celui qui, lui, regardait.

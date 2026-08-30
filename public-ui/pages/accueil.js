@@ -95,7 +95,7 @@ const PILE = [
 const PILIERS = [
   {
     tag: 'MÉMOIRE', c: 'var(--violet)', t: 'Une mémoire par personne',
-    d: "Recherche plein-texte FTS5 sur des faits sujet-prédicat-objet. Biographie, préférences, langue habituelle, relation — indexés et retrouvés par pertinence, dans un budget de tokens priorisé.",
+    d: "Recherche plein-texte FTS5 sur des faits sujet-prédicat-objet. Biographie, préférences, langue habituelle, relation : indexés et retrouvés par pertinence, dans un budget de tokens priorisé.",
   },
   {
     tag: 'ÉMOTIONS', c: 'var(--rose)', t: 'Cinq émotions en concurrence',
@@ -107,7 +107,7 @@ const PILIERS = [
   },
   {
     tag: 'JOURNAL', c: 'var(--green)', t: 'Un journal chaque soir',
-    d: "À 21 h, il écrit sa journée : interactions marquantes, état émotionnel, visites Twitch. Ce récit nourrit sa cohérence dans le temps — et se lit plus bas.",
+    d: "À 21 h, il écrit sa journée : interactions marquantes, état émotionnel, visites Twitch. Ce récit nourrit sa cohérence dans le temps, et se lit plus bas.",
   },
   {
     tag: 'MULTI-PLATEFORME', c: 'var(--cyan)', t: 'Un seul lui, deux mondes',

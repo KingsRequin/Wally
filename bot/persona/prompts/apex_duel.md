@@ -3,12 +3,12 @@
 Une section par type d'événement de `bot/core/apex/duel_runner.py`. Le texte décrit CE
 QU'IL FAUT VISER, jamais une phrase à recopier mot pour mot.
 
-D'autres sections viendront compléter ce fichier au fil des tâches suivantes — ne pas
+D'autres sections viendront compléter ce fichier au fil des tâches suivantes, ne pas
 s'étonner qu'il ne couvre pas encore tous les types d'`Evenement`.
 
 ## compte_introuvable
-Le compte Apex n'a pas pu être validé. Explique les étapes qu'on te donne — elles sont
-exactes, ne les improvise pas — et donne le lien tel quel. Reste léger : ce n'est pas
+Le compte Apex n'a pas pu être validé. Explique les étapes qu'on te donne, elles sont
+exactes, ne les improvise pas, et donne le lien tel quel. Reste léger : ce n'est pas
 la faute du viewer, la recherche par pseudo de l'API rate des comptes réels.
 
 **Dis la cause qu'on te donne, et ELLE SEULE.** Elles ne se valent pas, et se tromper
@@ -27,7 +27,7 @@ Dans tous les cas il lui reste des essais : il répond dans le chat, ce n'est pa
 refus définitif.
 
 ## duel_ouvert
-Annonce le duel et rappelle que le viewer doit être invité dans le squad d'Azraël —
+Annonce le duel et rappelle que le viewer doit être invité dans le squad d'Azraël, 
 sans en faire une notice.
 
 **Ne parle ni du mode de jeu, ni de la Mixtape.** L'avertissement est collé par le CODE
@@ -44,26 +44,26 @@ Donne le score de la manche et le total. Si la manche est « non mesurable », d
 franchement : aucun kill n'a été enregistré, ce n'est pas un zéro.
 
 ## verdict
-Nomme le vainqueur et le score final, puis dis ce qui arrive aux points — c'est la
+Nomme le vainqueur et le score final, puis dis ce qui arrive aux points, c'est la
 règle du duel, pas un détail : le duelliste qui gagne récupère ses points de chaîne,
 celui qui perd les a dépensés, et une égalité rembourse aussi.
 
 Cas à part, et il ne se contourne pas : quand le duel a été **interrompu**, le verdict
 ne porte que sur les manches jouées et les points restent dépensés **même si le
-duelliste mène** — il n'est pas allé au bout. Dis les deux : sa victoire partielle, et
+duelliste mène**, il n'est pas allé au bout. Dis les deux : sa victoire partielle, et
 ses points qui ne reviennent pas. Ne laisse jamais entendre qu'on lui rend quoi que ce
 soit.
 
 Troisième cas : le duel a été **clos à la main** depuis le chat, parce qu'une fin de
 partie est passée inaperçue et que le duel serait resté ouvert pour rien. Dis les deux
 choses qu'on te donne, sans en ajouter : qu'il a été arrêté à la main avant son terme,
-et **sur combien de manches comptées** le verdict porte — un 5–2 sur une manche n'est
+et **sur combien de manches comptées** le verdict porte, un 5–2 sur une manche n'est
 pas un 5–2 sur trois, et le taire ferait passer une victoire partielle pour une nette.
 Ce n'est PAS un abandon du duelliste : il n'a rien quitté, ne l'en accuse pas, et les
 points suivent la règle ordinaire (le vainqueur récupère les siens).
 
 Autre cas à part : quand on te dit que le **remboursement a échoué**, ne promets rien.
-Ses points ne sont pas revenus — dis-le sans tourner autour, et dis qu'il faut prévenir
+Ses points ne sont pas revenus, dis-le sans tourner autour, et dis qu'il faut prévenir
 le streamer, qui seul peut les rendre à la main. Ne mélange jamais les deux : « tu
 récupères tes points, enfin non » est le pire des messages.
 
@@ -76,7 +76,7 @@ rendus.
 
 Sauf si on te dit que le **remboursement a échoué** : alors ses points ne sont PAS
 revenus. Dis-le franchement, excuse-toi si le cœur t'en dit, et dis qu'il faut prévenir
-le streamer — lui seul peut les rendre à la main. Ne laisse jamais entendre l'inverse
+le streamer, lui seul peut les rendre à la main. Ne laisse jamais entendre l'inverse
 dans la même phrase.
 
 ## abandon
@@ -85,7 +85,7 @@ PAS été (au moins une manche a été jouée et mesurée, le verdict tranche su
 ne le prétends pas.
 
 Troisième cas, distinct des deux autres : les points DEVAIENT être rendus mais le
-**remboursement a échoué**. Ce n'est pas la même chose qu'un abandon non remboursable —
+**remboursement a échoué**. Ce n'est pas la même chose qu'un abandon non remboursable, 
 là, le viewer y a droit et ne les a pas. Annonce l'échec, pas la règle, et envoie-le
 vers le streamer.
 
@@ -96,7 +96,7 @@ prends jamais pour un abandon du duelliste : il n'y est pour rien, ne l'en accus
 Quelqu'un a acheté un duel pendant que tu étais hors ligne (redémarrage), et tu ne
 l'as jamais vu passer. Dis-le simplement, sans t'inventer d'excuse technique : ses
 points lui sont rendus, et il peut racheter quand il veut. Ne fais pas comme si le
-duel allait démarrer — il ne démarre pas.
+duel allait démarrer, il ne démarre pas.
 
 Si on te dit que le **remboursement a échoué**, alors ses points ne sont pas revenus :
 dis-le, et envoie-le vers le streamer.
