@@ -2164,6 +2164,26 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         for a in message.attachments
     )
     _enriched_content = _resolve_mentions(message, message.content or "")
+
+    # Un message vocal est une pièce jointe `audio/ogg` au `content` VIDE : sans
+    # ce passage il n'arrivait pas comme « un truc que je ne sais pas lire »,
+    # mais comme un message vide — Wally ne savait même pas qu'on lui avait
+    # parlé. C'est un désir qu'il a écrit lui-même le 2026-08-20.
+    #
+    # SYNCHRONE, contrairement à la description d'image : une image accompagne
+    # un message et sa description peut arriver après coup ; un vocal EST le
+    # message. Coût mesuré : 1,74× le temps réel, plafonné à 60 s d'audio.
+    if channel_allowed:
+        from bot.core.message_vocal import marqueur as _marqueur_vocal
+
+        _vocal, _texte_vocal = await _marqueur_vocal(message, bot.config)
+        if _vocal:
+            _enriched_content = (
+                f"{_enriched_content} {_vocal}".strip() if _enriched_content else _vocal
+            )
+    else:
+        _texte_vocal = ""
+
     if _has_images and not _enriched_content:
         n = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
         _enriched_content = f"[a envoyé {'une image' if n == 1 else f'{n} images'}]"
@@ -2225,16 +2245,20 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
             # → cadence cognitive vive. Le DM est géré par is_dm. Le reste =
             # perception passive (Phase 2c).
             _trigger_names = getattr(getattr(bot.config, "bot", None), "trigger_names", []) or []
-            _content_lower = (message.content or "").lower()
+            # Le texte transcrit compte : « Wally, tu peux… » dit à l'oral
+            # doit viser Wally comme s'il était écrit. `message.content` d'un
+            # message vocal est vide.
+            _content_lower = f"{message.content or ''} {_texte_vocal}".lower()
             _relevant = (bot.user in message.mentions) or any(
                 n.lower() in _content_lower for n in _trigger_names
             )
             bot.cognitive_loop.notify_activity(
                 channel_id=message.channel.id,
                 author=str(message.author.display_name),
-                content=_with_reactions(
-                    _resolve_mentions(message, message.content or ""), _reaction_note
-                ),
+                # `_context_content` et non `message.content` : il porte les
+                # marqueurs d'image et la transcription du vocal. Sans lui, la
+                # cognition recevait un message VIDE quand quelqu'un parlait.
+                content=_context_content,
                 message_id=str(message.id),
                 is_dm=message.guild is None,
                 relevant=_relevant,
@@ -2243,7 +2267,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         except Exception as e:
             logger.warning("cognitive_loop.notify_activity failed: {e!r}", e=e)
 
-    content_lower = message.content.lower()
+    # La transcription entre dans ce qui décide du déclenchement, et elle seule
+    # (pas les marqueurs) : un vocal où l'on dit son nom l'interpelle autant
+    # qu'un message écrit.
+    content_lower = f"{message.content} {_texte_vocal}".lower()
     mentioned = bot.user in message.mentions
     always_trigger = _is_always_trigger
     # Une question de Wally restée en suspens vaut invitation à répondre : sa
