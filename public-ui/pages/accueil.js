@@ -259,6 +259,61 @@ function metaEvenement(type) {
   return FEED_META[type] || { c: 'var(--soft)', k: (type || '·').slice(0, 6) };
 }
 
+/** Une entrée du flux. Deux lignes et non trois colonnes : à 390 px, l'heure
+ *  et un tag de 92 px mangeaient la moitié de la largeur, et il restait une
+ *  colonne de mots pour la pensée elle-même.
+ */
+function construireLigne(e) {
+  const meta = metaEvenement(e.type);
+  const complet = texteComplet(e);
+  const texte = (e._deplie && complet) ? complet : texteEvenement(e) + (complet ? ' …' : '');
+  const contexte = contexteEvenement(e);
+  const ligne = h('div', {
+    class: 'feed-row' + (complet ? ' clickable' : ''),
+    style: `--type: ${meta.c}`,
+  },
+  h('div', { class: 'feed-meta' },
+    h('span', { class: 'feed-time', text: e._t || '' }),
+    h('span', { class: 'feed-tag', text: meta.k }),
+    contexte ? h('span', { class: 'feed-ou', text: contexte }) : null,
+  ),
+  h('div', { class: 'feed-text', text: texte }),
+  );
+  if (complet) {
+    ligne.title = 'cliquer pour ' + (e._deplie ? 'replier' : 'déplier');
+    // Le clic REMPLACE sa propre ligne au lieu de redessiner les deux cents :
+    // déplier une pensée ne regarde que celle-là.
+    ligne.addEventListener('click', () => {
+      e._deplie = !e._deplie;
+      ligne.replaceWith(construireLigne(e));
+    });
+  }
+  return ligne;
+}
+
+/** Ajoute la DERNIÈRE entrée, sans toucher aux précédentes.
+ *
+ *  Le flux se redessinait en entier à chaque événement SSE : deux cents lignes
+ *  de quatre nœuds jetées et reconstruites pour une pensée de plus, plusieurs
+ *  fois par minute. C'est le geste du journal admin — on ajoute en bas, on
+ *  retire en haut — et c'est ce qui rend le panneau gratuit entre deux
+ *  événements.
+ */
+function ajouterLigne(e) {
+  const liste = _refs.feed;
+  if (!liste) return false;
+  // Une liste encore vide porte le message d'attente : elle passe par le
+  // rendu complet, qui sait l'effacer.
+  if (!liste.firstElementChild || !liste.firstElementChild.classList.contains('feed-row')) {
+    return false;
+  }
+  const enBas = liste.scrollHeight - liste.scrollTop - liste.clientHeight < 40;
+  liste.appendChild(construireLigne(e));
+  while (liste.children.length > 200) liste.removeChild(liste.firstChild);
+  if (enBas) liste.scrollTop = liste.scrollHeight;
+  return true;
+}
+
 function rendreFil() {
   const liste = _refs.feed;
   if (!liste) return;
@@ -274,29 +329,7 @@ function rendreFil() {
 
   // Plus ancien en haut, plus récent en bas — lecture de terminal.
   _evenements.slice(0, 200).reverse().forEach((e) => {
-    const meta = metaEvenement(e.type);
-    const complet = texteComplet(e);
-    const texte = (e._deplie && complet) ? complet : texteEvenement(e) + (complet ? ' …' : '');
-    const contexte = contexteEvenement(e);
-    // Deux lignes et non trois colonnes : à 390 px, l'heure et un tag de 92 px
-    // mangeaient la moitié de la largeur, et il restait une colonne de mots
-    // pour la pensée elle-même.
-    const ligne = h('div', {
-      class: 'feed-row' + (complet ? ' clickable' : ''),
-      style: `--type: ${meta.c}`,
-    },
-    h('div', { class: 'feed-meta' },
-      h('span', { class: 'feed-time', text: e._t || '' }),
-      h('span', { class: 'feed-tag', text: meta.k }),
-      contexte ? h('span', { class: 'feed-ou', text: contexte }) : null,
-    ),
-    h('div', { class: 'feed-text', text: texte }),
-    );
-    if (complet) {
-      ligne.title = 'cliquer pour ' + (e._deplie ? 'replier' : 'déplier');
-      ligne.addEventListener('click', () => { e._deplie = !e._deplie; rendreFil(); });
-    }
-    liste.appendChild(ligne);
+    liste.appendChild(construireLigne(e));
   });
 
   liste.scrollTop = enBas ? liste.scrollHeight : avant;
@@ -312,7 +345,7 @@ function pousserEvenement(e) {
   e._t = new Date().toLocaleTimeString('fr-FR');
   _evenements.unshift(e);
   if (_evenements.length > 300) _evenements.length = 300;
-  rendreFil();
+  if (!ajouterLigne(e)) rendreFil();
 }
 
 async function amorcerFil() {

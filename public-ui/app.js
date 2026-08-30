@@ -257,12 +257,14 @@ const _cartesEnVue = new Set();
 const _vueObserver = window.IntersectionObserver
   ? new IntersectionObserver((entrees) => {
     entrees.forEach((e) => {
-      if (e.isIntersecting) { _cartesEnVue.add(e.target); return; }
+      if (e.isIntersecting) { _cartesEnVue.add(e.target); e.target.classList.add('tilt-incline'); return; }
       _cartesEnVue.delete(e.target);
       // Remise à plat en sortant du champ : une carte figée dans son
-      // inclinaison réapparaîtrait de travers au retour du défilement.
+      // inclinaison réapparaîtrait de travers au retour du défilement. La
+      // classe part avec, sinon `will-change` garderait vivante une couche par
+      // carte de la page entière.
+      e.target.classList.remove('tilt-incline');
       e.target.style.transform = '';
-      e.target.style.boxShadow = '';
     });
   })
   : null;
@@ -296,11 +298,14 @@ function brancherTiltInclinaison(racine) {
       // Une carte pas encore révélée porte un `translateY(28px)` : l'incliner
       // maintenant écraserait ce transform et elle n'apparaîtrait jamais.
       if (el.classList.contains('reveal') && !el.classList.contains('on')) return;
+      // `transform` SEUL, et c'est tout le correctif de performance : il se
+      // compose sur le GPU sans rien repeindre. L'ombre suivait l'inclinaison
+      // sur la souris — ici elle coûtait un REPAINT de la carte à chaque image,
+      // sur toutes celles à l'écran, à 60 Hz. Le relief est porté par une ombre
+      // fixe posée en CSS (`.tilt-incline`), qui ne change jamais.
       el.style.transform = 'perspective(700px)'
         + ' rotateY(' + (cx * 10).toFixed(2) + 'deg)'
         + ' rotateX(' + (-cy * 10).toFixed(2) + 'deg)';
-      el.style.boxShadow = (cx * 26).toFixed(0) + 'px ' + (22 - cy * 16).toFixed(0)
-        + 'px 56px -24px rgba(255,106,43,.62), inset 0 0 0 1px rgba(255,176,46,.16)';
     });
   });
 }
@@ -641,6 +646,8 @@ function majCompagnon(el, sy, prog) {
   // visites ne voient jamais le même fond. Les cellules sont tirées sans
   // remise, sinon deux emojis se superposent une fois sur trois.
   const R = (a, b) => a + Math.random() * (b - a);
+  // Lu AVANT le semis : c'est lui qui pose l'opacité de chaque emoji.
+  const tactile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   const plans = [
     { es: ['📺', '💬', '🕹️', '✨', '🎲'], n: 4, s: [15, 19], o: [0.09, 0.13], b: [2.2, 2.7], sp: [0.10, 0.22] },
     { es: ['🎮', '🧠', '🎙️', '🃏'],       n: 3, s: [25, 31], o: [0.13, 0.17], b: [1.1, 1.5], sp: [0.42, 0.58] },
@@ -661,7 +668,10 @@ function majCompagnon(el, sy, prog) {
       el.style.left = Math.round(R(cx * 25 + 3, cx * 25 + 20)) + '%';
       el.style.top = Math.round(R(cy * 30 + 6, cy * 30 + 26)) + '%';
       el.style.fontSize = Math.round(R(p.s[0], p.s[1])) + 'px';
-      el.style.opacity = R(p.o[0], p.o[1]).toFixed(2);
+      // Sur un téléphone, le flou de profondeur est coupé (une texture par
+      // emoji, cf. la media query de `style.css`). Sans lui ils avancent d'un
+      // plan : l'opacité dit la même distance, et elle ne coûte rien.
+      el.style.opacity = (R(p.o[0], p.o[1]) * (tactile ? 0.66 : 1)).toFixed(2);
       el.style.filter = 'blur(' + R(p.b[0], p.b[1]).toFixed(1) + 'px) saturate(.8)';
       el.dataset.sp = R(p.sp[0], p.sp[1]).toFixed(2);
       icons.appendChild(el);
@@ -826,14 +836,35 @@ function majCompagnon(el, sy, prog) {
 // Les vidéos `autoplay muted` sont bloquées par certains navigateurs tant
 // qu'aucun geste n'a eu lieu : on relance, puis on réessaie au premier clic.
 (function lancerVideos() {
+  // Seulement celles À L'ÉCRAN. Elles jouaient toutes en même temps, où
+  // qu'elles soient dans la page : quatre décodages vidéo en parallèle sur un
+  // téléphone, dont trois que personne ne regarde. C'est de la batterie, de la
+  // mémoire GPU et du temps de composition, pour rien.
+  const enVue = window.IntersectionObserver
+    ? new IntersectionObserver((entrees) => {
+      entrees.forEach((e) => {
+        if (e.isIntersecting) jouer(e.target);
+        else e.target.pause();
+      });
+    }, { rootMargin: '120px' })
+    : null;
+
+  function jouer(v) {
+    v.muted = true; v.loop = true; v.playsInline = true;
+    const p = v.play();
+    if (p && p.catch) p.catch(() => {});
+  }
+
   const kick = () => {
     document.querySelectorAll('video').forEach((v) => {
-      v.muted = true; v.loop = true; v.playsInline = true;
-      const p = v.play();
-      if (p && p.catch) p.catch(() => {});
+      // Sans observateur (navigateur ancien), on garde l'ancien comportement :
+      // une vidéo muette qui tourne vaut mieux qu'une vidéo figée.
+      if (!enVue) { jouer(v); return; }
+      enVue.observe(v);
     });
   };
   kick();
+  // Les vidéos `autoplay muted` sont bloquées tant qu'aucun geste n'a eu lieu.
   [200, 800, 2000].forEach((t) => setTimeout(kick, t));
   document.addEventListener('pointerdown', kick, { once: true });
   window.addEventListener('wally-vue-changed', kick);

@@ -337,6 +337,32 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
              "et la sortie prend toute la largeur",
              f"{round((forme or {}).get('part', 0) * 100)} %")
 
+    # Déplier une pensée ne doit toucher QUE sa ligne. Le flux se redessinait
+    # en entier à chaque événement SSE — deux cents lignes de quatre nœuds
+    # jetées et reconstruites pour une pensée de plus.
+    deplie = roue.evaluate(
+        """(() => {
+          const l = document.querySelector('.feed-body');
+          [...l.children].forEach((c, i) => { c.dataset.temoin = i; });
+          const cibles = [...l.children].filter(c => c.classList.contains('clickable'));
+          if (!cibles.length) return null;
+          const cible = cibles[cibles.length - 1];
+          const avant = cible.querySelector('.feed-text').textContent.length;
+          cible.click();
+          return {
+            gardees: [...l.children].filter(c => c.dataset.temoin !== undefined).length,
+            total: l.children.length,
+            avant: avant,
+            apres: l.children[+cible.dataset.temoin].querySelector('.feed-text').textContent.length,
+          };
+        })()""")
+    rap.dire(bool(deplie and deplie["gardees"] == deplie["total"] - 1),
+             "déplier une pensée ne redessine que sa ligne",
+             f"{(deplie or {}).get('gardees')}/{(deplie or {}).get('total')} gardées")
+    rap.dire(bool(deplie and deplie["apres"] > deplie["avant"]),
+             "et elle porte bien le texte complet",
+             f"{(deplie or {}).get('avant')} → {(deplie or {}).get('apres')} car.")
+
     roue.evaluate("window.scrollTo(0, 0)")
     roue.wait_for_timeout(700)
     roue.mouse.move(720, 300)

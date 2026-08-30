@@ -135,10 +135,13 @@ input:focus, textarea:focus {
     radial-gradient(90% 60% at 85% 100%, rgba(70, 180, 255, .05), transparent 70%);
 }
 
+/* Pas de `filter: blur()` ici : le fond est DÉJÀ un dégradé radial qui
+ * s'éteint à 66 %, donc parfaitement doux. Le flou n'ajoutait rien à l'œil et
+ * coûtait une texture de 620×620 px plus un passage de flou à CHAQUE
+ * composition — sur un téléphone, deux des couches les plus chères de la page. */
 .bg-halo {
   position: absolute;
   border-radius: 50%;
-  filter: blur(30px);
 }
 .bg-halo.ember  { top: 14%; left: -8%;  width: 620px; height: 620px; background: radial-gradient(circle, rgba(255, 106, 43, .13), transparent 66%); }
 .bg-halo.cyan   { top: 56%; right: -10%; width: 700px; height: 700px; background: radial-gradient(circle, rgba(70, 180, 255, .10), transparent 66%); }
@@ -1330,3 +1333,47 @@ body.vue-chat .companion { display: none; }
   box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .9);
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ───────────  allègement sur les appareils tenus dans la main  ─────────── */
+/*
+ * Ni une media query de LARGEUR ni un test de tactile seul : c'est le couple
+ * `hover: none` + `pointer: coarse` qui désigne un téléphone, le même qui
+ * décide de brancher le gyroscope. Un écran étroit sur un bureau garde tout.
+ *
+ * Ce qu'on coupe, ce sont les COUCHES, pas le style. Chaque `backdrop-filter`
+ * et chaque `filter: blur` promeut son élément en couche composite avec sa
+ * propre texture ; le `backdrop-filter` relit en plus le fond à chaque image
+ * de défilement. Mesuré sur l'accueil : treize flous, neuf backdrops et douze
+ * couches promises en permanence, sur un GPU qui n'a rien d'un bureau. Quand
+ * la mémoire de tuiles est saturée, le navigateur en abandonne — c'est ce qui
+ * rend des zones grises en plein défilement.
+ *
+ * Le rendu bouge à peine : ces surfaces ont TOUTES un fond déjà opaque à
+ * 70–90 %, qu'on rend simplement plus dense.
+ */
+@media (hover: none) and (pointer: coarse) {
+  .nav { backdrop-filter: none; background: rgba(7, 6, 10, .94); }
+  .gal-votes { backdrop-filter: none; background: rgba(5, 4, 8, .88); }
+  .modal { backdrop-filter: none; background: rgba(5, 4, 8, .96); }
+  .chat-dock { backdrop-filter: none; background: rgba(10, 8, 16, .93); }
+
+  /* Le flou des emojis dit la PROFONDEUR ; l'opacité la dit aussi, et elle est
+   * gratuite. Le décalage du parallaxe fait déjà le reste du travail. */
+  .bg-icon { filter: saturate(.8) !important; }
+
+  /* `will-change` permanent, c'est une couche gardée vivante en permanence.
+   * Sur onze emojis dont on cache déjà un sur deux, la promesse coûte plus
+   * qu'elle ne rapporte : le transform les promeut de toute façon le temps
+   * qu'ils bougent. */
+  .bg-icon { will-change: auto; }
+
+  /* Le relief d'une carte inclinée par le gyroscope. FIXE : l'ombre suivait
+   * l'inclinaison image par image, ce qui repeignait la carte à 60 Hz — et
+   * `box-shadow` est du repaint, pas de la composition. Posée seulement sur
+   * les cartes À L'ÉCRAN, le temps qu'elles y sont. */
+  .tilt-incline {
+    will-change: transform;
+    box-shadow: 0 18px 44px -26px rgba(255, 106, 43, .5),
+                inset 0 0 0 1px rgba(255, 176, 46, .12);
+  }
+}
