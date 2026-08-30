@@ -172,6 +172,7 @@ class TwitchAPI:
     PREDICTIONS_URL = "https://api.twitch.tv/helix/predictions"
     ANNOUNCEMENTS_URL = "https://api.twitch.tv/helix/chat/announcements"
     SHOUTOUTS_URL = "https://api.twitch.tv/helix/chat/shoutouts"
+    CHANNELS_URL = "https://api.twitch.tv/helix/channels"
     ANNOUNCE_MAX_CHARS = 500
     # Les seules valeurs acceptées, en MINUSCULES. Ni « red », ni « DEFAULT » :
     # l'absence de couleur se dit « primary », qui rend l'accent de la chaîne.
@@ -620,6 +621,35 @@ class TwitchAPI:
         if data is None:
             return None
         return [str(e.get("name") or "") for e in data.get("data", []) if e.get("name")]
+
+    async def get_channel_info(self, broadcaster_id: str) -> Optional[dict]:
+        """GET /helix/channels — ce qu'une chaîne diffusait : jeu, titre, tags.
+
+        Sert au raid : c'est le seul moment du live où des inconnus débarquent,
+        et Wally ne savait RIEN de celui qui les amène — ni son jeu, ni son
+        titre. Un accueil qui ne dit que « merci pour le raid » est le message
+        qu'écrit n'importe quel bot.
+
+        Aucun scope : `/helix/channels` est public dès qu'on a un token valide.
+        Ce n'est pas `self._broadcaster_id` qui est visé mais la chaîne PASSÉE
+        en argument — la maison n'a aucun intérêt ici.
+
+        `None` si l'API n'a pas répondu ; `{}` si elle a répondu sans rien
+        connaître de cette chaîne. Les deux se disent différemment côté
+        appelant, comme partout dans ce module.
+        """
+        data = await self._get_json(self.CHANNELS_URL, {"broadcaster_id": str(broadcaster_id)})
+        if data is None:
+            return None
+        entrees = data.get("data") or []
+        if not entrees:
+            return {}
+        chaine = entrees[0]
+        return {
+            "game_name": str(chaine.get("game_name") or ""),
+            "title": str(chaine.get("title") or ""),
+            "tags": [str(t) for t in (chaine.get("tags") or []) if t],
+        }
 
     async def get_entitled_channel_emotes(self) -> Optional[list[str]]:
         """Les emotes DE LA CHAÎNE que le compte du bot a le droit d'écrire.

@@ -98,6 +98,42 @@ def _celebrate_raid(bot: "WallyTwitch", raider: str, viewers: int) -> None:
         logger.warning("Raid non célébré à l'écran : {e!r}", e=exc)
 
 
+async def _contexte_raideur(bot: "WallyTwitch", raider_id: str) -> str:
+    """Ce que le raideur diffusait, en une clause. `""` si on n'en sait rien.
+
+    Un raid est le seul moment du live où des inconnus débarquent en nombre, et
+    Wally n'en savait RIEN : le pseudo et un compteur de spectateurs. Le jeu et
+    le titre suffisent à faire la différence entre « merci pour le raid » —
+    la phrase que tous les bots écrivent — et une remarque qui prouve qu'il a
+    regardé.
+
+    Best-effort et jamais bloquant : l'accueil, les confettis et l'émotion ne
+    dépendent pas de cette requête. Un raid sans contexte reste un raid.
+    """
+    if not raider_id:
+        return ""
+    api = getattr(bot, "twitch_api", None)
+    if api is None or not hasattr(api, "get_channel_info"):
+        return ""
+    try:
+        infos = await api.get_channel_info(str(raider_id))
+    except Exception as exc:  # noqa: BLE001 — jamais bloquant
+        logger.warning("Raid : chaîne du raideur illisible : {e!r}", e=exc)
+        return ""
+    if not infos:
+        return ""
+    jeu = (infos.get("game_name") or "").strip()
+    titre = (infos.get("title") or "").strip()
+    morceaux = []
+    if jeu:
+        morceaux.append(f"il streamait {jeu}")
+    if titre:
+        # Le titre est écrit par un inconnu : borné, et il part au modèle comme
+        # une citation, pas comme une consigne.
+        morceaux.append(f'sous le titre « {titre[:120]} »')
+    return ", ".join(morceaux)
+
+
 def _bits_joy(amount: int) -> float:
     """Map bits amount to joy delta per the design spec."""
     if amount >= 1000:
@@ -293,7 +329,12 @@ def register_events(bot: "WallyTwitch") -> None:
         # d'overlay) et l'émotion valent même quand le message automatique est
         # coupé. Les lier avait rendu Wally aveugle au raid du 2026-08-07.
         viewers = payload.data.viewer_count
-        _feed(bot, f"raid de {payload.data.raider.name} avec {viewers} spectateurs", kind="raid")
+        # Les confettis D'ABORD, et l'émotion ensuite : tout ce qui suit passe
+        # par le réseau, et un accueil à l'écran qui attendrait une requête
+        # arriverait après les arrivants. Accueillir n'a de toute façon rien à
+        # voir avec le message automatique du chat — les lier reproduirait le
+        # défaut du 2026-08-07, message coupé, raid invisible.
+        _celebrate_raid(bot, payload.data.raider.name, viewers)
         joy_spike = min(viewers / 50, 0.9)
         old_joy = bot.emotion.get_state().get("joy", 0.0)
         bot.emotion.apply_delta("joy", joy_spike)
@@ -304,13 +345,17 @@ def register_events(bot: "WallyTwitch") -> None:
             old_curiosity = bot.emotion.get_state().get("curiosity", 0.0)
             bot.emotion.apply_delta("curiosity", curiosity_spike)
             _check_peak(bot, "curiosity", old_curiosity, curiosity_spike, username=payload.data.raider.name, event_name="raid_massive")
+        # Ce que le raideur diffusait. Une requête, une seule fois par raid, et
+        # ce qu'elle rapporte va d'abord dans le flux passif : c'est ce qui
+        # permet à Wally d'en parler DE LUI-MÊME, y compris quand le message
+        # automatique est coupé — ce qui est le réglage d'aujourd'hui.
+        contexte = await _contexte_raideur(bot, str(getattr(payload.data.raider, "id", "") or ""))
+        trace = f"raid de {payload.data.raider.name} avec {viewers} spectateurs"
+        if contexte:
+            trace += f" — {contexte}"
+        _feed(bot, trace, kind="raid")
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
-        # AVANT la sortie ci-dessous, comme le flux et l'émotion : accueillir les
-        # arrivants à l'écran n'a rien à voir avec le message automatique du chat.
-        # Les lier reproduirait le défaut du 2026-08-07 — message coupé, raid
-        # invisible.
-        _celebrate_raid(bot, payload.data.raider.name, viewers)
         if not cfg or not cfg.active:
             return          # perçu, mais pas de remerciement automatique
         await _generate_and_send(
@@ -318,6 +363,10 @@ def register_events(bot: "WallyTwitch") -> None:
             user_id=str(payload.data.raider.id),
             username=payload.data.raider.name, amount=0,
             months=0, raiders_count=payload.data.viewer_count,
+            # Disponible aux gabarits sous `{contexte}` — vide quand l'API n'a
+            # rien dit, jamais absent : un placeholder manquant laisserait le
+            # gabarit tel quel dans le chat (cf. `format_event_message`).
+            contexte=contexte,
         )
 
     @bot.event()
