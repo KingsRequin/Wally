@@ -402,6 +402,25 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     penche = mob.evaluate(halos)
     rap.dire(penche != repos, "390 px · le décor suit l'inclinaison de l'appareil",
              f"{repos} → {penche}")
+
+    # Les cartes aussi : faute de curseur à suivre, elles basculent ENSEMBLE
+    # avec l'appareil. On descend d'abord — en haut de l'accueil, le hero
+    # occupe tout l'écran et aucune carte n'est dans le champ, si bien qu'un
+    # test fait sans défiler passerait au vert sur zéro carte.
+    mob.evaluate("window.scrollTo(0, 1800)")
+    mob.wait_for_timeout(900)
+    mob.evaluate(
+        """() => {
+          const ev = (b, g) => window.dispatchEvent(
+            new DeviceOrientationEvent('deviceorientation', {beta: b, gamma: g}));
+          ev(40, 0); for (let i = 0; i < 40; i++) ev(40, 30);
+        }""")
+    mob.wait_for_timeout(1200)
+    inclinees = mob.evaluate(
+        "[...document.querySelectorAll('[data-tilt]')]"
+        ".filter(e => e.style.transform.includes('rotateY')).length")
+    rap.dire(inclinees > 0, "390 px · les cartes à l'écran suivent l'inclinaison",
+             f"{inclinees} carte(s)")
     mob.close()
 
 

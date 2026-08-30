@@ -88,6 +88,37 @@ export function surAnimation(fn) {
   };
 }
 
+// ── Inclinaison de l'appareil ─────────────────────────────────────────────
+// UNE seule lecture du gyroscope pour tout le site, pour la même raison que
+// l'horloge juste au-dessus : deux lectures, ce sont deux neutres et deux
+// corrections de paysage, qui divergent le jour où l'une des deux est
+// corrigée. Le décor s'en sert pour le parallaxe, les cartes pour leur relief.
+//
+// DÉCLARÉ ICI, avant les imports, pour la troisième fois dans ce fichier et
+// toujours pour la même raison : `brancherTilt()` s'abonne depuis le `mount()`
+// de la première page, qui tourne pendant l'évaluation de ce module.
+const _abonnesInclinaison = [];
+
+/** Vrai si l'appareil se tient dans la main : pas de survol, et un capteur.
+ *
+ * Le pointeur GROSSIER fait partie du test : un portable à écran tactile a un
+ * capteur qui ne bouge jamais, et sa valeur figée écraserait celle de la souris.
+ */
+export function inclinaisonDisponible() {
+  return !!window.DeviceOrientationEvent
+    && window.matchMedia('(hover: none) and (pointer: coarse)').matches
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Abonne `fn(x, y)` à l'inclinaison, chacun dans [-1, 1]. Rend le désabonnement. */
+export function surInclinaison(fn) {
+  _abonnesInclinaison.push(fn);
+  return () => {
+    const i = _abonnesInclinaison.indexOf(fn);
+    if (i !== -1) _abonnesInclinaison.splice(i, 1);
+  };
+}
+
 import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
 import * as pageGalerie from './pages/galerie.js';
@@ -219,10 +250,69 @@ function observeReveals(root) {
 // La carte s'incline vers le curseur, son ombre suit, sa bordure s'allume.
 // C'est le geste qui distingue une carte d'un rectangle : sans lui, la page
 // est un empilement de blocs morts, quel que soit le soin mis au CSS.
+// Les cartes actuellement À L'ÉCRAN. Un observateur plutôt qu'un
+// `getBoundingClientRect()` par carte et par image : l'accueil en porte une
+// trentaine, et mesurer trente rectangles à 60 Hz force autant de reflows.
+const _cartesEnVue = new Set();
+const _vueObserver = window.IntersectionObserver
+  ? new IntersectionObserver((entrees) => {
+    entrees.forEach((e) => {
+      if (e.isIntersecting) { _cartesEnVue.add(e.target); return; }
+      _cartesEnVue.delete(e.target);
+      // Remise à plat en sortant du champ : une carte figée dans son
+      // inclinaison réapparaîtrait de travers au retour du défilement.
+      e.target.style.transform = '';
+      e.target.style.boxShadow = '';
+    });
+  })
+  : null;
+let _tiltInclinaisonBranche = false;
+
+/** Les cartes suivent l'inclinaison de l'appareil, faute de curseur à suivre.
+ *
+ * Toutes celles à l'écran basculent ENSEMBLE : c'est le téléphone qu'on
+ * penche, pas une carte qu'on pointe. D'où ce qui n'est PAS repris du survol —
+ * le soulèvement, le `scale` et la bordure allumée disent « celle-ci est
+ * visée », et trente cartes qui se soulèvent en même temps ne visent rien.
+ * L'inclinaison et l'ombre qui la suit portent tout l'effet.
+ */
+function brancherTiltInclinaison(racine) {
+  if (!_vueObserver) return;
+  (racine || document).querySelectorAll('[data-tilt]').forEach((el) => {
+    el.classList.add('tiltable');
+    _vueObserver.observe(el);
+  });
+  if (_tiltInclinaisonBranche) return;
+  _tiltInclinaisonBranche = true;
+
+  let x = 0, y = 0, cx = 0, cy = 0;
+  surInclinaison((nx, ny) => { x = nx; y = ny; });
+  // Sur l'horloge du site, pas sur l'événement du capteur : le lissage doit
+  // avancer d'un pas par IMAGE, et une carte ne se repeint pas plus souvent.
+  surAnimation(() => {
+    cx += (x - cx) * 0.12;
+    cy += (y - cy) * 0.12;
+    _cartesEnVue.forEach((el) => {
+      // Une carte pas encore révélée porte un `translateY(28px)` : l'incliner
+      // maintenant écraserait ce transform et elle n'apparaîtrait jamais.
+      if (el.classList.contains('reveal') && !el.classList.contains('on')) return;
+      el.style.transform = 'perspective(900px)'
+        + ' rotateY(' + (cx * 4).toFixed(2) + 'deg)'
+        + ' rotateX(' + (-cy * 4).toFixed(2) + 'deg)';
+      el.style.boxShadow = (cx * 11).toFixed(0) + 'px ' + (16 - cy * 7).toFixed(0)
+        + 'px 44px -26px rgba(255,106,43,.5), inset 0 0 0 1px rgba(255,176,46,.10)';
+    });
+  });
+}
+
 function brancherTilt(racine) {
   // Sur un écran tactile il n'y a pas de survol : les gestionnaires ne
-  // serviraient qu'à faire clignoter la carte au moment du tap.
-  if (window.matchMedia('(hover: none)').matches) return;
+  // serviraient qu'à faire clignoter la carte au moment du tap. Mais il y a un
+  // gyroscope, et c'est lui qui remplace le curseur.
+  if (window.matchMedia('(hover: none)').matches) {
+    if (inclinaisonDisponible()) brancherTiltInclinaison(racine);
+    return;
+  }
 
   (racine || document).querySelectorAll('[data-tilt]').forEach((el) => {
     el.classList.add('tiltable');
@@ -488,6 +578,51 @@ function majCompagnon(el, sy, prog) {
   lab.style.animation = 'wTick 4s ease';
 }
 
+// ── Lecture du gyroscope ──────────────────────────────────────────────────
+// L'unique endroit du site qui touche `deviceorientation`. Tout le reste passe
+// par `surInclinaison()`.
+(function lireInclinaison() {
+  if (!inclinaisonDisponible()) return;
+  const AMPL = 24;   // degrés d'inclinaison pour aller d'un bord à l'autre
+  let x0 = null, y0 = null;
+
+  const surCapteur = (e) => {
+    if (e.beta == null || e.gamma == null) return;
+    const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    // En paysage, les deux axes du capteur ont tourné AVEC l'appareil : sans
+    // cet échange, incliner vers la gauche fait monter le décor.
+    let gx = e.gamma, gy = e.beta;
+    if (ang === 90) { gx = e.beta; gy = -e.gamma; }
+    else if (ang === 270 || ang === -90) { gx = -e.beta; gy = e.gamma; }
+    // La première mesure devient le neutre : personne ne tient son téléphone
+    // à plat, et sans repère tout démarre collé dans un coin, en butée.
+    if (x0 == null) { x0 = gx; y0 = gy; }
+    const borne = (v) => Math.max(-1, Math.min(1, v));
+    const x = borne((gx - x0) / AMPL);
+    const y = borne((gy - y0) / AMPL);
+    for (let i = 0; i < _abonnesInclinaison.length; i++) _abonnesInclinaison[i](x, y);
+  };
+
+  // Le neutre est RELATIF à l'orientation : le garder au passage en paysage
+  // enverrait tout en butée d'un côté, sans retour.
+  window.addEventListener('orientationchange', () => { x0 = null; y0 = null; });
+
+  const brancher = () => window.addEventListener('deviceorientation', surCapteur);
+  const DOE = window.DeviceOrientationEvent;
+  if (typeof DOE.requestPermission === 'function') {
+    // iOS 13+ : l'autorisation ne se demande QUE depuis un geste de
+    // l'utilisateur. Le premier appui sur la page sert de geste ; un refus
+    // laisse la page immobile, exactement comme avant.
+    window.addEventListener('pointerdown', () => {
+      DOE.requestPermission()
+        .then((r) => { if (r === 'granted') brancher(); })
+        .catch((err) => console.warn('gyroscope refusé', err));
+    }, { once: true });
+  } else {
+    brancher();
+  }
+}());
+
 // ── Décor animé : halos, emojis, parallaxe, compagnon ─────────────────────
 (function decor() {
   const reduit = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -549,51 +684,10 @@ function majCompagnon(el, sy, prog) {
   }
 
   // Sur un téléphone il n'y a pas de curseur : tout le mouvement LATÉRAL du
-  // décor est perdu, il ne reste que le défilement. On lit l'inclinaison de
-  // l'appareil et on la fait entrer par la MÊME porte que la souris (tmx/tmy) :
-  // la boucle d'animation n'a rien à savoir de la source.
-  // Réservé aux pointeurs grossiers — un portable à écran tactile a un capteur
-  // qui ne bouge jamais, et sa valeur figée écraserait celle de la souris.
-  if (!reduit && window.DeviceOrientationEvent
-      && window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
-    const AMPL = 24;   // degrés d'inclinaison pour aller d'un bord à l'autre
-    let x0 = null, y0 = null;
-
-    const surInclinaison = (e) => {
-      if (e.beta == null || e.gamma == null) return;
-      const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-      // En paysage, les deux axes du capteur ont tourné AVEC l'appareil : sans
-      // cet échange, incliner vers la gauche fait monter le décor.
-      let gx = e.gamma, gy = e.beta;
-      if (ang === 90) { gx = e.beta; gy = -e.gamma; }
-      else if (ang === 270 || ang === -90) { gx = -e.beta; gy = e.gamma; }
-      // La première mesure devient le neutre : personne ne tient son téléphone
-      // à plat, et sans repère le décor démarre collé dans un coin, en butée.
-      if (x0 == null) { x0 = gx; y0 = gy; }
-      const borne = (v) => Math.max(-1, Math.min(1, v));
-      tmx = borne((gx - x0) / AMPL);
-      tmy = borne((gy - y0) / AMPL);
-    };
-
-    // Le neutre est RELATIF à l'orientation : le garder au passage en paysage
-    // enverrait le décor en butée d'un côté et il n'en reviendrait plus.
-    window.addEventListener('orientationchange', () => { x0 = null; y0 = null; });
-
-    const brancher = () => window.addEventListener('deviceorientation', surInclinaison);
-    const DOE = window.DeviceOrientationEvent;
-    if (typeof DOE.requestPermission === 'function') {
-      // iOS 13+ : l'autorisation ne se demande QUE depuis un geste de
-      // l'utilisateur. Le premier appui sur la page sert de geste ; un refus
-      // laisse le décor immobile, exactement comme avant.
-      window.addEventListener('pointerdown', () => {
-        DOE.requestPermission()
-          .then((r) => { if (r === 'granted') brancher(); })
-          .catch((err) => console.warn('gyroscope refusé', err));
-      }, { once: true });
-    } else {
-      brancher();
-    }
-  }
+  // décor est perdu, il ne reste que le défilement. L'inclinaison entre par la
+  // MÊME porte que la souris (tmx/tmy) : la boucle n'a rien à savoir de la
+  // source. La LECTURE du capteur, elle, est partagée avec les cartes.
+  if (!reduit) surInclinaison((x, y) => { tmx = x; tmy = y; });
 
   let vh = window.innerHeight;
   let max = Math.max(1, document.body.scrollHeight - vh);
