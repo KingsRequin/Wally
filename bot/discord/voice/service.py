@@ -26,6 +26,7 @@ from bot.discord.voice.brain import (
     _is_stop_request,
     _voice_publish,
     consigner_et_dire,
+    est_un_echo,
     generate_voice_greeting,
     handle_transcript,
 )
@@ -149,6 +150,10 @@ class VoiceService:
             bot, self, current_speaker_id=lambda: self._current_speaker_id
         )
         self.is_speaking: bool = False
+        # Ce qu'il est en TRAIN de dire, mot pour mot. C'est le seul
+        # discriminant entre sa voix revenue par le micro d'un auditeur sans
+        # casque et quelqu'un qui lui parle pendant qu'il parle.
+        self._texte_parle: str = ""
         self.is_responding: bool = False  # une seule réponse à la fois (conversation de groupe)
         # Paroles entendues pendant qu'il répond : une entrée par locuteur (id → (label, texte, ts)),
         # traitées dans l'ordre d'arrivée. Remplace l'ancien slot unique qui jetait les autres.
@@ -700,6 +705,9 @@ class VoiceService:
             # n'était QUE des tags) : rien n'a été entendu.
             return False
         self.quota.add_tts_chars(len(text))
+        # Le texte NETTOYÉ, celui qui part réellement à la synthèse : les tags
+        # de style ([murmure]…) ne sortent d'aucun haut-parleur.
+        self._texte_parle = text
         self.is_speaking = True
         try:
             # Streaming si le provider TTS le supporte (joue dès le 1er chunk) ; sinon batch.
@@ -756,6 +764,7 @@ class VoiceService:
             return False
         finally:
             self.is_speaking = False
+            self._texte_parle = ""
 
     async def _speak_streaming(self, text: str, style: str | None, stream_fn) -> bool:
         """Joue le TTS au fil de la synthèse via une source alimentée en continu (latence minimale).
@@ -882,7 +891,19 @@ class VoiceService:
             if len(text) <= 40 and _is_stop_request(text):
                 logger.info("voice: interruption '{t}' → stop", t=text)
                 self.stop_speaking()
-            return
+                return
+            # Ce qui lui ressemble est sa propre voix, revenue par le micro d'un
+            # auditeur sans casque. Le reste est quelqu'un qui parle PENDANT
+            # qu'il parle — le cas normal d'une conversation, et le seul moment
+            # où on lui répond quand il vient de dire bonjour.
+            #
+            # Ce `return` était MUET et jetait les deux. Ni log, ni événement
+            # dans `voice_events` : le silence de Wally ne se diagnostiquait
+            # qu'en éliminant tous les autres chemins un par un.
+            if est_un_echo(text, self._texte_parle):
+                logger.info("voice: écho de sa propre voix écarté — « {t} »", t=text[:80])
+                return
+            logger.info("voice: on lui parle pendant qu'il parle — « {t} »", t=text[:80])
         label = _member_label(user)
         self._current_speaker_id = str(user.id)
         if self.listen_only:

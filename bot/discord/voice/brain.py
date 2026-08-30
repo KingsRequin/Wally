@@ -50,6 +50,13 @@ async def _voice_post_emotion(bot, speaker_user_id, speaker_label, transcript,
 
 _WORD_RE = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
 
+# Part des mots significatifs de l'énoncé qui doivent se retrouver dans ce que
+# Wally dit pour que ce soit son écho. Haut VOLONTAIREMENT : sous ce seuil, une
+# vraie phrase partageant deux mots avec la sienne serait jetée, et c'est
+# exactement le silence qu'on corrige. Une phrase humaine dépasse rarement la
+# moitié — elle apporte des mots à elle.
+_ECHO_RECOUVREMENT_MIN = 0.8
+
 # Tâches de fond détachées, gardées en vie le temps qu'elles s'achèvent.
 _TACHES_FOND: set[asyncio.Task] = set()
 
@@ -88,6 +95,37 @@ _STOP_RE = re.compile(
 def _is_stop_request(transcript: str) -> bool:
     """Vrai si la parole est un ordre d'arrêt (pour interrompre Wally pendant qu'il parle)."""
     return bool(_STOP_RE.search(transcript or ""))
+
+
+def est_un_echo(entendu: str, dit: str) -> bool:
+    """Vrai si `entendu` est la voix de Wally revenue par le micro d'un auditeur.
+
+    Sans casque, ce que Wally dit sort des enceintes, rentre dans le micro de la
+    personne et lui est ATTRIBUÉ par Discord. Il s'entendait alors lui-même, se
+    répondait, et le fact_extractor rangeait ses propres phrases comme des faits
+    sur elle. `is_speaking` servait de filtre — il jetait TOUTE parole entendue
+    pendant qu'il parlait, vraie ou non, alors que répondre à quelqu'un pendant
+    qu'il parle est le cas normal d'une conversation. Et Wally parle en
+    arrivant : la fenêtre où on lui répond était exactement celle où il
+    n'écoutait pas.
+
+    Le discriminant n'est pas le silence, c'est le CONTENU : on sait mot pour
+    mot ce qu'il est en train de dire. Le chevauchement de VOCABULAIRE, et non
+    la ressemblance de chaîne — le STT rend l'écho déformé, tronqué, sans
+    ponctuation, souvent un fragment au milieu de la phrase.
+
+    Le doute profite au locuteur, comme pour le plancher d'énoncé : rater un
+    écho coûte une réponse de trop, rater une phrase rend Wally muet devant
+    quelqu'un qui lui parle — le défaut qu'on est en train de corriger.
+    """
+    if not entendu or not dit:
+        return False
+    mots_dits = {m for m in _WORD_RE.findall(dit.lower()) if len(m) >= 3}
+    mots_entendus = [m for m in _WORD_RE.findall(entendu.lower()) if len(m) >= 3]
+    if not mots_dits or not mots_entendus:
+        return False
+    communs = sum(1 for m in mots_entendus if m in mots_dits)
+    return communs / len(mots_entendus) >= _ECHO_RECOUVREMENT_MIN
 
 
 def _is_named(transcript: str, trigger_names: list[str]) -> bool:

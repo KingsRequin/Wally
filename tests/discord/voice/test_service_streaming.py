@@ -69,15 +69,26 @@ async def test_on_stream_final_locuteur_inconnu_est_noop():
     ht.assert_not_awaited()
 
 
-async def test_on_stream_final_pendant_que_wally_parle_ignore_sauf_stop():
+async def test_on_stream_final_pendant_que_wally_parle_ecarte_son_echo_pas_les_gens():
+    """Ce test EXIGEAIT que toute parole entendue pendant qu'il parle soit jetée.
+
+    Il figeait le défaut : répondre à Wally pendant qu'il parle est le cas
+    NORMAL d'une conversation, et il parle en arrivant — la fenêtre où on lui
+    répond était exactement celle où il n'écoutait pas. Ce qui doit être écarté,
+    c'est sa propre voix revenue par le micro d'un auditeur sans casque, et elle
+    se reconnaît à son CONTENU.
+    """
     svc, streaming = _streaming_service()
     svc._stream_users["42"] = _user(42)
     svc.is_speaking = True
+    svc._texte_parle = "et donc je disais que le stream commence à vingt heures"
     svc.stop_speaking = MagicMock()
     with patch("bot.discord.voice.service.handle_transcript", new=AsyncMock()) as ht:
-        await svc._on_stream_final("42", "et donc je disais que", 5.0)  # parole normale
+        await svc._on_stream_final("42", "et donc je disais que", 5.0)  # son écho
         ht.assert_not_awaited()
         svc.stop_speaking.assert_not_called()
+        await svc._on_stream_final("42", "ouais je suis là tranquille", 5.0)  # quelqu'un
+        ht.assert_awaited_once()
         await svc._on_stream_final("42", "stop", 5.0)  # ordre d'arrêt court → barge-in
         svc.stop_speaking.assert_called_once()
 
