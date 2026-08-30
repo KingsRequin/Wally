@@ -391,7 +391,7 @@ def _remember_line(service, *, role: str, speaker: str, text: str) -> None:
         logger.warning("VoiceTranscript: réplique non consignée: {e!r}", e=e)
 
 
-async def _consigner_reponse(service, text: str) -> None:
+async def consigner_et_dire(service, text: str, *, malgre_ecoute: bool = False) -> bool:
     """Consigne la réplique de Wally AU FIL, puis la dit à voix haute.
 
     Dans cet ordre, et c'est tout le correctif. La parole ENTENDUE est consignée
@@ -404,9 +404,18 @@ async def _consigner_reponse(service, text: str) -> None:
     C'est le moment où la réplique est DÉCIDÉE qui la situe dans la
     conversation, pas la fin de sa lecture. Une panne de TTS ne troue donc pas
     le fil : il a bien dit ça, même si personne ne l'a entendu.
+
+    PUBLIQUE, et c'est le second correctif : la réponse générée passait par ici,
+    mais la SALUTATION d'arrivée, l'accueil d'un nouveau venu et la parole
+    commandée par un modérateur allaient droit à `speak()`. Wally disait bonjour
+    puis n'avait, pour lui-même, rien dit — et `_should_respond_voice` ne
+    voyait aucun tour à enchaîner. Il fallait le nommer à chaque phrase.
+
+    Rend ce que rend `speak()` : VRAI si la parole est sortie. `say_in_voice`
+    lit ce retour pour ne pas confirmer une phrase que personne n'a entendue.
     """
     _remember_line(service, role="assistant", speaker=_SELF_LABEL, text=text)
-    await service.speak(text)
+    return await service.speak(text, malgre_ecoute=malgre_ecoute)
 
 
 def _voice_publish(bot, service, type_: str, persist: bool = True, **fields) -> None:
@@ -598,7 +607,11 @@ async def _respond_once_inner(
         return
 
     if not _should_respond_voice(transcript, service.history, named):
-        logger.info("voice: parole pas adressée à Wally → il écoute")
+        # Le texte est DANS la ligne : sans lui, un silence de Wally ne se
+        # diagnostique qu'en ouvrant `voice_events` en base, et on ne sait pas
+        # si c'est la décision qui a raté ou le STT qui a rendu du charabia.
+        logger.info("voice: parole pas adressée à Wally → il écoute — « {t} »",
+                    t=transcript[:120])
         _voice_publish(bot, service, "ignored", speaker=speaker_label, speaker_id=speaker_user_id,
                        text=transcript, reason="pas adressé à Wally")
         return
@@ -646,7 +659,7 @@ async def _respond_once_inner(
     # Consignée AVANT d'être prononcée : `speak()` dure toute la lecture, et
     # l'interlocuteur qui répond pendant ce temps passait devant la question
     # qu'il était en train de répondre.
-    await _consigner_reponse(service, text)
+    await consigner_et_dire(service, text)
     # Suivi/debug : la réponse de Wally + latence depuis la décision (gate + génération + TTS).
     _voice_publish(bot, service, "reply", speaker=wally_name, text=text, gen_ms=_gen_ms())
 

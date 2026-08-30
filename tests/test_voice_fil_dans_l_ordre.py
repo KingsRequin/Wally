@@ -55,7 +55,7 @@ async def test_la_replique_est_au_fil_avant_d_etre_prononcee():
     La réplique est décidée au moment où elle est générée — c'est ce moment-là
     qui la situe dans la conversation, pas la fin de sa lecture à voix haute.
     """
-    from bot.discord.voice.brain import _consigner_reponse
+    from bot.discord.voice.brain import consigner_et_dire
 
     service = _Service()
     _remember_line(service, role="user", speaker="Azraël", text="fais un sondage")
@@ -65,7 +65,7 @@ async def test_la_replique_est_au_fil_avant_d_etre_prononcee():
         _remember_line(service, role="user", speaker="Azraël", text="sur les kills")
 
     await asyncio.gather(
-        _consigner_reponse(service, "sur quoi, le sondage ?"),
+        consigner_et_dire(service, "sur quoi, le sondage ?"),
         _interlocuteur_repond_pendant_qu_il_parle(),
     )
 
@@ -86,7 +86,7 @@ async def test_la_replique_reste_au_fil_meme_si_la_voix_echoue():
     L'exception, elle, continue de remonter comme avant — ce lot corrige un
     ORDRE d'écriture, pas la gestion d'erreur du vocal.
     """
-    from bot.discord.voice.brain import _consigner_reponse
+    from bot.discord.voice.brain import consigner_et_dire
 
     service = _Service()
 
@@ -95,7 +95,7 @@ async def test_la_replique_reste_au_fil_meme_si_la_voix_echoue():
 
     service.speak = _echoue
     with pytest.raises(RuntimeError):
-        await _consigner_reponse(service, "je disais donc")
+        await consigner_et_dire(service, "je disais donc")
 
     assert _lignes(service) == [("assistant", "je disais donc")]
 

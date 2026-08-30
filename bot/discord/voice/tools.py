@@ -11,7 +11,7 @@ from bot.tools.notes_tool import (
     run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
 )
 from bot.core.web_search import WEB_SEARCH_TOOL
-from bot.discord.voice.brain import generate_search_filler
+from bot.discord.voice.brain import consigner_et_dire, generate_search_filler
 from bot.intelligence.overlay_narrator import (
     CANCEL_TOOL_SPEC as OVERLAY_CANCEL_TOOL,
     LAST_CLIP_TOOL_SPEC as LAST_CLIP_TOOL,
@@ -148,7 +148,9 @@ async def run_say_in_voice_tool(bot, args: dict, *, roles=None,
         # nettoyage de style, timeout du TTS, panne Azure), et cette fonction
         # répondait quand même « c'est dit à voix haute » — Wally confirmait au
         # modérateur une phrase que personne n'avait entendue.
-        sortie = await service.speak(texte, malgre_ecoute=True)
+        # Par la porte du fil : on lui répond à voix haute juste après, et sans
+        # ça il ne sait pas ce qu'il vient de dire.
+        sortie = await consigner_et_dire(service, texte, malgre_ecoute=True)
     except Exception as e:  # noqa: BLE001 — une panne du vocal ne casse pas le chat
         logger.warning("say_in_voice a échoué: {e!r}", e=e)
         return "Impossible : la parole n'est pas sortie. Dis-le à la personne."

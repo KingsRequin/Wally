@@ -25,6 +25,7 @@ from bot.discord.voice.audio import est_sous_le_plancher
 from bot.discord.voice.brain import (
     _is_stop_request,
     _voice_publish,
+    consigner_et_dire,
     generate_voice_greeting,
     handle_transcript,
 )
@@ -456,7 +457,11 @@ class VoiceService:
                 activity_label=activity, inviter=self._pending_inviter,
             )
             if text:
-                await self.speak(text)
+                # Par la porte du fil, pas par `speak()` : sinon il salue puis,
+                # pour lui-même, n'a rien dit — et `_should_respond_voice` ne
+                # trouve aucun tour à enchaîner. Il fallait le NOMMER à chaque
+                # phrase juste après qu'il ait dit bonjour.
+                await consigner_et_dire(self, text)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice _greet a échoué: {e!r}", e=e)
         finally:
@@ -465,6 +470,11 @@ class VoiceService:
     async def greet_newcomer(self, member) -> None:
         """Salue une personne qui vient de rejoindre le salon (anti-spam : pas si Wally parle déjà)."""
         if self.is_speaking:
+            return
+        # En mode compagnon de stream, `speak()` refuse : la salutation était
+        # générée — un appel LLM payant à CHAQUE arrivée dans le salon — puis
+        # jetée sans un mot. On s'arrête AVANT de la produire.
+        if self.listen_only:
             return
         try:
             name = getattr(member, "display_name", str(member))
@@ -475,7 +485,7 @@ class VoiceService:
                 activity_label=activity, newcomer_user_id=str(member.id),
             )
             if text:
-                await self.speak(text)
+                await consigner_et_dire(self, text)
         except Exception as e:  # noqa: BLE001
             logger.warning("voice greet_newcomer a échoué: {e!r}", e=e)
 

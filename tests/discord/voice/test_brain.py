@@ -104,7 +104,7 @@ async def test_group_history_consigned_before_reply():
     service = MagicMock()
     snap_at_speak: list = []
 
-    async def capture_speak(text):
+    async def capture_speak(text, **_):
         snap_at_speak.extend(list(service.history))
 
     service.speak = AsyncMock(side_effect=capture_speak)
