@@ -253,6 +253,18 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
             cfg.bot.spontaneous_cooldown_seconds = int(d["spontaneous_cooldown_seconds"])
         if "notification_channel_id" in d:
             cfg.bot.notification_channel_id = int(d["notification_channel_id"]) if d["notification_channel_id"] else None
+        if "cost_alert_threshold" in d:
+            # L'écran envoyait ce champ depuis toujours ; la route l'ignorait en
+            # silence (« champs inconnus : ignorés »), et le toast annonçait
+            # quand même « Config bot sauvegardée ». Le seuil est lu par
+            # `VeilleCouts` ; 0 éteint la veille, ce qui est un réglage valide.
+            seuil = float(d["cost_alert_threshold"] or 0)
+            if not (0 <= seuil <= 1000):
+                raise HTTPException(
+                    status_code=400,
+                    detail="cost_alert_threshold must be 0–1000",
+                )
+            cfg.bot.cost_alert_threshold = seuil
 
     if "discord" in body:
         d = body["discord"]

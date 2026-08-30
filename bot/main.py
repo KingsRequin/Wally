@@ -788,6 +788,14 @@ async def main() -> None:
     from bot.core.notifications import NotificationService
     notification_service = NotificationService(config, discord_bot)
 
+    # `log_cost()` écrivait 98 957 lignes que personne ne relisait pour ALERTER,
+    # et `NotificationService.send()` n'avait aucun appelant : deux moitiés
+    # mortes qui se complètent. La veille projette le rythme des sept derniers
+    # jours sur un mois et prévient au franchissement du seuil.
+    from bot.core.cout_veille import VeilleCouts
+    veille_couts = VeilleCouts(db, config, notification_service)
+    tasks.append(veille_couts.veiller())
+
     dashboard_state = AppState(
         config=config,
         db=db,

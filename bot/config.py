@@ -17,6 +17,12 @@ class BotConfig:
     prelude_window_size: int = 15
     link_min_confidence: float = 0.75
     notification_channel_id: int | None = None
+    # Dépense mensuelle PROJETÉE au-delà de laquelle Wally prévient dans le
+    # salon de notification (`bot/core/cout_veille.py`). 0 = pas de veille.
+    # Le champ existait au dashboard depuis longtemps, sans lecteur : il a été
+    # retiré d'ici le 2026-08-26 avec les sept autres boutons morts, alors que
+    # l'écran, lui, l'affichait toujours et l'envoyait dans le vide.
+    cost_alert_threshold: float = 25.0
     bedroom_channel_id: int | None = None   # #chambre-de-wally — cible des rappels créés en vocal
     # Salon Discord où l'annonce de partie privée est poussée quand un modérateur
     # pose le code sur Twitch, et rôle pingué à cette occasion. C'est ce ping qui
