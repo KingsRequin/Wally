@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 
 from loguru import logger
 
+from bot.core.text_clean import retirer_tirets_cadratins
 from bot.core.voice_transcript import active_voice_transcript
 from bot.discord.voice.style import available_tags
 
@@ -452,6 +453,9 @@ async def consigner_et_dire(service, text: str, *, malgre_ecoute: bool = False) 
     Rend ce que rend `speak()` : VRAI si la parole est sortie. `say_in_voice`
     lit ce retour pour ne pas confirmer une phrase que personne n'a entendue.
     """
+    # Le tiret ne s'entend pas à l'oral, mais cette réplique part AUSSI au fil
+    # du salon et au tampon de contexte écrit, que Wally relit ensuite ailleurs.
+    text = retirer_tirets_cadratins(text)
     _remember_line(service, role="assistant", speaker=_SELF_LABEL, text=text)
     return await service.speak(text, malgre_ecoute=malgre_ecoute)
 

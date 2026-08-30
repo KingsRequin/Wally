@@ -34,6 +34,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from bot.core.text_clean import retirer_tirets_cadratins
 from bot.core.audit_log import journal, note_audience, note_speech
 from bot.core.conversation_log import new_trace_id
 from bot.core.music import vignette
@@ -3392,7 +3393,9 @@ class OverlayNarrator:
         # `nettoyer_decorations` retire aussi les backticks : le prompt épelle le
         # marqueur entre backticks, et le modèle les reprenait autour de sa PHRASE
         # — l'overlay ne rend pas le Markdown, ils s'affichaient tels quels.
-        short = nettoyer_decorations(raw)
+        # Les bulles font trois mots : un tiret cadratin y saute encore plus aux
+        # yeux qu'à l'écrit, et l'overlay s'adresse à des viewers.
+        short = retirer_tirets_cadratins(nettoyer_decorations(raw))
         # Le prompt répond RIEN quand la pensée n'a aucun intérêt pour un
         # spectateur — se taire est une réponse valide. Le marqueur se lit aussi
         # en FIN de texte : « C'est le genre de moment où l'on se tait. RIEN »

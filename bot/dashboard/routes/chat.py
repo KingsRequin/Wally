@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from loguru import logger
 
+from bot.core.text_clean import strip_stage_directions
 from bot.dashboard.routes.chat_auth import decode_jwt, _jwt_secret_raw
 from bot.discord.handlers import _parse_react_tag
 
@@ -304,6 +305,10 @@ async def _wally_respond(state: AppState, sender_id: str, username: str, content
 
             # Strip [react:emoji] tag — web chat doesn't support reactions
             _react_emoji, reply = _parse_react_tag(reply)
+            # Le chat web est le seul chemin de réponse qui n'avait AUCUN
+            # nettoyage de sortie : ni les didascalies de roleplay, ni les
+            # tirets cadratins. Les deux se lisaient tels quels sur le site.
+            reply = strip_stage_directions(reply)
 
             now = time.time()
             msg_id = await state.db.insert_chat_message(

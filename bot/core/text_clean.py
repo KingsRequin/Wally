@@ -37,7 +37,52 @@ def strip_stage_directions(text: str) -> str:
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     # Tout retirer voudrait dire que le message n'était QUE de la mise en scène :
     # mieux vaut le laisser passer que d'envoyer du vide.
-    return cleaned or text.strip()
+    #
+    # Les tirets cadratins partent ICI et pas chez chaque appelant : ce filtre
+    # est déjà le passage obligé de tout message sortant, et un second point
+    # d'application serait celui qu'on oublierait de poser sur le prochain
+    # chemin de parole.
+    return retirer_tirets_cadratins(cleaned or text.strip())
+
+
+# ── Tirets cadratins : la signature d'une machine ───────────────────────────
+#
+# Personne ne tape « — » au clavier en discutant sur Discord. Le modèle en pose
+# dans presque chaque réponse, et c'est ce qui trahit le plus vite qu'un texte
+# n'a pas été écrit par quelqu'un. Demande de l'owner, 2026-08-30.
+#
+# Un REMPLACEMENT et pas une suppression : « ouais — enfin bref » deviendrait
+# « ouais enfin bref », deux propositions collées. La virgule est celle qu'un
+# humain aurait tapée à la place.
+#
+# Deux formes échappent volontairement :
+#
+# · le tiret en DÉBUT de ligne, qui est une puce de liste ou un tiret de
+#   dialogue — de la mise en forme voulue, qu'une virgule casserait ;
+# · le demi-cadratin SANS espaces (« 1000–128000 »), qui est un intervalle.
+#
+# Le demi-cadratin entouré d'espaces, lui, est le même tic en plus discret.
+# Le cadratin se traite collé ou espacé (« ouais—non » est du même modèle) ;
+# le demi-cadratin seulement ESPACÉ, sans quoi « 1000–128000 » deviendrait
+# « 1000, 128000 » et le réglage se lirait comme deux valeurs.
+_TIRET_FIN = re.compile(r"[ \t]*(?:—|(?<=[ \t])–)[ \t]*$", re.MULTILINE)
+_TIRET_APRES_PONCTUATION = re.compile(r"(?<=[,;:.!?])[ \t]*(?:—|(?<=[ \t])–)[ \t]*")
+_TIRET_INCISE = re.compile(r"(?<=\S)(?:[ \t]*—[ \t]*|[ \t]+–[ \t]+)(?=\S)")
+
+
+def retirer_tirets_cadratins(text: str) -> str:
+    """Remplace les tirets cadratins d'incise par la ponctuation d'un humain."""
+    if not text:
+        return text
+    # L'ordre compte : en fin de ligne le tiret n'introduit plus rien, et une
+    # virgule finale serait pire que le tiret. Puis les cas déjà ponctués, qui
+    # doivent perdre le tiret SANS gagner une seconde virgule.
+    sortie = _TIRET_FIN.sub("", text)
+    sortie = _TIRET_APRES_PONCTUATION.sub(" ", sortie)
+    sortie = _TIRET_INCISE.sub(", ", sortie)
+    # Tout retirer voudrait dire que le texte n'était QU'un séparateur : mieux
+    # vaut le laisser passer que de rendre du vide, comme au-dessus.
+    return sortie or text
 
 
 # ── Liens markdown : justes sur Discord, illisibles sur Twitch ───────────────
