@@ -290,17 +290,17 @@ function brancherTiltInclinaison(racine) {
   // Sur l'horloge du site, pas sur l'événement du capteur : le lissage doit
   // avancer d'un pas par IMAGE, et une carte ne se repeint pas plus souvent.
   surAnimation(() => {
-    cx += (x - cx) * 0.12;
-    cy += (y - cy) * 0.12;
+    cx += (x - cx) * 0.18;
+    cy += (y - cy) * 0.18;
     _cartesEnVue.forEach((el) => {
       // Une carte pas encore révélée porte un `translateY(28px)` : l'incliner
       // maintenant écraserait ce transform et elle n'apparaîtrait jamais.
       if (el.classList.contains('reveal') && !el.classList.contains('on')) return;
-      el.style.transform = 'perspective(900px)'
-        + ' rotateY(' + (cx * 4).toFixed(2) + 'deg)'
-        + ' rotateX(' + (-cy * 4).toFixed(2) + 'deg)';
-      el.style.boxShadow = (cx * 11).toFixed(0) + 'px ' + (16 - cy * 7).toFixed(0)
-        + 'px 44px -26px rgba(255,106,43,.5), inset 0 0 0 1px rgba(255,176,46,.10)';
+      el.style.transform = 'perspective(700px)'
+        + ' rotateY(' + (cx * 10).toFixed(2) + 'deg)'
+        + ' rotateX(' + (-cy * 10).toFixed(2) + 'deg)';
+      el.style.boxShadow = (cx * 26).toFixed(0) + 'px ' + (22 - cy * 16).toFixed(0)
+        + 'px 56px -24px rgba(255,106,43,.62), inset 0 0 0 1px rgba(255,176,46,.16)';
     });
   });
 }
@@ -583,7 +583,10 @@ function majCompagnon(el, sy, prog) {
 // par `surInclinaison()`.
 (function lireInclinaison() {
   if (!inclinaisonDisponible()) return;
-  const AMPL = 24;   // degrés d'inclinaison pour aller d'un bord à l'autre
+  // Degrés d'inclinaison pour aller d'un bord à l'autre. Descendu de 24 à 14
+  // le 2026-08-30 : à 24, il fallait coucher le téléphone pour atteindre la
+  // butée, et le mouvement se lisait à peine dans la main.
+  const AMPL = 14;
   let x0 = null, y0 = null;
 
   const surCapteur = (e) => {
@@ -671,9 +674,11 @@ function majCompagnon(el, sy, prog) {
   listeIcons = listeIcons.filter((el) => el.style.display !== 'none');
   listeIcons.forEach((el, i) => { el._ph = i * 1.7; });
 
-  // Le décalage est plus discret sur un téléphone : à 390 px de large, la même
-  // amplitude fait sortir les couches de l'écran.
-  const K = mobile ? 0.55 : 1;
+  // Le décalage reste plus court sur un téléphone : à 390 px de large, la même
+  // amplitude que sur un bureau fait sortir les couches de l'écran. Remonté de
+  // 0,55 à 0,85 avec le gyroscope — le facteur avait été calé sur une page où
+  // rien ne bougeait latéralement, faute de curseur.
+  const K = mobile ? 0.85 : 1;
 
   let mx = 0, my = 0, tmx = 0, tmy = 0, aSy = -1, aMx = 99, aMy = 99;
   if (!reduit) {

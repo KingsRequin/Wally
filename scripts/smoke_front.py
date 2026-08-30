@@ -421,6 +421,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         ".filter(e => e.style.transform.includes('rotateY')).length")
     rap.dire(inclinees > 0, "390 px · les cartes à l'écran suivent l'inclinaison",
              f"{inclinees} carte(s)")
+
+    # Le débordement se re-teste PENCHÉ. Les tests ci-dessus mesurent une page
+    # au repos ; l'inclinaison déplace les couches du décor latéralement, et un
+    # halo en `right: -140px` gonfle le `scrollWidth` du document malgré
+    # `body { overflow-x: hidden }` — le piège a déjà coûté 43 px hors écran.
+    trop_penche = mob.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    rap.dire(trop_penche <= 0, "390 px · penché : pas de débordement horizontal",
+             f"{trop_penche} px")
     mob.close()
 
 
