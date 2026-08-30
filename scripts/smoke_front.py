@@ -371,7 +371,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # bout part hors de l'écran. Un `grid-template-columns` posé en style EN
     # LIGNE bat la media query — 43 px perdus sur la section des émotions, et
     # le bouton de connexion hors de portée du pouce.
-    mob = nav.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+    mob = nav.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
     erreurs_mob = _brancher_erreurs(mob)
     for nom, route, _ in PAGES_PUBLIQUES:
         del erreurs_mob[:]
@@ -382,6 +382,26 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         rap.dire(trop <= 0, f"390 px · {nom} : pas de débordement horizontal", f"{trop} px")
         rap.dire(not erreurs_mob, f"390 px · {nom} : aucune erreur JS",
                  " · ".join(erreurs_mob[:2]))
+
+    # Gyroscope. Sur un téléphone il n'y a pas de curseur : sans lui, tout le
+    # mouvement latéral du décor disparaît. Aucun test de texte ne le voit —
+    # le branchement est gardé par une media query ET par un événement de
+    # capteur, deux choses qui n'existent que dans un vrai navigateur mobile.
+    mob.goto(f"{BASE}/", wait_until="networkidle", timeout=40000)
+    mob.wait_for_timeout(1200)
+    halos = "getComputedStyle(document.getElementById('bg-halos')).transform"
+    repos = mob.evaluate(halos)
+    mob.evaluate(
+        """() => {
+          const ev = (b, g) => window.dispatchEvent(
+            new DeviceOrientationEvent('deviceorientation', {beta: b, gamma: g}));
+          ev(40, 0);                                  // la 1re mesure fait le neutre
+          for (let i = 0; i < 30; i++) ev(40, 30);    // puis on penche franchement
+        }""")
+    mob.wait_for_timeout(1500)
+    penche = mob.evaluate(halos)
+    rap.dire(penche != repos, "390 px · le décor suit l'inclinaison de l'appareil",
+             f"{repos} → {penche}")
     mob.close()
 
 

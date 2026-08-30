@@ -548,6 +548,53 @@ function majCompagnon(el, sy, prog) {
     });
   }
 
+  // Sur un téléphone il n'y a pas de curseur : tout le mouvement LATÉRAL du
+  // décor est perdu, il ne reste que le défilement. On lit l'inclinaison de
+  // l'appareil et on la fait entrer par la MÊME porte que la souris (tmx/tmy) :
+  // la boucle d'animation n'a rien à savoir de la source.
+  // Réservé aux pointeurs grossiers — un portable à écran tactile a un capteur
+  // qui ne bouge jamais, et sa valeur figée écraserait celle de la souris.
+  if (!reduit && window.DeviceOrientationEvent
+      && window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+    const AMPL = 24;   // degrés d'inclinaison pour aller d'un bord à l'autre
+    let x0 = null, y0 = null;
+
+    const surInclinaison = (e) => {
+      if (e.beta == null || e.gamma == null) return;
+      const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+      // En paysage, les deux axes du capteur ont tourné AVEC l'appareil : sans
+      // cet échange, incliner vers la gauche fait monter le décor.
+      let gx = e.gamma, gy = e.beta;
+      if (ang === 90) { gx = e.beta; gy = -e.gamma; }
+      else if (ang === 270 || ang === -90) { gx = -e.beta; gy = e.gamma; }
+      // La première mesure devient le neutre : personne ne tient son téléphone
+      // à plat, et sans repère le décor démarre collé dans un coin, en butée.
+      if (x0 == null) { x0 = gx; y0 = gy; }
+      const borne = (v) => Math.max(-1, Math.min(1, v));
+      tmx = borne((gx - x0) / AMPL);
+      tmy = borne((gy - y0) / AMPL);
+    };
+
+    // Le neutre est RELATIF à l'orientation : le garder au passage en paysage
+    // enverrait le décor en butée d'un côté et il n'en reviendrait plus.
+    window.addEventListener('orientationchange', () => { x0 = null; y0 = null; });
+
+    const brancher = () => window.addEventListener('deviceorientation', surInclinaison);
+    const DOE = window.DeviceOrientationEvent;
+    if (typeof DOE.requestPermission === 'function') {
+      // iOS 13+ : l'autorisation ne se demande QUE depuis un geste de
+      // l'utilisateur. Le premier appui sur la page sert de geste ; un refus
+      // laisse le décor immobile, exactement comme avant.
+      window.addEventListener('pointerdown', () => {
+        DOE.requestPermission()
+          .then((r) => { if (r === 'granted') brancher(); })
+          .catch((err) => console.warn('gyroscope refusé', err));
+      }, { once: true });
+    } else {
+      brancher();
+    }
+  }
+
   let vh = window.innerHeight;
   let max = Math.max(1, document.body.scrollHeight - vh);
   let listePx = Array.from(document.querySelectorAll('[data-px]'));
