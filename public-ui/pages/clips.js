@@ -38,13 +38,16 @@ function dateCourte(iso) {
  *
  *  `parent` DOIT être le domaine qui héberge la page, sinon Twitch refuse le
  *  lecteur avec un écran noir muet : `location.hostname` est la seule valeur
- *  qui reste juste derrière le tunnel comme en local. */
+ *  qui reste juste derrière le tunnel comme en local.
+ *
+ *  Pas de `muted` : c'est déjà `false` chez Twitch. Le lecteur démarre quand
+ *  même muet tant que le navigateur n'accorde pas l'autoplay sonore au
+ *  domaine — ça se décide chez le visiteur, pas dans cette URL. */
 function urlEmbed(slug) {
   const p = new URLSearchParams({
     clip: slug,
     parent: location.hostname,
     autoplay: 'true',
-    muted: 'false',
   });
   return 'https://clips.twitch.tv/embed?' + p.toString();
 }
@@ -65,7 +68,11 @@ function lire(carte, clip) {
         class: 'clip-frame',
         src: urlEmbed(clip.id),
         title: clip.title || 'Clip Twitch',
-        allow: 'autoplay; fullscreen; encrypted-media',
+        // `keyboard-map` n'est pas déléguée par défaut à un cadre d'une
+        // autre origine : sans elle, le lecteur Twitch lève un
+        // « getLayoutMap() must be called from a top-level browsing context »
+        // dans la console du VISITEUR, à chaque clip lu.
+        allow: 'autoplay; fullscreen; encrypted-media; keyboard-map',
         allowFullscreen: true,
         frameBorder: '0',
         scrolling: 'no',
@@ -95,7 +102,7 @@ function vignette(clip) {
         h('span', { text: '·' }),
         h('span', { text: dateCourte(clip.created_at) }),
         h('span', { text: '·' }),
-        h('span', { text: `${nombre(clip.views)} vues` }),
+        h('span', { text: `${nombre(clip.views)} vue${clip.views > 1 ? 's' : ''}` }),
       ),
       clip.url
         ? h('a', { class: 'clip-lien', href: clip.url, target: '_blank', rel: 'noopener',
