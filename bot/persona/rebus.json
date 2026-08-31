@@ -1,0 +1,3234 @@
+{
+ "convention": "Rébus en emoji. On lit les jetons dans l'ordre et on assemble : 🐈 💧 = chat + eau = CHÂTEAU. DEUX lectures sont admises, et un rébus est valide si L'UNE DES DEUX donne le mot — c'est ainsi que fonctionnent ces jeux. (1) Par le SON : 🐈 M 💧 = [ʃa]+[m]+[o] = chameau. (2) Par l'ORTHOGRAPHE : 🐈 💧 s'écrit chat+eau = chateau. Le champ `lecture` donne le jeton à prononcer ou à épeler.",
+ "regles_d_ecriture": [
+  "Chaque rébus porte AU MOINS un emoji-mot entier. Un rébus tout en lettres n'est pas un rébus, c'est de l'épellation.",
+  "Trois lettres au maximum. Les meilleurs n'en ont aucune.",
+  "⚠️ LES LETTRES SONT DES CARACTÈRES NORMAUX (A, B, C…), JAMAIS 🅰️ NI 🇦. Deux indicateurs régionaux voisins FUSIONNENT en drapeau de pays (🇻+🇪 = 🇻🇪 Venezuela), et sous Windows les mêmes paires sortent en lettres : le rendu change d'un chatteur à l'autre. 70 entrées d'une version précédente étaient illisibles pour cette seule raison.",
+  "⚠️ LE PIÈGE QUI A COÛTÉ LE PLUS D'ENTRÉES : la consonne FINALE de l'emoji se prononce. 🦆 = « canard » AVEC son R (« canard+P » fait kanarpé, pas canapé) · 🐻 = « ours » AVEC son S (« C+ours » fait course) · 🍐 = « poire » AVEC son P (« M+E+M+poire » ne fera jamais mémoire) · 🔩 = « vis » AVEC son S · 8️⃣ = « huit » AVEC son T · 🦌 = « cerf » SANS son F, qui est muet (donc cerveau ✓, cerfeuil ✗). Prononcer le jeton EN ENTIER avant de valider.",
+  "Un [s] entre deux voyelles devient [z] : 🪣 « seau » ne convient qu'à vaisseau, berceau, morceau, cerceau, arceau. Pour ciseau, réseau, museau, roseau, oiseau, il faut un Z explicite.",
+  "`emojis` et `lecture` ont TOUJOURS la même longueur : lecture[i] est ce que emojis[i] doit se prononcer ou s'épeler. C'est ce qui rend le fichier vérifiable à l'œil et ce qui sert d'indices progressifs.",
+  "Un emoji ne rentre que si son nom français est SANS ambiguïté sérieuse. 🌊 se lit « vague » autant que « eau » : absent d'ici, 💧 le remplace.",
+  "`categorie` sert d'indice n°1 pendant la partie (« c'est un objet »). Elle n'est pas décorative.",
+  "Seule exception à la règle des trois lettres : les noms propres de la catégorie « maison » (Azraël), qu'aucun emoji ne peut porter autrement."
+ ],
+ "rebus": [
+  {
+   "mot": "château",
+   "emojis": [
+    "🐈",
+    "💧"
+   ],
+   "lecture": [
+    "chat",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "râteau",
+   "emojis": [
+    "🐀",
+    "💧"
+   ],
+   "lecture": [
+    "rat",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "poireau",
+   "emojis": [
+    "🍐",
+    "💧"
+   ],
+   "lecture": [
+    "poire",
+    "eau"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "anneau",
+   "emojis": [
+    "🫏",
+    "💧"
+   ],
+   "lecture": [
+    "âne",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chalet",
+   "emojis": [
+    "🐈",
+    "🥛"
+   ],
+   "lecture": [
+    "chat",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "filet",
+   "emojis": [
+    "🧵",
+    "🥛"
+   ],
+   "lecture": [
+    "fil",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chevalet",
+   "emojis": [
+    "🐎",
+    "🥛"
+   ],
+   "lecture": [
+    "cheval",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "ravin",
+   "emojis": [
+    "🐀",
+    "🍷"
+   ],
+   "lecture": [
+    "rat",
+    "vin"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "pinceau",
+   "emojis": [
+    "🍞",
+    "🪣"
+   ],
+   "lecture": [
+    "pain",
+    "seau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "canari",
+   "emojis": [
+    "🦆",
+    "I"
+   ],
+   "lecture": [
+    "canard",
+    "I"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "coquille",
+   "emojis": [
+    "🐓",
+    "🎳"
+   ],
+   "lecture": [
+    "coq",
+    "quille"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "portail",
+   "emojis": [
+    "🚪",
+    "🧄"
+   ],
+   "lecture": [
+    "porte",
+    "ail"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chiendent",
+   "emojis": [
+    "🐕",
+    "🦷"
+   ],
+   "lecture": [
+    "chien",
+    "dent"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "rapporte",
+   "emojis": [
+    "🐀",
+    "🚪"
+   ],
+   "lecture": [
+    "rat",
+    "porte"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "mange",
+   "emojis": [
+    "M",
+    "👼"
+   ],
+   "lecture": [
+    "M",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "délit",
+   "emojis": [
+    "🎲",
+    "🛏️"
+   ],
+   "lecture": [
+    "dé",
+    "lit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "détroit",
+   "emojis": [
+    "🎲",
+    "3️⃣"
+   ],
+   "lecture": [
+    "dé",
+    "trois"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "délivre",
+   "emojis": [
+    "🎲",
+    "📚"
+   ],
+   "lecture": [
+    "dé",
+    "livre"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "démontre",
+   "emojis": [
+    "🎲",
+    "⌚"
+   ],
+   "lecture": [
+    "dé",
+    "montre"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "débouche",
+   "emojis": [
+    "🎲",
+    "👄"
+   ],
+   "lecture": [
+    "dé",
+    "bouche"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "troublé",
+   "emojis": [
+    "🕳️",
+    "🌾"
+   ],
+   "lecture": [
+    "trou",
+    "blé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "troupe",
+   "emojis": [
+    "🕳️",
+    "P"
+   ],
+   "lecture": [
+    "trou",
+    "P"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "trousse",
+   "emojis": [
+    "🕳️",
+    "S"
+   ],
+   "lecture": [
+    "trou",
+    "S"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "loupe",
+   "emojis": [
+    "🐺",
+    "P"
+   ],
+   "lecture": [
+    "loup",
+    "P"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "arrose",
+   "emojis": [
+    "A",
+    "🌹"
+   ],
+   "lecture": [
+    "A",
+    "rose"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "apporte",
+   "emojis": [
+    "A",
+    "🚪"
+   ],
+   "lecture": [
+    "A",
+    "porte"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "année",
+   "emojis": [
+    "A",
+    "👃"
+   ],
+   "lecture": [
+    "A",
+    "nez"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "oreiller",
+   "emojis": [
+    "👂",
+    "E"
+   ],
+   "lecture": [
+    "oreille",
+    "E"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "hiver",
+   "emojis": [
+    "I",
+    "🪱"
+   ],
+   "lecture": [
+    "I",
+    "ver"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "auvent",
+   "emojis": [
+    "O",
+    "🌬️"
+   ],
+   "lecture": [
+    "O",
+    "vent"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "assis",
+   "emojis": [
+    "A",
+    "🪚"
+   ],
+   "lecture": [
+    "A",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "ici",
+   "emojis": [
+    "I",
+    "🪚"
+   ],
+   "lecture": [
+    "I",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "été",
+   "emojis": [
+    "E",
+    "🍵"
+   ],
+   "lecture": [
+    "E",
+    "thé"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "raté",
+   "emojis": [
+    "🐀",
+    "🍵"
+   ],
+   "lecture": [
+    "rat",
+    "thé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "bourse",
+   "emojis": [
+    "B",
+    "🐻"
+   ],
+   "lecture": [
+    "B",
+    "ours"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "source",
+   "emojis": [
+    "S",
+    "🐻"
+   ],
+   "lecture": [
+    "S",
+    "ours"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "parc",
+   "emojis": [
+    "P",
+    "🏹"
+   ],
+   "lecture": [
+    "P",
+    "arc"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "tache",
+   "emojis": [
+    "T",
+    "🪓"
+   ],
+   "lecture": [
+    "T",
+    "hache"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "seuil",
+   "emojis": [
+    "S",
+    "👁️"
+   ],
+   "lecture": [
+    "S",
+    "œil"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "deuil",
+   "emojis": [
+    "D",
+    "👁️"
+   ],
+   "lecture": [
+    "D",
+    "œil"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "bosse",
+   "emojis": [
+    "B",
+    "🦴"
+   ],
+   "lecture": [
+    "B",
+    "os"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "fosse",
+   "emojis": [
+    "F",
+    "🦴"
+   ],
+   "lecture": [
+    "F",
+    "os"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "singer",
+   "emojis": [
+    "🐒",
+    "E"
+   ],
+   "lecture": [
+    "singe",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "clocher",
+   "emojis": [
+    "🔔",
+    "E"
+   ],
+   "lecture": [
+    "cloche",
+    "E"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "montrer",
+   "emojis": [
+    "⌚",
+    "E"
+   ],
+   "lecture": [
+    "montre",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "fuite",
+   "emojis": [
+    "F",
+    "8️⃣"
+   ],
+   "lecture": [
+    "F",
+    "huit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "suite",
+   "emojis": [
+    "S",
+    "8️⃣"
+   ],
+   "lecture": [
+    "S",
+    "huit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "cuite",
+   "emojis": [
+    "C",
+    "8️⃣"
+   ],
+   "lecture": [
+    "C",
+    "huit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "étroit",
+   "emojis": [
+    "E",
+    "3️⃣"
+   ],
+   "lecture": [
+    "E",
+    "trois"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "hideux",
+   "emojis": [
+    "I",
+    "2️⃣"
+   ],
+   "lecture": [
+    "I",
+    "deux"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "louange",
+   "emojis": [
+    "🐺",
+    "👼"
+   ],
+   "lecture": [
+    "loup",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "velours",
+   "emojis": [
+    "V",
+    "E",
+    "L",
+    "🐻"
+   ],
+   "lecture": [
+    "V",
+    "E",
+    "L",
+    "ours"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "secours",
+   "emojis": [
+    "S",
+    "E",
+    "C",
+    "🐻"
+   ],
+   "lecture": [
+    "S",
+    "E",
+    "C",
+    "ours"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "ourson",
+   "emojis": [
+    "🐻",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "ours",
+    "O",
+    "N"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "grosse",
+   "emojis": [
+    "G",
+    "R",
+    "🦴"
+   ],
+   "lecture": [
+    "G",
+    "R",
+    "os"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "brosse",
+   "emojis": [
+    "B",
+    "R",
+    "🦴"
+   ],
+   "lecture": [
+    "B",
+    "R",
+    "os"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "carrosse",
+   "emojis": [
+    "C",
+    "A",
+    "R",
+    "🦴"
+   ],
+   "lecture": [
+    "C",
+    "A",
+    "R",
+    "os"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "accueil",
+   "emojis": [
+    "A",
+    "C",
+    "👁️"
+   ],
+   "lecture": [
+    "A",
+    "C",
+    "œil"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "fauteuil",
+   "emojis": [
+    "F",
+    "O",
+    "T",
+    "👁️"
+   ],
+   "lecture": [
+    "F",
+    "O",
+    "T",
+    "œil"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "humain",
+   "emojis": [
+    "U",
+    "🖐️"
+   ],
+   "lecture": [
+    "U",
+    "main"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "demain",
+   "emojis": [
+    "D",
+    "E",
+    "🖐️"
+   ],
+   "lecture": [
+    "D",
+    "E",
+    "main"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "romain",
+   "emojis": [
+    "R",
+    "O",
+    "🖐️"
+   ],
+   "lecture": [
+    "R",
+    "O",
+    "main"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "urbain",
+   "emojis": [
+    "U",
+    "R",
+    "🛁"
+   ],
+   "lecture": [
+    "U",
+    "R",
+    "bain"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "ardent",
+   "emojis": [
+    "A",
+    "R",
+    "🦷"
+   ],
+   "lecture": [
+    "A",
+    "R",
+    "dent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "prudent",
+   "emojis": [
+    "P",
+    "R",
+    "U",
+    "🦷"
+   ],
+   "lecture": [
+    "P",
+    "R",
+    "U",
+    "dent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "évident",
+   "emojis": [
+    "E",
+    "V",
+    "I",
+    "🦷"
+   ],
+   "lecture": [
+    "E",
+    "V",
+    "I",
+    "dent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "divin",
+   "emojis": [
+    "D",
+    "I",
+    "🍷"
+   ],
+   "lecture": [
+    "D",
+    "I",
+    "vin"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "devin",
+   "emojis": [
+    "D",
+    "E",
+    "🍷"
+   ],
+   "lecture": [
+    "D",
+    "E",
+    "vin"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "copain",
+   "emojis": [
+    "C",
+    "O",
+    "🍞"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "pain"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "sapin",
+   "emojis": [
+    "S",
+    "A",
+    "🍞"
+   ],
+   "lecture": [
+    "S",
+    "A",
+    "pain"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "lapin",
+   "emojis": [
+    "L",
+    "A",
+    "🍞"
+   ],
+   "lecture": [
+    "L",
+    "A",
+    "pain"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "épingle",
+   "emojis": [
+    "E",
+    "🍞",
+    "G",
+    "L"
+   ],
+   "lecture": [
+    "E",
+    "pain",
+    "G",
+    "L"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "peinture",
+   "emojis": [
+    "🍞",
+    "T",
+    "U",
+    "R"
+   ],
+   "lecture": [
+    "pain",
+    "T",
+    "U",
+    "R"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "pintade",
+   "emojis": [
+    "🍞",
+    "T",
+    "A",
+    "D"
+   ],
+   "lecture": [
+    "pain",
+    "T",
+    "A",
+    "D"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "ballet",
+   "emojis": [
+    "B",
+    "A",
+    "🥛"
+   ],
+   "lecture": [
+    "B",
+    "A",
+    "lait"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "valet",
+   "emojis": [
+    "V",
+    "A",
+    "🥛"
+   ],
+   "lecture": [
+    "V",
+    "A",
+    "lait"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "volet",
+   "emojis": [
+    "V",
+    "O",
+    "🥛"
+   ],
+   "lecture": [
+    "V",
+    "O",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "mollet",
+   "emojis": [
+    "M",
+    "O",
+    "🥛"
+   ],
+   "lecture": [
+    "M",
+    "O",
+    "lait"
+   ],
+   "categorie": "corps"
+  },
+  {
+   "mot": "gilet",
+   "emojis": [
+    "J",
+    "I",
+    "🥛"
+   ],
+   "lecture": [
+    "J",
+    "I",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "poulet",
+   "emojis": [
+    "P",
+    "O",
+    "U",
+    "🥛"
+   ],
+   "lecture": [
+    "P",
+    "O",
+    "U",
+    "lait"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "boulet",
+   "emojis": [
+    "B",
+    "O",
+    "U",
+    "🥛"
+   ],
+   "lecture": [
+    "B",
+    "O",
+    "U",
+    "lait"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "beauté",
+   "emojis": [
+    "B",
+    "O",
+    "🍵"
+   ],
+   "lecture": [
+    "B",
+    "O",
+    "thé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "pâté",
+   "emojis": [
+    "P",
+    "A",
+    "🍵"
+   ],
+   "lecture": [
+    "P",
+    "A",
+    "thé"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "côté",
+   "emojis": [
+    "C",
+    "O",
+    "🍵"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "thé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "santé",
+   "emojis": [
+    "S",
+    "A",
+    "N",
+    "🍵"
+   ],
+   "lecture": [
+    "S",
+    "A",
+    "N",
+    "thé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "bonté",
+   "emojis": [
+    "B",
+    "O",
+    "N",
+    "🍵"
+   ],
+   "lecture": [
+    "B",
+    "O",
+    "N",
+    "thé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "bonnet",
+   "emojis": [
+    "B",
+    "O",
+    "👃"
+   ],
+   "lecture": [
+    "B",
+    "O",
+    "nez"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "dîner",
+   "emojis": [
+    "D",
+    "I",
+    "👃"
+   ],
+   "lecture": [
+    "D",
+    "I",
+    "nez"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "sonnet",
+   "emojis": [
+    "S",
+    "O",
+    "👃"
+   ],
+   "lecture": [
+    "S",
+    "O",
+    "nez"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "donner",
+   "emojis": [
+    "D",
+    "O",
+    "👃"
+   ],
+   "lecture": [
+    "D",
+    "O",
+    "nez"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "fané",
+   "emojis": [
+    "F",
+    "A",
+    "👃"
+   ],
+   "lecture": [
+    "F",
+    "A",
+    "nez"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "joli",
+   "emojis": [
+    "J",
+    "O",
+    "🛏️"
+   ],
+   "lecture": [
+    "J",
+    "O",
+    "lit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "poli",
+   "emojis": [
+    "P",
+    "O",
+    "🛏️"
+   ],
+   "lecture": [
+    "P",
+    "O",
+    "lit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "colis",
+   "emojis": [
+    "C",
+    "O",
+    "🛏️"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "lit"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "sali",
+   "emojis": [
+    "S",
+    "A",
+    "🛏️"
+   ],
+   "lecture": [
+    "S",
+    "A",
+    "lit"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "début",
+   "emojis": [
+    "🎲",
+    "B",
+    "U"
+   ],
+   "lecture": [
+    "dé",
+    "B",
+    "U"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "dépôt",
+   "emojis": [
+    "🎲",
+    "P",
+    "O"
+   ],
+   "lecture": [
+    "dé",
+    "P",
+    "O"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "défi",
+   "emojis": [
+    "🎲",
+    "F",
+    "I"
+   ],
+   "lecture": [
+    "dé",
+    "F",
+    "I"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "débat",
+   "emojis": [
+    "🎲",
+    "B",
+    "A"
+   ],
+   "lecture": [
+    "dé",
+    "B",
+    "A"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "défunt",
+   "emojis": [
+    "🎲",
+    "F",
+    "1️⃣"
+   ],
+   "lecture": [
+    "dé",
+    "F",
+    "un"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "défilé",
+   "emojis": [
+    "🎲",
+    "🧵",
+    "E"
+   ],
+   "lecture": [
+    "dé",
+    "fil",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "démange",
+   "emojis": [
+    "🎲",
+    "M",
+    "👼"
+   ],
+   "lecture": [
+    "dé",
+    "M",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "détail",
+   "emojis": [
+    "🎲",
+    "T",
+    "🧄"
+   ],
+   "lecture": [
+    "dé",
+    "T",
+    "ail"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "départ",
+   "emojis": [
+    "🎲",
+    "P",
+    "A",
+    "R"
+   ],
+   "lecture": [
+    "dé",
+    "P",
+    "A",
+    "R"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "désert",
+   "emojis": [
+    "🎲",
+    "Z",
+    "E",
+    "R"
+   ],
+   "lecture": [
+    "dé",
+    "Z",
+    "E",
+    "R"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "décor",
+   "emojis": [
+    "🎲",
+    "C",
+    "O",
+    "R"
+   ],
+   "lecture": [
+    "dé",
+    "C",
+    "O",
+    "R"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "délice",
+   "emojis": [
+    "🎲",
+    "L",
+    "I",
+    "S"
+   ],
+   "lecture": [
+    "dé",
+    "L",
+    "I",
+    "S"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "démon",
+   "emojis": [
+    "🎲",
+    "M",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "dé",
+    "M",
+    "O",
+    "N"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "banane",
+   "emojis": [
+    "B",
+    "A",
+    "N",
+    "🫏"
+   ],
+   "lecture": [
+    "B",
+    "A",
+    "N",
+    "âne"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "cabane",
+   "emojis": [
+    "C",
+    "A",
+    "B",
+    "🫏"
+   ],
+   "lecture": [
+    "C",
+    "A",
+    "B",
+    "âne"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "tisane",
+   "emojis": [
+    "T",
+    "I",
+    "Z",
+    "🫏"
+   ],
+   "lecture": [
+    "T",
+    "I",
+    "Z",
+    "âne"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "orange",
+   "emojis": [
+    "O",
+    "R",
+    "👼"
+   ],
+   "lecture": [
+    "O",
+    "R",
+    "ange"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "étrange",
+   "emojis": [
+    "E",
+    "T",
+    "R",
+    "👼"
+   ],
+   "lecture": [
+    "E",
+    "T",
+    "R",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "mélange",
+   "emojis": [
+    "M",
+    "E",
+    "L",
+    "👼"
+   ],
+   "lecture": [
+    "M",
+    "E",
+    "L",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "vidange",
+   "emojis": [
+    "V",
+    "I",
+    "D",
+    "👼"
+   ],
+   "lecture": [
+    "V",
+    "I",
+    "D",
+    "ange"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "grange",
+   "emojis": [
+    "G",
+    "R",
+    "👼"
+   ],
+   "lecture": [
+    "G",
+    "R",
+    "ange"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "avis",
+   "emojis": [
+    "A",
+    "🔩"
+   ],
+   "lecture": [
+    "A",
+    "vis"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "devis",
+   "emojis": [
+    "D",
+    "E",
+    "🔩"
+   ],
+   "lecture": [
+    "D",
+    "E",
+    "vis"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "aucun",
+   "emojis": [
+    "O",
+    "C",
+    "1️⃣"
+   ],
+   "lecture": [
+    "O",
+    "C",
+    "un"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "chacun",
+   "emojis": [
+    "🐈",
+    "C",
+    "1️⃣"
+   ],
+   "lecture": [
+    "chat",
+    "C",
+    "un"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "brun",
+   "emojis": [
+    "B",
+    "R",
+    "1️⃣"
+   ],
+   "lecture": [
+    "B",
+    "R",
+    "un"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "commun",
+   "emojis": [
+    "C",
+    "O",
+    "M",
+    "1️⃣"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "M",
+    "un"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "accent",
+   "emojis": [
+    "A",
+    "C",
+    "💯"
+   ],
+   "lecture": [
+    "A",
+    "C",
+    "cent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "décent",
+   "emojis": [
+    "D",
+    "E",
+    "💯"
+   ],
+   "lecture": [
+    "D",
+    "E",
+    "cent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "devant",
+   "emojis": [
+    "D",
+    "E",
+    "🌬️"
+   ],
+   "lecture": [
+    "D",
+    "E",
+    "vent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "souvent",
+   "emojis": [
+    "S",
+    "O",
+    "U",
+    "🌬️"
+   ],
+   "lecture": [
+    "S",
+    "O",
+    "U",
+    "vent"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "couvent",
+   "emojis": [
+    "C",
+    "O",
+    "U",
+    "🌬️"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "U",
+    "vent"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "espoir",
+   "emojis": [
+    "E",
+    "S",
+    "🍐"
+   ],
+   "lecture": [
+    "E",
+    "S",
+    "poire"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "mari",
+   "emojis": [
+    "M",
+    "A",
+    "🍚"
+   ],
+   "lecture": [
+    "M",
+    "A",
+    "riz"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "abri",
+   "emojis": [
+    "A",
+    "B",
+    "🍚"
+   ],
+   "lecture": [
+    "A",
+    "B",
+    "riz"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "esprit",
+   "emojis": [
+    "E",
+    "S",
+    "P",
+    "🍚"
+   ],
+   "lecture": [
+    "E",
+    "S",
+    "P",
+    "riz"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "écrit",
+   "emojis": [
+    "E",
+    "C",
+    "🍚"
+   ],
+   "lecture": [
+    "E",
+    "C",
+    "riz"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "prairie",
+   "emojis": [
+    "P",
+    "R",
+    "E",
+    "🍚"
+   ],
+   "lecture": [
+    "P",
+    "R",
+    "E",
+    "riz"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "mépris",
+   "emojis": [
+    "M",
+    "E",
+    "P",
+    "🍚"
+   ],
+   "lecture": [
+    "M",
+    "E",
+    "P",
+    "riz"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "sablé",
+   "emojis": [
+    "S",
+    "A",
+    "🌾"
+   ],
+   "lecture": [
+    "S",
+    "A",
+    "blé"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "câblé",
+   "emojis": [
+    "C",
+    "A",
+    "🌾"
+   ],
+   "lecture": [
+    "C",
+    "A",
+    "blé"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "ficelle",
+   "emojis": [
+    "F",
+    "I",
+    "🧂"
+   ],
+   "lecture": [
+    "F",
+    "I",
+    "sel"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "nacelle",
+   "emojis": [
+    "N",
+    "A",
+    "🧂"
+   ],
+   "lecture": [
+    "N",
+    "A",
+    "sel"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "parcelle",
+   "emojis": [
+    "P",
+    "A",
+    "R",
+    "🧂"
+   ],
+   "lecture": [
+    "P",
+    "A",
+    "R",
+    "sel"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "vaisselle",
+   "emojis": [
+    "V",
+    "E",
+    "S",
+    "🧂"
+   ],
+   "lecture": [
+    "V",
+    "E",
+    "S",
+    "sel"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "béquille",
+   "emojis": [
+    "B",
+    "E",
+    "🎳"
+   ],
+   "lecture": [
+    "B",
+    "E",
+    "quille"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "fabrique",
+   "emojis": [
+    "F",
+    "A",
+    "🧱"
+   ],
+   "lecture": [
+    "F",
+    "A",
+    "brique"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "rubrique",
+   "emojis": [
+    "R",
+    "U",
+    "🧱"
+   ],
+   "lecture": [
+    "R",
+    "U",
+    "brique"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "facile",
+   "emojis": [
+    "F",
+    "A",
+    "S",
+    "🏝️"
+   ],
+   "lecture": [
+    "F",
+    "A",
+    "S",
+    "île"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "utile",
+   "emojis": [
+    "U",
+    "T",
+    "🏝️"
+   ],
+   "lecture": [
+    "U",
+    "T",
+    "île"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "mobile",
+   "emojis": [
+    "M",
+    "O",
+    "B",
+    "🏝️"
+   ],
+   "lecture": [
+    "M",
+    "O",
+    "B",
+    "île"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "argile",
+   "emojis": [
+    "A",
+    "R",
+    "J",
+    "🏝️"
+   ],
+   "lecture": [
+    "A",
+    "R",
+    "J",
+    "île"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "ampoule",
+   "emojis": [
+    "A",
+    "N",
+    "🐔"
+   ],
+   "lecture": [
+    "A",
+    "N",
+    "poule"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "empile",
+   "emojis": [
+    "A",
+    "N",
+    "🔋"
+   ],
+   "lecture": [
+    "A",
+    "N",
+    "pile"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "attache",
+   "emojis": [
+    "A",
+    "T",
+    "🪓"
+   ],
+   "lecture": [
+    "A",
+    "T",
+    "hache"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "emporte",
+   "emojis": [
+    "A",
+    "N",
+    "🚪"
+   ],
+   "lecture": [
+    "A",
+    "N",
+    "porte"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "panache",
+   "emojis": [
+    "P",
+    "A",
+    "N",
+    "🪓"
+   ],
+   "lecture": [
+    "P",
+    "A",
+    "N",
+    "hache"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "cerveau",
+   "emojis": [
+    "🦌",
+    "V",
+    "💧"
+   ],
+   "lecture": [
+    "cerf",
+    "V",
+    "eau"
+   ],
+   "categorie": "corps"
+  },
+  {
+   "mot": "lionceau",
+   "emojis": [
+    "🦁",
+    "S",
+    "💧"
+   ],
+   "lecture": [
+    "lion",
+    "S",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "chapeau",
+   "emojis": [
+    "🐈",
+    "P",
+    "💧"
+   ],
+   "lecture": [
+    "chat",
+    "P",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chameau",
+   "emojis": [
+    "🐈",
+    "M",
+    "💧"
+   ],
+   "lecture": [
+    "chat",
+    "M",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "chapiteau",
+   "emojis": [
+    "🐈",
+    "P",
+    "I",
+    "T",
+    "💧"
+   ],
+   "lecture": [
+    "chat",
+    "P",
+    "I",
+    "T",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chariot",
+   "emojis": [
+    "🐈",
+    "R",
+    "I",
+    "O"
+   ],
+   "lecture": [
+    "chat",
+    "R",
+    "I",
+    "O"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "charrue",
+   "emojis": [
+    "🐈",
+    "R",
+    "U"
+   ],
+   "lecture": [
+    "chat",
+    "R",
+    "U"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "chacal",
+   "emojis": [
+    "🐈",
+    "C",
+    "A",
+    "L"
+   ],
+   "lecture": [
+    "chat",
+    "C",
+    "A",
+    "L"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "chaton",
+   "emojis": [
+    "🐈",
+    "T",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "chat",
+    "T",
+    "O",
+    "N"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "radeau",
+   "emojis": [
+    "🐀",
+    "D",
+    "💧"
+   ],
+   "lecture": [
+    "rat",
+    "D",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "rabot",
+   "emojis": [
+    "🐀",
+    "B",
+    "O"
+   ],
+   "lecture": [
+    "rat",
+    "B",
+    "O"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "radis",
+   "emojis": [
+    "🐀",
+    "D",
+    "I"
+   ],
+   "lecture": [
+    "rat",
+    "D",
+    "I"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "rabais",
+   "emojis": [
+    "🐀",
+    "B",
+    "E"
+   ],
+   "lecture": [
+    "rat",
+    "B",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "rapace",
+   "emojis": [
+    "🐀",
+    "P",
+    "A",
+    "S"
+   ],
+   "lecture": [
+    "rat",
+    "P",
+    "A",
+    "S"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "raton",
+   "emojis": [
+    "🐀",
+    "T",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "rat",
+    "T",
+    "O",
+    "N"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "racine",
+   "emojis": [
+    "🐀",
+    "S",
+    "I",
+    "N"
+   ],
+   "lecture": [
+    "rat",
+    "S",
+    "I",
+    "N"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "ramure",
+   "emojis": [
+    "🐀",
+    "M",
+    "U",
+    "R"
+   ],
+   "lecture": [
+    "rat",
+    "M",
+    "U",
+    "R"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "sanglot",
+   "emojis": [
+    "🩸",
+    "G",
+    "L",
+    "O"
+   ],
+   "lecture": [
+    "sang",
+    "G",
+    "L",
+    "O"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "sangsue",
+   "emojis": [
+    "🩸",
+    "S",
+    "U"
+   ],
+   "lecture": [
+    "sang",
+    "S",
+    "U"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "rideau",
+   "emojis": [
+    "R",
+    "I",
+    "D",
+    "💧"
+   ],
+   "lecture": [
+    "R",
+    "I",
+    "D",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "carreau",
+   "emojis": [
+    "C",
+    "A",
+    "R",
+    "💧"
+   ],
+   "lecture": [
+    "C",
+    "A",
+    "R",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "bureau",
+   "emojis": [
+    "B",
+    "U",
+    "R",
+    "💧"
+   ],
+   "lecture": [
+    "B",
+    "U",
+    "R",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "tonneau",
+   "emojis": [
+    "T",
+    "O",
+    "N",
+    "💧"
+   ],
+   "lecture": [
+    "T",
+    "O",
+    "N",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "barreau",
+   "emojis": [
+    "B",
+    "A",
+    "R",
+    "💧"
+   ],
+   "lecture": [
+    "B",
+    "A",
+    "R",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "panneau",
+   "emojis": [
+    "P",
+    "A",
+    "N",
+    "💧"
+   ],
+   "lecture": [
+    "P",
+    "A",
+    "N",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "niveau",
+   "emojis": [
+    "N",
+    "I",
+    "V",
+    "💧"
+   ],
+   "lecture": [
+    "N",
+    "I",
+    "V",
+    "eau"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "gâteau",
+   "emojis": [
+    "G",
+    "A",
+    "T",
+    "💧"
+   ],
+   "lecture": [
+    "G",
+    "A",
+    "T",
+    "eau"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "jumeau",
+   "emojis": [
+    "J",
+    "U",
+    "M",
+    "💧"
+   ],
+   "lecture": [
+    "J",
+    "U",
+    "M",
+    "eau"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "taureau",
+   "emojis": [
+    "T",
+    "O",
+    "R",
+    "💧"
+   ],
+   "lecture": [
+    "T",
+    "O",
+    "R",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "éléphanteau",
+   "emojis": [
+    "🐘",
+    "T",
+    "💧"
+   ],
+   "lecture": [
+    "éléphant",
+    "T",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "troupeau",
+   "emojis": [
+    "🕳️",
+    "P",
+    "💧"
+   ],
+   "lecture": [
+    "trou",
+    "P",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "vaisseau",
+   "emojis": [
+    "V",
+    "E",
+    "S",
+    "🪣"
+   ],
+   "lecture": [
+    "V",
+    "E",
+    "S",
+    "seau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "berceau",
+   "emojis": [
+    "B",
+    "E",
+    "R",
+    "🪣"
+   ],
+   "lecture": [
+    "B",
+    "E",
+    "R",
+    "seau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "morceau",
+   "emojis": [
+    "M",
+    "O",
+    "R",
+    "🪣"
+   ],
+   "lecture": [
+    "M",
+    "O",
+    "R",
+    "seau"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "cerceau",
+   "emojis": [
+    "S",
+    "E",
+    "R",
+    "🪣"
+   ],
+   "lecture": [
+    "S",
+    "E",
+    "R",
+    "seau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "arceau",
+   "emojis": [
+    "A",
+    "R",
+    "🪣"
+   ],
+   "lecture": [
+    "A",
+    "R",
+    "seau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "ciseau",
+   "emojis": [
+    "C",
+    "I",
+    "Z",
+    "💧"
+   ],
+   "lecture": [
+    "C",
+    "I",
+    "Z",
+    "eau"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "réseau",
+   "emojis": [
+    "R",
+    "E",
+    "Z",
+    "💧"
+   ],
+   "lecture": [
+    "R",
+    "E",
+    "Z",
+    "eau"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "museau",
+   "emojis": [
+    "M",
+    "U",
+    "Z",
+    "💧"
+   ],
+   "lecture": [
+    "M",
+    "U",
+    "Z",
+    "eau"
+   ],
+   "categorie": "corps"
+  },
+  {
+   "mot": "roseau",
+   "emojis": [
+    "R",
+    "O",
+    "Z",
+    "💧"
+   ],
+   "lecture": [
+    "R",
+    "O",
+    "Z",
+    "eau"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "oiseau",
+   "emojis": [
+    "O",
+    "I",
+    "Z",
+    "💧"
+   ],
+   "lecture": [
+    "O",
+    "I",
+    "Z",
+    "eau"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "verger",
+   "emojis": [
+    "🪱",
+    "J",
+    "E"
+   ],
+   "lecture": [
+    "ver",
+    "J",
+    "E"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "vertu",
+   "emojis": [
+    "🪱",
+    "T",
+    "U"
+   ],
+   "lecture": [
+    "ver",
+    "T",
+    "U"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "verrou",
+   "emojis": [
+    "🪱",
+    "O",
+    "U"
+   ],
+   "lecture": [
+    "ver",
+    "O",
+    "U"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "verset",
+   "emojis": [
+    "🪱",
+    "S",
+    "E"
+   ],
+   "lecture": [
+    "ver",
+    "S",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "verglas",
+   "emojis": [
+    "🪱",
+    "G",
+    "L",
+    "A"
+   ],
+   "lecture": [
+    "ver",
+    "G",
+    "L",
+    "A"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "verdure",
+   "emojis": [
+    "🪱",
+    "D",
+    "U",
+    "R"
+   ],
+   "lecture": [
+    "ver",
+    "D",
+    "U",
+    "R"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "ouvert",
+   "emojis": [
+    "O",
+    "U",
+    "🪱",
+    "T"
+   ],
+   "lecture": [
+    "O",
+    "U",
+    "ver",
+    "T"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "envers",
+   "emojis": [
+    "A",
+    "N",
+    "🪱"
+   ],
+   "lecture": [
+    "A",
+    "N",
+    "ver"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "profil",
+   "emojis": [
+    "P",
+    "R",
+    "O",
+    "🧵"
+   ],
+   "lecture": [
+    "P",
+    "R",
+    "O",
+    "fil"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "filon",
+   "emojis": [
+    "🧵",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "fil",
+    "O",
+    "N"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "merci",
+   "emojis": [
+    "M",
+    "E",
+    "R",
+    "🪚"
+   ],
+   "lecture": [
+    "M",
+    "E",
+    "R",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "souci",
+   "emojis": [
+    "S",
+    "O",
+    "U",
+    "🪚"
+   ],
+   "lecture": [
+    "S",
+    "O",
+    "U",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "farci",
+   "emojis": [
+    "F",
+    "A",
+    "R",
+    "🪚"
+   ],
+   "lecture": [
+    "F",
+    "A",
+    "R",
+    "scie"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "précis",
+   "emojis": [
+    "P",
+    "R",
+    "E",
+    "🪚"
+   ],
+   "lecture": [
+    "P",
+    "R",
+    "E",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "ainsi",
+   "emojis": [
+    "A",
+    "I",
+    "N",
+    "🪚"
+   ],
+   "lecture": [
+    "A",
+    "I",
+    "N",
+    "scie"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "chevalier",
+   "emojis": [
+    "🐎",
+    "I",
+    "E"
+   ],
+   "lecture": [
+    "cheval",
+    "I",
+    "E"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "cassette",
+   "emojis": [
+    "C",
+    "A",
+    "7️⃣"
+   ],
+   "lecture": [
+    "C",
+    "A",
+    "sept"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "sucette",
+   "emojis": [
+    "S",
+    "U",
+    "7️⃣"
+   ],
+   "lecture": [
+    "S",
+    "U",
+    "sept"
+   ],
+   "categorie": "nourriture"
+  },
+  {
+   "mot": "facette",
+   "emojis": [
+    "F",
+    "A",
+    "7️⃣"
+   ],
+   "lecture": [
+    "F",
+    "A",
+    "sept"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "bétail",
+   "emojis": [
+    "B",
+    "E",
+    "T",
+    "🧄"
+   ],
+   "lecture": [
+    "B",
+    "E",
+    "T",
+    "ail"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "corail",
+   "emojis": [
+    "C",
+    "O",
+    "R",
+    "🧄"
+   ],
+   "lecture": [
+    "C",
+    "O",
+    "R",
+    "ail"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "éventail",
+   "emojis": [
+    "E",
+    "🌬️",
+    "T",
+    "🧄"
+   ],
+   "lecture": [
+    "E",
+    "vent",
+    "T",
+    "ail"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "coquin",
+   "emojis": [
+    "🐓",
+    "I",
+    "N"
+   ],
+   "lecture": [
+    "coq",
+    "I",
+    "N"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "coquet",
+   "emojis": [
+    "🐓",
+    "E",
+    "T"
+   ],
+   "lecture": [
+    "coq",
+    "E",
+    "T"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "pommade",
+   "emojis": [
+    "🍎",
+    "A",
+    "D"
+   ],
+   "lecture": [
+    "pomme",
+    "A",
+    "D"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "pommier",
+   "emojis": [
+    "🍎",
+    "I",
+    "E"
+   ],
+   "lecture": [
+    "pomme",
+    "I",
+    "E"
+   ],
+   "categorie": "nature"
+  },
+  {
+   "mot": "aiglon",
+   "emojis": [
+    "🦅",
+    "O",
+    "N"
+   ],
+   "lecture": [
+    "aigle",
+    "O",
+    "N"
+   ],
+   "categorie": "animal"
+  },
+  {
+   "mot": "morose",
+   "emojis": [
+    "M",
+    "O",
+    "🌹"
+   ],
+   "lecture": [
+    "M",
+    "O",
+    "rose"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "feutre",
+   "emojis": [
+    "🔥",
+    "T",
+    "R"
+   ],
+   "lecture": [
+    "feu",
+    "T",
+    "R"
+   ],
+   "categorie": "objet"
+  },
+  {
+   "mot": "lundi",
+   "emojis": [
+    "L",
+    "1️⃣",
+    "D",
+    "I"
+   ],
+   "lecture": [
+    "L",
+    "un",
+    "D",
+    "I"
+   ],
+   "categorie": "mot"
+  },
+  {
+   "mot": "Wally",
+   "emojis": [
+    "W",
+    "A",
+    "🛏️"
+   ],
+   "lecture": [
+    "W",
+    "A",
+    "lit"
+   ],
+   "categorie": "maison"
+  },
+  {
+   "mot": "KingsRequin",
+   "emojis": [
+    "👑",
+    "S",
+    "🦈"
+   ],
+   "lecture": [
+    "king",
+    "S",
+    "requin"
+   ],
+   "categorie": "maison"
+  },
+  {
+   "mot": "Azraël",
+   "emojis": [
+    "A",
+    "Z",
+    "🐀",
+    "E",
+    "L"
+   ],
+   "lecture": [
+    "A",
+    "Z",
+    "rat",
+    "E",
+    "L"
+   ],
+   "categorie": "maison"
+  }
+ ]
+}

@@ -993,6 +993,16 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     if await dispatch_command(bot, payload, content, author, channel_name):
         return
 
+    # Rébus en cours : ce message est-il la bonne réponse ? On devine en
+    # ÉCRIVANT le mot, pas en tapant une commande — donc la vérification vit
+    # ici, après le dispatch, et pas dedans. Détachée : l'annonce de victoire
+    # passe par un appel LLM, qui n'a pas à retarder la perception du message.
+    # Le message continue son chemin normal ensuite : gagner ne le retire pas
+    # du chat, et Wally doit le percevoir comme n'importe quelle ligne.
+    if est_chaine_home(bot, channel_name):
+        from bot.twitch.commands.rebus import verifier_reponse
+        _fire(verifier_reponse(bot, author_display, content))
+
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
         bot._channel_was_live[channel_name] = True
