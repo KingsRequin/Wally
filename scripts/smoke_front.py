@@ -397,6 +397,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
              "et elle porte bien le texte complet",
              f"{(deplie or {}).get('avant')} → {(deplie or {}).get('apres')} car.")
 
+    # L'indice de dépliage doit être VISIBLE. Il a longtemps été un « … » noyé
+    # dans la phrase, doublé d'un `title` — deux choses qu'un doigt ne voit pas.
+    indices = roue.locator(".feed-plus")
+    rap.dire(indices.count() > 0, "une pensée coupée annonce qu'elle se déplie",
+             f"{indices.count()} indice(s)")
+    rap.dire(any("déplier" in t or "replier" in t for t in indices.all_inner_texts()),
+             "et l'indice le dit en toutes lettres",
+             " · ".join(indices.all_inner_texts()[:2]))
+
     roue.evaluate("window.scrollTo(0, 0)")
     roue.wait_for_timeout(700)
     roue.mouse.move(720, 300)
