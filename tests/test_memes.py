@@ -6,7 +6,7 @@ serait absurde.
 """
 import pytest
 
-from bot.core.memes import MemeLibrary
+from bot.core.memes import _RESERVE_JUGEABLE, MemeLibrary
 
 
 @pytest.fixture
@@ -71,12 +71,69 @@ def test_un_mot_vide_ne_suffit_pas_a_retenir_un_meme(tmp_path):
     assert {lib.pick("chat qui hurle")["name"] for _ in range(12)} == {"b.jpg"}
 
 
-def test_sans_aucune_correspondance_le_tirage_reste_ouvert(tmp_path):
-    """Un sujet hors-sujet ne doit pas rendre None : mieux vaut un meme au
-    hasard que pas de meme du tout."""
-    (tmp_path / "a.jpg").write_bytes(b"x")
-    (tmp_path / "a.txt").write_text("un chien qui dort")
-    assert MemeLibrary(tmp_path).pick("astrophysique quantique")["name"] == "a.jpg"
+# Le refus ne s'arme qu'au-dessus de `_RESERVE_JUGEABLE` : sous cette taille, une
+# réserve ne contient même pas le vocabulaire courant et l'absence d'un mot ne
+# prouve rien. Les tests du refus travaillent donc sur une réserve réaliste.
+# Le mot « meme » revient dans un cinquieme des phrases, comme dans le vrai
+# dossier (33 descriptions sur 172). Sans ca il serait RARE ici, donc
+# discriminant, et « le meme sur les cheaters » se classerait sur lui.
+_REMPLISSAGE = [
+    "un joueur qui rale sur le ping et qui accuse sa connexion",
+    "une equipe qui se dispute sur le loot dans une zone",
+    "le meme du joueur qui demande une rez alors qu il pouvait tenir",
+    "des joueurs qui courent sur la zone qui se referme",
+    "un streamer qui fixe son ecran sans rien dire pendant une minute",
+    "le meme de la legende qui saute du dropship avec son escouade",
+    "le mec qui prend tout le loot et qui part sans les autres",
+    "quelqu un qui rate son tir a bout portant et qui se retourne",
+    "le meme sur la partie qui se termine au dernier cercle",
+    "un joueur qui se plaint des degats de son arme preferee",
+    "le silence gene apres une defaite en finale de tournoi",
+    "un chat sur un clavier pendant une partie classee",
+    "des amis qui rigolent devant un ecran de fin de partie",
+    "le meme sur tout le monde qui parle en meme temps sur le vocal",
+]
+
+
+def _reserve(tmp_path, sujets):
+    """Une réserve de taille réaliste : les `sujets` voulus, noyés dans du
+    remplissage français, comme le vrai dossier de prod."""
+    for nom, description in sujets.items():
+        (tmp_path / nom).write_bytes(b"x")
+        (tmp_path / f"{nom}.txt").write_text(description, encoding="utf-8")
+    for i in range(_RESERVE_JUGEABLE):
+        (tmp_path / f"fond{i}.jpg").write_bytes(b"x")
+        (tmp_path / f"fond{i}.jpg.txt").write_text(
+            _REMPLISSAGE[i % len(_REMPLISSAGE)], encoding="utf-8"
+        )
+    return MemeLibrary(tmp_path)
+
+
+def test_un_sujet_absent_de_la_reserve_est_avoue(tmp_path):
+    """Ce test EXIGEAIT l'inverse — « mieux vaut un meme au hasard que pas de
+    meme du tout ». C'était le défaut, pas la règle : Wally sortait un meme sans
+    rapport et le commentait comme si c'était celui qu'on lui demandait, sans
+    que personne ne sache qu'il n'avait pas compris. Arbitrage de l'owner le
+    2026-08-31 : il dit qu'il ne l'a pas, ce qui signale aussi le meme manquant.
+    """
+    lib = _reserve(tmp_path, {"chien.jpg": "un chien qui dort tranquillement"})
+    assert lib.pick("astrophysique quantique") is None
+    assert lib.pick("le championnat de curling") is None
+
+
+def test_sous_une_petite_reserve_on_ne_refuse_pas(tmp_path):
+    """L'absence d'un mot n'est un signal que si la réserve est assez fournie
+    pour porter le vocabulaire courant. À cinq memes, `les` manque au dossier :
+    refuser « les cheaters » pour cette raison serait un faux aveu."""
+    petite = dict(enumerate(_REMPLISSAGE[:4]))
+    for i, description in petite.items():
+        (tmp_path / f"m{i}.jpg").write_bytes(b"x")
+        (tmp_path / f"m{i}.jpg.txt").write_text(description, encoding="utf-8")
+    (tmp_path / "cheat.jpg").write_bytes(b"x")
+    (tmp_path / "cheat.jpg.txt").write_text(
+        "Moe jette le sac CHEATERS dehors", encoding="utf-8")
+    # `les` manque a ce dossier de cinq, `cheaters` non : on ne doit pas refuser.
+    assert MemeLibrary(tmp_path).pick("les cheaters")["name"] == "cheat.jpg"
 
 
 def test_un_dossier_absent_ne_leve_pas(tmp_path):
@@ -117,8 +174,71 @@ def test_un_indice_oriente_le_choix(lib):
         assert lib.pick("le ping")["name"] == "azrael-blame-le-ping.jpg"
 
 
-def test_un_indice_sans_correspondance_retombe_sur_le_hasard(lib):
-    assert lib.pick("licorne quantique") is not None
+def test_un_indice_sans_correspondance_ne_sort_plus_n_importe_quoi(tmp_path):
+    """Même arbitrage : ne rien avoir vaut mieux qu'un hors-sujet assumé."""
+    lib = _reserve(tmp_path, {"chien.jpg": "un chien qui dort tranquillement"})
+    assert lib.pick("licorne quantique") is None
+
+
+# ── classement : le défaut vécu en prod le 2026-08-31 ──
+
+def _reserve_apex(tmp_path):
+    """Un dossier qui reproduit la forme du vrai : des descriptions en français,
+    donc pleines de mots vides, et un seul meme qui parle vraiment du sujet."""
+    return _reserve(tmp_path, {
+        "cheat.jpg": "Moe jette le sac CHEATERS dehors et le retrouve derriere lui",
+        "pingdur.jpg": "le lag et le pingdur qui ruinent une partie entiere",
+    })
+
+
+def test_les_mots_vides_ne_noient_plus_le_sujet(tmp_path):
+    """LE défaut vécu : « le meme sur les cheaters » ne sortait jamais le meme
+    sur les cheaters.
+
+    L'ancien tirage comptait les mots de plus de deux lettres trouves dans la
+    description. Or « sur », « les », « qui », « une » en font trois et vivent
+    dans presque toutes les phrases francaises : ils marquaient un point PARTOUT,
+    le meilleur score montait à deux grace à eux seuls, et le seul meme qui
+    parlait de triche — à un point — tombait hors du lot retenu. Il était donc
+    littéralement impossible à obtenir en le demandant dans une phrase.
+    """
+    lib = _reserve_apex(tmp_path)
+    for demande in ("cheaters", "les cheaters", "le meme sur les cheaters"):
+        assert lib.pick(demande)["name"] == "cheat.jpg", demande
+
+
+def test_le_sujet_prime_meme_noye_dans_une_phrase(tmp_path):
+    lib = _reserve_apex(tmp_path)
+    assert lib.pick("un meme sur le pingdur")["name"] == "pingdur.jpg"
+
+
+def test_la_recherche_ignore_les_accents_et_la_casse(tmp_path):
+    (tmp_path / "a.jpg").write_bytes(b"x")
+    (tmp_path / "a.txt").write_text("une equipe qui se dispute", encoding="utf-8")
+    (tmp_path / "b.jpg").write_bytes(b"x")
+    (tmp_path / "b.txt").write_text("un chien qui dort", encoding="utf-8")
+    assert MemeLibrary(tmp_path).pick("ÉQUIPE")["name"] == "a.jpg"
+
+
+def test_un_mot_entier_et_pas_une_sous_chaine(tmp_path):
+    """« chat » ne doit pas ramener « chatouille » : l'ancien filtre testait
+    l'appartenance à la chaine, donc tout prefixe interne comptait."""
+    (tmp_path / "a.jpg").write_bytes(b"x")
+    (tmp_path / "a.txt").write_text("des chatouilles entre amis", encoding="utf-8")
+    (tmp_path / "b.jpg").write_bytes(b"x")
+    (tmp_path / "b.txt").write_text("un chat sur un clavier", encoding="utf-8")
+    assert MemeLibrary(tmp_path).pick("chat")["name"] == "b.jpg"
+
+
+def test_une_description_ajoutee_est_vue_sans_redemarrage(tmp_path):
+    """L'index ne se reconstruit que si le dossier a bouge — encore faut-il
+    qu'il voie bouger un SIDECAR, pas seulement l'arrivee d'une image. Sans ca,
+    corriger une description depuis l'atelier resterait sans effet sur les
+    tirages jusqu'au prochain depot de fichier."""
+    lib = _reserve(tmp_path, {"b.jpg": "une photo sans grand interet"})
+    assert lib.pick("dinosaure") is None
+    (tmp_path / "b.jpg.txt").write_text("un dinosaure en costume", encoding="utf-8")
+    assert lib.pick("dinosaure")["name"] == "b.jpg"
 
 
 # ── sécurité : les fichiers sont servis publiquement ──

@@ -10,7 +10,10 @@ meme à propos plutôt qu'au hasard.
 """
 from __future__ import annotations
 
+import os
 import random
+import re
+import sqlite3
 import unicodedata
 from math import ceil
 from pathlib import Path
@@ -79,6 +82,7 @@ def tronquer_description(texte: str) -> str:
 # la méthode, pas vers le type — mypy le refuse. L'alias supprime le piège pour
 # toutes les méthodes, quel que soit leur ordre.
 _Entrees = list[dict]
+_Termes = list[str]
 
 
 def chemin_description(path: Path) -> Path:
@@ -142,6 +146,60 @@ def _describe(path: Path) -> str:
     return description_ecrite(path) or tronquer_description(
         path.stem.replace("-", " ").replace("_", " ")
     )
+
+
+# ── Recherche ──
+#
+# Le tirage par indice comptait les mots de plus de DEUX lettres trouvés dans
+# la description. « sur », « les », « qui », « une » en font trois et vivent
+# dans presque toutes les phrases françaises : ils marquaient un point partout,
+# et le meme qui parlait VRAIMENT du sujet — un seul point — tombait hors du
+# lot retenu. « le meme sur les cheaters » ne pouvait donc littéralement jamais
+# sortir le meme sur les cheaters. Mesuré sur les 172 memes de prod le
+# 2026-08-31 : `les` 23 %, `sur` 22 %, `qui` 34 % des descriptions.
+#
+# BM25 règle ça sans liste de mots vides à tenir à jour : un terme pèse à
+# l'inverse de sa fréquence, donc `les` s'annule tout seul, et d'autant mieux
+# que la réserve grandit.
+
+# Part des mots de la demande qui peut manquer à TOUTE la réserve avant qu'on
+# avoue ne pas avoir le meme. C'est l'absence, pas la rareté, qui dit « je n'ai
+# pas ça » : `rose` et `costume` sont rares ET présents, donc un seuil de rareté
+# acceptait « licorne rose » et « des dinosaures en costume ». Le mot introuvable,
+# lui, tranche — et sans dépendre de la taille du dossier, contrairement à une
+# fréquence relative, qui ne veut plus rien dire sur une réserve de cinq memes.
+#
+# Mesuré sur les 172 memes de prod le 2026-08-31 : douze demandes légitimes
+# (`cheaters`, `aim assist`, `la manette`, `give up`…) sont toutes à 0 % de mots
+# introuvables ; sept hors-sujets (`licorne rose`, `le tricot`, `le championnat
+# de curling`…) sont tous à 25 % ou plus. La marge est franche.
+_INTROUVABLES_MAX = 0.25
+
+# En dessous de cette taille, l'absence d'un mot ne prouve rien : une petite
+# réserve ne contient même pas le vocabulaire courant, et « les cheaters » se
+# ferait refuser parce que `les` manque, pas parce que le sujet manque. Mesuré
+# en tirant des sous-ensembles du dossier de prod : sur vingt mots français très
+# courants, il en manque 6,5 à cinq memes, 2,8 à dix, 1,0 à vingt, et 0,1 à
+# trente. En dessous, on classe et on montre — comme avant.
+_RESERVE_JUGEABLE = 30
+
+# Au-delà de ce rapport au meilleur score, on ne parle plus du même sujet. Sert
+# la VARIÉTÉ, pas la pertinence : entre deux memes également à propos, on tire.
+_ECART_MAX = 1.25
+
+_MOT = re.compile(r"[0-9a-z]+")
+
+
+def _termes(texte: str) -> _Termes:
+    """Mots cherchables d'un texte : sans accent, sans casse, sans ponctuation.
+
+    Le dépliage des accents double celui du tokenizer FTS5 (`remove_diacritics`)
+    au lieu de s'y fier : la requête est découpée ICI, et `[0-9a-z]+` sur du
+    texte accentué couperait « équipe » en « quipe ».
+    """
+    plat = unicodedata.normalize("NFKD", (texte or "").lower())
+    plat = "".join(c for c in plat if not unicodedata.combining(c))
+    return [m.group() for m in _MOT.finditer(plat) if len(m.group()) > 1]
 
 
 def _safe_name(name: str) -> str:
@@ -209,6 +267,10 @@ class MemeLibrary:
     def __init__(self, directory: str | Path) -> None:
         self._dir = Path(directory)
         self._last: str | None = None
+        # Index de recherche, reconstruit seulement quand le dossier bouge.
+        self._index: sqlite3.Connection | None = None
+        self._indexe: _Entrees = []
+        self._signature: tuple | None = None
 
     @property
     def directory(self) -> Path:
@@ -294,32 +356,128 @@ class MemeLibrary:
                   if e.get("genre") == "image"]
         return enveloppe_images(images, media_max, agrandir)
 
+    def _signature_dossier(self) -> tuple | None:
+        """Ce qui, dans le dossier, invaliderait l'index. None s'il est illisible.
+
+        `scandir` et pas `list()` : à cinq cents memes, relire les cinq cents
+        descriptions à chaque tirage ferait cinq cents `open()` synchrones dans
+        la boucle d'événements, pour un dossier qui n'a presque jamais bougé.
+        Le `stat` d'une entrée, lui, est déjà porté par le parcours.
+
+        Les sidecars comptent autant que les images : une description corrigée
+        depuis l'atelier ne change ni le nombre de fichiers ni leur nom.
+        """
+        try:
+            with os.scandir(self._dir) as entrees:
+                signature: list[tuple[str, int, int]] = []
+                for entree in entrees:
+                    if not entree.is_file():
+                        continue
+                    stat = entree.stat()
+                    signature.append((entree.name, stat.st_mtime_ns, stat.st_size))
+            return tuple(sorted(signature))
+        # Dossier absent ou illisible : `list()` rend déjà [] dans ce cas, et
+        # `pick()` en fait un None. Pas de cache à invalider, rien à dire de plus.
+        except OSError:
+            return None
+
+    def _fermer_index(self) -> None:
+        """Rend la connexion en cours. Sans ça, chaque dépôt de meme en laisse
+        une derrière lui jusqu'au passage du ramasse-miettes."""
+        if self._index is not None:
+            self._index.close()
+        self._index, self._indexe, self._signature = None, [], None
+
+    def _index_a_jour(self) -> sqlite3.Connection | None:
+        """L'index FTS5 du dossier, reconstruit s'il a bougé depuis la dernière fois.
+
+        En mémoire, jamais sur disque : le dossier est la seule source de vérité,
+        et un index persisté finirait par en diverger sans que rien ne le dise.
+        Sur 172 memes la reconstruction coûte quelques millisecondes, très en
+        dessous de la lecture des descriptions qu'elle accompagne.
+        """
+        signature = self._signature_dossier()
+        if signature is None:
+            self._fermer_index()
+            return None
+        if self._index is not None and signature == self._signature:
+            return self._index
+        entrees = self.list()
+        # `check_same_thread=False` : l'index est construit au premier tirage,
+        # dans le thread qui l'a demandé. Un `pick()` venu d'un `to_thread`
+        # lèverait sinon une ProgrammingError — et Wally deviendrait muet sur les
+        # memes sans qu'aucun test ne le voie. La base est en mémoire, jetable,
+        # et n'est écrite qu'ici : il n'y a rien à corrompre.
+        self._fermer_index()
+        index = sqlite3.connect(":memory:", check_same_thread=False)
+        index.execute(
+            "CREATE VIRTUAL TABLE memes USING fts5("
+            "nom UNINDEXED, texte, tokenize='unicode61 remove_diacritics 2')"
+        )
+        index.executemany(
+            "INSERT INTO memes(nom, texte) VALUES (?, ?)",
+            [(e["name"], e["description"]) for e in entrees],
+        )
+        self._index, self._indexe, self._signature = index, entrees, signature
+        return index
+
+    def _classer(self, index: sqlite3.Connection, termes: _Termes) -> _Entrees:
+        """Les memes qui parlent du sujet, du plus au moins pertinent. [] si aucun.
+
+        Rendre [] est une RÉPONSE, pas un échec : elle vaut « je n'ai pas ça »,
+        et l'appelant la transforme en aveu plutôt qu'en meme au hasard.
+        """
+        if len(self._indexe) >= _RESERVE_JUGEABLE:
+            introuvables = sum(
+                1
+                for terme in termes
+                if not index.execute(
+                    "SELECT 1 FROM memes WHERE memes MATCH ? LIMIT 1", (f'"{terme}"*',)
+                ).fetchone()
+            )
+            if introuvables / len(termes) >= _INTROUVABLES_MAX:
+                return []
+        # Le mot exact ET son préfixe : le préfixe seul rattrape les pluriels et
+        # les dérivés (« cheater » trouve « cheaters », « triche » « tricheur »),
+        # mais il ramène aussi « chatouilles » pour « chat ». Chercher les deux
+        # fait matcher DEUX clauses au document qui porte le mot entier contre une
+        # seule au faux ami, et bm25 additionne : l'exact passe devant sans qu'on
+        # perde le dérivé.
+        requete = " OR ".join(
+            f'("{t}" OR "{t}"*)' for t in dict.fromkeys(termes)
+        )
+        lignes = index.execute(
+            "SELECT nom, bm25(memes) FROM memes WHERE memes MATCH ? ORDER BY 2",
+            (requete,),
+        ).fetchall()
+        if not lignes:
+            return []
+        # bm25 est NÉGATIF, le plus petit gagne. On garde le peloton de tête pour
+        # que deux memes également à propos ne donnent pas toujours le même.
+        limite = lignes[0][1] / _ECART_MAX
+        retenus = {nom for nom, score in lignes if score <= limite}
+        return [e for e in self._indexe if e["name"] in retenus]
+
     def pick(self, hint: str = "") -> dict | None:
         """Choisit un meme. `hint` privilégie ceux dont la description colle.
 
         Sans indice, tirage au sort en évitant le dernier montré : deux fois le
         même d'affilée passerait pour un bug.
+
+        Avec un indice dont le sujet est absent de la réserve, rend None — Wally
+        dira qu'il ne l'a pas. Montrer autre chose et le commenter comme si
+        c'était le bon ne trompait que les spectateurs.
         """
-        memes = self.list()
-        if not memes:
+        index = self._index_a_jour()
+        if index is None or not self._indexe:
             return None
-        hint = (hint or "").strip().lower()
-        if hint:
-            # On garde les MEILLEURS, pas tous ceux qui ont un mot en commun.
-            # `any()` suffisait à retenir un meme, or « qui », « pas », « une »
-            # passent le filtre de longueur et figurent dans presque toutes les
-            # descriptions : « chat qui hurle » retenait donc quasi tout le
-            # dossier et retombait sur un tirage au hasard. Compter les mots
-            # trouvés fait remonter celui qui parle vraiment du sujet, sans
-            # avoir à maintenir une liste de mots vides.
-            words = {w for w in hint.split() if len(w) > 2}
-            scored = [
-                (sum(1 for w in words if w in m["description"].lower()), m)
-                for m in memes
-            ]
-            best = max((score for score, _ in scored), default=0)
-            if best:
-                memes = [m for score, m in scored if score == best]
+        termes = _termes(hint)
+        if termes:
+            memes = self._classer(index, termes)
+            if not memes:
+                return None
+        else:
+            memes = self._indexe
         pool = [m for m in memes if m["name"] != self._last] or memes
         chosen = random.choice(pool)
         self._last = chosen["name"]
