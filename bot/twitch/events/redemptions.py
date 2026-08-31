@@ -151,6 +151,27 @@ async def _est_le_tts_im_out(bot, reward_id: str) -> bool:
     return bool(attendu) and str(reward_id) == attendu
 
 
+async def _est_le_tts_viewer(bot, reward_id: str) -> bool:
+    """La récompense « Wally lit ton message », reconnue par son ID persisté.
+
+    Même principe que ses voisines, et pour la même raison : Twitch ne laisse
+    rembourser qu'à l'application qui a CRÉÉ la récompense, donc son ID est
+    découvert à l'exécution. Un ID vide DÉSACTIVE — sans ce garde, n'importe
+    quelle récompense de la chaîne ferait lire sa saisie à voix haute.
+    """
+    from bot.twitch.events.tts_viewer import CLE_RECOMPENSE
+
+    db = getattr(bot, "db", None)
+    if db is None or not reward_id:
+        return False
+    try:
+        attendu = str(await db.get_state(CLE_RECOMPENSE) or "")
+    except Exception as exc:  # noqa: BLE001 — un filtrage ne casse jamais l'événement
+        logger.debug("TTS viewer : ID persisté illisible : {e!r}", e=exc)
+        return False
+    return bool(attendu) and str(reward_id) == attendu
+
+
 async def _est_une_humeur(bot, reward_id: str) -> float | None:
     """L'intensité voulue si c'est une de NOS deux récompenses d'humeur.
 
@@ -207,6 +228,22 @@ async def handle_redemption(bot: "WallyTwitch", event) -> None:
             await im_out.dire_im_out(
                 bot,
                 acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
+                reward_id=reward_id,
+                redemption_id=str(getattr(event, "id", "")),
+            )
+            return
+        if await _est_le_tts_viewer(bot, reward_id):
+            from bot.twitch.events import tts_viewer
+
+            await tts_viewer.lire_message(
+                bot,
+                acheteur=str(getattr(getattr(event, "user", None), "name", "") or "?"),
+                # `input`, comme l'humeur et le duel : c'est le nom de
+                # l'ATTRIBUT chez twitchio. `user_input` est celui du champ
+                # dans le JSON de Twitch, et il ne survit pas au modèle — le
+                # lire rendrait toujours "", donc un remboursement systématique
+                # devant un champ pourtant rempli.
+                saisie=str(getattr(event, "input", "") or ""),
                 reward_id=reward_id,
                 redemption_id=str(getattr(event, "id", "")),
             )
