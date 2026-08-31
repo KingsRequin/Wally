@@ -547,6 +547,52 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(inclinees > 0, "390 px · les cartes à l'écran suivent l'inclinaison",
              f"{inclinees} carte(s)")
 
+    # Les cartes de clips arrivent d'un `fetch`, APRÈS que le routeur a branché
+    # le relief : sans rebranchement, elles seraient les seules cartes du site à
+    # rester mortes. Et celle qui joue une vidéo doit rester DROITE — faire
+    # tourner une texture vidéo en 3D coûte une composition par image.
+    mob.goto(f"{BASE}/clips", wait_until="networkidle", timeout=40000)
+    mob.wait_for_selector(".clip-card", timeout=_ATTENTE_PANNEAU_MS)
+    mob.evaluate("window.scrollTo(0, 700)")
+    mob.wait_for_timeout(900)
+    _pencher = """() => {
+      const ev = (b, g) => window.dispatchEvent(
+        new DeviceOrientationEvent('deviceorientation', {beta: b, gamma: g}));
+      ev(40, 0); for (let i = 0; i < 40; i++) ev(40, 30);
+    }"""
+    mob.evaluate(_pencher)
+    mob.wait_for_timeout(1200)
+    penchees = mob.evaluate(
+        "[...document.querySelectorAll('.clip-card')]"
+        ".filter(e => e.style.transform.includes('rotateY')).length")
+    rap.dire(penchees > 0, "390 px · les cartes de clips suivent l'inclinaison",
+             f"{penchees} carte(s)")
+
+    mob.locator("button.clip-media").first.click()
+    mob.wait_for_timeout(1500)
+    mob.evaluate(_pencher)
+    mob.wait_for_timeout(1200)
+    lecteur = mob.evaluate("""() => {
+      const c = document.querySelector('.clip-card:has(iframe)');
+      return {joue: !!c, penche: c ? c.style.transform.includes('rotateY') : true,
+              autres: [...document.querySelectorAll('.clip-card')]
+                .filter(e => e.style.transform.includes('rotateY')).length};
+    }""")
+    rap.dire(lecteur["joue"] and not lecteur["penche"] and lecteur["autres"] > 0,
+             "390 px · le clip qui JOUE reste droit, les autres basculent", str(lecteur))
+
+    trop_clips = mob.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    rap.dire(trop_clips <= 0, "390 px · clips penchés : pas de débordement horizontal",
+             f"{trop_clips} px")
+
+    mob.goto(f"{BASE}/", wait_until="networkidle", timeout=40000)
+    mob.wait_for_timeout(1200)
+    mob.evaluate("window.scrollTo(0, 1800)")
+    mob.wait_for_timeout(900)
+    mob.evaluate(_pencher)
+    mob.wait_for_timeout(1200)
+
     # Le débordement se re-teste PENCHÉ. Les tests ci-dessus mesurent une page
     # au repos ; l'inclinaison déplace les couches du décor latéralement, et un
     # halo en `right: -140px` gonfle le `scrollWidth` du document malgré

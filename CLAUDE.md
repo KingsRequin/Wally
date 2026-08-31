@@ -753,7 +753,12 @@ Chaque page n'exporte que `mount(el)` / `unmount()`.
   (`/api/public/twitch/clips`). **Helix trie par nombre de VUES, jamais par
   date** : le tri par date se fait côté serveur. Les quatre filtres (tri,
   clippeur, période, titre) travaillent sur la liste DÉJÀ chargée — aucun appel
-  de plus, et pas de période au-delà de 90 jours, qui est le plafond Helix. Le lecteur n'est monté qu'au
+  de plus, et pas de période au-delà de 90 jours, qui est le plafond Helix. Les
+  cartes portent `data-tilt` (relief au curseur, gyroscope sur téléphone) :
+  comme elles arrivent d'un `fetch`, la page **rappelle `brancherTilt()`** —
+  le routeur, lui, l'a appelé quand la grille était vide. `detacherTilt()` sort
+  du relief le clip qui JOUE : une texture vidéo en rotation 3D coûte une
+  composition par image, et se regarde mal. Le lecteur n'est monté qu'au
   CLIC (`clips.twitch.tv/embed`), et son paramètre `parent` vaut
   `location.hostname` — sans lui Twitch rend un écran noir, sans erreur JS.
 - ⚠️ **`total_messages` est un total de tous les temps**, persisté dans

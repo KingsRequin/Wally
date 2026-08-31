@@ -10,7 +10,7 @@
 // au serveur et rien au réseau. Une période au-delà de 90 jours n'existe pas —
 // c'est le plafond côté Helix, qui exige une borne de fin.
 
-import { h, pageFooter, sectionHead } from '../app.js';
+import { brancherTilt, detacherTilt, h, pageFooter, sectionHead } from '../app.js';
 
 const PAS = 12;
 const PERIODES = [[7, '7 jours'], [30, '30 jours'], [90, '90 jours']];
@@ -85,7 +85,16 @@ function couperLecteur() {
  *  Deux lecteurs qui parlent en même temps, ce n'est pas « deux clips » : c'est
  *  du bruit et deux flux vidéo. On remet le précédent en vignette. */
 function lire(carte, clip) {
-  if (_enLecture && _enLecture !== carte) _enLecture.replaceWith(vignette(_enLecture._clip));
+  if (_enLecture && _enLecture !== carte) {
+    const rendue = vignette(_enLecture._clip);
+    _enLecture.replaceWith(rendue);
+    // La carte remise en vignette est NEUVE : sans ce rebranchement, la
+    // première qu'on a lue serait la seule de la grille à ne plus bouger.
+    brancherTilt(rendue.parentNode || undefined);
+  }
+  // Une vidéo ne bascule pas avec les autres : la faire tourner en 3D coûte
+  // une composition de texture par image, et se regarde mal.
+  detacherTilt(carte);
   _enLecture = carte;
   // Le lecteur REMPLACE le bouton, il ne se glisse pas dedans : un `iframe`
   // dans un `<button>` est invalide, et le gestionnaire du bouton continuerait
@@ -121,7 +130,7 @@ function vignette(clip) {
     h('span', { class: 'clip-duree', text: duree(clip.duration) }),
   );
 
-  const carte = h('article', { class: 'clip-card' },
+  const carte = h('article', { class: 'clip-card', 'data-tilt': '1' },
     bouton,
     h('div', { class: 'clip-body' },
       h('h3', { class: 'clip-titre', text: clip.title || 'Sans titre' }),
@@ -167,6 +176,10 @@ function rendreSuite() {
   const lot = _filtres.slice(_montres, _montres + PAS);
   lot.forEach((c) => _grille.appendChild(vignette(c)));
   _montres += lot.length;
+  // Le routeur branche le relief au MONTAGE de la page ; ces cartes-ci sortent
+  // d'un `fetch` et de chaque clic sur « Charger plus ». L'appel saute celles
+  // qui sont déjà branchées.
+  brancherTilt(_grille);
   _btnPlus.style.display = _montres < _filtres.length ? '' : 'none';
 }
 

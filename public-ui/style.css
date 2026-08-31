@@ -789,13 +789,12 @@ body.vue-chat .vue { padding-bottom: 0; }
   border-radius: 14px;
   overflow: hidden;
   background: var(--surface-2);
-  transition: border-color .3s ease, box-shadow .3s ease, transform .3s var(--ease);
 }
-.clip-card:hover {
-  transform: translateY(-5px);
-  border-color: rgba(255, 140, 60, .42);
-  box-shadow: 0 24px 46px -26px rgba(255, 106, 43, .55);
-}
+/* Pas de `:hover` ni de `transition` ici : la carte porte `data-tilt`, et tout
+ * son relief — inclinaison, ombre, bordure allumée — vient du JS partagé
+ * (`brancherTilt`), comme `.card` partout ailleurs sur le site. Une transition
+ * de 300 ms sur `transform` ajouterait de la latence par-dessus le lissage du
+ * gyroscope, qui avance déjà d'un pas par image. */
 .clip-media {
   position: relative;
   display: block;

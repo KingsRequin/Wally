@@ -281,7 +281,7 @@ let _tiltInclinaisonBranche = false;
  */
 function brancherTiltInclinaison(racine) {
   if (!_vueObserver) return;
-  (racine || document).querySelectorAll('[data-tilt]').forEach((el) => {
+  (racine || document).querySelectorAll('[data-tilt]:not(.tiltable)').forEach((el) => {
     el.classList.add('tiltable');
     _vueObserver.observe(el);
   });
@@ -311,7 +311,14 @@ function brancherTiltInclinaison(racine) {
   });
 }
 
-function brancherTilt(racine) {
+/** Branche le relief sur les `[data-tilt]` de `racine`.
+ *
+ * Rappelable : `:not(.tiltable)` saute ce qui est déjà branché. Une page dont
+ * les cartes arrivent en ASYNCHRONE (les clips) n'existe pas encore quand le
+ * routeur appelle cette fonction au montage — elle doit pouvoir la rappeler
+ * sans doubler les écouteurs de celles déjà posées.
+ */
+export function brancherTilt(racine) {
   // Sur un écran tactile il n'y a pas de survol : les gestionnaires ne
   // serviraient qu'à faire clignoter la carte au moment du tap. Mais il y a un
   // gyroscope, et c'est lui qui remplace le curseur.
@@ -320,7 +327,7 @@ function brancherTilt(racine) {
     return;
   }
 
-  (racine || document).querySelectorAll('[data-tilt]').forEach((el) => {
+  (racine || document).querySelectorAll('[data-tilt]:not(.tiltable)').forEach((el) => {
     el.classList.add('tiltable');
     const bordBase = el.style.borderColor;
 
@@ -350,6 +357,23 @@ function brancherTilt(racine) {
       setTimeout(() => { el.style.zIndex = ''; }, 300);
     });
   });
+}
+
+/** Sort un élément du relief : plus d'inclinaison, plus d'observation.
+ *
+ * `_cartesEnVue` est nourri par un `IntersectionObserver` : une carte qu'on
+ * cesse simplement de vouloir incliner y RESTE, et la boucle continue de lui
+ * écrire un `transform` à chaque image. Utilisé quand une carte de clip devient
+ * un lecteur vidéo — faire tourner une vidéo en 3D coûte une composition de
+ * texture par image, et se regarde mal.
+ */
+export function detacherTilt(el) {
+  if (!el) return;
+  if (_vueObserver) _vueObserver.unobserve(el);
+  _cartesEnVue.delete(el);
+  el.classList.remove('tiltable', 'tilt-incline');
+  el.style.transform = '';
+  el.style.boxShadow = '';
 }
 
 // ── Routeur ───────────────────────────────────────────────────────────────
