@@ -38,6 +38,7 @@ from bot.discord.handlers import (
     _QUOTE_TOOL, run_quote_tool,
     _PRESENCE_TOOL, run_presence_tool, _presence_service,
 )
+from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -524,6 +525,11 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # partout, chaîne maison comme invitée, en live comme hors live — et « t'étais
     # énervé hier soir ? » se demande surtout quand il ne l'est plus.
     tools.append(MOOD_HISTORY_TOOL)
+    # Ce qu'il coûte, sur demande SEULEMENT. La description de l'outil porte
+    # l'interdiction d'en parler de lui-même ; ici on ne fait que lui donner
+    # de quoi répondre autre chose qu'un chiffre inventé. Inconditionnel pour
+    # la même raison que `mood_history` : la question se pose des deux côtés.
+    tools.append(COUT_TOOL)
     # Ses propres images. Inconditionnel : le lien est public et l'image existe
     # déjà — rien à afficher, rien à générer, donc rien à conditionner.
     tools.append(GALLERY_TOOL)
@@ -777,6 +783,8 @@ def make_tool_executor(
                                          user_id=user_id, author=author)
         if name == "mood_history":
             return await run_mood_history_tool(bot, args)
+        if name == "mon_cout":
+            return await run_cout_tool(bot, args)
         if name == "my_images":
             return await run_gallery_tool(bot, args)
         if name == "shoutout":

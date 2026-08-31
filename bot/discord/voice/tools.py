@@ -7,6 +7,7 @@ from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.notes_tool import (
     run_delete_note_tool, run_save_note_tool, run_save_user_memory_tool,
@@ -182,6 +183,10 @@ async def build_voice_tools(bot) -> list[dict]:
     # l'endroit où un outil manque sans que rien ne le dise — trois refus muets
     # en direct le 2026-08-25 avant qu'on le remarque.
     tools.append(MOOD_HISTORY_TOOL)
+    # Ce qu'il coûte, sur demande seulement — la question se pose autant à
+    # voix haute qu'à l'écrit, et un outil absent du catalogue vocal manque
+    # en silence (trois refus muets en direct le 2026-08-25).
+    tools.append(COUT_TOOL)
     action_service = getattr(bot, "action_service", None)
     if action_service is not None:
         tools.extend(action_service.get_tool_definitions())
@@ -367,6 +372,9 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
 
         if name == "mood_history":
             return await run_mood_history_tool(bot, json.loads(arguments or "{}"))
+
+        if name == "mon_cout":
+            return await run_cout_tool(bot, json.loads(arguments or "{}"))
 
         if name == "save_persistent_note":
             return await run_save_note_tool(bot.db, json.loads(arguments or "{}"))

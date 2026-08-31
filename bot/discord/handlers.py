@@ -20,6 +20,7 @@ from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
+from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -1490,6 +1491,11 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # Son humeur des jours passés. Le même état émotionnel vaut des deux côtés :
     # le conditionner à la plateforme le rendrait amnésique sur l'une des deux.
     tools.append(MOOD_HISTORY_TOOL)
+    # Ce qu'il coûte, sur demande SEULEMENT. La description de l'outil porte
+    # l'interdiction d'en parler de lui-même ; ici on ne fait que lui donner
+    # de quoi répondre autre chose qu'un chiffre inventé. Inconditionnel pour
+    # la même raison que `mood_history` : la question se pose des deux côtés.
+    tools.append(COUT_TOOL)
     tools.append(GALLERY_TOOL)
     # Le planning est offert INCONDITIONNELLEMENT : il rend un lien, pas un
     # affichage. Le conditionner à l'overlay priverait Wally de réponse hors
@@ -2993,6 +2999,8 @@ async def _respond(
                     author=str(message.author.display_name))
             if name == "mood_history":
                 return await run_mood_history_tool(bot, args)
+            if name == "mon_cout":
+                return await run_cout_tool(bot, args)
             if name == "my_images":
                 return await run_gallery_tool(bot, args)
             if name == "predict":

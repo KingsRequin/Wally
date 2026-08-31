@@ -22,7 +22,13 @@ class BotConfig:
     # Le champ existait au dashboard depuis longtemps, sans lecteur : il a été
     # retiré d'ici le 2026-08-26 avec les sept autres boutons morts, alors que
     # l'écran, lui, l'affichait toujours et l'envoyait dans le vide.
-    cost_alert_threshold: float = 25.0
+    #
+    # ÉTEINT PAR DÉFAUT depuis le 2026-08-31, sur arbitrage de l'owner : Wally
+    # ne parle pas de son prix de lui-même. L'alerte est partie une fois dans sa
+    # chambre (« je coûterai 36.26 $ sur le mois ») et c'est une fois de trop —
+    # ce n'est ni une nouvelle ni une conversation, et le chiffre reste lisible
+    # au dashboard. La question, elle, se répond : `bot/tools/cout_tool.py`.
+    cost_alert_threshold: float = 0.0
     bedroom_channel_id: int | None = None   # #chambre-de-wally — cible des rappels créés en vocal
     # Salon Discord où l'annonce de partie privée est poussée quand un modérateur
     # pose le code sur Twitch, et rôle pingué à cette occasion. C'est ce ping qui
