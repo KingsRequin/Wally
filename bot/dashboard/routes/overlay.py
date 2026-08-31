@@ -942,6 +942,19 @@ def _atelier_memes(request: Request):
     return library
 
 
+def _rang_meme(nom: str) -> tuple[int, int, str]:
+    """Clé de tri d'un meme : son NUMÉRO, pas son orthographe.
+
+    L'import numérote (`meme1` … `meme173`), et l'ordre lexicographique du
+    dossier rend `meme1, meme10, meme100, meme101, …, meme2` — l'ordre d'ajout
+    y est illisible, et deux memes postés le même soir se retrouvent à cent
+    cases l'un de l'autre. Les noms hors du schéma passent après, entre eux par
+    ordre alphabétique : ils n'ont pas de rang à respecter.
+    """
+    m = re.match(r"^meme(\d+)\.", nom, re.IGNORECASE)
+    return (0, int(m.group(1)), "") if m else (1, 0, nom.lower())
+
+
 def _meme_ou_404(library, nom: str) -> Path:
     chemin = library.resolve(nom)
     if chemin is None:
@@ -982,6 +995,7 @@ async def lister_memes(request: Request) -> dict:
             "lue": _describe(chemin),
             "taille": taille,
         })
+    memes.sort(key=lambda m: _rang_meme(str(m["nom"])))
     return {
         "memes": memes,
         "max_octets": MEMES_MAX_BYTES,

@@ -65,6 +65,20 @@ async def test_la_liste_distingue_ce_qui_est_ecrit_de_ce_qui_est_lu(atelier):
     assert d["max_octets"] > 0 and d["max_description"] > 0
 
 
+async def test_la_liste_est_triee_par_NUMERO_pas_par_orthographe(atelier):
+    """L'import numérote, et l'ordre lexicographique rend `meme1, meme10,
+    meme100, …, meme2` : l'ordre d'ajout y est illisible, et deux memes postés
+    le même soir se retrouvent à cent cases l'un de l'autre."""
+    dossier, state = atelier
+    for nom in ("meme2.webp", "meme10.webp", "meme100.webp"):
+        (dossier / nom).write_bytes(_png())
+    d = await lister_memes(_Req(state))
+    numerotes = [m["nom"] for m in d["memes"] if m["nom"].startswith("meme")]
+    assert numerotes == ["meme2.webp", "meme7.webp", "meme10.webp", "meme100.webp"]
+    # Les noms hors du schéma passent APRÈS : ils n'ont pas de rang à respecter.
+    assert d["memes"][-1]["nom"] == "chat.png"
+
+
 async def test_les_videos_sont_listees_mais_marquees_hors_des_tirages(atelier):
     """Le rotateur les joue, donc l'owner doit pouvoir les retirer d'ici. Wally,
     lui, affiche dans un `<img>` : il ne peut pas les sortir."""
@@ -237,44 +251,74 @@ async def test_supprimer_un_meme_inconnu_est_refuse(atelier):
     assert e.value.status_code == 404
 
 
-# ── Le nom d'un meme ne traverse jamais un contexte JavaScript ───────────────
+# ── La page Live › Memes ────────────────────────────────────────────────────
 
-def _atelier_js() -> str:
+def _page_memes_js() -> str:
     js = (Path(__file__).resolve().parents[1]
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    return js[js.index("// ── Atelier des memes"):js.index("// ── Atelier des sons")]
+    return js[js.index("// ── Live › Memes"):js.index("// ── Atelier des sons")]
 
 
 def test_aucun_onclick_ninterpole_un_nom_de_meme():
-    """`_escHtml` n'échappe PAS l'apostrophe, et le nom vient d'un FICHIER que
+    """`escHtml` n'échappe PAS l'apostrophe, et le nom vient d'un FICHIER que
     l'owner dépose lui-même. Un `x');alert(1);a.webp` s'exécuterait au rendu —
-    le piège a déjà été payé sur les sons."""
-    atelier = _atelier_js()
-    for interdit in ('onclick="enregistrerMeme(', 'onclick="supprimerMeme('):
-        assert interdit not in atelier, f"{interdit} remet un nom de fichier dans du JS"
-    assert 'data-meme-action="enregistrer"' in atelier
-    assert "closest('[data-meme-action]')" in atelier
+    le piège a déjà été payé sur les sons. Le RANG voyage dans un `data-`, le
+    nom ne quitte jamais le tableau JavaScript où il est arrivé."""
+    page = _page_memes_js()
+    for interdit in ("onclick=\"ouvrirMeme(", "onclick=\"supprimerMeme(",
+                     "onclick=\"enregistrerMeme("):
+        assert interdit not in page, f"{interdit} remet un nom de fichier dans du JS"
+    assert "data-rang=" in page and "closest('.meme-case')" in page
 
 
 def test_la_grille_est_declaree_en_classe_pas_en_style_en_ligne():
     """Un `grid-template-columns` posé en attribut bat la media query : la
     section garderait ses colonnes jusqu'à 320 px, en débordant de l'écran et
     sans lever la moindre erreur JS."""
-    atelier = _atelier_js()
-    assert "grid-template-columns" not in atelier
-    assert 'class="meme-grille"' in atelier
+    page = _page_memes_js()
+    assert "grid-template-columns" not in page
+    assert 'class="meme-grille"' in page
     css = (Path(__file__).resolve().parents[1]
            / "bot/dashboard/static/style.css").read_text(encoding="utf-8")
     assert ".meme-grille" in css
+    # La fiche passe en UNE colonne sur téléphone : côte à côte, sa colonne de
+    # texte garde son `minmax(320px, …)` et la pousse à 700 px de large.
+    responsive = css[css.index("/* ══ RESPONSIVE"):]
+    assert ".meme-fiche-boite" in responsive
 
 
-def test_le_panneau_est_monte_par_la_page_medias():
-    """Une fonction de rendu que personne n'appelle est du code mort — et le
-    panneau reste invisible en prod, sans que rien ne le dise."""
+def test_la_page_est_cablee_aux_quatre_endroits():
+    """Une page se câble à quatre endroits : la route, la sidebar, le panneau
+    et le dispatcher. Il en manque un, et l'entrée mène à un écran blanc — sans
+    la moindre erreur JS."""
+    racine = Path(__file__).resolve().parents[1]
+    js = (racine / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
+    html = (racine / "bot/dashboard/static/index.html").read_text(encoding="utf-8")
+    assert "'live/memes': {" in js, "route absente de ROUTES"
+    assert "pane: 'admin-memes'" in js
+    assert "def.pane === 'admin-memes') renderMemes()" in js, "dispatcher"
+    assert 'data-route="live/memes"' in html, "entrée de sidebar"
+    assert 'id="tab-admin-memes"' in html, "panneau"
+
+
+def test_la_galerie_nest_plus_dans_la_page_medias():
+    """173 vignettes noyaient « Médias & sons » et repoussaient l'atelier des
+    sons hors d'atteinte — c'est ce qui a motivé la page dédiée."""
     js = (Path(__file__).resolve().parents[1]
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    assert 'id="atelier-memes"' in js
-    assert "renderAtelierMemes();" in js
+    medias = js[js.index("// ── Live › Médias & sons"):js.index("// ── Mise en scène")]
+    assert "meme" not in medias.lower()
+
+
+def test_le_smoke_test_ouvre_vraiment_une_fiche():
+    """Un panneau MONTÉ n'est pas UTILISABLE : le volet des réglages de
+    l'overlay était monté, visible, et inatteignable à la souris. Le smoke test
+    doit donc CLIQUER une vignette, pas compter des nœuds."""
+    smoke = (Path(__file__).resolve().parents[1]
+             / "scripts/smoke_front.py").read_text(encoding="utf-8")
+    assert '("Memes", "live/memes")' in smoke
+    assert "#meme-grille .meme-case" in smoke
+    assert "#meme-fiche-desc" in smoke
 
 
 def test_le_repli_sur_le_nom_du_fichier_reste_le_dernier_mot():

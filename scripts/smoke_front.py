@@ -58,6 +58,7 @@ ONGLETS = [
     ("Scène & overlays", "live/scene"),
     ("Voix", "live/voix"),
     ("Médias & sons", "live/medias"),
+    ("Memes", "live/memes"),
     ("Automatisations", "live/automatisations"),
     ("Journal", "systeme/journal"),
     ("Connexions", "systeme/connexions"),
@@ -1027,12 +1028,28 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     # fois d'un déplacement de section.
     sons = page.locator("#atelier-sons").count()
     rap.dire(sons == 1, "l'atelier des sons a suivi", f"{sons} conteneur(s)")
-    # L'atelier des memes se compte en CARTES, comme la galerie : le conteneur
-    # existe même quand la route répond 404, et le panneau affiche alors
-    # « liste indisponible ». Compter le conteneur ne prouverait donc rien.
-    memes = page.locator("#meme-grille .meme-carte").count()
-    rap.dire(memes > 0, "Médias → les memes", f"{memes} carte(s)")
     rap.dire(not erreurs, "aucune erreur JS sur Médias & sons", " · ".join(erreurs[:2]))
+
+    # ── Live › Memes ────────────────────────────────────────────────────
+    #
+    # Une galerie qui MONTE ne prouve rien : ce qu'on vient y faire, c'est
+    # ouvrir un meme pour le décrire. On clique donc vraiment une vignette et
+    # on vérifie que sa fiche s'ouvre avec son champ — le panneau des réglages
+    # de l'overlay était monté, visible, et inatteignable à la souris.
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="live/memes"]').click()
+    page.wait_for_timeout(2500)
+    cases = page.locator("#meme-grille .meme-case").count()
+    rap.dire(cases > 0, "Memes → la galerie", f"{cases} vignette(s)")
+    if cases:
+        page.locator("#meme-grille .meme-case").first.click()
+        page.wait_for_timeout(600)
+        champ = page.locator("#meme-fiche-desc").count()
+        rap.dire(champ == 1, "un clic ouvre la fiche du meme", f"{champ} champ(s)")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+        rap.dire(page.locator("#meme-fiche").count() == 0, "Échap referme la fiche")
+    rap.dire(not erreurs, "aucune erreur JS sur Memes", " · ".join(erreurs[:2]))
 
     del erreurs[:]
     page.locator('.sidebar-item[data-route="live/voix"]').click()
