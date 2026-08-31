@@ -114,7 +114,7 @@ class VeilleDesClips:
     sur les 800 par minute de la chaîne : trois par minute ne coûtent rien.
 
     `un_tour()` est séparé de `veiller()` pour la même raison que dans
-    `PresenceDeStream` : une boucle `while True` avec un `sleep(120)` ne se
+    `PresenceDeStream` : une boucle `while True` avec un `sleep(20)` ne se
     teste pas, un tour se teste en une ligne.
     """
 

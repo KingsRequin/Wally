@@ -138,3 +138,19 @@ async def test_la_fenetre_demandee_est_plus_LARGE_que_la_periode():
     """Sinon un clip créé pile entre deux tours ne serait jamais vu. C'est cet
     écart qui impose la mémoire des clips déjà annoncés."""
     assert VeilleDesClips.FENETRE_MIN * 60 > VeilleDesClips.PERIODE_S
+
+
+async def test_le_clip_part_a_lecran_pendant_quon_en_parle_encore():
+    """Le clip est REJOUÉ, pas archivé : sa valeur tient à sa fraîcheur.
+
+    Deux bornes, et pas une ligne d'implémentation : le temps de DÉTECTION
+    (période de veille) et le temps de LATENCE une fois la vidéo prête (le pas
+    entre deux reprises). C'est la somme des deux que le public voit.
+    """
+    from bot.twitch.clip_announce import CLIP_VIDEO_RETRY_DELAYS
+
+    assert VeilleDesClips.PERIODE_S <= 30
+    assert max(CLIP_VIDEO_RETRY_DELAYS) <= 20
+    # Sans plafond, une tâche par clip sonderait l'API GQL non officielle
+    # jusqu'à la fin du live.
+    assert 120 <= sum(CLIP_VIDEO_RETRY_DELAYS) <= 300
