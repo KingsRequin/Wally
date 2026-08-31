@@ -90,6 +90,24 @@ def _too_similar(a: str, b: str) -> bool:
     return difflib.SequenceMatcher(None, na[:400], nb[:400]).ratio() >= 0.92
 
 
+#: Longueur de l'aperçu publié au flux cognitif. Le site le montre TEL QUEL :
+#: au-delà, ce n'est plus un aperçu, c'est une pensée qu'on lit.
+_EXTRAIT_MAX = 160
+
+
+def _extrait(texte: str | None, limite: int = _EXTRAIT_MAX) -> str:
+    """Un aperçu qui DIT qu'il est coupé.
+
+    `texte[:160]` s'arrêtait au milieu d'un mot, sans le moindre signe : sur le
+    site, une pensée de Wally finissait sur « C'est » et rien ne distinguait la
+    coupure d'une phrase inachevée. Constaté sur téléphone le 2026-08-31 — mais
+    le défaut n'avait rien de mobile, il était là depuis toujours et sur tous
+    les écrans.
+    """
+    t = (texte or "").strip()
+    return t if len(t) <= limite else t[:limite].rstrip() + "…"
+
+
 class CognitiveLoop:
     def __init__(
         self,
@@ -503,7 +521,7 @@ class CognitiveLoop:
         if self._feed:
             self._feed.publish({
                 "type": "ACT", "name": "web_search",
-                "content_snippet": query[:160],
+                "content_snippet": _extrait(query),
             })
         context.web_finding = f"{query} → {finding}"
         logger.debug("web_search cognitif : 2e passe de raisonnement sur « {} »", query[:60])
@@ -592,21 +610,31 @@ class CognitiveLoop:
                     self._feed.publish({
                         "type": "RSS",
                         "feed": rss_art.get("feed_name", ""),
-                        "content_snippet": (rss_art.get("title") or "")[:160],
+                        "content_snippet": _extrait(rss_art.get("title")),
                         "link": rss_art.get("link", ""),
                     })
                 if is_idle:
+                    graine = str(getattr(context, "idle_seed", None) or "(vagabondage)")
                     self._feed.publish({
                         "type": "ATTN",
                         "target": "—",
-                        "content_snippet": (getattr(context, "idle_seed", None) or "(vagabondage)")[:160],
+                        "content_snippet": _extrait(graine),
+                        # La graine est une pensée de WALLY, pas le message de
+                        # quelqu'un : le site peut la rendre en entier, et son
+                        # panneau la déplie au clic. Le message d'un tiers, lui,
+                        # reste à l'aperçu — cf. la branche juste en dessous.
+                        "full": graine,
                     })
                 else:
                     _last = self._recent_interactions[-1] if self._recent_interactions else {}
                     self._feed.publish({
                         "type": "ATTN",
                         "target": _last.get("author", "—"),
-                        "content_snippet": (_last.get("content") or "")[:160],
+                        # Pas de `full` ici, à la différence de la branche
+                        # `is_idle` : ce texte est le message d'une PERSONNE, et
+                        # le flux part sur un site public. L'aperçu est une
+                        # limite voulue, pas un défaut d'affichage.
+                        "content_snippet": _extrait(_last.get("content")),
                     })
             result = await self._reasoning.reason(context)
             result = await self._maybe_web_search(context, result)

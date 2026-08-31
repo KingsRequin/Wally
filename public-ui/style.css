@@ -632,6 +632,12 @@ input:focus, textarea:focus {
   margin-bottom: 2px;
 }
 .feed-row.clickable { cursor: pointer; }
+.feed-plus {
+  color: var(--ember-hi);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .feed-row.clickable:hover { background: rgba(255, 255, 255, .03); }
 .feed-meta {
   display: flex;

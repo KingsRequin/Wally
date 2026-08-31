@@ -266,7 +266,7 @@ function metaEvenement(type) {
 function construireLigne(e) {
   const meta = metaEvenement(e.type);
   const complet = texteComplet(e);
-  const texte = (e._deplie && complet) ? complet : texteEvenement(e) + (complet ? ' …' : '');
+  const texte = (e._deplie && complet) ? complet : texteEvenement(e);
   const contexte = contexteEvenement(e);
   const ligne = h('div', {
     class: 'feed-row' + (complet ? ' clickable' : ''),
@@ -277,7 +277,11 @@ function construireLigne(e) {
     h('span', { class: 'feed-tag', text: meta.k }),
     contexte ? h('span', { class: 'feed-ou', text: contexte }) : null,
   ),
-  h('div', { class: 'feed-text', text: texte }),
+  // L'indice de dépliage est un mot, pas un « … » noyé dans la phrase : au
+  // doigt, il n'y a ni survol ni `title`, et rien ne disait qu'il restait
+  // quelque chose à lire.
+  h('div', { class: 'feed-text' }, texte,
+    complet ? h('span', { class: 'feed-plus', text: e._deplie ? ' ↑ replier' : ' … déplier' }) : null),
   );
   if (complet) {
     ligne.title = 'cliquer pour ' + (e._deplie ? 'replier' : 'déplier');
