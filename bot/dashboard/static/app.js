@@ -482,7 +482,6 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-personnalite') renderPersonnalite();
   else if (def.pane === 'admin-modeles') renderModeles();
   else if (def.pane === 'admin-medias') renderMedias();
-  else if (def.pane === 'admin-memes') renderMemes();
   else if (def.pane === 'admin-connexions') renderConnexions();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
@@ -493,6 +492,10 @@ function _appliquerRoute(route, param) {
   // Les deux flux SSE de page : ouverts sur leur page, fermés partout ailleurs.
   if (def.pane === 'admin-actions') { renderActionsTab(); startActionSSE(); } else { stopActionSSE(); }
   if (def.pane === 'admin-voix') { renderVoix(); startVoiceSSE(); } else { stopVoiceSSE(); }
+  // La veille du dossier de memes : sur sa page, coupée partout ailleurs —
+  // même discipline que les deux flux SSE ci-dessus.
+  if (def.pane === 'admin-memes') { renderMemes(); startMemesVeille(); }
+  else { stopMemesVeille(); }
 
   pollLinksBadge();
 }
@@ -6688,6 +6691,9 @@ let _memeMax = { octets: 0, description: 0 };
 // flèches ← → de la fiche : décrire en série est le geste principal ici, et
 // refermer la fiche entre chaque meme le rendrait pénible.
 let _memeOuvert = -1;
+// La veille du dossier, et les noms arrivés depuis le dernier rendu.
+let _memesVeille = null;
+let _memesNeufs = [];
 
 function renderMemes() {
   const el = document.getElementById('tab-admin-memes');
@@ -6718,6 +6724,7 @@ function renderMemes() {
           </label>
           <span id="memes-compte" class="muted"></span>
         </div>
+        <div id="memes-neufs" class="meme-annonce" hidden></div>
         <div id="meme-grille" class="meme-grille"></div>
       </div>`;
     _cablerPageMemes(el);
@@ -6740,9 +6747,45 @@ async function chargerMemes() {
     poserSommaire('live/memes', _MEMES_SECTIONS, '');
     return;
   }
+  const connus = new Set(_memes.map((m) => m.nom));
   _memes = data.memes || [];
   _memeMax = { octets: data.max_octets || 0, description: data.max_description || 0 };
+  // Au PREMIER chargement, tout est nouveau et rien ne l'est : `connus` est
+  // vide, et annoncer « 168 nouveaux memes » à l'ouverture de la page serait
+  // absurde.
+  if (connus.size) {
+    _memesNeufs = _memes.filter((m) => !connus.has(m.nom)).map((m) => m.nom);
+  }
   _rendreGalerieMemes();
+  return true;
+}
+
+/** Le dossier change SANS passer par cette page : clic droit Discord,
+ *  `/importer-memes`, boîte aux lettres. Sans veille, la galerie reste sur son
+ *  état d'ouverture et il faut recharger — or on garde justement cet écran
+ *  ouvert pendant qu'on poste des memes ailleurs.
+ *
+ *  Un sondage et non un SSE : un meme arrive quelques fois par jour, et un flux
+ *  demanderait une route de plus PLUS un événement publié depuis les quatre
+ *  chemins d'import — dont trois vivent loin d'ici. La réponse fait 30 Ko, elle
+ *  n'est demandée que sur cette page, onglet au premier plan.
+ */
+function startMemesVeille() {
+  stopMemesVeille();
+  _memesVeille = setInterval(function () {
+    // Onglet en arrière-plan : personne ne regarde, et Chrome ramène de toute
+    // façon les timers d'un onglet caché à un par minute.
+    if (document.hidden) return;
+    // Fiche ouverte : on est en train de décrire. Redessiner la galerie
+    // déplacerait le rang du meme sous les doigts, et « Suivant → » sauterait
+    // sur un autre.
+    if (_memeOuvert >= 0) return;
+    chargerMemes();
+  }, 15000);
+}
+
+function stopMemesVeille() {
+  if (_memesVeille) { clearInterval(_memesVeille); _memesVeille = null; }
 }
 
 /** La grille et les compteurs. Séparée du montage : filtrer ne doit pas
@@ -6779,6 +6822,19 @@ function _rendreGalerieMemes() {
       + '<div class="rail-encart-titre">Descriptions</div>'
       + '<div class="rail-encart-ligne">Les ' + _memes.length + ' memes sont décrits.</div>'
       + '</div>');
+
+  // Les nouveaux arrivent en FIN de galerie (le tri suit les numéros) : sans
+  // cette ligne, un meme posté depuis Discord apparaît 168 cases plus bas et
+  // personne ne le voit. Le bouton mène au geste qui suit — le décrire.
+  const annonce = document.getElementById('memes-neufs');
+  if (annonce) {
+    annonce.innerHTML = _memesNeufs.length
+      ? '<span>' + _memesNeufs.length + ' nouveau'
+        + (_memesNeufs.length > 1 ? 'x memes' : ' meme') + ' dans le dossier.</span>'
+        + '<button class="btn" data-neufs="1">Le décrire</button>'
+      : '';
+    annonce.hidden = !_memesNeufs.length;
+  }
 
   if (!_memesVus.length) {
     grille.innerHTML = '<div class="muted">'
@@ -6819,6 +6875,7 @@ function _cablerPageMemes(el) {
   el.addEventListener('click', function (ev) {
     const case_ = ev.target.closest('.meme-case');
     if (case_) { ouvrirMeme(Number(case_.dataset.rang)); return; }
+    if (ev.target.closest('[data-neufs]')) { ouvrirPremierNeuf(); return; }
     const bouton = ev.target.closest('[data-fiche]');
     if (!bouton) return;
     const quoi = bouton.dataset.fiche;
@@ -6850,6 +6907,21 @@ function _cablerPageMemes(el) {
     if (ev.key === 'ArrowLeft') ouvrirMeme(_memeOuvert - 1);
     else if (ev.key === 'ArrowRight') ouvrirMeme(_memeOuvert + 1);
   });
+}
+
+/** Ouvre le premier meme arrivé depuis le dernier coup d'œil.
+ *
+ *  Il faut le RETROUVER dans la liste affichée : un filtre actif peut l'en
+ *  avoir exclu, et ouvrir un rang calculé sur une autre liste montrerait un
+ *  autre meme.
+ */
+function ouvrirPremierNeuf() {
+  for (const nom of _memesNeufs) {
+    const rang = _memesVus.findIndex((m) => m.nom === nom);
+    if (rang >= 0) { _memesNeufs = []; _rendreGalerieMemes(); ouvrirMeme(rang); return; }
+  }
+  // Tous filtrés : le dire vaut mieux qu'un bouton qui ne fait rien.
+  _etatMemes('Les nouveaux memes sont masqués par le filtre en cours.');
 }
 
 function _etatMemes(texte) {
@@ -7017,6 +7089,10 @@ async function deposerMemes() {
   // La liste ENTIÈRE est rechargée : le serveur renomme et peut convertir en
   // WebP. Deviner les noms ici, c'est afficher des vignettes mortes.
   await chargerMemes();
+  // Ce qu'on vient de déposer soi-même n'est pas une nouvelle à annoncer : la
+  // bannière sert aux memes arrivés d'AILLEURS pendant qu'on regardait.
+  _memesNeufs = [];
+  _rendreGalerieMemes();
   _etatMemes((ranges.length ? ranges.length + ' rangé(s). Décrivez-les : sans '
     + 'description, Wally ne saura pas quand les sortir.' : '')
     + (refus.length ? ' Refusé : ' + refus.join(' · ') : ''));

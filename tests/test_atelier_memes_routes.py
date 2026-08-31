@@ -296,7 +296,7 @@ def test_la_page_est_cablee_aux_quatre_endroits():
     html = (racine / "bot/dashboard/static/index.html").read_text(encoding="utf-8")
     assert "'live/memes': {" in js, "route absente de ROUTES"
     assert "pane: 'admin-memes'" in js
-    assert "def.pane === 'admin-memes') renderMemes()" in js, "dispatcher"
+    assert "renderMemes(); startMemesVeille();" in js, "dispatcher"
     assert 'data-route="live/memes"' in html, "entrée de sidebar"
     assert 'id="tab-admin-memes"' in html, "panneau"
 
@@ -308,6 +308,30 @@ def test_la_galerie_nest_plus_dans_la_page_medias():
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
     medias = js[js.index("// ── Live › Médias & sons"):js.index("// ── Mise en scène")]
     assert "meme" not in medias.lower()
+
+
+def test_la_veille_est_coupee_hors_de_la_page():
+    """Le dossier change SANS passer par cette page (clic droit Discord, boîte
+    aux lettres) : la galerie se rafraîchit toute seule. Mais un sondage qui
+    survit à la page interroge le serveur toutes les 15 s depuis n'importe où —
+    même discipline que les deux flux SSE, qu'on ferme en quittant."""
+    js = (Path(__file__).resolve().parents[1]
+          / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
+    assert "if (def.pane === 'admin-memes') { renderMemes(); startMemesVeille(); }" in js
+    assert "else { stopMemesVeille(); }" in js
+    page = _page_memes_js()
+    # Le tour de veille se saute dans deux cas, et les deux comptent : l'onglet
+    # caché (personne ne regarde) et la fiche ouverte (redessiner déplacerait
+    # le rang du meme sous les doigts, et « Suivant → » sauterait ailleurs).
+    assert "document.hidden" in page
+    assert "if (_memeOuvert >= 0) return;" in page
+
+
+def test_le_premier_chargement_nannonce_pas_168_nouveautes():
+    """`_memesNeufs` se calcule par différence avec ce qu'on connaissait déjà :
+    à l'ouverture on ne connaît rien, et tout serait « nouveau »."""
+    page = _page_memes_js()
+    assert "if (connus.size) {" in page
 
 
 def test_le_smoke_test_ouvre_vraiment_une_fiche():

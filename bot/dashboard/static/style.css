@@ -6435,6 +6435,23 @@ body.is-mobile .mobile-back-btn {
 
 .meme-barre #meme-recherche { width: 220px; }
 
+/* L'annonce des memes arrivés d'ailleurs. Discrète mais pas muette : les
+ * nouveaux atterrissent en FIN de galerie (le tri suit les numéros), donc
+ * 168 cases plus bas — invisibles sans cette ligne. */
+.meme-annonce {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.06);
+  font-size: 0.86rem;
+}
+
+.meme-annonce[hidden] { display: none; }
+
 /* ── La fiche d'un meme ──────────────────────────────────────────────────── */
 
 /* `.modal` fait 360 px : une fiche de meme montre l'image ET son texte côte à
