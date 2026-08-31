@@ -923,3 +923,158 @@ async def normaliser_sons_commande(request: Request) -> dict:
     logger.info("Normalisation : {n} son(s) traité(s), {e} échec(s)",
                 n=len(faits), e=len(echecs))
     return {"normalises": faits, "echecs": echecs}
+
+
+# ── Atelier des memes (Live → Médias & sons) ─────────────────────────────────
+#
+# Le dossier de memes est la seule source de vérité : `MemeLibrary` le relit à
+# chaque tirage, et le rotateur de l'overlay recharge sa liste à chaque cycle.
+# Rien à invalider ici, donc — déposer, décrire ou retirer prend effet sans
+# redémarrage ni rechargement de l'overlay, c'est la propriété du dossier, pas
+# une mécanique qu'on ajoute.
+
+
+def _atelier_memes(request: Request):
+    """La bibliothèque, ou 503 — l'atelier n'a rien à dire sans dossier."""
+    library = getattr(request.app.state.wally, "memes", None)
+    if library is None:
+        raise HTTPException(503, "Bibliothèque de memes indisponible")
+    return library
+
+
+def _meme_ou_404(library, nom: str) -> Path:
+    chemin = library.resolve(nom)
+    if chemin is None:
+        raise HTTPException(404, "Meme introuvable")
+    return chemin
+
+
+@admin_router.get("/overlay/memes")
+async def lister_memes(request: Request) -> dict:
+    """Le dossier de memes : ce que Wally peut montrer, et ce qu'il en sait.
+
+    Les vidéos y figurent — le rotateur les joue, l'owner doit pouvoir les
+    retirer d'ici. `montrable` dit lesquelles Wally peut sortir lui-même : il
+    affiche dans un `<img>`, une vidéo y serait cassée.
+    """
+    from bot.core.memes import _EXTENSIONS, MAX_DESCRIPTION, _describe, description_ecrite
+    from bot.core.memes import _MAX_BYTES as MEMES_MAX_BYTES
+
+    library = _atelier_memes(request)
+    memes = []
+    for entree in library.list_medias():
+        nom = str(entree["name"])
+        chemin = library.directory / nom
+        try:
+            taille = chemin.stat().st_size
+        # Le fichier a disparu entre l'inventaire et la mesure : l'owner range
+        # son dossier pendant qu'on le lit. Zéro plutôt qu'une page en erreur.
+        except OSError:
+            taille = 0
+        memes.append({
+            "nom": nom,
+            "genre": entree["genre"],
+            "montrable": chemin.suffix.lower() in _EXTENSIONS,
+            # Ce qui est ÉCRIT, et ce que Wally LIT. Les deux diffèrent quand
+            # personne n'a rien écrit : il lit alors « meme80 », et c'est
+            # justement le cas que cet écran existe pour corriger.
+            "description": description_ecrite(chemin),
+            "lue": _describe(chemin),
+            "taille": taille,
+        })
+    return {
+        "memes": memes,
+        "max_octets": MEMES_MAX_BYTES,
+        "max_description": MAX_DESCRIPTION,
+    }
+
+
+@admin_router.put("/overlay/memes/{nom}")
+async def decrire_meme(nom: str, request: Request) -> dict:
+    """Écrit la description d'un meme, ou l'efface si le texte est vide.
+
+    Rend ce que Wally LIRA — pas ce qui vient d'être envoyé : une phrase trop
+    longue est ramenée à `MAX_DESCRIPTION`, et une description effacée peut
+    redécouvrir un vieux sidecar partagé. L'écran affiche cette réponse.
+    """
+    from bot.core.memes import description_ecrite, ecrire_description
+
+    library = _atelier_memes(request)
+    chemin = _meme_ou_404(library, nom)
+    corps = await request.json()
+    if not isinstance(corps, dict):
+        raise HTTPException(400, "Corps attendu : {\"description\": \"…\"}")
+    texte = str(corps.get("description") or "")
+    try:
+        lue = ecrire_description(chemin, texte)
+    except OSError as e:
+        logger.warning("Description de {n} non écrite : {e!r}", n=chemin.name, e=e)
+        raise HTTPException(500, "Le fichier de description n'a pas pu être écrit") from e
+    logger.info("Meme {n} décrit : {d!r}", n=chemin.name, d=lue)
+    return {"nom": chemin.name, "description": description_ecrite(chemin), "lue": lue}
+
+
+@admin_router.post("/overlay/memes/{nom}")
+async def deposer_meme(nom: str, request: Request) -> dict:
+    """Dépose un meme. Le corps est le fichier BRUT, comme pour les sons.
+
+    Passe par `meme_import.importer`, qui est le chemin de TOUS les autres
+    dépôts (clic droit Discord, `/importer-memes`, boîte aux lettres) : la
+    conversion WebP, la déduplication et le plafond de poids sont là-bas. Une
+    seconde écriture directe dans le dossier finirait par en diverger.
+    """
+    import asyncio
+
+    from bot.core.meme_import import MAX_TELECHARGEMENT, importer
+    from bot.core.memes import _safe_name
+
+    library = _atelier_memes(request)
+    propre = _safe_name(nom)
+    suffixe = Path(propre).suffix.lower()
+    if not propre or not suffixe:
+        raise HTTPException(400, "Nom de fichier attendu, avec son extension")
+    contenu = await request.body()
+    if not contenu:
+        raise HTTPException(400, "Fichier vide")
+    if len(contenu) > MAX_TELECHARGEMENT:
+        raise HTTPException(413, f"Un meme fait {MAX_TELECHARGEMENT // 1048576} Mo au plus")
+    # Le meme arrive SANS description : elle se pose ensuite, par le PUT, qui
+    # est du JSON. Un en-tête HTTP ne pouvait pas la porter — leurs valeurs
+    # sont en latin-1, « un carré vert » y arrivait en « un carrÃ© vert », et
+    # `fetch` refuse même d'envoyer un en-tête hors de cette plage.
+    #
+    # La conversion WebP est du Pillow BLOQUANT : dans la boucle d'événements,
+    # elle arrêterait tout le bot le temps d'un encodage.
+    resultat = await asyncio.to_thread(
+        importer, contenu, suffixe, "", library.directory
+    )
+    if not resultat.ok:
+        detail = resultat.raison or "refusé"
+        if resultat.doublon:
+            detail = f"déjà rangé sous {resultat.doublon}"
+        raise HTTPException(400, detail)
+    logger.info("Meme déposé par le panneau : {n} ({o} octets)",
+                n=resultat.nom, o=resultat.octets)
+    return {"nom": resultat.nom, "converti": resultat.converti, "octets": resultat.octets}
+
+
+@admin_router.delete("/overlay/memes/{nom}")
+async def supprimer_meme(nom: str, request: Request) -> dict:
+    """Retire le meme ET sa description — un sidecar orphelin réserve son numéro.
+
+    `prochain_numero()` compte les `.txt` : un `meme9.webp.txt` resté seul
+    empêche le 9 d'être réattribué, et cette vieille phrase se collerait sinon
+    à l'image suivante.
+    """
+    from bot.core.memes import chemin_description
+
+    library = _atelier_memes(request)
+    chemin = _meme_ou_404(library, nom)
+    try:
+        chemin.unlink()
+        chemin_description(chemin).unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("Meme {n} non supprimé : {e!r}", n=chemin.name, e=e)
+        raise HTTPException(500, "Le fichier n'a pas pu être supprimé") from e
+    logger.info("Meme supprimé : {n}", n=chemin.name)
+    return {"supprime": chemin.name}

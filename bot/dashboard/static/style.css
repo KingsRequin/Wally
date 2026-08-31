@@ -6351,6 +6351,86 @@ body.is-mobile .mobile-back-btn {
 .ovl-insp-volet .ovl-insp-champ { justify-content: space-between; }
 
 
+/* ── Atelier des memes (Live → Médias & sons) ────────────────────────────── */
+
+/* La grille est déclarée en CLASSE et non en style EN LIGNE : un
+ * `grid-template-columns` posé sur l'attribut bat la media query, et la
+ * section garderait ses colonnes jusqu'à 320 px en débordant de l'écran —
+ * sans lever la moindre erreur JS. Payé une fois sur le site public. */
+.meme-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  /* Le dossier compte 173 memes : sans borne, la grille fait 24 000 px de haut
+   * et repousse l'atelier des sons — qui vit sous elle — hors d'atteinte. Elle
+   * défile donc DANS sa carte, et les filtres au-dessus restent visibles. */
+  max-height: 70vh;
+  overflow-y: auto;
+  /* La barre de défilement mange la largeur : sans ce recul, la dernière
+   * colonne de cartes passe dessous. */
+  padding-right: 4px;
+}
+
+.meme-carte {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* Sans lui, une description longue pousse la carte au-delà de sa colonne :
+   * le minimum d'un élément de grille est son contenu, pas zéro. */
+  min-width: 0;
+}
+
+.meme-carte:hover { border-color: var(--border-accent); }
+
+/* `contain` et non `cover` : un meme est fait pour être LU. Recadré au carré,
+ * la moitié des images perd sa chute, et on ne reconnaît plus celle qu'on
+ * cherche à décrire. Le fond sombre tient la place des bords manquants. */
+.meme-carte .meme-vignette {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid var(--border);
+}
+
+.meme-carte .meme-corps {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Un `textarea` et non un `input` : une description va jusqu'à 160
+ * caractères, qu'une ligne unique fait DÉFILER — on ne lit alors que le début
+ * de la phrase qu'on est venu corriger. Sur 390 px, `smoke_front.py` le compte
+ * comme un débordement, et il a raison. */
+.meme-carte .meme-corps textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+
+.meme-nom {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.meme-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.meme-filtres {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0;
+}
+
+
 /* ══ RESPONSIVE ═══════════════════════════════════════════════════════════
  *
  * EN FIN DE FICHIER, et c'est structurel. Une surcharge responsive n'ajoute
@@ -6660,5 +6740,5 @@ body.is-mobile .mobile-back-btn {
    * libellé « Choisir un fichier / Aucun fichier sélectionné » — et dépasse
    * 390 px à lui seul. Le `flex-wrap` de sa ligne n'y peut rien : ce n'est pas
    * la ligne qui déborde, c'est le champ. */
-  #son-fichier { max-width: 100%; flex: 1 0 100%; }
+  #son-fichier, #meme-fichier { max-width: 100%; flex: 1 0 100%; }
 }

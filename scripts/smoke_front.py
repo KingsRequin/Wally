@@ -1027,6 +1027,11 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     # fois d'un déplacement de section.
     sons = page.locator("#atelier-sons").count()
     rap.dire(sons == 1, "l'atelier des sons a suivi", f"{sons} conteneur(s)")
+    # L'atelier des memes se compte en CARTES, comme la galerie : le conteneur
+    # existe même quand la route répond 404, et le panneau affiche alors
+    # « liste indisponible ». Compter le conteneur ne prouverait donc rien.
+    memes = page.locator("#meme-grille .meme-carte").count()
+    rap.dire(memes > 0, "Médias → les memes", f"{memes} carte(s)")
     rap.dire(not erreurs, "aucune erreur JS sur Médias & sons", " · ".join(erreurs[:2]))
 
     del erreurs[:]

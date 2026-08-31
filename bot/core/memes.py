@@ -81,16 +81,26 @@ def tronquer_description(texte: str) -> str:
 _Entrees = list[dict]
 
 
-def _describe(path: Path) -> str:
-    """Description d'un meme : le .txt voisin s'il existe, sinon le nom du fichier.
+def chemin_description(path: Path) -> Path:
+    """Le sidecar CANONIQUE d'un meme : `chat.gif.txt`, collé à l'extension.
 
-    Deux formes de voisin, la première l'emporte :
-    `chat.gif.txt` (extension complète) puis `chat.txt`. Sans la première,
-    `chat.gif` et `chat.jpg` — deux images DIFFÉRENTES — se partageaient le seul
-    `chat.txt` et héritaient de la même description : Wally en commentait une en
-    décrivant l'autre. Dix paires du dossier étaient dans ce cas.
+    Celui qu'on écrit, et celui que `description_ecrite` lit en premier. La
+    forme sans extension (`chat.txt`) se lit encore — le dossier en compte —
+    mais ne s'écrit plus : `chat.gif` et `chat.jpg` la partageaient et
+    héritaient de la même phrase.
     """
-    for sidecar in (path.with_name(path.name + ".txt"), path.with_suffix(".txt")):
+    return path.with_name(path.name + ".txt")
+
+
+def description_ecrite(path: Path) -> str:
+    """La description ÉCRITE sur ce meme, ou "" si personne n'en a écrit.
+
+    Deux formes de voisin, la première l'emporte : `chat.gif.txt` puis
+    `chat.txt`. Le repli sur le nom du fichier n'est PAS fait ici — l'écran
+    d'édition doit pouvoir distinguer « décrit » de « nommé », sans quoi il
+    proposerait « meme80 » comme une phrase à corriger.
+    """
+    for sidecar in (chemin_description(path), path.with_suffix(".txt")):
         if not sidecar.is_file():
             continue
         try:
@@ -107,7 +117,31 @@ def _describe(path: Path) -> str:
         # un silence — il y a toujours une description au bout.
         except (OSError, ValueError):
             pass
-    return tronquer_description(path.stem.replace("-", " ").replace("_", " "))
+    return ""
+
+
+def ecrire_description(path: Path, texte: str) -> str:
+    """Écrit la description d'un meme, ou l'efface si `texte` est vide.
+
+    Rend ce que Wally lira ENSUITE — pas ce qu'on vient d'écrire. Les deux
+    diffèrent dans deux cas que l'écran doit montrer sans mentir : une phrase
+    trop longue est ramenée à `MAX_DESCRIPTION`, et une description effacée
+    peut redécouvrir un vieux `chat.txt` partagé, qui reprend alors la main.
+    """
+    sidecar = chemin_description(path)
+    retenu = tronquer_description(texte)
+    if retenu:
+        sidecar.write_text(retenu, encoding="utf-8")
+    else:
+        sidecar.unlink(missing_ok=True)
+    return _describe(path)
+
+
+def _describe(path: Path) -> str:
+    """Description d'un meme : ce qui est écrit, sinon le nom du fichier."""
+    return description_ecrite(path) or tronquer_description(
+        path.stem.replace("-", " ").replace("_", " ")
+    )
 
 
 def _safe_name(name: str) -> str:

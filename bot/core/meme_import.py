@@ -28,7 +28,12 @@ from PIL import Image, ImageSequence
 # commentaire s'était perdu à l'extraction du module, et le raisonnement a
 # dérapé aussitôt — un plafond appliqué aux seules images laissait entrer des
 # vidéos que `list_medias()` écartait ensuite en silence.
-from bot.core.memes import _EXTENSIONS_MEDIA, _MAX_BYTES, tronquer_description
+from bot.core.memes import (
+    _EXTENSIONS_MEDIA,
+    _MAX_BYTES,
+    chemin_description,
+    tronquer_description,
+)
 
 A_CONVERTIR = frozenset({".gif", ".png"})
 
@@ -257,7 +262,7 @@ class SessionImport:
         texte = tronquer_description(description)
         if texte:
             try:
-                (self.dossier / f"{nom}.txt").write_text(texte, encoding="utf-8")
+                chemin_description(chemin).write_text(texte, encoding="utf-8")
             except Exception:
                 # Le sidecar est le second temps d'une écriture en deux temps :
                 # s'il échoue, l'image ne doit pas rester seule en rayon — un
@@ -426,5 +431,5 @@ def sidecar_de(path: Path) -> Path | None:
     La forme sans extension (`meme1.txt`) suit le nom de base et survit à la
     conversion : rien à faire pour elle.
     """
-    voisin = path.with_name(path.name + ".txt")
+    voisin = chemin_description(path)
     return voisin if voisin.is_file() else None

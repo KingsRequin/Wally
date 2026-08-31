@@ -4528,6 +4528,7 @@ async function _renderSystemeOverlay(panel) {
       <div id="overlay-health-line" class="muted">Mesure en cours…</div>
     </div>
     <div id="overlay-config-container-systeme"></div>
+    <div id="atelier-memes" class="card" style="margin-top:12px"></div>
     <div id="atelier-sons" class="card" style="margin-top:12px"></div>
   `;
 
@@ -4535,6 +4536,7 @@ async function _renderSystemeOverlay(panel) {
   refreshOverlayForceLive();
   refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
+  renderAtelierMemes();
   renderAtelierSons();
 }
 
@@ -6649,6 +6651,220 @@ async function savePromptFile() {
     status.style.color = 'rgb(239,68,68)';
   }
 }
+
+// ── Atelier des memes (Live → Médias & sons) ─────────────────────────────────
+//
+// Ce que Wally MONTRE : le dossier `data/memes`, ses vidéos comprises (le
+// rotateur les joue). Le dossier est la seule source de vérité — il est relu à
+// chaque tirage côté bot, et le rotateur recharge sa liste à chaque cycle. Un
+// dépôt, une description ou un retrait prennent donc effet SANS redémarrage et
+// sans recharger l'overlay ; rien ici n'a à les prévenir.
+//
+// Wally ne VOIT pas ces images : la description est sa seule prise dessus.
+// C'est elle qui lui permet de choisir un meme à propos plutôt qu'au hasard —
+// d'où cet écran.
+
+// La liste chargée. Les deux filtres travaillent dessus, sans rappeler le
+// serveur : le dossier tient dans une réponse, et un aller-retour par frappe
+// rendrait la recherche saccadée.
+let _memes = [];
+let _memeFiltre = '';
+let _memeMuetsSeuls = false;
+
+async function renderAtelierMemes() {
+  const box = document.getElementById('atelier-memes');
+  if (!box) return;
+  let data = null;
+  try {
+    const r = await apiFetch('/api/admin/overlay/memes');
+    if (r && r.ok) data = await r.json();
+  } catch (e) {
+    // Réseau coupé : on le DIT. Un panneau vide se lit comme « aucun meme ».
+  }
+  if (!data) {
+    box.innerHTML = '<div class="card-title">MEMES</div>'
+      + '<div class="muted">Liste indisponible — le bot ne répond pas.</div>';
+    return;
+  }
+  _memes = data.memes || [];
+  box.innerHTML = `
+    <div class="card-title">MEMES</div>
+    <p class="muted" style="margin-top:0">
+      Ce que Wally montre sur le live. Il ne VOIT pas ces images : la
+      description est sa seule prise dessus — c'est elle qui lui fait choisir
+      un meme à propos plutôt qu'au hasard. Sans description, il ne lit que le
+      nom du fichier. Tout est pris en compte aussitôt, sans redémarrage.
+    </p>
+    <div class="meme-filtres">
+      <input type="file" id="meme-fichier" accept=".png,.jpg,.jpeg,.gif,.webp,.mp4,.webm">
+      <button class="btn" onclick="deposerMeme()">Déposer</button>
+      <input type="text" id="meme-recherche" placeholder="Chercher…"
+             value="${_escHtml(_memeFiltre)}" style="width:180px">
+      <label class="muted" style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="meme-muets" ${_memeMuetsSeuls ? 'checked' : ''}>
+        Sans description
+      </label>
+      <span id="atelier-memes-etat" class="muted"></span>
+    </div>
+    <div id="meme-grille" class="meme-grille"></div>
+    <div class="muted" style="margin-top:10px;font-size:12px">
+      ${_octetsLisibles(data.max_octets || 0)} par fichier au maximum,
+      ${Number(data.max_description) || 0} caractères par description.
+      Les PNG et GIF sont convertis en WebP au dépôt s'ils y gagnent.
+    </div>`;
+  _cablerAtelierMemes(box);
+  _rendreGrilleMemes();
+}
+
+/** Les cartes seules, pour que filtrer ne réécrive pas les champs de saisie
+ *  ni la ligne d'état — un `innerHTML` sur toute la carte remettrait le
+ *  curseur au début de la recherche à chaque frappe. */
+function _rendreGrilleMemes() {
+  const grille = document.getElementById('meme-grille');
+  if (!grille) return;
+  const q = _memeFiltre.trim().toLowerCase();
+  const vus = _memes.filter(function (m) {
+    if (_memeMuetsSeuls && m.description) return false;
+    if (!q) return true;
+    return (m.nom + ' ' + (m.description || '')).toLowerCase().includes(q);
+  });
+  if (!vus.length) {
+    grille.innerHTML = '<div class="muted">'
+      + (_memes.length ? 'Aucun meme ne correspond.'
+                       : 'Aucun meme. Déposez une image pour commencer.')
+      + '</div>';
+    return;
+  }
+  grille.innerHTML = vus.map(function (m) {
+    const url = '/api/public/meme/' + encodeURIComponent(m.nom);
+    // La vidéo n'est pas jouée : `preload="metadata"` suffit à en montrer la
+    // première image, et douze lectures simultanées feraient ramer la page.
+    const apercu = m.genre === 'video'
+      ? `<video class="meme-vignette" src="${_escHtml(url)}" preload="metadata" muted></video>`
+      : `<img class="meme-vignette" src="${_escHtml(url)}" alt="" loading="lazy">`;
+    return `
+      <div class="meme-carte" data-nom="${_escHtml(m.nom)}">
+        ${apercu}
+        <div class="meme-corps">
+          <div class="meme-nom muted">${_escHtml(m.nom)}
+            ${m.genre === 'video' ? '· vidéo' : ''}
+            ${m.montrable ? '' : '· hors des tirages de Wally'}
+            · ${_octetsLisibles(m.taille || 0)}</div>
+          <textarea data-champ="description" rows="3"
+                    placeholder="${_escHtml(m.lue || '')}">${_escHtml(m.description || '')}</textarea>
+          <div class="meme-actions">
+            <button class="btn" data-meme-action="enregistrer">Enregistrer</button>
+            <button class="btn" data-meme-action="supprimer">Supprimer</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/** Boutons et filtres câblés par DÉLÉGATION, une seule fois.
+ *
+ *  Surtout pas d'`onclick="...('${nom}')"` : `_escHtml` n'échappe PAS
+ *  l'apostrophe, et le nom vient d'un nom de FICHIER que l'owner dépose
+ *  lui-même. Un `x');alert(1);a.webp` s'exécuterait au rendu — le piège a déjà
+ *  été payé sur les sons. Ici le nom ne traverse jamais un contexte
+ *  JavaScript : il vit dans un attribut `data-`, lu comme une chaîne.
+ */
+function _cablerAtelierMemes(box) {
+  if (box.dataset.cable) return;
+  box.dataset.cable = '1';
+  box.addEventListener('click', function (ev) {
+    const bouton = ev.target.closest('[data-meme-action]');
+    if (!bouton) return;
+    const carte = bouton.closest('.meme-carte');
+    if (!carte) return;
+    if (bouton.dataset.memeAction === 'enregistrer') enregistrerMeme(carte, carte.dataset.nom);
+    else if (bouton.dataset.memeAction === 'supprimer') supprimerMeme(carte.dataset.nom);
+  });
+  box.addEventListener('input', function (ev) {
+    if (ev.target.id === 'meme-recherche') {
+      _memeFiltre = ev.target.value;
+      _rendreGrilleMemes();
+    }
+  });
+  box.addEventListener('change', function (ev) {
+    if (ev.target.id === 'meme-muets') {
+      _memeMuetsSeuls = ev.target.checked;
+      _rendreGrilleMemes();
+    }
+  });
+}
+
+function _etatMemes(texte) {
+  const el = document.getElementById('atelier-memes-etat');
+  if (el) el.textContent = texte;
+}
+
+/** Enregistre la description d'UNE carte, sans redessiner la grille.
+ *
+ *  Le serveur rend ce que Wally LIRA — tronqué à la longueur maximale, ou
+ *  retombé sur un vieux sidecar partagé si l'on vient d'effacer. C'est cette
+ *  réponse qu'on réaffiche, pas la saisie : sinon l'écran promet une phrase
+ *  que le bot ne lira jamais en entier.
+ */
+async function enregistrerMeme(carte, nom) {
+  const champ = carte.querySelector('[data-champ="description"]');
+  if (!champ) return;
+  _etatMemes('Enregistrement…');
+  const r = await apiFetch('/api/admin/overlay/memes/' + encodeURIComponent(nom), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description: champ.value }),
+  });
+  if (!r || !r.ok) { _etatMemes('Échec de l\'enregistrement.'); return; }
+  const d = await r.json();
+  champ.value = d.description || '';
+  champ.placeholder = d.lue || '';
+  const entree = _memes.find((m) => m.nom === nom);
+  if (entree) { entree.description = d.description || ''; entree.lue = d.lue || ''; }
+  _etatMemes(nom + ' : « ' + (d.lue || '') + ' »');
+}
+
+async function supprimerMeme(nom) {
+  if (!confirm('Supprimer ' + nom + ' ? Le fichier et sa description partent.')) return;
+  _etatMemes('Suppression…');
+  const r = await apiFetch('/api/admin/overlay/memes/' + encodeURIComponent(nom),
+                           { method: 'DELETE' });
+  _memes = _memes.filter((m) => m.nom !== nom);
+  _rendreGrilleMemes();
+  _etatMemes(r && r.ok ? nom + ' supprimé.' : 'Échec de la suppression.');
+}
+
+async function deposerMeme() {
+  const input = document.getElementById('meme-fichier');
+  const fichier = input && input.files && input.files[0];
+  if (!fichier) { _etatMemes('Choisissez un fichier.'); return; }
+  _etatMemes('Envoi de ' + fichier.name + '… (conversion possible)');
+  // Le corps est le fichier BRUT : pas de multipart, donc pas de dépendance
+  // `python-multipart` côté serveur pour un seul fichier à la fois.
+  const r = await apiFetch('/api/admin/overlay/memes/' + encodeURIComponent(fichier.name), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: fichier,
+  });
+  if (r && r.ok) {
+    const d = await r.json();
+    // La liste ENTIÈRE est rechargée : le serveur renomme (`meme137.webp`) et
+    // peut convertir. Deviner le nom ici, c'est afficher une vignette morte.
+    await renderAtelierMemes();
+    _etatMemes(d.nom + ' rangé' + (d.converti ? ' (converti en WebP).' : '.')
+      + ' Décrivez-le : sans description, Wally ne saura pas quand le sortir.');
+    return;
+  }
+  // Le serveur DIT pourquoi (format, poids, doublon) : le relayer vaut mieux
+  // qu'un « échec » qui laisse chercher.
+  let raison = '';
+  // `apiFetch` rend NULL sur 401 (session expirée) : `r.json()` lèverait, et le
+  // `catch` masquerait la vraie cause derrière un « Refusé » sec.
+  try { if (r) raison = (await r.json()).detail || ''; }
+  catch (e) { /* corps illisible */ }
+  _etatMemes('Refusé' + (raison ? ' — ' + raison : '.'));
+}
+
 
 // ── Atelier des sons de commande (Système → Overlay) ─────────────────────────
 //

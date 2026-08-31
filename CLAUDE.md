@@ -704,14 +704,14 @@ exécute ce que Wally vient de déclarer raté).
 - `data/hf-cache` est monté : sans lui, chaque rebuild rejette les 145 Mo du modèle STT.
 - Un rebuild coupe le site ~15 s ; l'edge Cloudflare garde un 403 quelques secondes de plus.
 - Dashboard : FastAPI + SPA vanilla JS. Auth : Bearer token (admin), JWT Discord OAuth2 (chat web).
-- Sidebar admin — **7 onglets** :
-  **Paramètres** (Émotions · LLM · Images · Vocal) · **Mémoire** (Utilisateurs · Mémoire
-  communautaire · Questions · Notes du bot · Comptes Apex · Dans la tête de Wally) ·
-  **Actions** · **Prompts** · **Mise en scène** · **Système** (Logs · Twitch · Overlay) ·
-  **Vocal**. Les anciens noms d'onglets redirigent de façon transparente.
+- Sidebar admin — **11 pages en 4 thèmes** (`ROUTES` d'`app.js`, `index.html`) :
+  **Cockpit** · **Cerveau** (Personnes · Mémoire commune · Personnalité · Modèles & coûts) ·
+  **Live** (Scène & overlays · Voix · Médias & sons · Automatisations) ·
+  **Système** (Journal · Connexions). Route = `#/theme/page` ; les anciens hash
+  (`#admin-memoire`, `admin-overlay`…) redirigent par `ROUTES_LEGACY`.
   (L'onglet Coûts a été retiré : remplacé par Langfuse puis abandonné ; `log_cost()` écrit
   toujours en base, sans UI.)
-- Un nouvel onglet se câble à **4 endroits** d'`app.js` — chercher les quatre avant de conclure.
+- Une nouvelle page se câble à **4 endroits** — chercher les quatre avant de conclure.
 - ⚠️ Un `throw` dans un `mount()` casse tous les montages suivants ; `node --check` ne voit pas
   les TDZ. Vérifier le montage réel dans le navigateur, pas seulement les tests.
 
