@@ -20,6 +20,7 @@ from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
+from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool_discord
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
@@ -1483,6 +1484,10 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     _narrateur_jeu = _overlay_narrator(bot)
     if _narrateur_jeu is not None and _narrateur_jeu.is_active():
         tools.append(DEUX_VERITES_TOOL)
+    # Le rébus ne demande qu'un salon où écrire : ni overlay, ni badge, ni live.
+    # C'est ce qui le distingue du duel et du shoutout, et ce qui lui vaut d'être
+    # offert des deux côtés au lieu de figurer dans `_TWITCH_SEULEMENT`.
+    tools.append(REBUS_TOOL)
     # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
     # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
@@ -2202,6 +2207,16 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # Le contenu brut reste celui donné à la mémoire, aux faits et aux logs.
     _reaction_note = await _reaction_roster(bot, message) if channel_allowed else ""
     _context_content = _with_reactions(_enriched_content, _reaction_note)
+
+    # Rébus en cours dans ce salon : ce message est-il la bonne réponse ? On
+    # devine en ÉCRIVANT le mot, jamais en tapant une commande — la
+    # vérification vit donc sur le chemin de TOUS les messages. Détachée, et le
+    # message poursuit sa route : gagner ne le retire pas du salon, Wally doit
+    # le percevoir comme n'importe quelle ligne.
+    if channel_allowed:
+        from bot.tools.rebus_tool import verifier_reponse
+        _fire(verifier_reponse(message.author.display_name, _enriched_content,
+                               str(message.channel.id)))
 
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
     if channel_allowed:
@@ -3008,6 +3023,8 @@ async def _respond(
             if name == "deux_verites_un_mensonge":
                 return await run_deux_verites_tool(
                     bot, args, canal_id=str(message.channel.id))
+            if name == "rebus":
+                return await run_rebus_tool_discord(message.channel)
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
             if name == "music_control":

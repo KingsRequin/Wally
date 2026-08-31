@@ -43,14 +43,6 @@ async def dispatch_command(
                 _fire(_announce_overlay_image(bot, channel_name, channel_id, image, ds, img_payload))
         return True
 
-    # Le rébus : chaîne MAISON seulement, comme `!image` et les sons. Les
-    # réponses, elles, se ramassent dans `handle_message` — on devine en
-    # écrivant le mot, pas en tapant une commande.
-    if content_lower == "!rebus" and est_chaine_home(bot, channel_name):
-        from bot.twitch.commands.rebus import handle_rebus_command
-        await handle_rebus_command(bot, channel_name)
-        return True
-
     if content_lower == "!mood":
         await handle_mood_command(bot, channel_name)
         return True

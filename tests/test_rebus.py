@@ -1,4 +1,4 @@
-"""Le rébus : le catalogue livré, le moteur, et la partie dans le chat.
+"""Le rébus : le catalogue livré, le moteur, et la partie lancée par l'outil.
 
 Le gros morceau ici est `TestCatalogueLivre` : il ne teste pas du code, il tient
 le FICHIER. Quatre relectures phonétiques ont sorti 48 entrées fausses du
@@ -9,6 +9,7 @@ tout en lettres) sont ceux qu'une relecture humaine rate justement le plus.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import unicodedata
 
@@ -16,7 +17,7 @@ import pytest
 
 from bot.core import rebus as noyau
 from bot.core.rebus import Rebus, Sac, charger, indices, normaliser, trouve
-from bot.twitch.commands import rebus as jeu
+from bot.tools import rebus_tool as jeu
 
 CHAMEAU = Rebus("chameau", ("🐈", "M", "💧"), ("chat", "M", "eau"), "animal")
 
@@ -141,94 +142,150 @@ class TestCatalogueAbsent:
         assert charger(f) == []
 
 
-# ────────────────────────── la partie dans le chat ─────────────────────────
-class FausseAPI:
-    def __init__(self):
-        self.lignes: list[str] = []
-
-    async def send_automatic(self, texte, broadcaster_id=None):
-        self.lignes.append(texte)
-        return True
-
-
-class FauxBot:
-    def __init__(self):
-        self.twitch_api = FausseAPI()
-
-
+# ─────────────────────────── la partie qui tourne ──────────────────────────
 @pytest.fixture(autouse=True)
 def partie_neuve(monkeypatch):
-    """Aucune partie ne survit d'un test à l'autre, et le cooldown non plus."""
+    """Aucune partie ne survit d'un test à l'autre, et le repos non plus."""
     monkeypatch.setattr(jeu, "_partie", None, raising=False)
     monkeypatch.setattr(jeu, "_sac", Sac([CHAMEAU]), raising=False)
     monkeypatch.setattr(jeu, "_fin_derniere", float("-inf"), raising=False)
-    annonces: list[str] = []
-
-    async def _annonce(bot, canal, fait):
-        annonces.append(fait)
-
-    monkeypatch.setattr(jeu, "_annoncer_fin", _annonce)
-    yield annonces
+    # L'énigme part normalement 2,5 s après l'outil, le temps que la réplique de
+    # Wally sorte. Attendre ce délai pour de vrai à chaque test rendrait la suite
+    # lente sans rien prouver de plus.
+    monkeypatch.setattr(jeu, "DELAI_ENIGME_S", 0.0)
+    yield
     if jeu._partie is not None and jeu._partie.tache is not None:
         jeu._partie.tache.cancel()
 
 
+class Salon:
+    """Un canal où écrire — c'est tout ce que le moteur connaît d'une plateforme."""
+
+    def __init__(self, nom="azrael"):
+        self.nom = nom
+        self.lignes: list[str] = []
+        self.annonces: list[str] = []
+
+    async def publier(self, texte):
+        self.lignes.append(texte)
+
+    async def annoncer(self, fait):
+        self.annonces.append(fait)
+
+    async def lancer(self):
+        return await jeu._lancer(self.nom, self.publier, self.annoncer)
+
+
+async def _laisser_partir_l_enigme():
+    """Rend la main au minuteur, qui publie l'énigme."""
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+
 class TestPartie:
-    async def test_la_commande_publie_l_enigme(self):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert "🐈 M 💧" in bot.twitch_api.lignes[0]
+    async def test_l_enigme_est_publiee(self):
+        s = Salon()
+        await s.lancer()
+        await _laisser_partir_l_enigme()
+        assert CHAMEAU.enigme in s.lignes[0]
+
+    async def test_l_enigme_ne_part_pas_avant_la_replique_de_wally(self):
+        """L'outil rend la main SANS avoir rien publié.
+
+        C'est ce qui met les dessins APRÈS la phrase qui les annonce : le modèle
+        répond dans l'intervalle. Publiée depuis l'outil, l'énigme arriverait
+        avant « vas-y je suis chaud », et la conversation se lirait à l'envers.
+        """
+        s = Salon()
+        await s.lancer()
+        assert s.lignes == []
 
     async def test_l_enigme_ne_contient_jamais_la_reponse(self):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert "chameau" not in " ".join(bot.twitch_api.lignes).lower()
+        s = Salon()
+        await s.lancer()
+        await _laisser_partir_l_enigme()
+        assert "chameau" not in " ".join(s.lignes).lower()
 
-    async def test_la_bonne_reponse_gagne_et_clot_la_partie(self, partie_neuve):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert await jeu.verifier_reponse(bot, "Alice", "un chameau !")
+    async def test_la_bonne_reponse_gagne_et_clot_la_partie(self):
+        s = Salon()
+        await s.lancer()
+        assert await jeu.verifier_reponse("Alice", "un chameau !", "azrael")
         assert jeu._partie is None
-        assert "Alice" in partie_neuve[0] and "CHAMEAU" in partie_neuve[0]
+        assert "Alice" in s.annonces[0] and "CHAMEAU" in s.annonces[0]
 
     async def test_une_mauvaise_reponse_ne_clot_rien(self):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert not await jeu.verifier_reponse(bot, "Alice", "un dromadaire")
+        s = Salon()
+        await s.lancer()
+        assert not await jeu.verifier_reponse("Alice", "un dromadaire", "azrael")
         assert jeu._partie is not None
 
     async def test_sans_partie_la_verification_est_muette(self):
-        assert not await jeu.verifier_reponse(FauxBot(), "Alice", "chameau")
+        assert not await jeu.verifier_reponse("Alice", "chameau", "azrael")
 
-    async def test_le_second_gagnant_ne_gagne_pas_deux_fois(self, partie_neuve):
-        """Deux bonnes réponses coup sur coup : une seule annonce."""
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        await jeu.verifier_reponse(bot, "Alice", "chameau")
-        await jeu.verifier_reponse(bot, "Bob", "chameau")
-        assert len(partie_neuve) == 1
+    async def test_une_reponse_venue_d_un_AUTRE_salon_ne_gagne_pas(self):
+        """Sans cette garde, une bonne réponse tapée sur Discord emporterait la
+        partie qui tourne sur Twitch, devant des gens qui ne l'ont jamais vue."""
+        s = Salon("twitch")
+        await s.lancer()
+        assert not await jeu.verifier_reponse("Alice", "chameau", "un-salon-discord")
+        assert jeu._partie is not None
 
-    async def test_relancer_pendant_une_partie_redonne_l_enigme(self):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
+    async def test_le_second_gagnant_ne_gagne_pas_deux_fois(self):
+        s = Salon()
+        await s.lancer()
+        await jeu.verifier_reponse("Alice", "chameau", "azrael")
+        await jeu.verifier_reponse("Bob", "chameau", "azrael")
+        assert len(s.annonces) == 1
+
+    async def test_relancer_dans_le_meme_salon_redonne_l_enigme(self):
+        s = Salon()
+        await s.lancer()
+        await _laisser_partir_l_enigme()
         premier = jeu._partie
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert jeu._partie is premier
-        assert "🐈 M 💧" in bot.twitch_api.lignes[-1]
+        await s.lancer()
+        assert jeu._partie is premier and CHAMEAU.enigme in s.lignes[-1]
 
-    async def test_le_cooldown_bloque_une_relance_immediate(self, monkeypatch):
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        await jeu.verifier_reponse(bot, "Alice", "chameau")
-        avant = len(bot.twitch_api.lignes)
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert len(bot.twitch_api.lignes) == avant and jeu._partie is None
+    async def test_wally_n_anime_pas_deux_parties_a_la_fois(self):
+        await Salon("twitch").lancer()
+        rapport = json.loads(await Salon("discord").lancer())
+        assert rapport["status"] == "ailleurs"
 
-    async def test_un_catalogue_vide_ne_lance_rien(self, monkeypatch):
+    async def test_le_repos_bloque_une_relance_immediate(self):
+        s = Salon()
+        await s.lancer()
+        await jeu.verifier_reponse("Alice", "chameau", "azrael")
+        await s.lancer()
+        await _laisser_partir_l_enigme()
+        assert jeu._partie is None
+
+
+class TestCompteRenduAuModele:
+    """Ce que l'outil rend à Wally. Il ne doit RIEN pouvoir recopier."""
+
+    async def test_le_compte_rendu_ne_livre_ni_la_reponse_ni_les_emoji(self):
+        rapport = await Salon().lancer()
+        assert "chameau" not in rapport.lower()
+        assert not any(c in rapport for c in CHAMEAU.emojis if not c.isascii())
+
+    async def test_le_compte_rendu_dit_qu_il_a_lance(self):
+        assert json.loads(await Salon().lancer())["status"] == "lance"
+
+    async def test_un_catalogue_vide_le_dit_au_lieu_de_mentir(self, monkeypatch):
+        """Un outil qui rendrait « ok » dans tous les cas ferait mentir Wally."""
         monkeypatch.setattr(jeu, "_sac", Sac([]))
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        assert jeu._partie is None and bot.twitch_api.lignes == []
+        rapport = json.loads(await Salon().lancer())
+        assert rapport["status"] == "indisponible" and jeu._partie is None
+
+    async def test_le_repos_se_dit_au_modele(self):
+        s = Salon()
+        await s.lancer()
+        await jeu.verifier_reponse("Alice", "chameau", "azrael")
+        assert json.loads(await s.lancer())["status"] == "trop_tot"
+
+    async def test_une_partie_en_cours_se_dit_au_modele(self):
+        s = Salon()
+        await s.lancer()
+        assert json.loads(await s.lancer())["status"] == "deja_en_cours"
 
 
 class TestFiletDuSecret:
@@ -237,32 +294,54 @@ class TestFiletDuSecret:
 
     async def test_le_mot_est_masque_pendant_la_partie(self):
         from bot.core.secret_guard import redact
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
+        await Salon().lancer()
         assert "chameau" not in redact("la réponse est chameau").lower()
 
     async def test_le_filet_est_leve_a_la_victoire(self):
         from bot.core.secret_guard import redact
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
-        await jeu.verifier_reponse(bot, "Alice", "chameau")
+        await Salon().lancer()
+        await jeu.verifier_reponse("Alice", "chameau", "azrael")
         assert redact("le mot était chameau") == "le mot était chameau"
 
-    async def test_le_filet_est_leve_quand_le_temps_expire(self, monkeypatch, partie_neuve):
+    async def test_le_filet_est_leve_quand_le_temps_expire(self, monkeypatch):
         from bot.core.secret_guard import redact
         monkeypatch.setattr(jeu, "DELAI_INDICE_S", 0.0)
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
+        s = Salon()
+        await s.lancer()
         await asyncio.wait_for(jeu._partie.tache, timeout=2.0)
         assert jeu._partie is None
         assert redact("le mot était chameau") == "le mot était chameau"
-        assert "CHAMEAU" in partie_neuve[0]
+        assert "CHAMEAU" in s.annonces[0]
 
-    async def test_les_indices_sortent_dans_l_ordre_puis_la_reponse(self, monkeypatch, partie_neuve):
+    async def test_les_indices_sortent_dans_l_ordre_puis_la_reponse(self, monkeypatch):
         monkeypatch.setattr(jeu, "DELAI_INDICE_S", 0.0)
-        bot = FauxBot()
-        await jeu.handle_rebus_command(bot, "azrael")
+        s = Salon()
+        await s.lancer()
         await asyncio.wait_for(jeu._partie.tache, timeout=2.0)
-        indices_publies = [l for l in bot.twitch_api.lignes if "Indice" in l]
-        assert len(indices_publies) == len(indices(CHAMEAU))
-        assert "animal" in indices_publies[0]
+        publies = [l for l in s.lignes if "Indice" in l]
+        assert len(publies) == len(indices(CHAMEAU)) and "animal" in publies[0]
+
+
+class TestEntreesDeChaquePlateforme:
+    """Les deux adaptateurs branchent le même moteur sur un canal différent."""
+
+    async def test_discord_publie_dans_le_salon(self):
+        envoyes: list[str] = []
+
+        class FauxSalon:
+            id = 4242
+
+            async def send(self, texte):
+                envoyes.append(texte)
+
+        assert json.loads(await jeu.run_rebus_tool_discord(FauxSalon()))["status"] == "lance"
+        await _laisser_partir_l_enigme()
+        assert CHAMEAU.enigme in envoyes[0]
+        assert jeu._partie.canal == "4242"
+
+    async def test_twitch_sans_api_le_dit_au_lieu_de_planter(self):
+        class SansAPI:
+            twitch_api = None
+
+        rapport = json.loads(await jeu.run_rebus_tool(SansAPI(), "azrael"))
+        assert rapport["status"] == "indisponible" and jeu._partie is None

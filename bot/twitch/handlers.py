@@ -44,6 +44,7 @@ from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
+from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool
 from bot.tools.shoutout_tool import SHOUTOUT_TOOL, run_shoutout_tool
 from bot.core.prediction_kills import PREDICTION_TOOL, run_prediction_tool
 from bot.discord.voice.tools import SAY_IN_VOICE_TOOL, run_say_in_voice_tool
@@ -570,6 +571,13 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # un outil qui ne sait que dire non coûte du contexte à chaque tour.
     if _narrateur_so is not None and _narrateur_so.is_active():
         tools.append(DEUX_VERITES_TOOL)
+    # Le rébus n'a besoin QUE du chat — pas d'overlay, donc pas de live. C'est
+    # la différence avec les deux jeux ci-dessus, qui s'affichent à l'écran et
+    # ne peuvent que refuser hors direct. Chaîne maison quand même : le jeu
+    # appartient au live d'Azraël, et une partie lancée depuis une chaîne
+    # invitée publierait chez lui.
+    if overlay and getattr(bot, "twitch_api", None) is not None:
+        tools.append(REBUS_TOOL)
     return tools
 
 
@@ -793,6 +801,10 @@ def make_tool_executor(
             # `channel` EST la clé du prélude côté Twitch (`channel_id=channel`
             # dans `handle_message`) : c'est elle qui dit qui vient d'écrire.
             return await run_deux_verites_tool(bot, args, canal_id=channel)
+        if name == "rebus":
+            # `channel` et pas `channel_name` : c'est la clé que l'annonceur de
+            # fin de partie attend, la même que pour `deux_verites_un_mensonge`.
+            return await run_rebus_tool(bot, channel)
         if name == "predict":
             return await run_predict_tool(bot, args)
         if name in ("start_counting", "stop_counting", "list_counters"):
@@ -1000,8 +1012,8 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Le message continue son chemin normal ensuite : gagner ne le retire pas
     # du chat, et Wally doit le percevoir comme n'importe quelle ligne.
     if est_chaine_home(bot, channel_name):
-        from bot.twitch.commands.rebus import verifier_reponse
-        _fire(verifier_reponse(bot, author_display, content))
+        from bot.tools.rebus_tool import verifier_reponse
+        _fire(verifier_reponse(author_display, content, channel_id))
 
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
