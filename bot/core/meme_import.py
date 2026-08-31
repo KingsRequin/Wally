@@ -32,6 +32,7 @@ from bot.core.memes import (
     _EXTENSIONS_MEDIA,
     _MAX_BYTES,
     chemin_description,
+    description_ecrite,
     tronquer_description,
 )
 
@@ -423,6 +424,42 @@ def memes_sans_description(
         if sidecar_de(p) is None and not p.with_suffix(".txt").is_file():
             muets.append(p)
     return muets
+
+
+def memes_a_citation_coupee(
+    dossier: Path, formats: frozenset[str] = _EXTENSIONS_MEDIA
+) -> list[Path]:
+    """Les médias dont la description s'arrête au milieu d'une citation.
+
+    L'ancien plafond de `MAX_DESCRIPTION` — 160 avant le 2026-08-31 — coupait à
+    l'ÉCRITURE du sidecar : le texte au-delà n'existe nulle part, et seule une
+    nouvelle analyse peut le rendre.
+
+    Le signe retenu est un guillemet ouvert jamais refermé, parce qu'il ne se
+    trompe pas. Deux critères plus larges ont été essayés et écartés :
+
+    · La LONGUEUR seule (≥ 140 caractères) désignait 120 des 167 descriptions,
+      dont des descriptions entières. Re-décrire l'une d'elles a produit une
+      REGRESSION — le modèle a perdu le format « bébé sceptique » identifié par
+      la version d'avant et recopié une infobulle Apex sans intérêt sur trois
+      cents caractères. Un remède qui abîme les deux tiers du corpus pour en
+      réparer un tiers n'en est pas un.
+    · « ne finit pas par une ponctuation » accusait des fins normales : le
+      prompt demande de clore la phrase à nu sur le sujet, donc
+      « … BESOIN D'UN BUFF… » Apex » se termine bien.
+
+    Reste que ce critère ne voit PAS une coupe survenue hors citation. C'est
+    assumé : on ne sait pas distinguer celles-là d'une description complète, et
+    le coût d'une régression dépasse celui d'une description un peu courte.
+    """
+    coupees: list[Path] = []
+    for p in sorted(dossier.iterdir()):
+        if not p.is_file() or p.suffix.lower() not in formats:
+            continue
+        texte = description_ecrite(p)
+        if texte.count("«") != texte.count("»") or texte.count('"') % 2:
+            coupees.append(p)
+    return coupees
 
 
 def sidecar_de(path: Path) -> Path | None:

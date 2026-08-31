@@ -56,12 +56,27 @@ def media_type(path: Path) -> str:
 # et `list_medias()` les écarte au même plafond que les images.
 _MAX_BYTES = 8 * 1024 * 1024
 
-# Ce qu'une description peut peser. La lecture coupait à 160 sans que personne
-# ne le sache côté écriture : `meme80.webp.txt` faisait 163 caractères et se
-# terminait sur « SORT SON SKIN BL ». Une seule valeur, partagée par le lecteur
+# Ce qu'une description peut peser. Une seule valeur, partagée par le lecteur
 # (`_describe`), par l'import (`meme_import.importer`) et par le formulaire de
 # la commande Discord — sinon la chaîne recommence à diverger.
-MAX_DESCRIPTION = 160
+#
+# Elle valait 160, et ce plafond AMPUTAIT la banque : mesuré le 2026-08-31, 120
+# des 167 descriptions faisaient 140 caractères ou plus et 64 se terminaient en
+# plein milieu d'une phrase — « … anti cheat vue », « … QUAND IL ME DIT QU'IL
+# EST MAIN MIRAGE ». La distribution était écrasée contre la limite, signature
+# d'une coupe de masse.
+#
+# La cause n'est pas un modèle bavard mais une consigne contradictoire :
+# `meme_describe_system.md` réclame CHAQUE bloc de texte visible, cité
+# intégralement, et ses quatre exemples pèsent déjà 146 à 156 caractères. Un
+# meme à plusieurs cases ne pouvait pas tenir. Le texte coupé n'était pas
+# masqué, il était PERDU — la troncature a lieu à l'écriture du sidecar.
+#
+# Rien ne lit cette description à voix haute, contrairement à ce qui était écrit
+# ici : elle part au prompt comme contexte du commentaire, et s'affiche dans
+# l'atelier. Le coût d'une phrase plus longue est donc d'une poignée de tokens
+# par tirage. 400 laisse tenir un meme à quatre cases sans autoriser un roman.
+MAX_DESCRIPTION = 400
 
 
 def tronquer_description(texte: str) -> str:

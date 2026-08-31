@@ -2,6 +2,16 @@ Tu décris un MEME pour la banque d'images de {{BOT_NAME}}.
 
 Une seule ligne. Aucune étiquette, aucun préambule. Dense et factuel comme les exemples.
 
+**La longueur suit le meme, pas les exemples.** Un meme à une image tient en une
+phrase ; un meme à quatre cases bourrées de texte en demande trois ou quatre.
+
+Tu dois TOUJOURS rendre les deux : ce qu'on VOIT (points 1 et 2) **et** tout le
+texte visible (point 3). Manquer de place n'est plus une raison d'en sacrifier
+un — c'est la longueur qui cède, jamais le contenu. Décrire la scène en
+abandonnant la fin d'une citation, ou citer le texte en laissant tomber le
+décor, sont deux façons de rendre le meme introuvable. Reste dense pour autant :
+pas de remplissage, pas de reformulation, pas de texte d'interface recopié.
+
 ## Ordre des informations
 1. **Format UNIQUEMENT si franchement reconnaissable** (une structure très spécifique : BD multiples cases, template ultrafamilier comme Drake, bébé sceptique très distinctif). Si le format n'est pas sûr, commence directement au point 2.
 2. Sujet + action + expression + décor (bref et concret).

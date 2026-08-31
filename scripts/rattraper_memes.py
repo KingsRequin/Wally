@@ -30,6 +30,7 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -179,6 +180,54 @@ async def _decrire_les_muets(dossier: Path, apply: bool, db_path: str) -> None:
         await db.close()
 
 
+async def _redecrire_les_tronques(dossier: Path, apply: bool, db_path: str) -> None:
+    """Réécrit les descriptions coupées en pleine citation par l'ancien plafond.
+
+    Le texte coupé n'était pas masqué mais PERDU — la troncature avait lieu à
+    l'écriture du sidecar. Seule une nouvelle analyse peut le rendre, et elle ne
+    le peut que depuis que `MAX_DESCRIPTION` vaut 400.
+
+    L'ancienne description est gardée en `.txt.avant-<horodatage>` : le modèle
+    peut faire moins bien qu'avant sur une image, et rien ne permettrait alors
+    de revenir en arrière.
+    """
+    suspects = meme_import.memes_a_citation_coupee(dossier, _EXTENSIONS)
+    print(f"\n{len(suspects)} description(s) coupées en pleine citation")
+    if not suspects:
+        return
+    if not apply:
+        for chemin in suspects[:5]:
+            print(f"  {chemin.name:16} serait re-décrit — non appelé en simulation")
+        if len(suspects) > 5:
+            print(f"  … et {len(suspects) - 5} autre(s)")
+        return
+
+    svc, db, modele = await _vision(db_path)
+    horodatage = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    try:
+        if not svc.available:
+            print(f"  OPENAI_API_KEY absente — vision ({modele}) indisponible, "
+                  f"aucune description réécrite")
+            return
+        rallonges = 0
+        for chemin in suspects:
+            texte = await _decrire(svc, chemin)
+            if not texte:
+                print(f"  {chemin.name:16} aucune description obtenue, l'ancienne reste")
+                continue
+            sidecar = chemin.with_name(chemin.name + ".txt")
+            if sidecar.is_file():
+                sidecar.rename(sidecar.with_name(f"{sidecar.name}.avant-{horodatage}"))
+            sidecar.write_text(texte, encoding="utf-8")
+            if len(texte) > 160:
+                rallonges += 1
+            print(f"  {chemin.name:16} {len(texte):3} car. {texte[:70]}")
+        print(f"\n{rallonges} description(s) dépassent maintenant les 160 "
+              f"caractères d'avant — autant d'amputations réparées.")
+    finally:
+        await db.close()
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dossier", default="data/memes")
@@ -187,6 +236,9 @@ async def main() -> int:
                         help="écrit ; sans lui, rien n'est modifié")
     parser.add_argument("--sans-decrire", action="store_true",
                         help="ne fait que la conversion")
+    parser.add_argument("--redecrire-tronques", action="store_true",
+                        help="réécrit les descriptions coupées en pleine "
+                             "citation (garde l'ancienne à côté)")
     args = parser.parse_args()
 
     dossier = Path(args.dossier)
@@ -196,6 +248,9 @@ async def main() -> int:
 
     if not args.sans_decrire:
         await _decrire_les_muets(dossier, args.apply, args.db)
+
+    if args.redecrire_tronques:
+        await _redecrire_les_tronques(dossier, args.apply, args.db)
 
     print("\nConversion en WebP :")
     _convertir_dossier(dossier, args.apply)
