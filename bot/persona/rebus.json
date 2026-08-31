@@ -9,7 +9,7 @@
   "`emojis` et `lecture` ont TOUJOURS la même longueur : lecture[i] est ce que emojis[i] doit se prononcer ou s'épeler. C'est ce qui rend le fichier vérifiable à l'œil et ce qui sert d'indices progressifs.",
   "Un emoji ne rentre que si son nom français est SANS ambiguïté sérieuse. 🌊 se lit « vague » autant que « eau » : absent d'ici, 💧 le remplace.",
   "`categorie` sert d'indice n°1 pendant la partie (« c'est un objet »). Elle n'est pas décorative.",
-  "Seule exception à la règle des trois lettres : les noms propres de la catégorie « maison » (Azraël), qu'aucun emoji ne peut porter autrement."
+  "⚠️ LA RÉPONSE NE DOIT JAMAIS ÊTRE UN MOT QUE WALLY A BESOIN D'ÉCRIRE : son propre nom, celui du streamer, un pseudo de la commu. `secret_guard` masque la réponse dans TOUT ce qu'il publie pendant la partie — le 2026-08-31 le tirage est sorti sur « Wally » et son nom a été caviardé six fois en trois minutes, en plein live. La catégorie « maison » (Wally, KingsRequin, Azraël) a été retirée pour cette raison : un rébus ne se paie pas en rendant Wally incapable de se nommer."
  ],
  "rebus": [
   {
@@ -3183,52 +3183,6 @@
     "I"
    ],
    "categorie": "mot"
-  },
-  {
-   "mot": "Wally",
-   "emojis": [
-    "W",
-    "A",
-    "🛏️"
-   ],
-   "lecture": [
-    "W",
-    "A",
-    "lit"
-   ],
-   "categorie": "maison"
-  },
-  {
-   "mot": "KingsRequin",
-   "emojis": [
-    "👑",
-    "S",
-    "🦈"
-   ],
-   "lecture": [
-    "king",
-    "S",
-    "requin"
-   ],
-   "categorie": "maison"
-  },
-  {
-   "mot": "Azraël",
-   "emojis": [
-    "A",
-    "Z",
-    "🐀",
-    "E",
-    "L"
-   ],
-   "lecture": [
-    "A",
-    "Z",
-    "rat",
-    "E",
-    "L"
-   ],
-   "categorie": "maison"
   }
  ]
 }

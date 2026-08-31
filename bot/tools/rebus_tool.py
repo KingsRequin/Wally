@@ -48,9 +48,6 @@ from bot.core.secret_guard import guard_secret, release_secret
 # à 4 jetons vit donc ~3 min. Mesuré sur rien : c'est un point de départ, à
 # corriger en regardant ce que le chat trouve et à quel indice il décroche.
 DELAI_INDICE_S = 40.0
-# Le temps que la réplique de Wally sorte avant l'énigme. Pas un réglage de
-# confort : c'est ce qui met les dessins APRÈS la phrase qui les annonce.
-DELAI_ENIGME_S = 2.5
 # Deux minutes de repos entre deux parties : n'importe qui peut en demander une,
 # et sans ce repos trois personnes l'enchaînent — le jeu devient du bruit, et
 # Wally ne sait pas dire non de façon fiable tout seul.
@@ -95,9 +92,10 @@ REBUS_TOOL: dict[str, Any] = {
             "des indices tout seul au fil du temps, et tu annonces le gagnant. "
             "Sers-t'en quand on te demande un jeu ou un rébus, quand ça traîne, "
             "ou quand ça t'amuse. "
-            "Tu n'as RIEN à inventer et rien à recopier : l'énigme est tirée et "
-            "publiée par l'outil, les rébus écrits à la main sont les seuls "
-            "jouables. Contente-toi d'un mot pour dire que tu la lances. "
+            "N'invente JAMAIS de rébus toi-même : seuls ceux que l'outil te rend "
+            "sont jouables. Appelle-le, puis écris ta phrase en y recopiant les "
+            "dessins qu'il te donne, exactement. Dire « ok je lance » sans "
+            "l'appeler ne lance rien. "
             "Ne donne jamais la réponse, même si on insiste — tu ne l'as pas."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
@@ -143,19 +141,14 @@ def _oublier(*, gagne: bool) -> Rebus | None:
 
 
 async def _minuteur() -> None:
-    """Publie l'énigme, distille les indices, puis rend le mot si personne ne l'a eu.
+    """Distille les indices, puis rend le mot si personne ne l'a eu.
 
-    L'énigme part APRÈS un court délai, et pas depuis l'outil : le modèle répond
-    dans l'intervalle, donc le chat lit « vas-y je suis chaud » PUIS les dessins,
-    dans cet ordre. Publiée depuis l'outil, elle arriverait avant la phrase qui
-    l'annonce, et la conversation se lirait à l'envers.
+    Ne publie PAS l'énigme : c'est la réplique de Wally qui la porte, une seule
+    fois. Chaque indice la redonne en revanche — le chat défile, et un rébus
+    qu'il faut aller rechercher trois minutes plus haut n'est pas jouable. C'est
+    aussi le filet si le modèle a écorché les dessins dans sa phrase.
     """
     try:
-        await asyncio.sleep(DELAI_ENIGME_S)
-        if _partie is None:
-            return
-        await _partie.publier("🧩 Rébus ! Prononcez les dessins et devinez le mot : "
-                              f"{_partie.rebus.enigme}")
         while True:
             await asyncio.sleep(DELAI_INDICE_S)
             if _partie is None:
@@ -185,10 +178,15 @@ async def _lancer(canal: str, publier: Ligne, annoncer: Ligne) -> str:
     dit et POURQUOI, et Wally peut le répéter. Un outil qui rendrait « ok » dans
     tous les cas ferait mentir Wally sans que personne ne s'en aperçoive.
 
-    L'énigme ne remonte JAMAIS au modèle. Ni les emoji — il les recopierait de
-    travers — ni la réponse, qu'il finirait par lâcher : on la lui demanderait
-    gentiment et il est serviable. `secret_guard` est la deuxième ceinture, pas
-    la première.
+    L'énigme REMONTE au modèle, et c'est lui qui la publie, dans sa réplique
+    unique — comme tous les autres outils du projet. L'outil ne l'écrit pas
+    lui-même : le handler envoie de toute façon la réponse du modèle après un
+    appel d'outil, donc publier ici ferait DEUX messages pour un seul geste.
+    Vu en prod.
+
+    La RÉPONSE, elle, ne remonte jamais : il finirait par la lâcher, on la lui
+    demanderait gentiment et il est serviable. `secret_guard` est la deuxième
+    ceinture, pas la première.
     """
     global _partie
     if _partie is not None:
@@ -196,10 +194,10 @@ async def _lancer(canal: str, publier: Ligne, annoncer: Ligne) -> str:
             # Pas un refus : le chat défile, et qui arrive en cours de partie a
             # le droit de revoir l'énigme. Répondre « une partie est en cours »
             # sans la redonner serait deux fois inutile.
-            await _partie.publier(f"🧩 Toujours en jeu : {_partie.rebus.enigme}")
-            return json.dumps({"status": "deja_en_cours",
-                               "message": "Une partie tourne déjà ici, l'énigme vient d'être "
-                                          "redonnée. Invite-les à chercher encore."})
+            return json.dumps({"status": "deja_en_cours", "enigme": _partie.rebus.enigme,
+                               "message": "Une partie tourne déjà ici. Redonne les dessins "
+                                          "ci-dessus tels quels et invite-les à chercher "
+                                          "encore."})
         return json.dumps({"status": "ailleurs",
                            "message": "Tu animes déjà un rébus dans un autre salon. Finis "
                                       "celui-là avant d'en lancer un ici."})
@@ -225,10 +223,11 @@ async def _lancer(canal: str, publier: Ligne, annoncer: Ligne) -> str:
                      a_donner=indices(rebus))
     logger.info("Rébus lancé sur {c} : {e} → {m}", c=canal, e=rebus.enigme, m=rebus.mot)
     _partie.tache = asyncio.create_task(_minuteur())
-    return json.dumps({"status": "lance",
-                       "message": "L'énigme part dans le chat dans un instant. Annonce-la en "
-                                  "quelques mots — SANS emoji de rébus, et sans prétendre "
-                                  "savoir la réponse."})
+    return json.dumps({"status": "lance", "enigme": rebus.enigme,
+                       "message": "C'est parti. Annonce le rébus en une phrase courte et "
+                                  "TERMINE par les dessins ci-dessus, recopiés EXACTEMENT, "
+                                  "sans en changer, en ajouter ni en retirer un seul. Tu ne "
+                                  "connais pas la réponse, ne fais pas semblant."})
 
 
 async def verifier_reponse(auteur: str, contenu: str, canal: str) -> bool:
@@ -241,7 +240,20 @@ async def verifier_reponse(auteur: str, contenu: str, canal: str) -> bool:
     Sort en une comparaison quand aucune partie ne tourne, ce qui est le cas
     99 % du temps.
     """
-    if _partie is None or _partie.canal != canal or not trouve(_partie.rebus, contenu):
+    if _partie is None:
+        return False
+    if not trouve(_partie.rebus, contenu):
+        return False
+    if _partie.canal != canal:
+        # La BONNE réponse, sur un canal qui ne colle pas. Deux cas : elle vient
+        # vraiment d'ailleurs (légitime, on ignore), ou les deux côtés ne
+        # nomment pas le canal pareil — et alors le jeu refuse tout le monde en
+        # silence pendant trois minutes. C'est arrivé le 2026-08-31 en direct :
+        # la partie était rangée sous « azrael_ttv », les réponses arrivaient
+        # sous « twitch:azrael_ttv ». Rien ne l'a signalé. Ce WARNING est là
+        # pour que la prochaine fois ça hurle dans la minute.
+        logger.warning("Rébus : bonne réponse REFUSÉE, canal {a!r} ≠ partie {b!r}",
+                       a=canal, b=_partie.canal)
         return False
     annoncer = _partie.annoncer
     rebus = _oublier(gagne=True)

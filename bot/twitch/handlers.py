@@ -1012,8 +1012,13 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # Le message continue son chemin normal ensuite : gagner ne le retire pas
     # du chat, et Wally doit le percevoir comme n'importe quelle ligne.
     if est_chaine_home(bot, channel_name):
+        # `channel_name` et NON `channel_id` : le runner d'outils reçoit
+        # `channel=channel_name` (« azrael_ttv »), alors que `channel_id` vaut
+        # « twitch:azrael_ttv ». Les deux ne se rencontraient jamais, donc
+        # aucune réponse ne pouvait gagner et le jeu déroulait ses indices
+        # jusqu'au bout. Vu en direct le 2026-08-31.
         from bot.tools.rebus_tool import verifier_reponse
-        _fire(verifier_reponse(author_display, content, channel_id))
+        _fire(verifier_reponse(author_display, content, channel_name))
 
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:

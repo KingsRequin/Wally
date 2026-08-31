@@ -54,11 +54,22 @@ class TestCatalogueLivre:
         assert not nus, f"aucun emoji dans : {nus}"
 
     def test_trois_lettres_au_maximum(self, catalogue):
-        """Au-delà, l'énigme se lit comme un mot de passe. Les noms propres de
-        la commu échappent : aucun emoji ne porte « Azraël »."""
-        trop = [r.mot for r in catalogue if r.categorie != "maison"
-                and sum(1 for t in r.emojis if len(t) == 1 and t.isascii() and t.isalpha()) > 3]
+        """Au-delà, l'énigme se lit comme un mot de passe, pas comme un rébus."""
+        trop = [r.mot for r in catalogue
+                if sum(1 for t in r.emojis if len(t) == 1 and t.isascii() and t.isalpha()) > 3]
         assert not trop, f"plus de trois lettres : {trop}"
+
+    def test_aucune_reponse_n_est_un_nom_qu_il_doit_pouvoir_ecrire(self, catalogue):
+        """`secret_guard` masque la réponse dans TOUT ce que Wally publie.
+
+        Le 2026-08-31 le tirage est sorti sur « Wally » : son propre nom a été
+        caviardé six fois en trois minutes, en plein live, et il ne pouvait plus
+        ni se nommer ni répondre à ceux qui l'appelaient. Un rébus ne se paie
+        pas en rendant Wally muet sur les mots dont il a besoin.
+        """
+        interdits = {"wally", "kingsrequin", "azrael", "azraël", "cindy"}
+        fautifs = [r.mot for r in catalogue if normaliser(r.mot) in interdits]
+        assert not fautifs, f"réponses que Wally doit pouvoir écrire : {fautifs}"
 
     def test_aucun_doublon(self, catalogue):
         mots = [r.mot for r in catalogue]
@@ -149,10 +160,6 @@ def partie_neuve(monkeypatch):
     monkeypatch.setattr(jeu, "_partie", None, raising=False)
     monkeypatch.setattr(jeu, "_sac", Sac([CHAMEAU]), raising=False)
     monkeypatch.setattr(jeu, "_fin_derniere", float("-inf"), raising=False)
-    # L'énigme part normalement 2,5 s après l'outil, le temps que la réplique de
-    # Wally sorte. Attendre ce délai pour de vrai à chaque test rendrait la suite
-    # lente sans rien prouver de plus.
-    monkeypatch.setattr(jeu, "DELAI_ENIGME_S", 0.0)
     yield
     if jeu._partie is not None and jeu._partie.tache is not None:
         jeu._partie.tache.cancel()
@@ -176,35 +183,22 @@ class Salon:
         return await jeu._lancer(self.nom, self.publier, self.annoncer)
 
 
-async def _laisser_partir_l_enigme():
-    """Rend la main au minuteur, qui publie l'énigme."""
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-
-
 class TestPartie:
-    async def test_l_enigme_est_publiee(self):
-        s = Salon()
-        await s.lancer()
-        await _laisser_partir_l_enigme()
-        assert CHAMEAU.enigme in s.lignes[0]
+    async def test_l_outil_ne_publie_RIEN_lui_meme(self):
+        """UN seul message par geste, comme tous les autres outils.
 
-    async def test_l_enigme_ne_part_pas_avant_la_replique_de_wally(self):
-        """L'outil rend la main SANS avoir rien publié.
-
-        C'est ce qui met les dessins APRÈS la phrase qui les annonce : le modèle
-        répond dans l'intervalle. Publiée depuis l'outil, l'énigme arriverait
-        avant « vas-y je suis chaud », et la conversation se lirait à l'envers.
+        Le handler envoie de toute façon la réplique du modèle après un appel
+        d'outil. Publier l'énigme ici en ferait DEUX pour un seul lancement —
+        c'est ce qui a été vu en prod.
         """
         s = Salon()
         await s.lancer()
+        await asyncio.sleep(0)
         assert s.lignes == []
 
-    async def test_l_enigme_ne_contient_jamais_la_reponse(self):
-        s = Salon()
-        await s.lancer()
-        await _laisser_partir_l_enigme()
-        assert "chameau" not in " ".join(s.lignes).lower()
+    async def test_l_enigme_est_rendue_au_modele_pour_qu_il_la_recopie(self):
+        rapport = json.loads(await Salon().lancer())
+        assert rapport["enigme"] == CHAMEAU.enigme
 
     async def test_la_bonne_reponse_gagne_et_clot_la_partie(self):
         s = Salon()
@@ -230,6 +224,20 @@ class TestPartie:
         assert not await jeu.verifier_reponse("Alice", "chameau", "un-salon-discord")
         assert jeu._partie is not None
 
+    async def test_une_bonne_reponse_refusee_pour_le_canal_CRIE_dans_les_logs(self):
+        """Le 2026-08-31, les deux côtés ne nommaient pas le canal pareil : le
+        jeu a refusé toutes les bonnes réponses pendant trois minutes, en
+        silence. Le silence est le vrai défaut, pas la ligne fausse."""
+        from loguru import logger
+        vus: list[str] = []
+        sid = logger.add(lambda m: vus.append(m), level="WARNING")
+        try:
+            await Salon("azrael_ttv").lancer()
+            await jeu.verifier_reponse("Alice", "chameau", "twitch:azrael_ttv")
+        finally:
+            logger.remove(sid)
+        assert any("REFUSÉE" in v for v in vus)
+
     async def test_le_second_gagnant_ne_gagne_pas_deux_fois(self):
         s = Salon()
         await s.lancer()
@@ -240,10 +248,11 @@ class TestPartie:
     async def test_relancer_dans_le_meme_salon_redonne_l_enigme(self):
         s = Salon()
         await s.lancer()
-        await _laisser_partir_l_enigme()
         premier = jeu._partie
-        await s.lancer()
-        assert jeu._partie is premier and CHAMEAU.enigme in s.lignes[-1]
+        rapport = json.loads(await s.lancer())
+        assert jeu._partie is premier
+        assert rapport["status"] == "deja_en_cours" and rapport["enigme"] == CHAMEAU.enigme
+        assert s.lignes == []
 
     async def test_wally_n_anime_pas_deux_parties_a_la_fois(self):
         await Salon("twitch").lancer()
@@ -255,17 +264,17 @@ class TestPartie:
         await s.lancer()
         await jeu.verifier_reponse("Alice", "chameau", "azrael")
         await s.lancer()
-        await _laisser_partir_l_enigme()
         assert jeu._partie is None
 
 
 class TestCompteRenduAuModele:
     """Ce que l'outil rend à Wally. Il ne doit RIEN pouvoir recopier."""
 
-    async def test_le_compte_rendu_ne_livre_ni_la_reponse_ni_les_emoji(self):
+    async def test_le_compte_rendu_ne_livre_JAMAIS_la_reponse(self):
+        """Les dessins, oui — c'est lui qui les publie. Le mot, jamais : il
+        finirait par le lâcher, on le lui demanderait gentiment."""
         rapport = await Salon().lancer()
         assert "chameau" not in rapport.lower()
-        assert not any(c in rapport for c in CHAMEAU.emojis if not c.isascii())
 
     async def test_le_compte_rendu_dit_qu_il_a_lance(self):
         assert json.loads(await Salon().lancer())["status"] == "lance"
@@ -325,7 +334,7 @@ class TestFiletDuSecret:
 class TestEntreesDeChaquePlateforme:
     """Les deux adaptateurs branchent le même moteur sur un canal différent."""
 
-    async def test_discord_publie_dans_le_salon(self):
+    async def test_discord_joue_sur_le_salon_qui_a_demande(self):
         envoyes: list[str] = []
 
         class FauxSalon:
@@ -334,10 +343,10 @@ class TestEntreesDeChaquePlateforme:
             async def send(self, texte):
                 envoyes.append(texte)
 
-        assert json.loads(await jeu.run_rebus_tool_discord(FauxSalon()))["status"] == "lance"
-        await _laisser_partir_l_enigme()
-        assert CHAMEAU.enigme in envoyes[0]
+        rapport = json.loads(await jeu.run_rebus_tool_discord(FauxSalon()))
+        assert rapport["status"] == "lance" and rapport["enigme"] == CHAMEAU.enigme
         assert jeu._partie.canal == "4242"
+        assert envoyes == []   # c'est la réplique de Wally qui porte l'énigme
 
     async def test_twitch_sans_api_le_dit_au_lieu_de_planter(self):
         class SansAPI:
