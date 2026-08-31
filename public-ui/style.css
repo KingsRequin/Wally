@@ -54,6 +54,18 @@
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   --nav-h: 66px;
+  /* Barre d'onglets du pouce : sa hauteur est RÉSERVÉE en bas de `.vue`,
+   * elle ne recouvre jamais le contenu. `env()` couvre la barre gestuelle
+   * des iPhone — sans elle, le dernier onglet tombe sous le trait maison.
+   *
+   * ⚠️ `--tab-reserve` vaut ZÉRO hors téléphone, et c'est LUI que lisent les
+   * règles de base (`.vue`, `.chat-vue`, `.companion`). Réserver la place
+   * depuis la media query ne marchait pas : `.chat-vue` est déclaré 200 lignes
+   * PLUS BAS, à spécificité égale, donc il gagnait — le chat passait sous la
+   * barre. Même piège que `.lbl-court`. Une variable qui change au point de
+   * rupture rend l'ordre du fichier sans effet. */
+  --tab-h: 58px;
+  --tab-reserve: 0px;
   --ease:  cubic-bezier(.2, .8, .2, 1);
 }
 
@@ -369,6 +381,13 @@ input:focus, textarea:focus {
 .btn-discord:hover { background: #4752c4; color: #fff; }
 .btn-sm { padding: 8px 16px; font-size: 12.5px; letter-spacing: .04em; }
 .btn-sm.btn-ghost:hover { background: var(--discord); border-color: var(--discord); color: #fff; }
+
+/* Libellés longs / courts du bouton de connexion (cf. `renderAuth()`).
+ * ⚠️ Cette règle DOIT rester au-dessus de la media query qui rallume
+ * `.lbl-court` : à spécificité égale, c'est la dernière écrite qui gagne. Elle
+ * vivait 700 lignes plus bas, et le bouton était une pastille VIDE sur tout
+ * téléphone — sans texte, sans icône, rien à cliquer pour se connecter. */
+.lbl-court { display: none; }
 .btn[disabled] { opacity: .5; cursor: default; transform: none; }
 
 .pill {
@@ -702,6 +721,14 @@ input:focus, textarea:focus {
 }
 .gal-votes.voted { background: rgba(255, 106, 43, .35); color: #160b04; }
 
+/* ─────────────────────  barre d'onglets (pouce)  ───────────────────── */
+
+/* Cachée par défaut : elle n'apparaît qu'au point de rupture téléphone, tout
+ * en bas de ce fichier. Rien ici ne dépend d'un `position: fixed` du contenu. */
+.tabbar { display: none; }
+.vue { padding-bottom: var(--tab-reserve); }
+body.vue-chat .vue { padding-bottom: 0; }
+
 /* ────────────────────────────  clips  ──────────────────────────── */
 
 /* Une carte = une vignette 16/9 + son pied. Grille en CLASSE et jamais en style
@@ -971,7 +998,7 @@ input:focus, textarea:focus {
 
 .companion {
   position: fixed;
-  right: 30px; bottom: 30px;
+  right: 30px; bottom: calc(30px + var(--tab-reserve));
   z-index: 30;
   width: 78px; height: 78px;
   pointer-events: none;
@@ -1039,7 +1066,7 @@ input:focus, textarea:focus {
   .clip-grid { grid-template-columns: repeat(2, 1fr); }
   .entry { padding: 28px 22px 30px; }
   .footer { padding: 44px 18px 96px; }
-  .companion { right: 14px; bottom: 14px; width: 52px; height: 52px; }
+  .companion { right: 14px; bottom: calc(14px + var(--tab-reserve)); width: 52px; height: 52px; }
   .companion-label { display: none; }
 }
 
@@ -1060,6 +1087,67 @@ input:focus, textarea:focus {
   .lbl-court { display: inline; }
   .gal-filters { width: 100%; }
   .gal-filters input { max-width: none !important; flex: 1 1 140px; }
+
+  /* Les onglets passent EN BAS, sous le pouce. Ceux du haut disparaissent :
+   * les garder ferait deux fois la même liste, et c'est leur défilement
+   * horizontal qu'on remplace. */
+  .nav-links { display: none; }
+  :root { --tab-reserve: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
+  .tabbar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(7, 6, 10, .92);
+    backdrop-filter: blur(18px);
+    border-top: 1px solid rgba(255, 255, 255, .08);
+  }
+  .tab {
+    position: relative;
+    height: var(--tab-h);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--dim);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color .2s ease;
+  }
+  .tab.active { color: var(--ember-hi); }
+  .tab-ico { width: 21px; height: 21px; }
+  .tab-lbl {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .09em;
+  }
+  /* Le trait de l'onglet actif : posé SOUS la barre du haut, il serait invisible
+   * derrière son fond ; ici il court le long du bord supérieur. */
+  .tab.active::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 22%; right: 22%;
+    height: 2px;
+    border-radius: 0 0 3px 3px;
+    background: var(--ember);
+  }
+  /* Le mot « BIENTÔT » ne tient pas sous une icône de 21 px : un point suffit
+   * à dire « pas encore », et l'onglet du haut porte le mot en entier. */
+  .tab-soon {
+    position: absolute;
+    /* Ancré sur le CENTRE de la cellule, pas sur sa position statique : sans
+     * `left`, l'élément gardait la place qu'il aurait eue dans le flux et le
+     * point partait se coller au bord de l'écran, comme un badge égaré. */
+    top: 10px; left: 50%;
+    margin-left: 11px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--gold);
+  }
 }
 
 @media (max-width: 520px) {
@@ -1078,9 +1166,6 @@ input:focus, textarea:focus {
 
 .lead-center { margin-left: auto; margin-right: auto; text-align: center; max-width: 600px; }
 .lead-sm { font-size: 14.5px; line-height: 1.6; margin-top: 12px; }
-
-/* Libellés longs / courts : voir `renderAuth()`. */
-.lbl-court { display: none; }
 
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
@@ -1228,7 +1313,7 @@ input:focus, textarea:focus {
 .chat-vue {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - var(--tab-reserve));
   padding-top: var(--nav-h);
 }
 

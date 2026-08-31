@@ -433,6 +433,48 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         rap.dire(not erreurs_mob, f"390 px · {nom} : aucune erreur JS",
                  " · ".join(erreurs_mob[:2]))
 
+        # La barre d'onglets du pouce. Elle remplace les onglets du haut, dont
+        # le défilement horizontal coupait « TCG » en « T » dès 320 px sans que
+        # rien ne dise qu'il restait quelque chose à droite.
+        #
+        # On descend AVANT de mesurer : le pied de page d'une page non défilée
+        # est à des milliers de pixels sous l'écran, et sa distance à la barre
+        # ne dit alors rien du tout. Mesuré sans ce défilement, le test
+        # annonçait « 12 704 px de chevauchement » sur une page saine.
+        mob.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        mob.wait_for_timeout(900)
+        barre = mob.evaluate("""() => {
+          const t = document.querySelector('.tabbar');
+          const visible = t && getComputedStyle(t).display !== 'none';
+          const r = visible ? t.getBoundingClientRect() : null;
+          const pied = document.querySelector('.footer');
+          return {
+            visible,
+            onglets: t ? t.querySelectorAll('.tab').length : 0,
+            actifs: t ? t.querySelectorAll('.tab.active').length : 0,
+            hautMasque: getComputedStyle(document.querySelector('.nav-links')).display === 'none',
+            // La barre RÉSERVE sa place, elle ne recouvre pas : le pied de page
+            // et le bouton « Charger plus » doivent rester atteignables.
+            recouvre: (pied && r) ? Math.round(pied.getBoundingClientRect().bottom - r.top) : 0,
+            // Le libellé du bouton de connexion : les deux variantes ont été
+            // masquées ensemble pendant des mois, et le bouton était un rond
+            // VIDE sur tout téléphone. Aucun test de texte ne voit ça.
+            auth: (document.querySelector('#auth') || {}).innerText || '',
+          };
+        }""")
+        rap.dire(barre["visible"] and barre["hautMasque"],
+                 f"390 px · {nom} : la barre du pouce remplace les onglets du haut", str(barre))
+        rap.dire(barre["onglets"] == len(PAGES_PUBLIQUES),
+                 f"390 px · {nom} : {barre['onglets']} onglets en bas",
+                 f"attendu {len(PAGES_PUBLIQUES)}")
+        rap.dire(barre["actifs"] == 1, f"390 px · {nom} : un seul onglet actif en bas",
+                 f"{barre['actifs']} actif(s)")
+        rap.dire(barre["recouvre"] <= 2, f"390 px · {nom} : la barre ne recouvre pas le pied",
+                 f"{barre['recouvre']} px de chevauchement")
+        rap.dire(bool(barre["auth"].strip()),
+                 f"390 px · {nom} : le bouton de connexion porte un libellé",
+                 f"innerText = {barre['auth']!r}")
+
     # Gyroscope. Sur un téléphone il n'y a pas de curseur : sans lui, tout le
     # mouvement latéral du décor disparaît. Aucun test de texte ne le voit —
     # le branchement est gardé par une media query ET par un événement de

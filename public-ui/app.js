@@ -377,7 +377,10 @@ function normaliser(pathname) {
 }
 
 function syncNav(route) {
-  document.querySelectorAll('.nav-link').forEach((a) => {
+  // Deux barres à tenir : les onglets du haut (grand écran) et ceux du pouce
+  // (téléphone). Une seule est visible à la fois, mais l'autre garde sa marque
+  // en mémoire — une rotation d'écran ne repasse pas par ici.
+  document.querySelectorAll('.nav-link, .tab').forEach((a) => {
     a.classList.toggle('active', a.dataset.route === route);
   });
 }

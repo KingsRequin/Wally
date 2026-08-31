@@ -736,7 +736,14 @@ Chaque page n'exporte que `mount(el)` / `unmount()`.
 - ⚠️ **`is_owner` est SIGNÉ dans le JWT**, il ne vient PAS de
   `/api/public/status` — `owner_discord_id` en a été retiré (le snowflake du
   propriétaire partait à tout visiteur). Le site n'a rien à comparer.
-- ⚠️ **Un `grid-template-columns` posé en style EN LIGNE bat la media query.**
+- ⚠️ **Sous 620 px, les onglets passent EN BAS** (`.tabbar`, barre du pouce) et
+  ceux du haut disparaissent. La place se réserve par la variable
+  `--tab-reserve`, qui vaut **0 hors téléphone** : une réservation posée dans la
+  media query serait battue par `.chat-vue`, déclaré 200 lignes plus bas à
+  spécificité égale. **La position d'une règle dans `style.css` décide** — même
+  piège que `.lbl-court`, qui a laissé le bouton de connexion VIDE sur tout
+  téléphone.
+- - ⚠️ **Un `grid-template-columns` posé en style EN LIGNE bat la media query.**
   Une grille responsive se déclare en CLASSE, jamais en attribut : la section
   des émotions gardait deux colonnes jusqu'à 320 px et débordait de 43 px hors
   de l'écran, sans lever la moindre erreur JS.
