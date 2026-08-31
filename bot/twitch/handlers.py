@@ -1007,18 +1007,21 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
 
     # Rébus en cours : ce message est-il la bonne réponse ? On devine en
     # ÉCRIVANT le mot, pas en tapant une commande — donc la vérification vit
-    # ici, après le dispatch, et pas dedans. Détachée : l'annonce de victoire
-    # passe par un appel LLM, qui n'a pas à retarder la perception du message.
-    # Le message continue son chemin normal ensuite : gagner ne le retire pas
-    # du chat, et Wally doit le percevoir comme n'importe quelle ligne.
+    # ici, après le dispatch, et pas dedans. Le message poursuit sa route :
+    # gagner ne le retire pas du chat, Wally le perçoit comme toute autre ligne.
+    _rebus_gagne = None
     if est_chaine_home(bot, channel_name):
         # `channel_name` et NON `channel_id` : le runner d'outils reçoit
         # `channel=channel_name` (« azrael_ttv »), alors que `channel_id` vaut
         # « twitch:azrael_ttv ». Les deux ne se rencontraient jamais, donc
         # aucune réponse ne pouvait gagner et le jeu déroulait ses indices
         # jusqu'au bout. Vu en direct le 2026-08-31.
+        #
+        # AWAIT et non `_fire` : la victoire doit être la RÉPONSE de Wally à la
+        # personne, pas un message de plus par-dessus. Il faut donc la connaître
+        # AVANT de décider s'il répond. Le contrôle est une regex, sans réseau.
         from bot.tools.rebus_tool import verifier_reponse
-        _fire(verifier_reponse(author_display, content, channel_name))
+        _rebus_gagne = await verifier_reponse(author_display, content, channel_name)
 
     # Marquer la chaîne invitée comme "vue live" dès réception d'un message
     if channel_name in bot._channel_ids:
@@ -1165,6 +1168,10 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     triggered = (bot_nick and f"@{bot_nick}" in content_lower) or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
+    # Trouver le rébus, c'est lui parler : la réponse s'adresse à lui, même sans
+    # le citer. Sans ça, celui qui gagne sans écrire « @wally » tombe dans le
+    # silence du gate et sa victoire n'est jamais annoncée.
+    triggered = triggered or _rebus_gagne is not None
 
     # Motif du silence, affiné au fil des gardes traversées. « non interpellé »
     # est le cas ordinaire ; les autres disent qu'il a failli parler.
@@ -1226,7 +1233,11 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
     # secondes qui suivent. Sans ces exemptions, il demande « tu veux quoi au
     # juste ? » puis avale la réponse, ou lance un chifoumi et ignore le
     # « encore une partie » qui arrive six secondes plus tard.
-    exempte = (_consume_open_question(channel_name, user_id)
+    # Gagner exempte du cooldown, au même titre qu'une question que Wally vient
+    # de poser : c'est LUI qui a ouvert le jeu, et laisser un gagnant sans
+    # réponse parce qu'il a parlé trente secondes plus tôt serait absurde.
+    exempte = (_rebus_gagne is not None
+               or _consume_open_question(channel_name, user_id)
                or _consume_relance(channel_name, user_id))
     if not exempte and bot.is_on_cooldown(user_id):
         # Journalisé : ce refus était muet, et un message avalé sans trace est
@@ -1406,6 +1417,17 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
             "Sois BREF : 1 à 2 phrases maximum, comme dans un vrai chat Twitch."
         )
         user_content = prelude_block + context_block + target_notice + f"\n[{author}]: {content}"
+        if _rebus_gagne is not None:
+            # Le FAIT est calculé, jamais laissé au modèle : il l'habille, il ne
+            # le change pas. Même règle que les fins de partie du pendu et du
+            # sondage — sauf qu'ici elle voyage dans SA phrase, au lieu d'une
+            # annonce séparée qui doublerait sa réponse.
+            from bot.tools.rebus_tool import phrase_de_victoire
+            user_content += (
+                "\n\n🧩 " + phrase_de_victoire(_rebus_gagne, author)
+                + " Réagis À ÇA en une phrase : donne le mot et sa décomposition, "
+                "et réagis à la personne. Ne lance pas d'autre rébus, n'en invente pas."
+            )
 
         openai_messages = [{"role": "user", "content": user_content}]
 

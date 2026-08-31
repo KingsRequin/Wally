@@ -2213,10 +2213,14 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     # vérification vit donc sur le chemin de TOUS les messages. Détachée, et le
     # message poursuit sa route : gagner ne le retire pas du salon, Wally doit
     # le percevoir comme n'importe quelle ligne.
+    # AWAIT et non `_fire` : la victoire doit être la RÉPONSE de Wally à la
+    # personne, pas un message de plus par-dessus. Il faut donc la connaître
+    # AVANT de décider s'il répond. Le contrôle est une regex, sans réseau.
+    _rebus_gagne = None
     if channel_allowed:
         from bot.tools.rebus_tool import verifier_reponse
-        _fire(verifier_reponse(message.author.display_name, _enriched_content,
-                               str(message.channel.id)))
+        _rebus_gagne = await verifier_reponse(
+            message.author.display_name, _enriched_content, str(message.channel.id))
 
     # Capture passive + récupération prelude AVANT d'ajouter le message courant
     if channel_allowed:
@@ -2302,6 +2306,10 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     triggered = always_trigger or mentioned or answers_question or any(
         name.lower() in content_lower for name in bot.config.bot.trigger_names
     )
+    # Trouver le rébus, c'est lui parler : la réponse s'adresse à lui, même sans
+    # le mentionner. Sans ça, celui qui gagne tombe dans le silence du gate et
+    # sa victoire n'est jamais annoncée.
+    triggered = triggered or _rebus_gagne is not None
     logger.debug("triggered={} mentioned={} always={} channel={}", triggered, mentioned, always_trigger, message.channel.id)
     if not triggered:
         # Motif du silence, affiné au fil des gardes traversées. Même parité que
@@ -2491,7 +2499,8 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
                 pass
         return
 
-    await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact, enriched_content=_enriched_content)
+    await _respond(bot, message, user_id, guild_id, prelude, first_contact=first_contact,
+                   enriched_content=_enriched_content, rebus_gagne=_rebus_gagne)
 
 
 _LIST_RE = re.compile(r"^\s*([-*+]|\d+[.)]) ")
@@ -2646,6 +2655,7 @@ async def _respond(
     prelude: list[dict],
     first_contact: bool = False,
     enriched_content: str = "",
+    rebus_gagne=None,
 ) -> None:
     try:
         # Hors du `try` global : celui-ci se contente de logger et de sortir.
@@ -2965,6 +2975,16 @@ async def _respond(
             + image_analysis_context
             + f"\n[{author_label}]: {text_content}"
         )
+        if rebus_gagne is not None:
+            # Le FAIT est calculé, jamais laissé au modèle : il l'habille, il ne
+            # le change pas. Il voyage dans SA phrase, au lieu d'un second
+            # message qui doublerait sa réponse — même choix que côté Twitch.
+            from bot.tools.rebus_tool import phrase_de_victoire
+            user_content += (
+                "\n\n🧩 " + phrase_de_victoire(rebus_gagne, message.author.display_name)
+                + " Réagis À ÇA en une phrase : donne le mot et sa décomposition, "
+                "et réagis à la personne. Ne lance pas d'autre rébus, n'en invente pas."
+            )
 
         if first_contact:
             user_content = (

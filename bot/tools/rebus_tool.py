@@ -158,6 +158,9 @@ async def _minuteur() -> None:
             indice = _partie.a_donner.pop(0)
             await _partie.publier(f"🧩 Indice : {indice}. → {_partie.rebus.enigme}")
         annoncer = _partie.annoncer
+        # Personne à qui répondre ici : le temps a expiré, aucun message ne
+        # porte la fin de partie. C'est le SEUL cas où le jeu publie de
+        # lui-même — une victoire, elle, passe par la réplique de Wally.
         # LEVER le filet AVANT d'annoncer : `redact()` masque le mot dans tout
         # ce qui sort, y compris dans la phrase qui le révèle. Annoncer d'abord
         # publierait « le mot était ███ ».
@@ -230,8 +233,26 @@ async def _lancer(canal: str, publier: Ligne, annoncer: Ligne) -> str:
                                   "connais pas la réponse, ne fais pas semblant."})
 
 
-async def verifier_reponse(auteur: str, contenu: str, canal: str) -> bool:
-    """Ce message gagne-t-il la partie ? Appelé sur CHAQUE ligne de chat.
+def phrase_de_victoire(rebus: Rebus, auteur: str) -> str:
+    """Le FAIT, tel qu'on le donne à Wally ou tel qu'on le publie.
+
+    Écrit ici et nulle part ailleurs : c'est le résultat d'une partie, il ne se
+    laisse pas au modèle. Lui l'habille, il ne le change pas.
+    """
+    return (f"{auteur} vient de trouver ton rébus {rebus.enigme} : "
+            f"c'était {rebus.mot.upper()} ({rebus.solution}).")
+
+
+async def verifier_reponse(auteur: str, contenu: str, canal: str) -> Rebus | None:
+    """Ce message gagne-t-il la partie ? Rend le rébus gagné, sinon None.
+
+    **N'annonce RIEN.** L'appelant décide : sur le chat, la victoire doit être
+    la RÉPONSE de Wally à la personne, pas un second message par-dessus. Une
+    annonce séparée doublait sa réplique à chaque fois que quelqu'un lui
+    répondait — vu en direct, et c'est tout sauf naturel.
+
+    Rapide et SYNCHRONE (une regex, pas d'appel réseau) : l'appelant a besoin
+    de savoir avant de décider s'il répond.
 
     `canal` n'est pas décoratif : sans lui, une bonne réponse écrite dans un
     salon Discord gagnerait la partie qui tourne sur Twitch, devant des gens qui
@@ -241,9 +262,9 @@ async def verifier_reponse(auteur: str, contenu: str, canal: str) -> bool:
     99 % du temps.
     """
     if _partie is None:
-        return False
+        return None
     if not trouve(_partie.rebus, contenu):
-        return False
+        return None
     if _partie.canal != canal:
         # La BONNE réponse, sur un canal qui ne colle pas. Deux cas : elle vient
         # vraiment d'ailleurs (légitime, on ignore), ou les deux côtés ne
@@ -254,14 +275,10 @@ async def verifier_reponse(auteur: str, contenu: str, canal: str) -> bool:
         # pour que la prochaine fois ça hurle dans la minute.
         logger.warning("Rébus : bonne réponse REFUSÉE, canal {a!r} ≠ partie {b!r}",
                        a=canal, b=_partie.canal)
-        return False
-    annoncer = _partie.annoncer
-    rebus = _oublier(gagne=True)
-    if rebus is None:  # deux bonnes réponses dans la même milliseconde
-        return False
-    await annoncer(f"{auteur} a trouvé le rébus {rebus.enigme} : "
-                   f"{rebus.mot.upper()} ({rebus.solution}).")
-    return True
+        return None
+    # `_oublier` lève le filet du secret : sans ça, le mot serait caviardé dans
+    # la phrase même qui le révèle.
+    return _oublier(gagne=True)
 
 
 # ───────────────────────────── côté Twitch ─────────────────────────────────

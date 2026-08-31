@@ -203,25 +203,41 @@ class TestPartie:
     async def test_la_bonne_reponse_gagne_et_clot_la_partie(self):
         s = Salon()
         await s.lancer()
-        assert await jeu.verifier_reponse("Alice", "un chameau !", "azrael")
+        gagne = await jeu.verifier_reponse("Alice", "un chameau !", "azrael")
+        assert gagne is not None and gagne.mot == "chameau"
         assert jeu._partie is None
-        assert "Alice" in s.annonces[0] and "CHAMEAU" in s.annonces[0]
+
+    async def test_une_victoire_ne_publie_RIEN_toute_seule(self):
+        """La victoire doit être la RÉPONSE de Wally à la personne.
+
+        Une annonce séparée doublait sa réplique chaque fois que quelqu'un lui
+        répondait — vu en direct, et c'est tout sauf naturel. Le fait remonte
+        donc à l'appelant, qui le glisse dans SA phrase.
+        """
+        s = Salon()
+        await s.lancer()
+        await jeu.verifier_reponse("Alice", "chameau", "azrael")
+        assert s.lignes == [] and s.annonces == []
+
+    async def test_le_fait_de_victoire_est_calcule_jamais_laisse_au_modele(self):
+        fait = jeu.phrase_de_victoire(CHAMEAU, "Alice")
+        assert "Alice" in fait and "CHAMEAU" in fait and CHAMEAU.enigme in fait
 
     async def test_une_mauvaise_reponse_ne_clot_rien(self):
         s = Salon()
         await s.lancer()
-        assert not await jeu.verifier_reponse("Alice", "un dromadaire", "azrael")
+        assert await jeu.verifier_reponse("Alice", "un dromadaire", "azrael") is None
         assert jeu._partie is not None
 
     async def test_sans_partie_la_verification_est_muette(self):
-        assert not await jeu.verifier_reponse("Alice", "chameau", "azrael")
+        assert await jeu.verifier_reponse("Alice", "chameau", "azrael") is None
 
     async def test_une_reponse_venue_d_un_AUTRE_salon_ne_gagne_pas(self):
         """Sans cette garde, une bonne réponse tapée sur Discord emporterait la
         partie qui tourne sur Twitch, devant des gens qui ne l'ont jamais vue."""
         s = Salon("twitch")
         await s.lancer()
-        assert not await jeu.verifier_reponse("Alice", "chameau", "un-salon-discord")
+        assert await jeu.verifier_reponse("Alice", "chameau", "un-salon-discord") is None
         assert jeu._partie is not None
 
     async def test_une_bonne_reponse_refusee_pour_le_canal_CRIE_dans_les_logs(self):
@@ -241,9 +257,8 @@ class TestPartie:
     async def test_le_second_gagnant_ne_gagne_pas_deux_fois(self):
         s = Salon()
         await s.lancer()
-        await jeu.verifier_reponse("Alice", "chameau", "azrael")
-        await jeu.verifier_reponse("Bob", "chameau", "azrael")
-        assert len(s.annonces) == 1
+        assert await jeu.verifier_reponse("Alice", "chameau", "azrael") is not None
+        assert await jeu.verifier_reponse("Bob", "chameau", "azrael") is None
 
     async def test_relancer_dans_le_meme_salon_redonne_l_enigme(self):
         s = Salon()
