@@ -734,6 +734,52 @@ body.vue-chat .vue { padding-bottom: 0; }
 /* Une carte = une vignette 16/9 + son pied. Grille en CLASSE et jamais en style
  * en ligne : un `grid-template-columns` posé sur l'élément battrait la media
  * query, et la page déborderait sur téléphone sans lever la moindre erreur. */
+.clip-barre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.clip-filtres { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.clip-recherche {
+  max-width: 220px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+/* Une liste déroulante — le seul `select` du site. Le natif est illisible sur
+ * fond sombre : on reprend le trait et le fond des pastilles, et on garde le
+ * sélecteur natif du système, qui est ce qu'il y a de mieux au pouce. */
+.champ {
+  padding: 9px 30px 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-lift);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  appearance: none;
+  /* Le chevron : en `background-image`, pas en pseudo-élément — un `select`
+   * n'en accepte aucun. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 15px center, right 10px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.champ:hover { border-color: rgba(255, 140, 60, .4); color: var(--text); }
+.champ option { background: var(--surface); color: var(--text); }
+.clip-tris { display: flex; gap: 6px; }
+.clip-compte {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
 .clip-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 .clip-card {
   display: flex;
@@ -1087,6 +1133,11 @@ body.vue-chat .vue { padding-bottom: 0; }
   .lbl-court { display: inline; }
   .gal-filters { width: 100%; }
   .gal-filters input { max-width: none !important; flex: 1 1 140px; }
+  .clip-filtres { width: 100%; }
+  .clip-recherche { max-width: none; flex: 1 1 100%; }
+  .champ { flex: 1 1 130px; }
+  .clip-tris { flex: 1 1 100%; }
+  .clip-tris .pill { flex: 1 1 0; text-align: center; }
 
   /* Les onglets passent EN BAS, sous le pouce. Ceux du haut disparaissent :
    * les garder ferait deux fois la même liste, et c'est leur défilement

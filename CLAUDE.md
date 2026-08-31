@@ -751,7 +751,9 @@ Chaque page n'exporte que `mount(el)` / `unmount()`.
   pas un timestamp Unix.
 - ⚠️ La page `/clips` sert les clips Twitch des 90 derniers jours
   (`/api/public/twitch/clips`). **Helix trie par nombre de VUES, jamais par
-  date** : le tri par date se fait côté serveur. Le lecteur n'est monté qu'au
+  date** : le tri par date se fait côté serveur. Les quatre filtres (tri,
+  clippeur, période, titre) travaillent sur la liste DÉJÀ chargée — aucun appel
+  de plus, et pas de période au-delà de 90 jours, qui est le plafond Helix. Le lecteur n'est monté qu'au
   CLIC (`clips.twitch.tv/embed`), et son paramètre `parent` vaut
   `location.hostname` — sans lui Twitch rend un écran noir, sans erreur JS.
 - ⚠️ **`total_messages` est un total de tous les temps**, persisté dans

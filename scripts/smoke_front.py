@@ -214,6 +214,39 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
             page.screenshot(path=str(captures / f"public-{route.strip('/') or 'accueil'}.png"),
                             full_page=(route != "/chat"))
 
+    # Les filtres des clips. Tout se joue en JavaScript sur une liste déjà
+    # chargée : aucun appel réseau ne le trahirait, et aucun test Python ne
+    # l'exécute. Le compteur est le seul témoin visible du tri en cours.
+    del erreurs[:]
+    page.goto(f"{BASE}/clips", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector(".clip-card", timeout=_ATTENTE_PANNEAU_MS)
+    total = page.locator(".clip-compte").inner_text()
+    premier = page.locator(".clip-titre").first.inner_text()
+
+    page.get_by_role("button", name="Plus vus").click()
+    page.wait_for_timeout(500)
+    rap.dire(page.locator(".clip-titre").first.inner_text() != premier,
+             "clips : « Plus vus » change l'ordre",
+             f"{premier} → {page.locator('.clip-titre').first.inner_text()}")
+
+    # Le premier clippeur de la liste, celui qui a le plus clippé.
+    page.locator(".champ").first.select_option(index=1)
+    page.wait_for_timeout(500)
+    filtre = page.locator(".clip-compte").inner_text()
+    auteurs = set(page.locator(".clip-auteur").all_inner_texts())
+    rap.dire(len(auteurs) == 1, "clips : filtrer par clippeur ne garde que le sien",
+             " · ".join(sorted(auteurs)))
+    rap.dire(filtre != total, "clips : le compteur suit le filtre", f"{total} → {filtre}")
+
+    page.locator(".champ").first.select_option(index=0)
+    page.locator(".clip-recherche").fill("zzzznexistepas")
+    page.wait_for_timeout(600)
+    rap.dire(page.locator(".clip-card").count() == 0 and page.locator(".empty").count() == 1,
+             "clips : une recherche sans résultat le DIT",
+             page.locator(".empty").inner_text() if page.locator(".empty").count() else "rien")
+    rap.dire(not erreurs, "clips : aucune erreur JS pendant le filtrage",
+             " · ".join(erreurs[:2]))
+
     # Le MOUVEMENT. Il ne lève aucune erreur, ne vide aucun panneau, et ne
     # laisse aucune trace dans le DOM une fois disparu : quatre mécaniques de
     # la maquette avaient été oubliées à la refonte et rien ne l'a signalé.
