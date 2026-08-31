@@ -15,13 +15,20 @@ from bot.intelligence.overlay_narrator import OverlayNarrator
 # Attentes avant de renoncer à la vidéo, en SECONDES. Twitch documente un délai
 # entre la création d'un clip pendant un live et la disponibilité de son asset :
 # « indéterminé, typiquement de plusieurs minutes ». La veille interroge l'API
-# toutes les deux minutes, elle tombait donc systématiquement sur un clip pas
-# encore transcodé — l'overlay n'affichait que la carte titre, alors que le même
-# clip demandé plus tard partait bien en vidéo.
+# toutes les vingt secondes, elle tombe donc sur un clip pas encore transcodé —
+# l'overlay n'afficherait que la carte titre, alors que le même clip demandé
+# plus tard part bien en vidéo.
 #
-# Plafonné à ~3 min cumulées : au-delà, le clip n'est plus un moment frais et
-# mieux vaut l'annoncer en carte que pas du tout.
-CLIP_VIDEO_RETRY_DELAYS = (30, 60, 90)
+# Le pas est ce qui compte, pas le plafond : c'est lui qui fixe combien de temps
+# la vidéo reste PRÊTE sans qu'on le sache. Les paliers 30/60/90 laissaient
+# jusqu'à 90 s de retard sur un asset déjà disponible. Ici 10 s la première
+# minute — là où la plupart des clips arrivent — puis 20 s, jusqu'à 4 min
+# cumulées. Au-delà, le clip n'est plus un moment frais et mieux vaut
+# l'annoncer en carte que pas du tout.
+#
+# ⚠️ Chaque reprise est un appel à l'API GQL NON OFFICIELLE : resserrer encore
+# reviendrait à la marteler pour gagner quelques secondes.
+CLIP_VIDEO_RETRY_DELAYS = (10,) * 6 + (20,) * 9
 
 
 async def announce_clip(
@@ -98,10 +105,13 @@ class VeilleDesClips:
     fonction de mille lignes, donc du comportement qu'aucun test ne pouvait
     exécuter — alors qu'elle porte deux arbitrages payés en production.
 
-    Twitch n'émet AUCUN événement EventSub à la création d'un clip : la seule
-    voie est d'interroger l'API régulièrement. Deux minutes suffisent — un clip
-    signalé deux minutes après reste un moment frais, et on ne martèle pas
-    l'API pour rien.
+    Twitch n'émet AUCUN événement EventSub à la création d'un clip (vérifié le
+    2026-08-31 : aucun type de souscription ne porte ce nom) : la seule voie est
+    d'interroger l'API régulièrement. Deux minutes ont longtemps semblé
+    suffire — c'est vrai pour SIGNALER un clip, faux pour le REJOUER : le clip
+    passe à l'écran pendant qu'on en parle encore, et deux minutes de retard
+    tombent après la conversation. À vingt secondes, un GET Helix vaut 1 point
+    sur les 800 par minute de la chaîne : trois par minute ne coûtent rien.
 
     `un_tour()` est séparé de `veiller()` pour la même raison que dans
     `PresenceDeStream` : une boucle `while True` avec un `sleep(120)` ne se
@@ -111,7 +121,7 @@ class VeilleDesClips:
     #: La fenêtre demandée à Twitch. Plus large que la période, pour ne pas
     #: rater un clip créé pile entre deux tours.
     FENETRE_MIN = 5
-    PERIODE_S = 120.0
+    PERIODE_S = 20.0
     #: `deque(maxlen=...)` et PAS un `set` vidé d'un coup : le `clear()`
     #: oubliait TOUT alors que la fenêtre d'interrogation est de 5 min —
     #: jusqu'à 20 clips étaient réannoncés au tour suivant. Ici les plus vieux
