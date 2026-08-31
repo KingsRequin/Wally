@@ -156,7 +156,7 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     page.close()
 
 
-# Les quatre pages du site public, et le sélecteur d'un élément que SEULE cette
+# Les cinq pages du site public, et le sélecteur d'un élément que SEULE cette
 # page monte. Un `<main>` non vide ne prouve rien : le routeur pourrait rendre
 # l'accueil sur les quatre routes sans que personne ne le voie.
 RAIL_ATTENDU = ["HAUT", "CERVEAU", "ÉMOTIONS", "CHAT", "GALERIE", "JOURNAL", "CAPOT"]
@@ -165,6 +165,7 @@ PAGES_PUBLIQUES = [
     ("Accueil", "/", "#a-cerveau .feed-body"),
     ("Chat", "/chat", ".chat-vue"),
     ("Galerie", "/galerie", ".gal-grid"),
+    ("Clips", "/clips", ".clip-grid"),
     ("TCG", "/tcg", ".tcg-hero"),
 ]
 

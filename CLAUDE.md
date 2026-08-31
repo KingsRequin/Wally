@@ -719,10 +719,10 @@ exécute ce que Wally vient de déclarer raté).
 
 ## Site public
 
-`public-ui/` — quatre pages, un routeur d'historique posé sur le catch-all SPA
-de `SPAStaticFiles` (`/`, `/chat`, `/galerie`, `/tcg`). `app.js` tient la
-coquille : nav, décor parallax, flux SSE partagés, auth Discord, modale. Chaque
-page n'exporte que `mount(el)` / `unmount()`.
+`public-ui/` — cinq pages, un routeur d'historique posé sur le catch-all SPA
+de `SPAStaticFiles` (`/`, `/chat`, `/galerie`, `/clips`, `/tcg`). `app.js` tient
+la coquille : nav, décor parallax, flux SSE partagés, auth Discord, modale.
+Chaque page n'exporte que `mount(el)` / `unmount()`.
 
 - **Thème « braise »** : sombre, Space Grotesk + JetBrains Mono, une seule
   couleur saturée. Les tokens vivent dans `:root` de `style.css` — ne pas
@@ -742,6 +742,11 @@ page n'exporte que `mount(el)` / `unmount()`.
   de l'écran, sans lever la moindre erreur JS.
 - ⚠️ `gallery.created_at` est un **datetime SQL UTC** (« 2026-08-27 22:38:20 »),
   pas un timestamp Unix.
+- ⚠️ La page `/clips` sert les clips Twitch des 90 derniers jours
+  (`/api/public/twitch/clips`). **Helix trie par nombre de VUES, jamais par
+  date** : le tri par date se fait côté serveur. Le lecteur n'est monté qu'au
+  CLIC (`clips.twitch.tv/embed`), et son paramètre `parent` vaut
+  `location.hostname` — sans lui Twitch rend un écran noir, sans erreur JS.
 - ⚠️ **`total_messages` est un total de tous les temps**, persisté dans
   `bot_state` (`messages_traites_total`) : report relu au boot +
   `state.message_count` du cycle courant. Ce dernier repart de zéro à chaque

@@ -702,6 +702,97 @@ input:focus, textarea:focus {
 }
 .gal-votes.voted { background: rgba(255, 106, 43, .35); color: #160b04; }
 
+/* ────────────────────────────  clips  ──────────────────────────── */
+
+/* Une carte = une vignette 16/9 + son pied. Grille en CLASSE et jamais en style
+ * en ligne : un `grid-template-columns` posé sur l'élément battrait la media
+ * query, et la page déborderait sur téléphone sans lever la moindre erreur. */
+.clip-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface-2);
+  transition: border-color .3s ease, box-shadow .3s ease, transform .3s var(--ease);
+}
+.clip-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(255, 140, 60, .42);
+  box-shadow: 0 24px 46px -26px rgba(255, 106, 43, .55);
+}
+.clip-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: none;
+  background: #0d0b13;
+  cursor: pointer;
+  overflow: hidden;
+}
+.clip-media.playing { cursor: default; }
+.clip-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.clip-vide { width: 100%; height: 100%; background: linear-gradient(150deg, #17121f, #241428); }
+.clip-frame { width: 100%; height: 100%; border: 0; display: block; }
+.clip-play {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px; height: 52px;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  background: rgba(5, 4, 8, .62);
+  color: var(--ember-hi);
+  font-size: 17px;
+  padding-left: 3px;
+  transition: transform .3s var(--ease), background .3s ease;
+}
+.clip-media:hover .clip-play { transform: translate(-50%, -50%) scale(1.12); background: rgba(5, 4, 8, .8); }
+.clip-duree {
+  position: absolute;
+  right: 8px; bottom: 8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(5, 4, 8, .78);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.clip-body { padding: 13px 15px 15px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.clip-titre {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  /* Deux lignes puis les points : les titres de clips vont de trois mots à une
+   * phrase entière, et une carte qui grandit désaligne toute la rangée. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clip-meta {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+.clip-auteur { color: var(--gold); }
+.clip-lien {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.clip-lien:hover { color: var(--ember-hi); border-bottom-color: rgba(255, 138, 61, .45); }
+
 /* ───────────────────────────  journal  ─────────────────────────── */
 
 .days { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
@@ -945,6 +1036,7 @@ input:focus, textarea:focus {
   .grid-3, .grid-2, .grid-emo { grid-template-columns: 1fr; }
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
   .gal-grid { grid-template-columns: repeat(2, 1fr); }
+  .clip-grid { grid-template-columns: repeat(2, 1fr); }
   .entry { padding: 28px 22px 30px; }
   .footer { padding: 44px 18px 96px; }
   .companion { right: 14px; bottom: 14px; width: 52px; height: 52px; }
@@ -973,6 +1065,7 @@ input:focus, textarea:focus {
 @media (max-width: 520px) {
   .grid-5, .grid-4 { grid-template-columns: 1fr; }
   .gal-grid { grid-template-columns: 1fr; }
+  .clip-grid { grid-template-columns: 1fr; }
 }
 
 /* ═══════════════════  pièces propres aux pages  ═══════════════════ */

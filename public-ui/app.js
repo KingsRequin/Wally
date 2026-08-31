@@ -121,6 +121,7 @@ export function surInclinaison(fn) {
 
 import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
+import * as pageClips from './pages/clips.js';
 import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
 
@@ -356,6 +357,7 @@ const ROUTES = {
   '/':        { page: pageAccueil, plein: false },
   '/chat':    { page: pageChat,    plein: true },
   '/galerie': { page: pageGalerie, plein: false },
+  '/clips':   { page: pageClips,   plein: false },
   '/tcg':     { page: pageTcg,     plein: false },
 };
 
