@@ -6,6 +6,8 @@ import json
 from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
+from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
+from bot.tools.follow_tool import api_twitch
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -187,6 +189,12 @@ async def build_voice_tools(bot) -> list[dict]:
     # voix haute qu'à l'écrit, et un outil absent du catalogue vocal manque
     # en silence (trois refus muets en direct le 2026-08-25).
     tools.append(COUT_TOOL)
+    # Clipper le live. C'est ICI que la demande tombe le plus souvent : Azraël
+    # JOUE pendant qu'il parle, « clippe ça » se dit à voix haute bien plus
+    # qu'il ne s'écrit. L'outil est né le 2026-09-01 branché sur Discord et
+    # Twitch seulement, et le manque ne se serait vu qu'en direct.
+    if api_twitch(bot) is not None:
+        tools.append(CLIP_TOOL)
     action_service = getattr(bot, "action_service", None)
     if action_service is not None:
         tools.extend(action_service.get_tool_definitions())
@@ -435,6 +443,13 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
                 user_roles=user_roles, channel_id=channel_id, guild_id=guild_id,
             )
             return json.dumps(result)
+
+        if name == "create_clip":
+            # `vocal=True` : le rendu perd son URL. Le modèle a pour consigne de
+            # la recopier telle quelle — à la voix, il l'ÉPELLERAIT.
+            return await run_clip_tool(
+                bot, json.loads(arguments or "{}"),
+                author=_nom_du_locuteur(), vocal=True)
 
         if name in ("show_overlay", "cancel_overlay", "show_clip", "show_apex"):
             # Import LOCAL : `handlers` importe `VOICE_TOOLS` d'ici, un import

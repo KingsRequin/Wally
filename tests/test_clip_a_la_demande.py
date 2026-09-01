@@ -86,3 +86,46 @@ def test_l_outil_annonce_les_bornes_de_duree_au_modele():
     params = CLIP_TOOL["function"]["parameters"]["properties"]
     assert "5" in params["duration"]["description"]
     assert "60" in params["duration"]["description"]
+
+
+# ── Le vocal : le troisième chemin ────────────────────────────────────────
+#
+# Azraël JOUE pendant qu'il parle : « wally clippe ça » se dit à voix haute
+# bien plus souvent qu'il ne s'écrit. L'outil est né le 2026-09-01 branché sur
+# Discord et Twitch seulement — le chemin vocal ne le proposait pas, et un
+# outil absent du catalogue manque EN SILENCE (précédent du 2026-08-25 :
+# trois refus muets en direct avant qu'on le remarque).
+
+
+async def test_a_la_voix_l_url_n_est_PAS_dictee():
+    """Une URL de clip lue à voix haute (« h-t-t-p-s deux-points… ») est
+    inutilisable : personne ne la retient. On la retire du rendu plutôt que de
+    compter sur le modèle pour se retenir de la lire."""
+    b = _bot({"url": "https://clips.twitch.tv/Abc", "title": "le wingman"})
+    rendu = json.loads(await run_clip_tool(b, {"title": "le wingman"}, vocal=True))
+
+    assert rendu["status"] == "ok"
+    assert "url" not in rendu, "l'URL est là : le modèle va l'épeler à voix haute"
+    assert "clips.twitch.tv" not in json.dumps(rendu)
+    assert rendu["title"] == "le wingman"
+
+
+async def test_le_clip_reste_cree_pour_de_vrai_a_la_voix():
+    """Le rendu change, pas le geste : c'est le MÊME appel Twitch."""
+    b = _bot({"url": "https://clips.twitch.tv/Abc"})
+    assert json.loads(await run_clip_tool(b, {"duration": 40}, vocal=True))["status"] == "ok"
+    b.twitch_api.create_clip.assert_awaited_once_with("", 40)
+
+
+async def test_clipper_est_offert_sur_les_TROIS_chemins():
+    from tests.test_parite_plateformes import _bot_avec_tout, _noms
+    from bot.discord.handlers import build_chat_tools as discord
+    from bot.discord.voice.tools import build_voice_tools as vocal
+    from bot.twitch.handlers import build_chat_tools as twitch
+
+    assert "create_clip" in _noms(await discord(_bot_avec_tout(), author_id="42"))
+    assert "create_clip" in _noms(await twitch(_bot_avec_tout()))
+    assert "create_clip" in _noms(await vocal(_bot_avec_tout())), (
+        "« clippe ça » dit à voix haute pendant qu'il joue : c'est l'endroit "
+        "le plus naturel de la demande, et le seul où l'outil manquait."
+    )
