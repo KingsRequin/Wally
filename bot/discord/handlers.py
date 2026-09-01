@@ -25,6 +25,9 @@ from bot.tools.meme_tool import run_meme_tool_discord
 from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool_discord
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
+from bot.tools.move_voice_tool import (
+    MOVE_TO_STREAM_TOOL, run_move_to_stream_tool,
+)
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -1504,6 +1507,11 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
         # commente ici, c'est le même moment et la même communauté. L'outil dit
         # lui-même qu'aucun live ne tourne, le cas échéant.
         tools.append(CLIP_TOOL)
+    # Faire venir quelqu'un dans le salon vocal du stream. Offert ICI aussi, et
+    # pas seulement au chat Twitch : le salon déplacé est un salon DISCORD, et
+    # Azraël écrit des deux côtés. L'outil tient lui-même ses deux gardes — le
+    # live en cours, et « le créateur ou le streamer, personne d'autre ».
+    tools.append(MOVE_TO_STREAM_TOOL)
     # Son humeur des jours passés. Le même état émotionnel vaut des deux côtés :
     # le conditionner à la plateforme le rendrait amnésique sur l'une des deux.
     tools.append(MOOD_HISTORY_TOOL)
@@ -3046,6 +3054,10 @@ async def _respond(
             if name == "create_clip":
                 return await run_clip_tool(
                     bot, args, author=str(message.author.display_name))
+            if name == "move_to_stream":
+                return await run_move_to_stream_tool(
+                    bot, args, platform="discord", user_id=str(message.author.id),
+                    author=str(message.author.display_name))
             if name == "mood_history":
                 return await run_mood_history_tool(bot, args)
             if name == "mon_cout":

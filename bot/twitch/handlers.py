@@ -40,6 +40,9 @@ from bot.discord.handlers import (
 )
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
+from bot.tools.move_voice_tool import (
+    MOVE_TO_STREAM_TOOL, run_move_to_stream_tool,
+)
 from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -507,6 +510,13 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     _vs = getattr(getattr(bot, "discord_bot", None), "voice_service", None)
     if overlay and _vs is not None and getattr(_vs, "is_connected", False):
         tools.append(SAY_IN_VOICE_TOOL)
+    # Faire venir quelqu'un dans le salon du stream, sur demande d'Azraël ou du
+    # créateur. Offert dès qu'un bot Discord est là et jamais conditionné au
+    # live, comme le clip et le pari : la garde d'exécution est la seule vérité,
+    # et elle sait DIRE pourquoi elle refuse. Le conditionner ici ferait une
+    # seconde règle à tenir, et un outil qui disparaît sans rien expliquer.
+    if overlay and getattr(bot, "discord_bot", None) is not None:
+        tools.append(MOVE_TO_STREAM_TOOL)
     # La musique d'Azraël. Proposée partout, chaîne invitée comprise : « c'est
     # quoi la musique ? » est une LECTURE, ouverte à tous, et un invité a le
     # droit de la poser. C'est le pilotage que la garde d'exécution réserve —
@@ -799,6 +809,12 @@ def make_tool_executor(
                                          user_id=user_id, author=author)
         if name == "create_clip":
             return await run_clip_tool(bot, args, author=author)
+        if name == "move_to_stream":
+            # `platform`/`user_id` viennent de l'APPELANT, jamais du modèle :
+            # c'est ce qui empêche un viewer de se déclarer streamer dans sa
+            # phrase pour faire déplacer quelqu'un.
+            return await run_move_to_stream_tool(bot, args, platform=platform,
+                                                 user_id=user_id, author=author)
         if name == "mood_history":
             return await run_mood_history_tool(bot, args)
         if name == "mon_cout":
