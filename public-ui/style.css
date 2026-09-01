@@ -175,8 +175,17 @@ input:focus, textarea:focus {
   align-items: center;
   gap: 16px;
   padding: 12px 24px;
-  background: rgba(7, 6, 10, .78);
-  backdrop-filter: blur(18px);
+  /* Fond DENSE, pas de `backdrop-filter`. La barre est fixe et large : un flou
+   * de fond l'oblige à relire et reflouter toute la bande derrière elle à
+   * chaque image de défilement, à la résolution PHYSIQUE de l'écran. Sur un
+   * 1440p en densité 2 (soit 5120×2880 pixels réels), elle coûtait à elle
+   * seule la moitié du budget d'image : p95 mesuré au défilement 19 → 41 ms,
+   * et 96 images sur 100 au-dessus de 20 ms. Le rendu, lui, bouge à peine —
+   * le fond était déjà opaque à 78 %.
+   *
+   * Réduire le rayon ne suffit pas : à `blur(8px)` le p95 reste à 37 ms. Ce
+   * qui coûte est la RELECTURE du fond, pas la largeur du flou. */
+  background: rgba(7, 6, 10, .94);
   border-bottom: 1px solid rgba(255, 255, 255, .07);
 }
 
@@ -745,8 +754,9 @@ input:focus, textarea:focus {
   padding: 4px 9px;
   border: none;
   border-radius: 999px;
-  background: rgba(5, 4, 8, .7);
-  backdrop-filter: blur(6px);
+  /* Une pastille par vignette, donc autant de couches à reflouter. Même
+   * arbitrage que la barre : fond dense plutôt que verre. */
+  background: rgba(5, 4, 8, .88);
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--gold);
@@ -1613,8 +1623,9 @@ body.vue-chat .companion { display: none; }
  * 70–90 %, qu'on rend simplement plus dense.
  */
 @media (hover: none) and (pointer: coarse) {
-  .nav { backdrop-filter: none; background: rgba(7, 6, 10, .94); }
-  .gal-votes { backdrop-filter: none; background: rgba(5, 4, 8, .88); }
+  /* `.nav` et `.gal-votes` n'ont plus de flou de fond DU TOUT — ce qui était
+   * mesuré ici comme un coût de téléphone se paie aussi, et plus cher, sur un
+   * grand écran en haute densité. Leur règle est remontée au style commun. */
   .modal { backdrop-filter: none; background: rgba(5, 4, 8, .96); }
   .chat-dock { backdrop-filter: none; background: rgba(10, 8, 16, .93); }
 
