@@ -66,7 +66,7 @@ def _overlay_line() -> str:
 
 _IMAGE_OFF = (
     "Fabriquer une image de ma propre initiative, je ne peux pas pour l'instant : "
-    "il faut que quelqu'un déclenche `/image`."
+    "il faut que quelqu'un déclenche `/imagine`."
 )
 
 
