@@ -387,7 +387,12 @@ OVERLAY_TOOL_SPEC: dict = {
         "description": (
             "Affiche un widget sur l'overlay du stream, quand on te le demande ou "
             "que l'envie te prend. Ne fonctionne QUE pendant un live, hors live "
-            "l'outil te le dira, et tu pourras le dire simplement. C'est toi qui "
+            "l'outil te le dira, et tu pourras le dire simplement. ⚠️ UNE "
+            "exception : un `meme` demandé sur DISCORD est envoyé dans le salon "
+            "en pièce jointe, jamais sur l'overlay — les gens à qui tu parles là "
+            "ne voient pas l'écran du stream. Il marche donc aussi hors live, et "
+            "l'outil te rend la description de l'image, que tu es seul à voir. "
+            "C'est toi qui "
             "décides : tu peux refuser si on t'en demande trop, commenter le "
             "résultat, et même forcer le tirage pour tricher. ⚠️ L'overlay est vu "
             "par les SPECTATEURS, pas par le streamer : ton `comment` s'adresse à "

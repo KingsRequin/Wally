@@ -20,6 +20,7 @@ from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
+from bot.tools.meme_tool import run_meme_tool_discord
 from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool_discord
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
@@ -3053,6 +3054,14 @@ async def _respond(
             if name == "show_planning":
                 return run_planning_tool(bot, args)
             if name == "show_overlay":
+                # Un meme demandé DEPUIS Discord part dans le salon, pas sur
+                # l'overlay : celui-ci s'adresse aux viewers du live, que la
+                # personne qui parle ici ne voit pas. Wally répondait « c'est à
+                # l'écran » devant un écran absent — le meme était donc
+                # impossible à obtenir sur Discord. Les autres widgets gardent
+                # l'écran, qui est bien leur surface.
+                if str(args.get("widget") or "") == "meme":
+                    return await run_meme_tool_discord(bot, message.channel, args)
                 return run_overlay_tool(
                     bot, args, requester=message.author.display_name
                 )
