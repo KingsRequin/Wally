@@ -282,11 +282,17 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(page.locator(".rail a.active").count() == 1,
              "et le rail suit la section atteinte")
 
-    # Le relief au survol. Le compte importe autant que le mécanisme : neuf
+    # Le relief au survol. Le compte importe autant que le mécanisme : les
     # cartes de l'accueil le portent, en perdre une ne se voit pas à l'œil.
     tilt = page.locator("[data-tilt]").count()
     tiltable = page.locator("[data-tilt].tiltable").count()
-    rap.dire(tilt >= 20, f"{tilt} cartes déclarent le relief au survol", "attendu ≥ 20")
+    rap.dire(tilt >= 19, f"{tilt} cartes déclarent le relief au survol", "attendu ≥ 19")
+    # Le flux, LUI, en est exclu : c'est le plus gros bloc de texte de la page
+    # et un conteneur qui défile. L'incliner le fait re-rasteriser image par
+    # image — 53 images sur 123 au-dessus de 20 ms, contre 2 sur 143 à plat.
+    # Le compte ci-dessus ne le dirait pas : il remonterait simplement à 20.
+    rap.dire(page.locator(".feed[data-tilt]").count() == 0,
+             "et le flux cognitif, lui, ne s'incline pas")
     rap.dire(tilt == tiltable, "et toutes ont été branchées", f"{tiltable} branchées")
 
     page.evaluate("document.querySelectorAll('.reveal').forEach(e => e.classList.add('on'))")

@@ -235,7 +235,16 @@ function sectionCerveau() {
           h('div', { class: 'loop-underline' }),
         )),
       ),
-      h('div', { class: 'feed mt-16 reveal', 'data-tilt': '1' },
+      // PAS de `data-tilt` ici, contrairement aux cartes voisines. Le flux est
+      // le plus gros bloc de texte de la page ET un conteneur qui défile : le
+      // relief lui pose une rotation 3D qui change à chaque image, sous le
+      // curseur au survol et en continu au gyroscope. Le texte doit alors être
+      // re-rasterisé image par image, et le défilement interne perd sa
+      // composition rapide. Mesuré au défilement, écran 1440p en densité 2 :
+      // 53 images sur 123 au-dessus de 20 ms en relief, contre 2 sur 143 à
+      // plat. C'est l'arbitrage déjà rendu pour le clip qui JOUE
+      // (`detacherTilt`) : une surface qu'on regarde ne s'incline pas.
+      h('div', { class: 'feed mt-16 reveal' },
         h('div', { class: 'feed-head' },
           h('div', { class: 'feed-live' }, h('span', { class: 'dot' }), 'FLUX COGNITIF EN DIRECT'),
           h('div', { class: 'label', style: 'letter-spacing:.04em', text: '/api/public/sse/cognitive' }),
