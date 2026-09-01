@@ -689,6 +689,12 @@ function clearToken()     { localStorage.removeItem(AUTH_KEY); }
 function showAuthModal()  { document.getElementById('auth-modal').classList.add('visible'); }
 function hideAuthModal()  { document.getElementById('auth-modal').classList.remove('visible'); }
 
+// Un refus n'est pas forcément un mauvais token. Le verrou anti-force-brute
+// (`bot/dashboard/auth.py`) répond 429 AVANT toute comparaison, et son seau est
+// partagé par tout ce qui arrive par le tunnel : dix requêtes rejetées — un seul
+// rechargement de page avec un jeton périmé suffit — et l'owner se retrouve
+// enfermé dehors. Lui annoncer « Token invalide » l'envoie chercher un jeton qui
+// est le bon, et chaque nouvelle tentative DOUBLE le verrou.
 async function submitToken() {
   const t = document.getElementById('token-input').value.trim();
   if (!t) return;
@@ -700,20 +706,44 @@ async function submitToken() {
     _sessionExpiredFired = false;
     enterAdmin();
     toast('Accès admin accordé', 'success');
-  } else {
+  } else if (r.status === 429) {
+    toast(`Trop de tentatives refusées — réessaie dans ${retryApres(r)} s. Le jeton est peut-être le bon.`, 'error');
+  } else if (r.status === 503) {
+    toast('Aucun dashboard_token configuré côté serveur.', 'error');
+  } else if (r.status === 401) {
     toast('Token invalide', 'error');
+  } else {
+    toast(`Le serveur a refusé (HTTP ${r.status})`, 'error');
   }
+}
+
+/** Secondes à attendre annoncées par `Retry-After`, 60 par défaut. */
+function retryApres(r) {
+  return parseInt(r.headers.get('Retry-After') || '', 10) || 60;
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 let _sessionExpiredFired = false;
+let _verrouFired = false;
 
 async function apiFetch(url, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const r = await fetch(url, { ...opts, headers });
+  if (r.status === 429) {
+    // Le verrou d'authentification, pas une limite de débit métier : le
+    // dashboard entier reçoit `{"detail": ...}` là où il attend ses données, et
+    // chaque panneau se peint VIDE sans un mot. Le dire une fois vaut mieux que
+    // onze écrans muets.
+    if (!_verrouFired) {
+      _verrouFired = true;
+      toast(`Accès temporairement verrouillé (trop de tentatives) — réessaie dans ${retryApres(r)} s.`, 'error');
+      setTimeout(() => { _verrouFired = false; }, 10000);
+    }
+    return null;
+  }
   if (r.status === 401) {
     if (token && !_sessionExpiredFired) {
       _sessionExpiredFired = true;
