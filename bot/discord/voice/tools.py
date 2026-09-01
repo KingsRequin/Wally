@@ -6,8 +6,6 @@ import json
 from loguru import logger
 
 from bot.core.apex.tool import APEX_OVERLAY_TOOL
-from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
-from bot.tools.follow_tool import api_twitch
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -189,15 +187,11 @@ async def build_voice_tools(bot) -> list[dict]:
     # voix haute qu'à l'écrit, et un outil absent du catalogue vocal manque
     # en silence (trois refus muets en direct le 2026-08-25).
     tools.append(COUT_TOOL)
-    # Clipper le live. ⚠️ Ce catalogue N'EST PAS le chemin d'un live : pendant
-    # un stream Wally est en écoute seule, et « clippe ça » dit à voix haute
-    # passe par `voice/request.py`, qui emprunte les outils TWITCH et répond
-    # dans le chat, lien compris. Ce catalogue-ci sert la CONVERSATION vocale
-    # (`/join`), qui reste possible pendant un live quand Wally était déjà là :
-    # `stream_presence` ne déplace pas une conversation en cours. Là, sa seule
-    # sortie est sa voix — d'où `vocal=True` plus bas, qui retire l'URL.
-    if api_twitch(bot) is not None:
-        tools.append(CLIP_TOOL)
+    # Pas de `create_clip` ICI. Ce catalogue sert la CONVERSATION vocale, et
+    # Azraël ne stream pas pendant qu'il discute en vocal : l'outil n'y
+    # aboutirait jamais. Le chemin qui compte est l'autre — en live il est en
+    # écoute seule, « clippe ça » passe par `voice/request.py`, qui emprunte
+    # les outils TWITCH et répond dans le chat, lien compris.
     action_service = getattr(bot, "action_service", None)
     if action_service is not None:
         tools.extend(action_service.get_tool_definitions())
@@ -446,13 +440,6 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
                 user_roles=user_roles, channel_id=channel_id, guild_id=guild_id,
             )
             return json.dumps(result)
-
-        if name == "create_clip":
-            # `vocal=True` : le rendu perd son URL. Le modèle a pour consigne de
-            # la recopier telle quelle — à la voix, il l'ÉPELLERAIT.
-            return await run_clip_tool(
-                bot, json.loads(arguments or "{}"),
-                author=_nom_du_locuteur(), vocal=True)
 
         if name in ("show_overlay", "cancel_overlay", "show_clip", "show_apex"):
             # Import LOCAL : `handlers` importe `VOICE_TOOLS` d'ici, un import

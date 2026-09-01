@@ -88,48 +88,31 @@ def test_l_outil_annonce_les_bornes_de_duree_au_modele():
     assert "60" in params["duration"]["description"]
 
 
-# ── Le vocal : deux chemins, pas un ───────────────────────────────────────
+# ── Le vocal : le clip passe par les outils TWITCH ────────────────────────
 #
-# PENDANT UN LIVE, Wally est en écoute seule : il ne parle pas, et « wally
-# clippe ça » passe par `voice/request.py`, qui emprunte les outils du chemin
-# TWITCH et répond dans le chat, lien compris. Ce chemin-là marchait depuis le
-# premier jour — c'est le cas normal.
+# Pendant un live, Wally est en ÉCOUTE SEULE : `_on_transcript` s'arrête à
+# `_observe_transcript`, et `build_voice_tools()` n'est jamais consulté. « Wally
+# clippe ça » dit à voix haute passe par `voice/request.py`, qui emprunte
+# `build_chat_tools` du chemin TWITCH et répond dans le chat, lien compris.
 #
-# `build_voice_tools()` sert l'autre : la CONVERSATION vocale (`/join`), où il
-# répond de vive voix. Elle survit au démarrage d'un live (`stream_presence` ne
-# déplace pas une conversation en cours), donc « clippe ça » peut y tomber — et
-# l'outil y manquait.
+# Rien à brancher sur `build_voice_tools()`, donc : ce catalogue sert la
+# CONVERSATION vocale, et Azraël ne stream pas pendant qu'il discute en vocal —
+# l'outil n'y aboutirait jamais (arbitrage owner du 2026-09-01). Un outil qui ne
+# peut pas aboutir est un bouton branché sur rien.
 
 
-async def test_a_la_voix_l_url_n_est_PAS_dictee():
-    """Une URL de clip lue à voix haute (« h-t-t-p-s deux-points… ») est
-    inutilisable : personne ne la retient. On la retire du rendu plutôt que de
-    compter sur le modèle pour se retenir de la lire."""
-    b = _bot({"url": "https://clips.twitch.tv/Abc", "title": "le wingman"})
-    rendu = json.loads(await run_clip_tool(b, {"title": "le wingman"}, vocal=True))
-
-    assert rendu["status"] == "ok"
-    assert "url" not in rendu, "l'URL est là : le modèle va l'épeler à voix haute"
-    assert "clips.twitch.tv" not in json.dumps(rendu)
-    assert rendu["title"] == "le wingman"
-
-
-async def test_le_clip_reste_cree_pour_de_vrai_a_la_voix():
-    """Le rendu change, pas le geste : c'est le MÊME appel Twitch."""
-    b = _bot({"url": "https://clips.twitch.tv/Abc"})
-    assert json.loads(await run_clip_tool(b, {"duration": 40}, vocal=True))["status"] == "ok"
-    b.twitch_api.create_clip.assert_awaited_once_with("", 40)
-
-
-async def test_clipper_est_offert_sur_les_TROIS_chemins():
+async def test_la_demande_orale_emprunte_les_outils_twitch():
+    """Le seul chemin vocal qui clippe. S'il perdait `create_clip`, « wally
+    clippe ça » dit en direct ne ferait plus rien — sans erreur, sans log."""
     from tests.test_parite_plateformes import _bot_avec_tout, _noms
-    from bot.discord.handlers import build_chat_tools as discord
-    from bot.discord.voice.tools import build_voice_tools as vocal
-    from bot.twitch.handlers import build_chat_tools as twitch
+    from bot.twitch.handlers import build_chat_tools
 
-    assert "create_clip" in _noms(await discord(_bot_avec_tout(), author_id="42"))
-    assert "create_clip" in _noms(await twitch(_bot_avec_tout()))
-    assert "create_clip" in _noms(await vocal(_bot_avec_tout())), (
-        "« clippe ça » dit à voix haute pendant qu'il joue : c'est l'endroit "
-        "le plus naturel de la demande, et le seul où l'outil manquait."
-    )
+    assert "create_clip" in _noms(await build_chat_tools(_bot_avec_tout()))
+
+
+async def test_la_conversation_vocale_ne_propose_PAS_de_clipper():
+    """Volontaire, et non un oubli : hors live l'outil ne peut qu'échouer."""
+    from tests.test_parite_plateformes import _bot_avec_tout, _noms
+    from bot.discord.voice.tools import build_voice_tools
+
+    assert "create_clip" not in _noms(await build_voice_tools(_bot_avec_tout()))

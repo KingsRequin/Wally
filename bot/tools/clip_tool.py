@@ -79,18 +79,12 @@ def _reste(maintenant: float) -> float:
     return max(0.0, COOLDOWN_S - (maintenant - _dernier_clip_a))
 
 
-async def run_clip_tool(bot: Any, args: dict, *, author: str = "",
-                        vocal: bool = False) -> str:
+async def run_clip_tool(bot: Any, args: dict, *, author: str = "") -> str:
     """Crée le clip et rend son URL, ou dit pourquoi il n'y en a pas.
 
     Chaque refus porte un `message` rédigé pour être DIT : un outil qui rend
     `{"status": "error"}` nu laisse le modèle inventer une explication, et il
     invente en général qu'il n'a pas la capacité.
-
-    `vocal=True` retire l'URL du rendu : à voix haute elle serait ÉPELÉE
-    (« h-t-t-p-s deux-points barre barre… »), inaudible et inutilisable. On ne
-    compte pas sur le modèle pour se retenir de lire un champ qu'on lui donne —
-    la description de l'outil lui dit justement de le recopier tel quel.
     """
     global _dernier_clip_a
 
@@ -128,13 +122,4 @@ async def run_clip_tool(bot: Any, args: dict, *, author: str = "",
             f"Twitch ne sait pas remonter plus loin que "
             f"{api.CLIP_DUREE_MAX_S} s : le clip fait ça, pas "
             f"{duree_demandee} s. Dis-le.")
-    # EN DERNIER, et pas au moment où `rendu` est construit : le bornage de
-    # durée ci-dessus pose son propre `message` et effacerait celui-ci.
-    if vocal:
-        del rendu["url"]
-        rendu["message"] = " ".join(filter(None, (
-            rendu.get("message"),
-            "Ne DIS PAS l'adresse du clip à voix haute, elle est illisible à "
-            "l'oral : dis simplement que c'est clippé, on retrouve le lien sur "
-            "la chaîne.")))
     return json.dumps(rendu)
