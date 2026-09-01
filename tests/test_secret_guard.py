@@ -86,6 +86,7 @@ def test_un_texte_vide_ne_casse_rien():
 def _narrator():
     from unittest.mock import MagicMock
 
+    from bot.core.mots_joues import MotsJoues
     from bot.intelligence.overlay_narrator import OverlayNarrator
 
     n = OverlayNarrator.__new__(OverlayNarrator)
@@ -96,6 +97,9 @@ def _narrator():
     # donc lui poser à la main ce dont la fin de partie se sert. Ici on ne teste
     # que le filet du mot secret — personne à prévenir.
     n._hook_fin = None
+    # Mémoire des mots déjà joués, même raison : `start_hangman` y écrit à
+    # chaque ouverture. Sans base — on ne teste ici que le filet du mot secret.
+    n._mots_pendu = MotsJoues(None, "test:pendu")
     return n
 
 

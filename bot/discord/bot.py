@@ -448,6 +448,10 @@ class WallyDiscord(commands.Bot):
                 # alors qu'il tournait encore : Wally n'en voyait plus la trace,
                 # en concluait qu'il n'en avait pas ouvert, et en relançait un.
                 await _overlay_narrator.restore_live_state()
+                # Les mots de pendu déjà joués. Hors de `restore_live_state`,
+                # qui ne reprend que le live EN COURS : cette mémoire-là doit
+                # traverser les lives, c'est toute sa raison d'être.
+                await _overlay_narrator.restore_mots_pendu()
 
                 async def _annoncer_fin_de_partie(genre: str, fait: str) -> None:
                     """Sondage dépouillé, pendu fini : le résultat part dans le chat.

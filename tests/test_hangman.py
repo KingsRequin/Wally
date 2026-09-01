@@ -358,3 +358,33 @@ def test_le_lancement_rappelle_que_l_indice_reste_cache():
     phrase = _overlay_outcome({"widget": "hangman", "letters": 9})
     assert "9 lettres" in phrase
     assert "indice" in phrase.lower()
+
+
+# ── Un mot déjà joué est refusé (prod du 2026-08-31 : deux « peacekeeper ») ──
+
+def test_le_meme_mot_deux_fois_de_suite_est_refuse():
+    n, _ = _n()
+    assert n.show_widget("hangman", sollicite=True, word="peacekeeper") is not None
+    n.cancel("pendu")          # la partie est finie, le mot reste brûlé
+    assert n.show_widget("hangman", sollicite=True, word="peacekeeper") is None
+
+
+def test_le_refus_nomme_le_mot_et_cite_les_derniers_joues():
+    """Sans la liste, Wally repioche dans le même vivier et se fait refuser encore."""
+    n, _ = _n()
+    n.show_widget("hangman", sollicite=True, word="wattson")
+    n.cancel("pendu")
+    n.show_widget("hangman", sollicite=True, word="peacekeeper")
+    n.cancel("pendu")
+
+    n.show_widget("hangman", sollicite=True, word="Peacekeeper")   # même mot, autre casse
+    motif = n.dernier_refus_widget()
+    assert "peacekeeper" in motif.lower()
+    assert "wattson" in motif.lower()
+
+
+def test_un_mot_neuf_passe_toujours():
+    n, _ = _n()
+    n.show_widget("hangman", sollicite=True, word="peacekeeper")
+    n.cancel("pendu")
+    assert n.show_widget("hangman", sollicite=True, word="chaussette") is not None

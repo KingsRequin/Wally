@@ -37,6 +37,7 @@ from loguru import logger
 from bot.core.text_clean import retirer_tirets_cadratins
 from bot.core.audit_log import journal, note_audience, note_speech
 from bot.core.conversation_log import new_trace_id
+from bot.core.mots_joues import MotsJoues
 from bot.core.music import vignette
 from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
@@ -217,6 +218,12 @@ FORCE_LIVE_KEY = "overlay:force_until"
 # au process, et il dure quelques minutes — le ressusciter sans son minuteur
 # laisserait un dépouillement qui n'arrive jamais.
 LIVE_STATE_KEY = "overlay:live_state"
+
+# Les mots de pendu déjà joués. Hors de `LIVE_STATE_KEY` À DESSEIN : cet
+# état-là est borné au live en cours et s'efface au suivant, alors qu'un mot
+# joué doit rester interdit d'un live à l'autre — c'est même le seul cas où la
+# répétition se remarque, chez l'habitué qui les suit tous.
+PENDU_MOTS_KEY = "overlay:pendu_mots_joues"
 
 # Âge au-delà duquel un état rangé n'est plus celui du live en cours, quand le
 # live n'est pas identifiable (statut Twitch pas encore revenu du poll). Un
@@ -790,6 +797,10 @@ class OverlayNarrator:
         # Pendu en cours. Le mot reste ICI : l'overlay ne reçoit que les
         # lettres trouvées, sinon les viewers le liraient à l'écran.
         self._hangman: Optional[dict] = None
+        # Les mots déjà joués, pour refuser une redite. Traverse les lives et
+        # les redémarrages — deux « peacekeeper » d'affilée le 2026-08-31, et
+        # rien nulle part ne gardait trace de la partie précédente.
+        self._mots_pendu = MotsJoues(db, PENDU_MOTS_KEY)
         # Dernier rappel du bingo : il se fait oublier entre deux cases.
         self._bingo_reminded_at: float = 0.0
         # Objectif du live (follows / subs / bits), rempli par les
@@ -1015,6 +1026,10 @@ class OverlayNarrator:
         tache = loop.create_task(self.flush_live_state())
         taches.add(tache)
         tache.add_done_callback(taches.discard)
+
+    async def restore_mots_pendu(self) -> None:
+        """Relit les mots de pendu déjà joués. Sans conditions de live ni de session."""
+        await self._mots_pendu.charger()
 
     async def restore_live_state(self) -> None:
         """Reprend les parties laissées en cours par le process précédent.
@@ -1833,6 +1848,17 @@ class OverlayNarrator:
                 self._publish_hangman()
                 return {"widget": "hangman", "letters": _compte_lettres(
                     self._hangman["word"])}
+            # Le refus est une INFORMATION, comme celui de la partie déjà
+            # ouverte : on nomme le mot ET on cite les derniers joués, sinon
+            # Wally rechoisit dans le même petit vivier et se fait refuser trois
+            # fois de suite. C'est un filet, pas le pilote — le pilote est
+            # `overlay_widgets.md`, qui élargit le vivier en amont.
+            if self._mots_pendu.deja_joue(mot):
+                recents = ", ".join(self._mots_pendu.recents[:12])
+                return self._refuser(
+                    f"« {mot} » a déjà été joué récemment, prends-en un autre. "
+                    f"Derniers mots joués : {recents}."
+                )
             if not self.start_hangman(mot, str(extra.get("hint") or comment or "")):
                 return self._refuser("le mot du pendu doit faire 3 à 16 lettres (paramètre `word`).")
             return {"widget": "hangman", "letters": _compte_lettres(
@@ -3011,6 +3037,10 @@ class OverlayNarrator:
         # accents, pas les espaces — « rocket  league » posé et « rocket league »
         # levé sont deux clés différentes, et le `pop()` échouait sans un bruit.
         guard_secret(self._hangman["display"])
+        # Retenu à l'OUVERTURE, pas à la fin : une partie abandonnée en cours de
+        # route a déjà brûlé son mot devant le chat, qui l'a vu s'afficher lettre
+        # par lettre. Point d'ouverture unique, donc point d'écriture unique.
+        self._mots_pendu.retenir(self._hangman["display"])
         self._publish_hangman()
         logger.info("Overlay: pendu ouvert ({n} lettres)", n=len(letters))
         self._planifier_flush()
