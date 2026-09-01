@@ -177,27 +177,6 @@ def _describe(path: Path) -> str:
 # l'inverse de sa fréquence, donc `les` s'annule tout seul, et d'autant mieux
 # que la réserve grandit.
 
-# Part des mots de la demande qui peut manquer à TOUTE la réserve avant qu'on
-# avoue ne pas avoir le meme. C'est l'absence, pas la rareté, qui dit « je n'ai
-# pas ça » : `rose` et `costume` sont rares ET présents, donc un seuil de rareté
-# acceptait « licorne rose » et « des dinosaures en costume ». Le mot introuvable,
-# lui, tranche — et sans dépendre de la taille du dossier, contrairement à une
-# fréquence relative, qui ne veut plus rien dire sur une réserve de cinq memes.
-#
-# Mesuré sur les 172 memes de prod le 2026-08-31 : douze demandes légitimes
-# (`cheaters`, `aim assist`, `la manette`, `give up`…) sont toutes à 0 % de mots
-# introuvables ; sept hors-sujets (`licorne rose`, `le tricot`, `le championnat
-# de curling`…) sont tous à 25 % ou plus. La marge est franche.
-_INTROUVABLES_MAX = 0.25
-
-# En dessous de cette taille, l'absence d'un mot ne prouve rien : une petite
-# réserve ne contient même pas le vocabulaire courant, et « les cheaters » se
-# ferait refuser parce que `les` manque, pas parce que le sujet manque. Mesuré
-# en tirant des sous-ensembles du dossier de prod : sur vingt mots français très
-# courants, il en manque 6,5 à cinq memes, 2,8 à dix, 1,0 à vingt, et 0,1 à
-# trente. En dessous, on classe et on montre — comme avant.
-_RESERVE_JUGEABLE = 30
-
 # Au-delà de ce rapport au meilleur score, on ne parle plus du même sujet. Sert
 # la VARIÉTÉ, pas la pertinence : entre deux memes également à propos, on tire.
 _ECART_MAX = 1.25
@@ -442,22 +421,25 @@ class MemeLibrary:
         Rendre [] est une RÉPONSE, pas un échec : elle vaut « je n'ai pas ça »,
         et l'appelant la transforme en aveu plutôt qu'en meme au hasard.
         """
-        if len(self._indexe) >= _RESERVE_JUGEABLE:
-            introuvables = sum(
-                1
-                for terme in termes
-                if not index.execute(
-                    "SELECT 1 FROM memes WHERE memes MATCH ? LIMIT 1", (f'"{terme}"*',)
-                ).fetchone()
-            )
-            if introuvables / len(termes) >= _INTROUVABLES_MAX:
-                return []
-        # Le mot exact ET son préfixe : le préfixe seul rattrape les pluriels et
-        # les dérivés (« cheater » trouve « cheaters », « triche » « tricheur »),
-        # mais il ramène aussi « chatouilles » pour « chat ». Chercher les deux
-        # fait matcher DEUX clauses au document qui porte le mot entier contre une
-        # seule au faux ami, et bm25 additionne : l'exact passe devant sans qu'on
-        # perde le dérivé.
+        # « Je n'ai pas ça » ne se dit QUE si rien ne correspond du tout — c'est
+        # la requête ci-dessous qui le décide, en ne rendant aucune ligne.
+        #
+        # Deux critères plus fins ont été essayés, et les DEUX ont cassé la prod :
+        #
+        # · la PROPORTION de mots introuvables (≥ 25 %) refusait « montre un
+        #   meme », « envoie un meme », « balance un meme » — deux mots absents
+        #   du dossier sur trois, et pourquoi `montre` y serait-il écrit ;
+        # · n'compter que les mots « porteurs » (df ≤ 20 % du corpus) ne tenait
+        #   qu'à une coïncidence : `meme` est dans 19,8 % des descriptions. Un
+        #   seul meme de plus le mentionnant, et le refus revenait.
+        #
+        # La leçon est structurelle : un verbe d'instruction absent du dossier et
+        # un sujet absent du dossier sont le MÊME objet lexical. « le tricot » et
+        # « un truc marrant » ne se distinguent pas — seul le sens le ferait, et
+        # on ne l'a pas ici. Un refus qu'on ne sait pas fonder juste vaut moins
+        # qu'un hors-sujet occasionnel : le premier retire une fonctionnalité,
+        # le second déçoit une fois.
+
         requete = " OR ".join(
             f'("{t}" OR "{t}"*)' for t in dict.fromkeys(termes)
         )

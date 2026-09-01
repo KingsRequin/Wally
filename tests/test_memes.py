@@ -6,7 +6,7 @@ serait absurde.
 """
 import pytest
 
-from bot.core.memes import _RESERVE_JUGEABLE, MemeLibrary
+from bot.core.memes import MemeLibrary
 
 
 @pytest.fixture
@@ -71,9 +71,9 @@ def test_un_mot_vide_ne_suffit_pas_a_retenir_un_meme(tmp_path):
     assert {lib.pick("chat qui hurle")["name"] for _ in range(12)} == {"b.jpg"}
 
 
-# Le refus ne s'arme qu'au-dessus de `_RESERVE_JUGEABLE` : sous cette taille, une
-# réserve ne contient même pas le vocabulaire courant et l'absence d'un mot ne
-# prouve rien. Les tests du refus travaillent donc sur une réserve réaliste.
+# Une réserve de taille réaliste pour les tests du classement et du refus : sur
+# cinq memes, les fréquences de mots ne veulent rien dire.
+_TAILLE_RESERVE = 30
 # Le mot « meme » revient dans un cinquieme des phrases, comme dans le vrai
 # dossier (33 descriptions sur 172). Sans ca il serait RARE ici, donc
 # discriminant, et « le meme sur les cheaters » se classerait sur lui.
@@ -101,7 +101,7 @@ def _reserve(tmp_path, sujets):
     for nom, description in sujets.items():
         (tmp_path / nom).write_bytes(b"x")
         (tmp_path / f"{nom}.txt").write_text(description, encoding="utf-8")
-    for i in range(_RESERVE_JUGEABLE):
+    for i in range(_TAILLE_RESERVE):
         (tmp_path / f"fond{i}.jpg").write_bytes(b"x")
         (tmp_path / f"fond{i}.jpg.txt").write_text(
             _REMPLISSAGE[i % len(_REMPLISSAGE)], encoding="utf-8"
@@ -109,22 +109,21 @@ def _reserve(tmp_path, sujets):
     return MemeLibrary(tmp_path)
 
 
-def test_un_sujet_absent_de_la_reserve_est_avoue(tmp_path):
+def test_une_demande_totalement_etrangere_est_avouee(tmp_path):
     """Ce test EXIGEAIT l'inverse — « mieux vaut un meme au hasard que pas de
-    meme du tout ». C'était le défaut, pas la règle : Wally sortait un meme sans
-    rapport et le commentait comme si c'était celui qu'on lui demandait, sans
-    que personne ne sache qu'il n'avait pas compris. Arbitrage de l'owner le
-    2026-08-31 : il dit qu'il ne l'a pas, ce qui signale aussi le meme manquant.
+    meme du tout ». Wally sortait un hors-sujet et le commentait comme si
+    c'était le bon. Arbitrage de l'owner le 2026-08-31 : il l'avoue.
+
+    Mais SEULEMENT quand rien ne correspond, pas un mot. Deux tentatives de
+    refus plus fin ont cassé la prod — cf. le commentaire de `_classer`.
     """
     lib = _reserve(tmp_path, {"chien.jpg": "un chien qui dort tranquillement"})
     assert lib.pick("astrophysique quantique") is None
-    assert lib.pick("le championnat de curling") is None
 
 
 def test_sous_une_petite_reserve_on_ne_refuse_pas(tmp_path):
-    """L'absence d'un mot n'est un signal que si la réserve est assez fournie
-    pour porter le vocabulaire courant. À cinq memes, `les` manque au dossier :
-    refuser « les cheaters » pour cette raison serait un faux aveu."""
+    """`les` manque à un dossier de cinq memes, `cheaters` non : il correspond
+    quelque chose, donc on montre."""
     petite = dict(enumerate(_REMPLISSAGE[:4]))
     for i, description in petite.items():
         (tmp_path / f"m{i}.jpg").write_bytes(b"x")
@@ -174,8 +173,8 @@ def test_un_indice_oriente_le_choix(lib):
         assert lib.pick("le ping")["name"] == "azrael-blame-le-ping.jpg"
 
 
-def test_un_indice_sans_correspondance_ne_sort_plus_n_importe_quoi(tmp_path):
-    """Même arbitrage : ne rien avoir vaut mieux qu'un hors-sujet assumé."""
+def test_un_indice_sans_aucune_correspondance_ne_sort_rien(tmp_path):
+    """Même arbitrage, même bornage : aucun des deux mots n'existe nulle part."""
     lib = _reserve(tmp_path, {"chien.jpg": "un chien qui dort tranquillement"})
     assert lib.pick("licorne quantique") is None
 
@@ -207,6 +206,22 @@ def test_les_mots_vides_ne_noient_plus_le_sujet(tmp_path):
         assert lib.pick(demande)["name"] == "cheat.jpg", demande
 
 
+def test_une_demande_generique_sort_un_meme(tmp_path):
+    """LE défaut qui a cassé la prod le 2026-09-01.
+
+    Le refus comptait la PROPORTION de mots de la demande introuvables dans la
+    réserve. « montre un meme » en a deux sur trois — `montre` n'est écrit dans
+    aucune description, et pourquoi le serait-il — donc Wally répondait qu'il
+    n'avait pas ce meme. Idem « envoie un meme », « balance un meme ». Un verbe
+    d'instruction est introuvable pour la même raison qu'un sujet absent : rien
+    ne les distingue, il ne faut donc PAS les compter.
+    """
+    lib = _reserve_apex(tmp_path)
+    for demande in ("montre un meme", "envoie un meme", "balance un meme",
+                    "montre moi un meme", "wally montre un meme"):
+        assert lib.pick(demande) is not None, demande
+
+
 def test_le_sujet_prime_meme_noye_dans_une_phrase(tmp_path):
     lib = _reserve_apex(tmp_path)
     assert lib.pick("un meme sur le pingdur")["name"] == "pingdur.jpg"
@@ -236,7 +251,7 @@ def test_une_description_ajoutee_est_vue_sans_redemarrage(tmp_path):
     corriger une description depuis l'atelier resterait sans effet sur les
     tirages jusqu'au prochain depot de fichier."""
     lib = _reserve(tmp_path, {"b.jpg": "une photo sans grand interet"})
-    assert lib.pick("dinosaure") is None
+    assert lib.pick("dinosaure") is None   # le mot n'existe encore nulle part
     (tmp_path / "b.jpg.txt").write_text("un dinosaure en costume", encoding="utf-8")
     assert lib.pick("dinosaure")["name"] == "b.jpg"
 
