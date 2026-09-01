@@ -648,6 +648,18 @@ input:focus, textarea:focus {
   padding: 6px 0 8px 12px;
   border-left: 2px solid var(--type, transparent);
   margin-bottom: 2px;
+  /* Le panneau garde deux cents pensées, soit vingt-trois mille pixels de
+   * contenu sous une fenêtre de 360. `content-visibility: auto` dit au
+   * navigateur de ne disposer et ne peindre QUE les lignes à l'écran ; les
+   * autres coûtent leur hauteur estimée et rien d'autre. Mesuré au défilement
+   * sur téléphone, deux cents lignes : 45 images sur 279 au-dessus de 20 ms
+   * sans, 4 sur 162 avec — soit exactement le coût du panneau ABSENT (2/146).
+   *
+   * `auto 110px` et non une valeur fixe : la hauteur réelle d'une ligne
+   * repliée est mémorisée dès qu'elle a été rendue une fois, ce qui empêche la
+   * barre de défilement de sauter quand on remonte. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 110px;
 }
 .feed-row.clickable { cursor: pointer; }
 .feed-plus {

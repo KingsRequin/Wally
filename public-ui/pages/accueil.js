@@ -397,12 +397,22 @@ async function chargerPlusDeFil(liste) {
     const evts = data.events || [];
     if (!evts.length) { _avantId = null; return; }
     const hAvant = liste.scrollHeight;
-    evts.forEach((e) => _evenements.push({
-      ...e,
-      _t: e.ts ? new Date(e.ts * 1000).toLocaleTimeString('fr-FR') : '',
-    }));
+    // On INSÈRE en tête, on ne redessine pas. `rendreFil()` jette les deux
+    // cents lignes et les rebâtit : mesuré à 29 ms sur un PC rapide et 125 à
+    // 148 ms sur un processeur modeste, soit deux à neuf images perdues d'un
+    // coup. Et elle se déclenchait en plein défilement, à chaque fois que le
+    // panneau approchait son haut — d'où un à-coup qui ne se produisait que
+    // devant ce panneau, en boucle tant qu'on restait dessus.
+    //
+    // Les événements arrivent du plus récent au plus ancien et le DOM va de
+    // l'ancien en haut au récent en bas : les insérer un à un en TÊTE, dans
+    // cet ordre, les empile donc dans le bon sens.
+    evts.forEach((e) => {
+      const evt = { ...e, _t: e.ts ? new Date(e.ts * 1000).toLocaleTimeString('fr-FR') : '' };
+      _evenements.push(evt);
+      liste.insertBefore(construireLigne(evt), liste.firstChild);
+    });
     _avantId = data.next_before !== undefined ? data.next_before : null;
-    rendreFil();
     // Compense l'ajout en haut pour ne pas faire sauter la vue.
     liste.scrollTop += liste.scrollHeight - hAvant;
   } catch (err) {
