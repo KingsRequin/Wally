@@ -88,13 +88,17 @@ def test_l_outil_annonce_les_bornes_de_duree_au_modele():
     assert "60" in params["duration"]["description"]
 
 
-# ── Le vocal : le troisième chemin ────────────────────────────────────────
+# ── Le vocal : deux chemins, pas un ───────────────────────────────────────
 #
-# Azraël JOUE pendant qu'il parle : « wally clippe ça » se dit à voix haute
-# bien plus souvent qu'il ne s'écrit. L'outil est né le 2026-09-01 branché sur
-# Discord et Twitch seulement — le chemin vocal ne le proposait pas, et un
-# outil absent du catalogue manque EN SILENCE (précédent du 2026-08-25 :
-# trois refus muets en direct avant qu'on le remarque).
+# PENDANT UN LIVE, Wally est en écoute seule : il ne parle pas, et « wally
+# clippe ça » passe par `voice/request.py`, qui emprunte les outils du chemin
+# TWITCH et répond dans le chat, lien compris. Ce chemin-là marchait depuis le
+# premier jour — c'est le cas normal.
+#
+# `build_voice_tools()` sert l'autre : la CONVERSATION vocale (`/join`), où il
+# répond de vive voix. Elle survit au démarrage d'un live (`stream_presence` ne
+# déplace pas une conversation en cours), donc « clippe ça » peut y tomber — et
+# l'outil y manquait.
 
 
 async def test_a_la_voix_l_url_n_est_PAS_dictee():

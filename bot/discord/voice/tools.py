@@ -189,10 +189,13 @@ async def build_voice_tools(bot) -> list[dict]:
     # voix haute qu'à l'écrit, et un outil absent du catalogue vocal manque
     # en silence (trois refus muets en direct le 2026-08-25).
     tools.append(COUT_TOOL)
-    # Clipper le live. C'est ICI que la demande tombe le plus souvent : Azraël
-    # JOUE pendant qu'il parle, « clippe ça » se dit à voix haute bien plus
-    # qu'il ne s'écrit. L'outil est né le 2026-09-01 branché sur Discord et
-    # Twitch seulement, et le manque ne se serait vu qu'en direct.
+    # Clipper le live. ⚠️ Ce catalogue N'EST PAS le chemin d'un live : pendant
+    # un stream Wally est en écoute seule, et « clippe ça » dit à voix haute
+    # passe par `voice/request.py`, qui emprunte les outils TWITCH et répond
+    # dans le chat, lien compris. Ce catalogue-ci sert la CONVERSATION vocale
+    # (`/join`), qui reste possible pendant un live quand Wally était déjà là :
+    # `stream_presence` ne déplace pas une conversation en cours. Là, sa seule
+    # sortie est sa voix — d'où `vocal=True` plus bas, qui retire l'URL.
     if api_twitch(bot) is not None:
         tools.append(CLIP_TOOL)
     action_service = getattr(bot, "action_service", None)
