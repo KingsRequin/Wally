@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 CLE_RECOMPENSE = "overlay:virus_popup_reward_id"
 
 TITRE = "Attaque de meme"
-COUT = 50000
+COUT = 30000
 PROMPT = ("L'écran se fait submerger de fausses fenêtres de virus et de memes, "
           "de plus en plus vite, jusqu'à un blue screen.")
 

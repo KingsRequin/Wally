@@ -464,7 +464,7 @@ OVERLAY_TOOL_SPEC: dict = {
                 "check": {"type": "string", "description": "Pour bingo : la case qui vient de se réaliser, son numéro (0 = la première) ou quelques mots de son intitulé."},
                 "target": {"type": "integer", "description": "Pour goal : le nombre à atteindre."},
                 "kind": {"type": "string", "enum": ["follow", "sub", "bits"], "description": "Pour goal : ce qu'on compte."},
-                "about": {"type": "string", "description": "Pour meme : LE SUJET SEUL, deux ou trois mots (« cheaters », « aim assist »), jamais ta phrase ni un verbe comme « montre ». Omets-le pour un tirage au hasard."},
+                "about": {"type": "string", "description": "Pour meme : TOUS les mots par lesquels on décrit le meme voulu — sujet, personne citée, arme, jeu (« skin flatline azra », « cheaters »). Ne retire RIEN de ce qui désigne : un nom écarté et le meme ne sort pas. Retire seulement les verbes comme « montre » ou « affiche ». Omets-le pour un tirage au hasard."},
                 "player": {"type": "string", "description": "Le pseudo, pour stats."},
                 "lines": {
                     "type": "array", "items": {"type": "string"},

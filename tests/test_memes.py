@@ -245,6 +245,37 @@ def test_un_mot_entier_et_pas_une_sous_chaine(tmp_path):
     assert MemeLibrary(tmp_path).pick("chat")["name"] == "b.jpg"
 
 
+def test_une_demande_plus_precise_que_la_description_trouve_quand_meme(tmp_path):
+    """LE défaut vécu le 2026-09-01 : « le meme d'Azra sur le skin de la
+    Flatline » restait introuvable.
+
+    La seule description qui le portait dit « skin de flat » — le jargon Apex
+    abrège. Le préfixe FTS5 va du COURT vers le long : `"flat"*` trouve
+    « flatline », jamais l'inverse. Une demande PLUS précise que la description
+    était donc un refus, et les deux fois où quelque chose sortait, c'était le
+    mauvais meme (celui qui parlait de « skin » tout court).
+    """
+    lib = _reserve(tmp_path, {
+        "azra_flat.jpg": "Azra avec son nouveau skin de flat, tout fier",
+        "skin_cher.jpg": "un skin a 320 euros et personne ne bronche",
+    })
+    for demande in ("flatline", "skin flatline", "le meme du skin flatline d'azra",
+                    "le skin de la flat a azra"):
+        assert lib.pick(demande)["name"] == "azra_flat.jpg", demande
+
+
+def test_un_mot_de_trois_lettres_ne_sert_pas_d_abreviation(tmp_path):
+    """Le garde d'`_ABREV_MIN`. Sans lui, « sacoche » trouverait « sac »,
+    « pinceau » trouverait « pin », et trois lettres relieraient n'importe quel
+    mot a n'importe quel autre — la moitié du dossier remonterait sur chaque
+    demande."""
+    lib = _reserve(tmp_path, {
+        "a.jpg": "il jette le sac dehors et le retrouve derriere lui",
+        "b.jpg": "une licorne quantique dans un grille pain",
+    })
+    assert lib.pick("sacoche") is None
+
+
 def test_une_description_ajoutee_est_vue_sans_redemarrage(tmp_path):
     """L'index ne se reconstruit que si le dossier a bouge — encore faut-il
     qu'il voie bouger un SIDECAR, pas seulement l'arrivee d'une image. Sans ca,

@@ -181,6 +181,22 @@ def _describe(path: Path) -> str:
 # la VARIÉTÉ, pas la pertinence : entre deux memes également à propos, on tire.
 _ECART_MAX = 1.25
 
+# Longueur minimale d'un terme du dossier pour servir d'abréviation. Le préfixe
+# FTS5 (`"flat"*`) va du COURT vers le long : il trouve « flatline » quand on
+# écrit « flat ». Le sens inverse n'existe pas, et c'est celui dont on a besoin
+# — l'owner écrit « flat », « wing », « path » dans ses descriptions, et le chat
+# demande « flatline », « wingman », « pathfinder ». Mesuré en prod le
+# 2026-09-01 : « le meme d'Azra sur le skin de la Flatline » ne pouvait pas
+# sortir, la seule description qui le portait dit « skin de flat ».
+#
+# Quatre caractères : en dessous, « sac » serait le préfixe de « sacoche » et
+# tout terme de trois lettres ramasserait la moitié du dossier. À quatre, le
+# hors-sujet reste possible — « maison » trouve « mais » — et c'est assumé : le
+# même arbitrage qu'en dessous, un refus qu'on ne sait pas fonder juste coûte
+# plus cher qu'un hors-sujet occasionnel, et bm25 range de toute façon le mot
+# vide loin derrière le sujet.
+_ABREV_MIN = 4
+
 _MOT = re.compile(r"[0-9a-z]+")
 
 
@@ -265,6 +281,7 @@ class MemeLibrary:
         self._index: sqlite3.Connection | None = None
         self._indexe: _Entrees = []
         self._signature: tuple | None = None
+        self._vocab: frozenset[str] = frozenset()
 
     @property
     def directory(self) -> Path:
@@ -381,6 +398,7 @@ class MemeLibrary:
         if self._index is not None:
             self._index.close()
         self._index, self._indexe, self._signature = None, [], None
+        self._vocab = frozenset()
 
     def _index_a_jour(self) -> sqlite3.Connection | None:
         """L'index FTS5 du dossier, reconstruit s'il a bougé depuis la dernière fois.
@@ -412,8 +430,31 @@ class MemeLibrary:
             "INSERT INTO memes(nom, texte) VALUES (?, ?)",
             [(e["name"], e["description"]) for e in entrees],
         )
+        # Le vocabulaire RÉEL du dossier, tel que FTS5 l'a découpé. Le
+        # reconstruire en Python le ferait diverger du tokenizer au premier
+        # caractère exotique — et c'est justement sur ce vocabulaire qu'on
+        # cherche les abréviations.
+        index.execute("CREATE VIRTUAL TABLE vocabulaire USING fts5vocab(memes, row)")
+        self._vocab = frozenset(
+            t for (t,) in index.execute("SELECT term FROM vocabulaire")
+            if len(t) >= _ABREV_MIN
+        )
         self._index, self._indexe, self._signature = index, entrees, signature
         return index
+
+    def _formes(self, terme: str) -> _Termes:
+        """Les écritures de `terme` à chercher dans le dossier, lui compris.
+
+        Le mot exact, sa forme préfixe (« cheat » trouve « cheaters »), et les
+        ABRÉVIATIONS dont il est l'allongement : le dossier dit « flat », le
+        chat demande « flatline ». Sans elles, une demande plus précise que la
+        description est un refus, ce qui est exactement l'inverse du sens
+        attendu.
+        """
+        formes = [f'"{terme}"', f'"{terme}"*']
+        formes += [f'"{v}"' for v in self._vocab
+                   if v != terme and terme.startswith(v)]
+        return formes
 
     def _classer(self, index: sqlite3.Connection, termes: _Termes) -> _Entrees:
         """Les memes qui parlent du sujet, du plus au moins pertinent. [] si aucun.
@@ -441,7 +482,8 @@ class MemeLibrary:
         # le second déçoit une fois.
 
         requete = " OR ".join(
-            f'("{t}" OR "{t}"*)' for t in dict.fromkeys(termes)
+            "(" + " OR ".join(self._formes(t)) + ")"
+            for t in dict.fromkeys(termes)
         )
         lignes = index.execute(
             "SELECT nom, bm25(memes) FROM memes WHERE memes MATCH ? ORDER BY 2",

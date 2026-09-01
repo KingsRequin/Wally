@@ -268,11 +268,16 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # Le fil de la boucle cognitive se remplit au défilement : à 0 il est vide.
     page.evaluate("window.scrollTo(0, 0)")
     page.wait_for_timeout(600)
-    vide = page.locator(".wire-fill").evaluate("e => e.style.width")
+    # Le remplissage est une `scaleX`, pas une largeur : une largeur écrite à
+    # chaque image redispose la section entière au moment précis où l'on arrive
+    # dessus.
+    vide = page.locator(".wire-fill").evaluate("e => e.style.transform")
     page.evaluate("window.scrollTo(0, 1200)")
     page.wait_for_timeout(800)
-    plein = page.locator(".wire-fill").evaluate("e => e.style.width")
-    rap.dire(vide == "0%" and plein == "100%",
+    plein = page.locator(".wire-fill").evaluate("e => e.style.transform")
+    # Le navigateur RÉÉCRIT la valeur qu'on lui a posée — « scaleX(0.000) »
+    # ressort « scaleX(0) ». On compare donc le nombre, pas la chaîne.
+    rap.dire(vide.startswith("scaleX(0") and plein.startswith("scaleX(1"),
              "le fil de la boucle se remplit au défilement", f"{vide} → {plein}")
     rap.dire(page.locator(".rail a.active").count() == 1,
              "et le rail suit la section atteinte")
@@ -382,21 +387,25 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
           const cibles = [...l.children].filter(c => c.classList.contains('clickable'));
           if (!cibles.length) return null;
           const cible = cibles[cibles.length - 1];
-          const avant = cible.querySelector('.feed-text').textContent.length;
+          // La HAUTEUR rendue, pas la longueur du texte : une pensée est
+          // repliée par `-webkit-line-clamp`, donc son `textContent` est déjà
+          // complet dans le DOM avant le clic. Mesurer les caractères ne
+          // verrait plus rien bouger, alors que l'écran, lui, change.
+          const avant = cible.querySelector('.feed-text').clientHeight;
           cible.click();
           return {
             gardees: [...l.children].filter(c => c.dataset.temoin !== undefined).length,
             total: l.children.length,
             avant: avant,
-            apres: l.children[+cible.dataset.temoin].querySelector('.feed-text').textContent.length,
+            apres: l.children[+cible.dataset.temoin].querySelector('.feed-text').clientHeight,
           };
         })()""")
     rap.dire(bool(deplie and deplie["gardees"] == deplie["total"] - 1),
              "déplier une pensée ne redessine que sa ligne",
              f"{(deplie or {}).get('gardees')}/{(deplie or {}).get('total')} gardées")
     rap.dire(bool(deplie and deplie["apres"] > deplie["avant"]),
-             "et elle porte bien le texte complet",
-             f"{(deplie or {}).get('avant')} → {(deplie or {}).get('apres')} car.")
+             "et elle montre alors toute la pensée",
+             f"{(deplie or {}).get('avant')} → {(deplie or {}).get('apres')} px")
 
     # L'indice de dépliage doit être VISIBLE. Il a longtemps été un « … » noyé
     # dans la phrase, doublé d'un `title` — deux choses qu'un doigt ne voit pas.

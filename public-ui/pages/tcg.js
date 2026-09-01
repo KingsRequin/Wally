@@ -5,6 +5,12 @@
 
 import { h, nomBot, pageFooter, sectionHead } from '../app.js';
 
+// L'invitation au serveur, en dur comme le lien du dépôt dans `app.js`. Elle
+// double la note persistante `lien_invitation_discord` que Wally donne quand on
+// la lui demande : le site est servi en statique et n'a pas d'API pour aller la
+// lire. Si le lien change, les deux bougent ensemble.
+const LIEN_DISCORD = 'https://discord.com/invite/qPx53paTGg';
+
 // L'éventail de dos de cartes du héros : purement décoratif, jamais annoncé
 // aux lecteurs d'écran.
 const EVENTAIL = [
@@ -55,10 +61,12 @@ function heros() {
       + 'Les comptes Discord connectés auront leur collection, leurs decks et leurs duels. '
       + "Rien n'est encore jouable, le code s'écrit."),
     h('div', { class: 'hero-cta reveal' },
-      h('button', {
+      h('a', {
         class: 'btn btn-discord',
-        text: 'Connecter mon Discord',
-        onclick: () => { window.location.href = '/api/chat/auth/login'; },
+        href: LIEN_DISCORD,
+        target: '_blank',
+        rel: 'noopener',
+        text: 'Rejoindre le Discord',
       }),
       h('a', { class: 'btn btn-ghost', href: '/chat', 'data-route': '/chat', text: `Parler à ${nomBot()}` }),
     ),

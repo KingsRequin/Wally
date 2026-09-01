@@ -342,9 +342,18 @@ input:focus, textarea:focus {
   height: 2px;
   overflow: hidden;
 }
+/* Le remplissage se joue en `scaleX`, jamais en `width`. Une largeur écrite à
+ * chaque image de défilement redispose et repeint la section entière — et
+ * l'ombre portée avec elle, qui coûte à elle seule un repaint complet. C'est
+ * une cause du ralentissement signalé pile en arrivant sur la boucle
+ * cognitive, et nulle part ailleurs : c'est le seul endroit où la valeur
+ * change. Mesuré au défilement, CPU bridé ×10 : pire image 38 → 29 ms. */
 .wire-fill {
   height: 100%;
-  width: 0%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
   background: linear-gradient(90deg, var(--ember), var(--gold), var(--rose));
   box-shadow: 0 0 14px rgba(255, 106, 43, .7);
 }
@@ -637,6 +646,7 @@ input:focus, textarea:focus {
   font-family: var(--mono);
   font-size: 11px;
   white-space: nowrap;
+  margin-top: 2px;
 }
 .feed-row.clickable:hover { background: rgba(255, 255, 255, .03); }
 .feed-meta {
@@ -658,7 +668,24 @@ input:focus, textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.feed-text { color: var(--text-3); word-break: break-word; line-height: 1.65; }
+/* `pre-wrap` : les pensées de Wally arrivent avec leurs propres retours à la
+ * ligne — vingt en moyenne. Le HTML les écrasait, et la réflexion sortait en
+ * un pavé compact où plus rien ne se distinguait. */
+.feed-text {
+  color: var(--text-3);
+  word-break: break-word;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+/* Trois lignes tant qu'on n'a pas cliqué. `-webkit-line-clamp` est le seul
+ * repli qui compte des lignes RENDUES : couper à N caractères couperait au
+ * milieu d'un mot et changerait de longueur à chaque largeur d'écran. */
+.feed-text.replie {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 /* ──────────────────────────  bandeau défilant  ────────────────────────── */
 

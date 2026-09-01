@@ -255,6 +255,10 @@ function sectionCerveau() {
   );
 }
 
+// Au-delà, la ligne du flux est repliée à trois lignes et cliquable. Un
+// message court (« a réagi », un nom d'action) n'a rien à replier.
+const REPLI_MAX = 160;
+
 function metaEvenement(type) {
   return FEED_META[type] || { c: 'var(--soft)', k: (type || '·').slice(0, 6) };
 }
@@ -268,8 +272,15 @@ function construireLigne(e) {
   const complet = texteComplet(e);
   const texte = (e._deplie && complet) ? complet : texteEvenement(e);
   const contexte = contexteEvenement(e);
+  // Une pensée de Wally pèse 2 400 caractères et porte VINGT retours à la
+  // ligne — mesuré sur le flux de prod le 2026-09-01. Rendus tels quels, le
+  // HTML écrasait les retours et la page affichait deux cents pavés d'un bloc :
+  // illisible, et deux cents fois la hauteur d'un écran à disposer à chaque
+  // défilement. Repliée à trois lignes, la même entrée se lit d'un coup d'œil
+  // et se déplie au clic.
+  const long = Boolean(complet) || texte.length > REPLI_MAX || texte.includes('\n');
   const ligne = h('div', {
-    class: 'feed-row' + (complet ? ' clickable' : ''),
+    class: 'feed-row' + (long ? ' clickable' : ''),
     style: `--type: ${meta.c}`,
   },
   h('div', { class: 'feed-meta' },
@@ -279,11 +290,13 @@ function construireLigne(e) {
   ),
   // L'indice de dépliage est un mot, pas un « … » noyé dans la phrase : au
   // doigt, il n'y a ni survol ni `title`, et rien ne disait qu'il restait
-  // quelque chose à lire.
-  h('div', { class: 'feed-text' }, texte,
-    complet ? h('span', { class: 'feed-plus', text: e._deplie ? ' ↑ replier' : ' … déplier' }) : null),
+  // quelque chose à lire. Il vit HORS du texte : le repli est un
+  // `-webkit-line-clamp`, qui pose son propre « … » et masquerait un enfant
+  // laissé à l'intérieur.
+  h('div', { class: 'feed-text' + (long && !e._deplie ? ' replie' : '') }, texte),
+  long ? h('div', { class: 'feed-plus', text: e._deplie ? '↑ replier' : '… déplier' }) : null,
   );
-  if (complet) {
+  if (long) {
     ligne.title = 'cliquer pour ' + (e._deplie ? 'replier' : 'déplier');
     // Le clic REMPLACE sa propre ligne au lieu de redessiner les deux cents :
     // déplier une pensée ne regarde que celle-là.
@@ -789,36 +802,42 @@ function rail() {
  *  la section qu'on est en train de lire.
  */
 function image(sy, vh) {
+  // TOUTES les mesures d'abord, les écritures ensuite. Intercalées, chaque
+  // `getBoundingClientRect()` qui suit une écriture de style force le
+  // navigateur à redisposer la page sur-le-champ, une fois par image.
+  const piste = _refs.marquee;
+  const moitie = piste ? piste.scrollWidth / 2 : 0;
+  const section = document.getElementById('a-cerveau');
+  const hautCerveau = section ? section.getBoundingClientRect().top : null;
+  const nav = _refs.rail;
+  // Le rail : la DERNIÈRE section dont le haut a passé les 42 % de l'écran.
+  // Toujours exactement une active — un `IntersectionObserver` avec une bande
+  // centrale n'en allume aucune quand deux sections se relaient hors de cette
+  // bande, et le rail s'éteint en plein milieu de la page.
+  let actif = 0;
+  if (nav) {
+    RAIL.forEach(([id], i) => {
+      if (i === 0) return;
+      const el = document.getElementById(id);
+      if (el && el.getBoundingClientRect().top < vh * 0.42) actif = i;
+    });
+  }
+
   // Le bandeau défile AVEC la page, il ne tourne pas tout seul : c'est ce qui
   // le relie au geste du lecteur au lieu d'en faire une décoration.
-  const piste = _refs.marquee;
   if (piste) {
-    const moitie = piste.scrollWidth / 2;   // la liste de mots est doublée
     const x = moitie > 0 ? -((((sy * 0.45) % moitie) + moitie) % moitie) : 0;
     piste.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
   }
 
   // Le fil se remplit pendant que la section de la boucle traverse l'écran.
   const fil = _refs.wire;
-  const section = document.getElementById('a-cerveau');
-  if (fil && section) {
-    const r = section.getBoundingClientRect();
-    const p = Math.max(0, Math.min(1, (vh * 0.8 - r.top) / (vh * 0.7)));
-    fil.style.width = (p * 100).toFixed(1) + '%';
+  if (fil && hautCerveau !== null) {
+    const p = Math.max(0, Math.min(1, (vh * 0.8 - hautCerveau) / (vh * 0.7)));
+    fil.style.transform = 'scaleX(' + p.toFixed(3) + ')';
   }
 
-  // Le rail : la DERNIÈRE section dont le haut a passé les 42 % de l'écran.
-  // Toujours exactement une active — un `IntersectionObserver` avec une bande
-  // centrale n'en allume aucune quand deux sections se relaient hors de cette
-  // bande, et le rail s'éteint en plein milieu de la page.
-  const nav = _refs.rail;
   if (!nav) return;
-  let actif = 0;
-  RAIL.forEach(([id], i) => {
-    if (i === 0) return;
-    const el = document.getElementById(id);
-    if (el && el.getBoundingClientRect().top < vh * 0.42) actif = i;
-  });
   Array.from(nav.children).forEach((a, i) => a.classList.toggle('active', i === actif));
 }
 
