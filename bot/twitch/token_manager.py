@@ -18,6 +18,27 @@ from loguru import logger
 _PROACTIVE_REFRESH_S = 3 * 3600 + 1800
 
 
+def scopes_manquants(token_type: str, obtenus: list[str]) -> list[str]:
+    """Les scopes que le code RÉCLAME et que le token en service ne porte pas.
+
+    Un scope ajouté au code ne s'applique qu'à la prochaine autorisation OAuth :
+    le token déjà émis garde exactement ceux qu'on lui avait demandés. Entre les
+    deux, l'appel Helix rend 401 et l'appelant se replie — proprement, mais en
+    silence. Vécu du 2026-08-28 au 2026-09-01 : `moderator:manage:announcements`
+    réclamé par le code, absent du token, et les douze chemins de `send_automatic`
+    sortaient en message ordinaire au lieu d'annonces colorées. Quatre jours sans
+    qu'une ligne le dise.
+
+    La liste de référence est LUE dans `twitch_auth`, jamais recopiée : deux
+    listes divergeraient, et c'est la copie qui ferait foi ici.
+    """
+    from bot.dashboard.routes.twitch_auth import _BOT_SCOPES, _STREAMER_SCOPES
+
+    attendus = _BOT_SCOPES if token_type == "bot" else _STREAMER_SCOPES
+    porte = {s.strip() for s in obtenus if s and s.strip()}
+    return [s for s in attendus.split() if s not in porte]
+
+
 class TwitchTokenManager:
     VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -98,12 +119,24 @@ class TwitchTokenManager:
                     resp.raise_for_status()
                     data = resp.json()
                     expires_in = data.get("expires_in")
+                    scopes = data.get("scopes", []) or []
                     logger.info(
                         "Twitch {t} token valid — scopes={scopes} expires_in={exp}s",
                         t=token_type,
-                        scopes=data.get("scopes", []),
+                        scopes=scopes,
                         exp=expires_in if expires_in is not None else "?",
                     )
+                    # En WARNING et nommément : la ligne INFO au-dessus porte
+                    # déjà la donnée depuis toujours, personne n'a jamais
+                    # comparé les deux listes à l'œil.
+                    if manquants := scopes_manquants(token_type, scopes):
+                        logger.warning(
+                            "Twitch {t} : {n} scope(s) réclamés par le code et ABSENTS "
+                            "du token — {liste}. Les appels concernés échoueront en 401 "
+                            "et se replieront en silence. Refaire l'autorisation du "
+                            "compte depuis le dashboard.",
+                            t=token_type, n=len(manquants), liste=", ".join(manquants),
+                        )
                     # Encore valide, mais plus pour longtemps : on renouvelle
                     # maintenant plutôt que d'attendre le 401 du prochain passage.
                     if (

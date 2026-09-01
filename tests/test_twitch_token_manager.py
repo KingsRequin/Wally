@@ -185,3 +185,41 @@ async def test_write_env_appends_key_when_absent(tmp_path):
     content = env_file.read_text()
     assert "BOT_ACCESS_TOKEN=appended_token" in content
     assert "BOT_REFRESH_TOKEN=appended_ref" in content
+
+
+# ── Scopes réclamés par le code mais absents du token en service ──
+# Le token du compte bot n'a JAMAIS porté `moderator:manage:announcements`
+# depuis son ajout au code le 2026-08-28 : les annonces colorées repartaient
+# en messages ordinaires, sans une ligne pour le dire. Ce n'est pas un défaut
+# de code, c'est une autorisation à refaire — encore faut-il l'apprendre.
+
+def test_scopes_manquants_nomme_ce_qui_manque():
+    """Le token de prod du 2026-09-01, tel que /oauth2/validate le rendait."""
+    from bot.twitch.token_manager import scopes_manquants
+
+    manquants = scopes_manquants("bot", [
+        "chat:edit", "chat:read", "moderator:read:followers", "user:bot",
+        "user:read:chat", "user:read:emotes", "user:write:chat",
+    ])
+    assert "moderator:manage:announcements" in manquants
+    assert "moderator:manage:shoutouts" in manquants
+    # Ceux qu'il porte ne doivent pas être signalés.
+    assert "chat:edit" not in manquants
+    assert "user:read:emotes" not in manquants
+
+
+def test_scopes_manquants_vide_quand_le_token_est_complet():
+    """Un token fraîchement autorisé ne doit RIEN faire crier."""
+    from bot.dashboard.routes.twitch_auth import _BOT_SCOPES, _STREAMER_SCOPES
+    from bot.twitch.token_manager import scopes_manquants
+
+    assert scopes_manquants("bot", _BOT_SCOPES.split()) == []
+    assert scopes_manquants("streamer", _STREAMER_SCOPES.split()) == []
+
+
+def test_scopes_manquants_signale_tout_quand_le_token_n_en_porte_aucun():
+    """Liste vide (réponse inattendue de Twitch) : on signale, on ne se tait pas."""
+    from bot.dashboard.routes.twitch_auth import _STREAMER_SCOPES
+    from bot.twitch.token_manager import scopes_manquants
+
+    assert scopes_manquants("streamer", []) == _STREAMER_SCOPES.split()
