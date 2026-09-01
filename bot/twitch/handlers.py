@@ -39,6 +39,7 @@ from bot.discord.handlers import (
     _PRESENCE_TOOL, run_presence_tool, _presence_service,
 )
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
+from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -522,6 +523,13 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
         # `moderator:read:followers` ne vaut que là, et « depuis quand tu me
         # suis » chez un invité parlerait de SA chaîne, pas de celle-ci.
         tools.append(FOLLOW_TOOL)
+        # Clipper à la demande. Maison seulement, pour la même raison que le
+        # pari : `broadcaster_id` est celui d'Azraël, et le scope
+        # `channel:manage:clips` de SON token ne vaut que sur SA chaîne. Ouvert
+        # à tous (arbitrage du 2026-09-01) — le garde-fou est le cooldown de
+        # deux minutes, qui tient à la fenêtre de capture de Twitch, pas aux
+        # badges.
+        tools.append(CLIP_TOOL)
     # Son humeur des jours passés. Inconditionnel : il porte son état émotionnel
     # partout, chaîne maison comme invitée, en live comme hors live — et « t'étais
     # énervé hier soir ? » se demande surtout quand il ne l'est plus.
@@ -789,6 +797,8 @@ def make_tool_executor(
         if name == "follow_date":
             return await run_follow_tool(bot, args, platform=platform,
                                          user_id=user_id, author=author)
+        if name == "create_clip":
+            return await run_clip_tool(bot, args, author=author)
         if name == "mood_history":
             return await run_mood_history_tool(bot, args)
         if name == "mon_cout":

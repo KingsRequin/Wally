@@ -23,6 +23,7 @@ from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.meme_tool import run_meme_tool_discord
 from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool_discord
 from bot.tools.cout_tool import COUT_TOOL, run_cout_tool
+from bot.tools.clip_tool import CLIP_TOOL, run_clip_tool
 from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
@@ -1494,6 +1495,10 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
     if api_twitch(bot) is not None:
         tools.append(FOLLOW_TOOL)
+        # Clipper le live d'Azraël depuis Discord : on regarde le stream et on
+        # commente ici, c'est le même moment et la même communauté. L'outil dit
+        # lui-même qu'aucun live ne tourne, le cas échéant.
+        tools.append(CLIP_TOOL)
     # Son humeur des jours passés. Le même état émotionnel vaut des deux côtés :
     # le conditionner à la plateforme le rendrait amnésique sur l'une des deux.
     tools.append(MOOD_HISTORY_TOOL)
@@ -3033,6 +3038,9 @@ async def _respond(
                 return await run_follow_tool(
                     bot, args, platform="discord", user_id=str(message.author.id),
                     author=str(message.author.display_name))
+            if name == "create_clip":
+                return await run_clip_tool(
+                    bot, args, author=str(message.author.display_name))
             if name == "mood_history":
                 return await run_mood_history_tool(bot, args)
             if name == "mon_cout":

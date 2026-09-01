@@ -1,7 +1,7 @@
 # bot/twitch/api.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import asyncio
 import time
@@ -817,6 +817,153 @@ class TwitchAPI:
             return None
         meilleurs.sort(key=lambda t: (t[0], t[1]), reverse=True)
         return meilleurs[0][2]
+
+    CLIPS_URL = "https://api.twitch.tv/helix/clips"
+
+    # 5 à 60 s, 30 par défaut — bornes de l'annonce Twitch du 2025-12-20, qui a
+    # ajouté `title` et `duration` à `POST /helix/clips` et retiré `has_delay`
+    # (« did not have any effect on the resulting clip »).
+    #
+    # ⚠️ Le guide `dev.twitch.tv/docs/api/clips/` n'a PAS été mis à jour : il
+    # décrit encore `has_delay` et le scope `clips:edit`, et affirme que le
+    # titre s'édite après coup via `edit_url`. C'est la RÉFÉRENCE et l'annonce
+    # qui font foi ici. Vérifié le 2026-09-01.
+    CLIP_DUREE_MIN_S = 5
+    CLIP_DUREE_MAX_S = 60
+    CLIP_DUREE_DEFAUT_S = 30
+    CLIP_TITRE_MAX = 60
+
+    # Un clip n'est pas prêt quand `POST` répond : la réponse rend un `id`, pas
+    # un clip. On re-interroge `Get Clips` jusqu'à le voir revenir. Au-delà,
+    # c'est un échec — annoncer un clip qu'on n'a pas vu revenir, c'est promettre
+    # une URL qui rendra 404 au premier qui clique.
+    CLIP_ATTENTE_PAS_S = 1.5
+    CLIP_ATTENTE_MAX_S = 15.0
+
+    async def create_clip(self, title: str = "",
+                          duration: int = 0) -> Optional[dict]:
+        """POST /helix/clips — clippe le live en cours. None si ça n'a pas pris.
+
+        Token STREAMER et scope `channel:manage:clips` : l'annonce du
+        2025-12-20 remplace `clips:edit` par `editor:manage:clips` (compte
+        éditeur) ou `channel:manage:clips` (le broadcaster). On prend le second,
+        qui ne demande aucun réglage côté Twitch — l'éditeur, lui, se nomme à la
+        main dans les paramètres de la chaîne, comme le modérateur des annonces.
+
+        La fenêtre de capture fait ~90 s (≈85 s avant l'appel, ≈5 s après) : une
+        demande de 40 s en arrière tient dedans, 90 s non — d'où le bornage à 60.
+        """
+        duree = int(duration or self.CLIP_DUREE_DEFAUT_S)
+        # Borné plutôt que refusé : « clippe les 2 dernières minutes » est une
+        # demande LÉGITIME dont Twitch ne sait faire que la dernière minute.
+        # Rendre une erreur ferait dire à Wally « je ne peux pas » là où il peut
+        # presque — le retour porte la durée réelle, à lui de le dire.
+        duree = max(self.CLIP_DUREE_MIN_S, min(self.CLIP_DUREE_MAX_S, duree))
+        corps: dict[str, Any] = {"duration": duree}
+        # `redact` comme toute sortie visible : un titre de clip est PUBLIC et
+        # définitif, c'est la dernière place où laisser filer le mot du pendu.
+        if titre := redact(title).strip()[:self.CLIP_TITRE_MAX]:
+            corps["title"] = titre
+
+        clip_id = await self._creer_clip(corps, duree)
+        if not clip_id:
+            return None
+        return await self._attendre_clip(clip_id)
+
+    async def _creer_clip(self, corps: dict, duree: int) -> str:
+        """L'appel POST lui-même. Rend l'id du clip, ou `""`."""
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.post(
+                        self.CLIPS_URL,
+                        params={"broadcaster_id": self._broadcaster_id},
+                        json=corps,
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        logger.warning("Clip 401 — renouvellement du token streamer")
+                        if not await self._tm.refresh("streamer"):
+                            logger.error("Renouvellement du token streamer échoué — "
+                                         "clip abandonné")
+                            return ""
+                        continue
+                    if resp.status_code == 404:
+                        # Le cas NORMAL hors live, pas une panne : Twitch ne sait
+                        # clipper qu'un stream en cours.
+                        logger.info("Clip refusé : aucun live en cours")
+                        return ""
+                    if resp.status_code not in (200, 201, 202):
+                        logger.error("Clip refusé HTTP {c} : {t}",
+                                     c=resp.status_code, t=resp.text[:200])
+                        return ""
+                    data = (resp.json() or {}).get("data") or []
+                    clip_id = str((data[0] or {}).get("id") or "") if data else ""
+                    if not clip_id:
+                        logger.error("Clip créé sans id — réponse : {t}",
+                                     t=resp.text[:200])
+                        return ""
+                    logger.info("Clip demandé ({d} s) — id {i}", d=duree, i=clip_id)
+                    return clip_id
+                return ""
+        except Exception as exc:  # noqa: BLE001 — un clip raté ne tue pas le live
+            logger.error("Clip en erreur : {e!r}", e=exc)
+            return ""
+
+    async def _attendre_clip(self, clip_id: str) -> Optional[dict]:
+        """Re-interroge `Get Clips` jusqu'à ce que le clip existe vraiment.
+
+        La création est ASYNCHRONE côté Twitch. Sans cette attente, on rendrait
+        une URL qui n'existe pas encore : le premier qui clique tombe sur une
+        page vide, et c'est exactement le moment où l'on voulait faire bonne
+        figure. Passé le plafond, on le dit — on n'annonce jamais un clip qu'on
+        n'a pas vu revenir.
+        """
+        attendu = 0.0
+        while attendu < self.CLIP_ATTENTE_MAX_S:
+            await asyncio.sleep(self.CLIP_ATTENTE_PAS_S)
+            attendu += self.CLIP_ATTENTE_PAS_S
+            for clip in await self.get_clips_par_id([clip_id]):
+                logger.info("Clip prêt en {s:.0f} s : {u}",
+                            s=attendu, u=clip.get("url") or "")
+                return clip
+        logger.warning("Clip {i} toujours absent après {s:.0f} s — non annoncé",
+                       i=clip_id, s=attendu)
+        return None
+
+    async def get_clips_par_id(self, ids: list[str]) -> list[dict]:
+        """GET /helix/clips?id=… — les clips existants parmi ceux demandés.
+
+        Liste VIDE tant que Twitch n'a pas fini de fabriquer le clip : c'est le
+        signal d'attente de `_attendre_clip`, pas une erreur.
+        """
+        if not ids:
+            return []
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.get(
+                        self.CLIPS_URL,
+                        params=[("id", str(i)) for i in ids[:100]],
+                        headers={"Authorization": f"Bearer {self._tm.bot_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        logger.warning("Clips par id 401 — renouvellement du token")
+                        if not await self._tm.refresh("bot"):
+                            return []
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning("Clips par id — HTTP {c}", c=resp.status_code)
+                        return []
+                    return resp.json().get("data") or []
+                return []
+        except Exception as exc:  # noqa: BLE001 — une attente ratée n'annonce rien
+            logger.warning("Clips par id en erreur : {e!r}", e=exc)
+            return []
 
     async def get_recent_clips(self, since_iso: str, first: int = 20) -> list[dict]:
         """GET /helix/clips — clips créés depuis `since_iso` sur la chaîne.

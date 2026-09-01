@@ -245,3 +245,162 @@ async def test_une_reponse_sans_drop_reason_reste_un_refus():
     Un `.get(clé, défaut)` ne couvre pas `clé: null`."""
     refuse = make_http_response(200, {"data": [{"is_sent": False, "drop_reason": None}]})
     assert await _envoi(refuse) is False
+
+
+# ── create_clip : POST asynchrone, puis attente que le clip EXISTE ──
+# La réponse de `POST /helix/clips` rend un `id`, pas un clip. Annoncer l'URL
+# tout de suite, c'est promettre une page qui rendra 404 au premier qui clique.
+
+def _api_streamer(streamer_token="str_tok") -> TwitchAPI:
+    tm = MagicMock()
+    tm.bot_token = "bot_tok"
+    tm.streamer_token = streamer_token
+    tm.refresh = AsyncMock(return_value=True)
+    return TwitchAPI(token_manager=tm, client_id="cid",
+                     bot_id="bot_id", broadcaster_id="bc_id")
+
+
+class _FauxHTTP:
+    """Un client httpx qui rend des réponses scriptées, et note les appels."""
+
+    def __init__(self, post_resp, get_resps):
+        self.post_resp = post_resp
+        self.get_resps = list(get_resps)
+        self.posts: list[dict] = []
+        self.gets = 0
+
+    def __call__(self, **kw):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, params=None, json=None, headers=None, timeout=None):
+        self.posts.append({"url": url, "params": params, "json": json,
+                           "headers": headers})
+        return self.post_resp
+
+    async def get(self, url, params=None, headers=None, timeout=None):
+        self.gets += 1
+        return self.get_resps.pop(0) if self.get_resps else make_http_response(
+            200, {"data": []})
+
+
+@pytest.mark.asyncio
+async def test_create_clip_poste_titre_et_duree():
+    api = _api_streamer()
+    http = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "ClipId", "edit_url": "e"}]}),
+        [make_http_response(200, {"data": [{"id": "ClipId",
+                                            "url": "https://clips.twitch.tv/ClipId",
+                                            "title": "kill au wingman"}]})],
+    )
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        clip = await api.create_clip("kill au wingman", 40)
+
+    assert clip["url"] == "https://clips.twitch.tv/ClipId"
+    envoye = http.posts[0]
+    assert envoye["json"] == {"duration": 40, "title": "kill au wingman"}
+    assert envoye["params"] == {"broadcaster_id": "bc_id"}
+    # Token STREAMER : c'est lui qui porte `channel:manage:clips`.
+    assert "str_tok" in envoye["headers"]["Authorization"]
+
+
+@pytest.mark.asyncio
+async def test_create_clip_borne_la_duree_au_lieu_de_refuser():
+    """« clippe les 2 dernières minutes » est légitime ; Twitch plafonne à 60 s."""
+    api = _api_streamer()
+    http = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "C"}]}),
+        [make_http_response(200, {"data": [{"id": "C", "url": "u"}]})],
+    )
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        await api.create_clip("", 120)
+    assert http.posts[0]["json"]["duration"] == 60
+
+    http2 = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "C"}]}),
+        [make_http_response(200, {"data": [{"id": "C", "url": "u"}]})],
+    )
+    with patch("bot.twitch.api.httpx.AsyncClient", http2), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        await api.create_clip("", 1)
+    assert http2.posts[0]["json"]["duration"] == 5
+
+
+@pytest.mark.asyncio
+async def test_create_clip_sans_titre_n_envoie_pas_le_champ():
+    """Un `title: ""` poserait un titre VIDE au lieu de laisser celui de Twitch."""
+    api = _api_streamer()
+    http = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "C"}]}),
+        [make_http_response(200, {"data": [{"id": "C", "url": "u"}]})],
+    )
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        await api.create_clip("")
+    assert "title" not in http.posts[0]["json"]
+    assert http.posts[0]["json"]["duration"] == 30      # le défaut documenté
+
+
+@pytest.mark.asyncio
+async def test_create_clip_hors_live_rend_none_sans_bruit():
+    """404 = aucun stream en cours. C'est le cas NORMAL, pas une panne."""
+    api = _api_streamer()
+    http = _FauxHTTP(make_http_response(404, {}), [])
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        assert await api.create_clip("peu importe") is None
+    assert http.gets == 0          # rien à attendre, on n'interroge pas
+
+
+@pytest.mark.asyncio
+async def test_create_clip_attend_que_le_clip_existe():
+    """Les premières interrogations rendent une liste vide : c'est l'attente."""
+    api = _api_streamer()
+    http = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "C"}]}),
+        [make_http_response(200, {"data": []}),
+         make_http_response(200, {"data": []}),
+         make_http_response(200, {"data": [{"id": "C", "url": "enfin"}]})],
+    )
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        clip = await api.create_clip("")
+    assert clip["url"] == "enfin"
+    assert http.gets == 3
+
+
+@pytest.mark.asyncio
+async def test_un_clip_jamais_revenu_n_est_PAS_annonce():
+    api = _api_streamer()
+    http = _FauxHTTP(make_http_response(202, {"data": [{"id": "C"}]}), [])
+    with patch("bot.twitch.api.httpx.AsyncClient", http), \
+         patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+        assert await api.create_clip("") is None
+
+
+@pytest.mark.asyncio
+async def test_le_titre_passe_par_le_filet_du_mot_secret():
+    """Un titre de clip est PUBLIC et définitif — la dernière place où laisser
+    filer le mot du pendu en cours."""
+    from bot.core.secret_guard import clear_secrets, guard_secret
+
+    api = _api_streamer()
+    http = _FauxHTTP(
+        make_http_response(202, {"data": [{"id": "C"}]}),
+        [make_http_response(200, {"data": [{"id": "C", "url": "u"}]})],
+    )
+    guard_secret("gibraltar")
+    try:
+        with patch("bot.twitch.api.httpx.AsyncClient", http), \
+             patch("bot.twitch.api.asyncio.sleep", AsyncMock()):
+            await api.create_clip("le mot était gibraltar")
+    finally:
+        clear_secrets()
+    assert "gibraltar" not in http.posts[0]["json"]["title"].lower()
