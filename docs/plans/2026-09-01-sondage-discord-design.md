@@ -61,7 +61,7 @@ le vocal.
 
 `sondage_discord(action: creer|fermer, question, options[], duree_minutes?,
 salon?, ping_everyone?)`. Offert sur Discord seulement — le chat du live a déjà
-le sondage de l'overlay — donc inscrit dans `_TWITCH_SEULEMENT` avec sa raison.
+le sondage de l'overlay — donc inscrit dans `_DISCORD_SEULEMENT` avec sa raison.
 
 ### `bot/discord/events/reactions.py` — le vote
 

@@ -34,6 +34,11 @@ _DISCORD_SEULEMENT = {
     "search_history": "fouille les logs Discord — fuiterait vers un chat public",
     "request_self_modification": "réservé au créateur, identifié par son id Discord",
     "join_voice": "pilote un salon vocal Discord",
+    # Le vote se fait en CLIQUANT une réaction sous un embed : le chat Twitch
+    # n'a ni réaction, ni embed, ni image éditable. Le sondage du live existe
+    # déjà, ailleurs et autrement — c'est celui de l'overlay, où l'on vote en
+    # tapant un numéro (`OverlayNarrator.start_poll`).
+    "sondage": "vote par réaction sous un embed : n'existe pas dans le chat Twitch",
     "leave_voice": "pilote un salon vocal Discord",
 }
 _TWITCH_SEULEMENT: dict[str, str] = {

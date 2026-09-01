@@ -11,6 +11,7 @@ from loguru import logger
 
 from bot.discord.events import register_events
 from bot.discord.presence import PresenceService
+from bot.discord.sondage_service import SondageService
 
 if TYPE_CHECKING:
     from bot.config import Config, LLMConfig, LLMRoleConfig
@@ -110,6 +111,11 @@ class WallyDiscord(commands.Bot):
         # Perception de la présence (statut + activité) des membres du serveur principal,
         # en lecture seule depuis le cache discord.py. Voir bot/discord/presence.py.
         self.presence = PresenceService(self)
+        # Sondages Discord : embed + image redessinée à chaque vote. Construit
+        # ICI et pas dans `setup_hook` parce que `on_raw_reaction_add` peut
+        # arriver avant la fin de celui-ci — un service absent à ce moment-là
+        # perdrait des votes sans rien dire.
+        self.sondages = SondageService(self)
         self.journal = None  # set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
         self.vision = None  # VisionService — set by main.py after construction
@@ -652,6 +658,12 @@ class WallyDiscord(commands.Bot):
             self.cognitive_loop.start()
         if self.self_upgrade is not None:
             self.self_upgrade.start()
+
+        # Sondages laissés ouverts par le process précédent : on les recompte
+        # depuis les réactions du message (seules à porter les votes tombés
+        # pendant la coupure) et on replanifie leur dépouillement.
+        from bot.discord.handlers import _fire
+        _fire(self.sondages.reprendre())
         from bot.discord.channel_health import report_dead_channels
         try:
             await report_dead_channels(self)

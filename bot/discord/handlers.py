@@ -19,6 +19,7 @@ from bot.tools.notes_tool import (
 from bot.core.audit_log import observe_event
 from bot.core.history_search import DEFAULT_LIMIT as HISTORY_SEARCH_DEFAULT_LIMIT
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.discord.sondage_service import SONDAGE_TOOL, run_sondage_tool
 from bot.tools.deux_verites import DEUX_VERITES_TOOL, run_deux_verites_tool
 from bot.tools.meme_tool import run_meme_tool_discord
 from bot.tools.rebus_tool import REBUS_TOOL, run_rebus_tool_discord
@@ -1490,6 +1491,10 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # C'est ce qui le distingue du duel et du shoutout, et ce qui lui vaut d'être
     # offert des deux côtés au lieu de figurer dans `_TWITCH_SEULEMENT`.
     tools.append(REBUS_TOOL)
+    # Le sondage a besoin d'un embed, d'une image qu'on réédite et de réactions
+    # cliquables : rien de tout ça n'existe dans le chat Twitch, qui a déjà son
+    # propre sondage sur l'overlay (on y vote en tapant un numéro).
+    tools.append(SONDAGE_TOOL)
     # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
     # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —
     # il ne dépend donc pas de l'identité de la plateforme où on le questionne.
@@ -3054,6 +3059,8 @@ async def _respond(
                     bot, args, canal_id=str(message.channel.id))
             if name == "rebus":
                 return await run_rebus_tool_discord(message.channel)
+            if name == "sondage":
+                return await run_sondage_tool(bot, args, message=message)
             if name in ("start_counting", "stop_counting", "list_counters"):
                 return await run_tally_tool(bot, name, args)
             if name == "music_control":
