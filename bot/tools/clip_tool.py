@@ -79,31 +79,38 @@ def _reste(maintenant: float) -> float:
     return max(0.0, COOLDOWN_S - (maintenant - _dernier_clip_a))
 
 
-async def run_clip_tool(bot: Any, args: dict, *, author: str = "") -> str:
-    """Crée le clip et rend son URL, ou dit pourquoi il n'y en a pas.
+async def creer_clip(bot: Any, *, titre: str = "", duree: int = 0,
+                     author: str = "") -> dict:
+    """Crée le clip et rend un compte rendu. Le SEUL chemin vers l'API.
 
-    Chaque refus porte un `message` rédigé pour être DIT : un outil qui rend
-    `{"status": "error"}` nu laisse le modèle inventer une explication, et il
-    invente en général qu'il n'a pas la capacité.
+    Partagé par l'outil LLM et par la commande `!clip` du chat : le cooldown de
+    deux minutes appartient à la CHAÎNE, un second chemin avec son propre
+    compteur le doublerait — soit exactement les deux clips du même moment que
+    ce cooldown existe pour éviter.
+
+    Le `message` de chaque refus est rédigé pour le MODÈLE (« dis-le »,
+    « n'invente aucune URL ») : un outil qui rend `{"status": "error"}` nu le
+    laisse inventer une explication, et il invente en général qu'il n'a pas la
+    capacité. La commande de chat, elle, ne le recopie pas — elle écrit sa
+    propre phrase à partir du `status`.
     """
     global _dernier_clip_a
 
     api = api_twitch(bot)
     if api is None:
-        return json.dumps({"status": "unavailable",
-                           "message": "L'API Twitch n'est pas disponible."})
+        return {"status": "unavailable",
+                "message": "L'API Twitch n'est pas disponible."}
 
     if (reste := _reste(time.monotonic())) > 0:
-        return json.dumps({"status": "cooldown", "reste_s": int(reste), "message": (
+        return {"status": "cooldown", "reste_s": int(reste), "message": (
             f"Un clip vient d'être pris il y a moins de deux minutes : le "
-            f"suivant montrerait le même moment. Encore {int(reste)} s.")})
+            f"suivant montrerait le même moment. Encore {int(reste)} s.")}
 
-    duree_demandee = int(args.get("duration") or 0)
-    clip = await api.create_clip(str(args.get("title") or ""), duree_demandee)
+    clip = await api.create_clip(titre, duree)
     if clip is None:
-        return json.dumps({"status": "failed", "message": (
+        return {"status": "failed", "message": (
             "Le clip n'a pas abouti. Soit le live ne tourne pas, soit Twitch "
-            "n'a pas fini de le fabriquer. Ne donne AUCUNE URL.")})
+            "n'a pas fini de le fabriquer. Ne donne AUCUNE URL.")}
 
     # Posé seulement maintenant : un échec ne doit pas consommer le cooldown,
     # sinon une panne de deux minutes se transforme en quatre.
@@ -116,10 +123,20 @@ async def run_clip_tool(bot: Any, args: dict, *, author: str = "") -> str:
     # La durée RÉELLE, quand elle n'est pas celle demandée : Twitch borne à 60 s
     # et Wally doit pouvoir le dire au lieu de laisser croire qu'il a eu les
     # deux minutes réclamées.
-    if duree_demandee and duree_demandee > api.CLIP_DUREE_MAX_S:
+    if duree and duree > api.CLIP_DUREE_MAX_S:
         rendu["duree_reelle_s"] = api.CLIP_DUREE_MAX_S
         rendu["message"] = (
             f"Twitch ne sait pas remonter plus loin que "
             f"{api.CLIP_DUREE_MAX_S} s : le clip fait ça, pas "
-            f"{duree_demandee} s. Dis-le.")
-    return json.dumps(rendu)
+            f"{duree} s. Dis-le.")
+    return rendu
+
+
+async def run_clip_tool(bot: Any, args: dict, *, author: str = "") -> str:
+    """L'outil LLM : crée le clip et rend son URL, ou dit pourquoi il n'y en a pas."""
+    return json.dumps(await creer_clip(
+        bot,
+        titre=str((args or {}).get("title") or ""),
+        duree=int((args or {}).get("duration") or 0),
+        author=author,
+    ))
