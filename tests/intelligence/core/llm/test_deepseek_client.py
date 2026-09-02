@@ -270,3 +270,63 @@ async def test_complete_structured_forces_tool_choice():
     # Vérifier que tool_choice a été forcé
     call_kwargs = client._client.chat.completions.create.call_args.kwargs
     assert call_kwargs["tool_choice"] == {"type": "function", "function": {"name": "gate_decision"}}
+
+
+@pytest.mark.asyncio
+async def test_safe_parse_args_repare_emoji_nu():
+    """Un emoji rendu SANS guillemets ne doit plus faire perdre la décision.
+
+    Cas réel du 2026-09-01 (5 occurrences en 3 jours) : DeepSeek rend
+    `{"decision": "IGNORE", "emoji": 🤔, "reason": "..."}`. Les suffixes de
+    fermeture ne peuvent rien contre une valeur nue au MILIEU du document :
+    `_safe_parse_args` rendait `{}`, `ResponseGate` voyait une décision hors
+    enum et repliait sur RESPOND — Wally parlait alors qu'il venait de décider
+    de se taire.
+    """
+    client = make_client()
+    raw = '{"decision": "IGNORE", "emoji": 🤔, "reason": "Question posée au chat"}'
+    assert client._safe_parse_args(raw) == {
+        "decision": "IGNORE", "emoji": "🤔", "reason": "Question posée au chat",
+    }
+
+
+@pytest.mark.asyncio
+async def test_safe_parse_args_repare_chaine_nue_avec_virgules():
+    """Une chaîne nue court jusqu'à la clé SUIVANTE, pas jusqu'à la virgule.
+
+    Cas réel du 2026-09-01 : `"reason": Nørem lui demande s'il a un truc, c'est`.
+    Une frontière posée sur la première virgule couperait le motif en deux.
+    """
+    client = make_client()
+    raw = '{"decision": "RESPOND", "reason": Nørem demande un truc, sans appeler}'
+    assert client._safe_parse_args(raw) == {
+        "decision": "RESPOND", "reason": "Nørem demande un truc, sans appeler",
+    }
+
+
+@pytest.mark.asyncio
+async def test_safe_parse_args_valeur_nue_puis_troncature():
+    """Les deux réparations se cumulent : valeur nue DANS un document tronqué."""
+    client = make_client()
+    raw = '{"decision": "IGNORE", "emoji": 🤐, "reason": "coupé en plein'
+    assert client._safe_parse_args(raw) == {
+        "decision": "IGNORE", "emoji": "🤐", "reason": "coupé en plein",
+    }
+
+
+@pytest.mark.asyncio
+async def test_safe_parse_args_ne_touche_pas_aux_litteraux():
+    """`true`, `null` et les nombres restent des littéraux, pas des chaînes."""
+    client = make_client()
+    raw = '{"actif": true, "emoji": null, "n": -3.5, "l": [1, 2], "o": {"a": 1}}'
+    assert client._safe_parse_args(raw) == {
+        "actif": True, "emoji": None, "n": -3.5, "l": [1, 2], "o": {"a": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_safe_parse_args_rend_les_fermetures_englobantes():
+    """Une valeur nue en fin d'objet imbriqué ne doit pas avaler son accolade."""
+    client = make_client()
+    raw = '{"o": {"a": nu}, "b": 1}'
+    assert client._safe_parse_args(raw) == {"o": {"a": "nu"}, "b": 1}

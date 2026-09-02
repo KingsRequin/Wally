@@ -181,6 +181,35 @@ class _SyntheticToolCall:
         }
 
 
+# Réparation des arguments de tool call (cf. `_quoter_valeurs_nues`).
+_CHAINE_JSON = re.compile(r'"(?:[^"\\]|\\.)*"')
+_CLE_JSON = re.compile(r'"(?:[^"\\]|\\.)*"\s*:\s*')
+# La valeur nue s'arrête à la clé SUIVANTE ou à l'accolade finale.
+_FIN_VALEUR_NUE = re.compile(r',\s*"(?:[^"\\]|\\.)*"\s*:|\s*\}\s*$')
+_OUVRE_LITTERAL = '"{[-0123456789'
+_MOTS_LITTERAUX = ("true", "false", "null")
+
+
+def _fermer_json(texte: str) -> dict | None:
+    """Relit `texte`, en essayant plusieurs fermetures s'il est tronqué.
+
+    Rend `None` quand aucune ne tient — et pas `{}`, qui est un résultat
+    LÉGITIME (un outil sans argument) et masquerait l'échec.
+    """
+    for suffix in ("", '"', '"}', '"}}', '}'):
+        try:
+            valeur = json.loads(texte + suffix)
+        # Ce `continue` EST le mécanisme : on essaie plusieurs fermetures
+        # possibles sur un JSON tronqué, et l'échec de l'une n'est pas une
+        # erreur — c'est le tour suivant. L'abandon final, lui, est journalisé
+        # par l'appelant avec le texte brut.
+        except json.JSONDecodeError:
+            continue
+        if isinstance(valeur, dict):
+            return valeur
+    return None
+
+
 class DeepSeekLLMClient(BaseLLMClient):
     """Client DeepSeek V4 via OpenAI-compatible API.
 
@@ -336,24 +365,70 @@ class DeepSeekLLMClient(BaseLLMClient):
         raise derniere
 
     @staticmethod
+    def _quoter_valeurs_nues(raw: str) -> str:
+        """Entoure de guillemets les valeurs rendues SANS, `"emoji": 🤔` en tête.
+
+        Les suffixes de fermeture ne peuvent rien contre une valeur nue au
+        MILIEU du document : le JSON est cassé bien avant sa fin. Six fois en
+        trois jours (2026-08-30 → 09-01), toutes sur le tool call du gate, dont
+        cinq sur un emoji nu — `_safe_parse_args` rendait `{}`, `ResponseGate`
+        voyait une décision hors enum et repliait sur RESPOND : Wally parlait
+        alors qu'il venait de décider de se taire.
+
+        La frontière d'une valeur nue est la clé SUIVANTE, jamais la première
+        virgule — un motif en contient (« Nørem demande un truc, sans appeler »)
+        et couper là le scinderait en deux. Rend `raw` inchangé si rien n'est nu.
+        """
+        morceaux: list[str] = []
+        ecrit = 0   # jusqu'où `raw` est déjà recopié dans `morceaux`
+        i = 0
+        while (m := _CLE_JSON.search(raw, i)) is not None:
+            debut = m.end()
+            if debut >= len(raw):
+                break
+            if raw[debut] == '"':
+                # Sauter la chaîne ENTIÈRE, pas un seul caractère : une valeur
+                # qui contient `": ` (« il a dit "chut": voilà ») serait sinon
+                # relue comme une clé, et sa fin comme une valeur nue.
+                fin_chaine = _CHAINE_JSON.match(raw, debut)
+                i = fin_chaine.end() if fin_chaine else debut + 1
+                continue
+            if raw[debut] in _OUVRE_LITTERAL or raw.startswith(_MOTS_LITTERAUX, debut):
+                i = debut + 1
+                continue
+            fin_m = _FIN_VALEUR_NUE.search(raw, debut)
+            fin = fin_m.start() if fin_m else len(raw)
+            # Les fermetures d'un objet ou d'un tableau ENGLOBANT tombent du
+            # même côté que la valeur quand la clé suivante est un cran plus
+            # haut (`{"o": {"a": nu}, "b": 1}`). Les avaler dans la chaîne
+            # casserait la structure au lieu de la réparer : on les rend.
+            valeur = raw[debut:fin].rstrip()
+            queue = valeur[len(valeur.rstrip("}]")):]
+            morceaux.append(raw[ecrit:debut])
+            morceaux.append(json.dumps(valeur[:len(valeur) - len(queue)].strip(),
+                                       ensure_ascii=False) + queue)
+            ecrit = i = fin
+        if not morceaux:
+            return raw
+        morceaux.append(raw[ecrit:])
+        return "".join(morceaux)
+
+    @staticmethod
     def _safe_parse_args(raw: str) -> dict:
         """Parse les arguments JSON d'un tool call avec réparation si malformé."""
         if not raw:
             return {}
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            for suffix in ['"', '"}', '"}}', '}']:
-                try:
-                    return json.loads(raw + suffix)
-                # Ce `continue` EST le mécanisme : on essaie plusieurs fermetures
-                # possibles (`"`, `"}`, `"}}`, `}`) sur un JSON tronqué, et l'échec de
-                # l'une n'est pas une erreur — c'est le tour suivant. L'abandon final,
-                # lui, est journalisé juste en dessous avec le texte brut.
-                except json.JSONDecodeError:
-                    continue
+        # Deux avaries se cumulent : une valeur nue au MILIEU du document et
+        # une troncature à la fin. On tente donc les fermetures sur le texte
+        # brut, puis sur le texte requoté — plutôt que de choisir entre les
+        # deux réparations. Le requotage n'est calculé que si le brut échoue.
+        resultat = _fermer_json(raw)
+        if resultat is None:
+            resultat = _fermer_json(DeepSeekLLMClient._quoter_valeurs_nues(raw))
+        if resultat is None:
             logger.warning("DeepSeek: impossible de réparer le JSON d'arguments: {raw!r}", raw=raw[:100])
             return {}
+        return resultat
 
     async def _log_cost(self, response: Any, purpose: str, user_id: str | None) -> None:
         try:

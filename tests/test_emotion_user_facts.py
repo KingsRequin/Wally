@@ -79,3 +79,29 @@ async def test_user_facts_dicts_are_coerced_to_strings(engine):
     )
     assert result is not None
     assert result["user_facts"] == ["Aime le café", "Joue à Apex"]
+
+
+@pytest.mark.asyncio
+async def test_analyse_survit_a_une_cle_absente(engine):
+    """Une clé manquante ne doit plus jeter TOUTE l'analyse.
+
+    Vu en prod le 2026-08-31 : `KeyError('deltas')`. La branche « structured
+    outputs » lisait `parsed["deltas"]` en faisant confiance au schéma, alors
+    que sa jumelle (branche images) lisait déjà en `.get()`. Un provider qui
+    omet une clé faisait donc tomber les cinq autres dans le repli
+    heuristique ±0.05 — trust, love et faits utilisateur compris.
+    """
+    engine._openai.complete_structured = AsyncMock(return_value={
+        "new_words": [],
+        "trust_delta": 0.03,
+        "love_delta": 0.0,
+        "user_facts": ["Joue à Apex"],
+    })
+    result = await engine.process_message(
+        "je joue à Apex",
+        trust_score=0.5,
+        context_messages=[{"author": "Alice", "content": "salut"}],
+    )
+    assert result is not None
+    assert result["user_facts"] == ["Joue à Apex"]
+    assert result["trust_delta"] == 0.03

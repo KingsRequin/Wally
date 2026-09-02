@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from loguru import logger
 from starlette.types import Scope
 
+from bot.core.veille_verrou import VeilleVerrou
 from bot.dashboard.auth import BearerAuthMiddleware
 
 if TYPE_CHECKING:
@@ -396,13 +397,23 @@ async def ranger_compteur_messages(state: "AppState") -> None:
 
 
 async def _snapshot_task(state: "AppState") -> None:
-    """Snapshot d'émotion et total de messages, toutes les 5 minutes."""
+    """Snapshot d'émotion et total de messages, toutes les 5 minutes.
+
+    C'est aussi le pouls qui dit si la base accepte encore une écriture : le
+    2026-08-30, elle a refusé les siennes dix heures durant sans que personne
+    l'apprenne. `VeilleVerrou` regarde le résultat de CETTE écriture-là plutôt
+    que d'en inventer une à elle — elle mesure ce que la prod fait vraiment.
+    """
+    veille = VeilleVerrou(state.notifications)
     while True:
         await asyncio.sleep(300)
+        echec: BaseException | None = None
         try:
             await state.db.insert_emotion_snapshot(state.emotion.get_state())
         except Exception as exc:
+            echec = exc
             logger.warning("Failed periodic emotion snapshot: {e!r}", e=exc)
+        await veille.constater(echec)
         # Le filet, pour le jour où le processus est tué sans passer par
         # l'arrêt propre : au pire on perd cinq minutes de comptage.
         await ranger_compteur_messages(state)

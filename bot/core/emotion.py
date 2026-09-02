@@ -1016,11 +1016,6 @@ class EmotionEngine:
                 image_urls=image_urls,
             )
             parsed = _extract_json(raw)
-            raw_deltas = parsed.get("deltas", {})
-            new_words = parsed.get("new_words", [])
-            trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta", 0.0))))
-            love_delta = max(0.0, min(0.1, float(parsed.get("love_delta", 0.0))))
-            user_facts = parsed.get("user_facts", [])
         else:
             # No images — use structured outputs (schema-guaranteed response)
             parsed = await self._openai.complete_structured(
@@ -1029,11 +1024,16 @@ class EmotionEngine:
                 schema=_EMOTION_ANALYSIS_SCHEMA,
                 purpose="emotion_analysis",
             )
-            raw_deltas = parsed["deltas"]
-            new_words = parsed["new_words"]
-            trust_delta = max(-0.1, min(0.1, float(parsed["trust_delta"])))
-            love_delta = max(0.0, min(0.1, float(parsed["love_delta"])))
-            user_facts = parsed["user_facts"]
+        # Lecture COMMUNE aux deux branches. La branche structurée lisait
+        # `parsed["deltas"]` en se fiant au schéma : un `KeyError('deltas')` en
+        # prod le 2026-08-31 a jeté les cinq autres clés — trust, love et faits
+        # utilisateur compris — dans le repli heuristique ±0.05. Le schéma
+        # n'est pas une garantie, c'est une demande.
+        raw_deltas = parsed.get("deltas") or {}
+        new_words = parsed.get("new_words") or []
+        trust_delta = max(-0.1, min(0.1, float(parsed.get("trust_delta") or 0.0)))
+        love_delta = max(0.0, min(0.1, float(parsed.get("love_delta") or 0.0)))
+        user_facts = parsed.get("user_facts") or []
         deltas = {
             e: min(max(float(raw_deltas.get(e, 0.0)), 0.0), MAX_DELTA_PER_MESSAGE)
             for e in EMOTIONS
