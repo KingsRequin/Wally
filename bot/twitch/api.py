@@ -824,10 +824,11 @@ class TwitchAPI:
     # ajouté `title` et `duration` à `POST /helix/clips` et retiré `has_delay`
     # (« did not have any effect on the resulting clip »).
     #
-    # ⚠️ Le guide `dev.twitch.tv/docs/api/clips/` n'a PAS été mis à jour : il
-    # décrit encore `has_delay` et le scope `clips:edit`, et affirme que le
-    # titre s'édite après coup via `edit_url`. C'est la RÉFÉRENCE et l'annonce
-    # qui font foi ici. Vérifié le 2026-09-01.
+    # ⚠️ Le guide `dev.twitch.tv/docs/api/clips/` décrit encore `has_delay` et
+    # affirme que le titre s'édite après coup via `edit_url` : sur CES points
+    # l'annonce fait foi. Sur le SCOPE, en revanche, le guide avait raison —
+    # `clips:edit`, cf. `_STREAMER_SCOPES`. Vérifié le 2026-09-02 contre le 401
+    # rendu en live, qui nommait le scope manquant.
     CLIP_DUREE_MIN_S = 5
     CLIP_DUREE_MAX_S = 60
     CLIP_DUREE_DEFAUT_S = 30
@@ -844,11 +845,11 @@ class TwitchAPI:
                           duration: int = 0) -> Optional[dict]:
         """POST /helix/clips — clippe le live en cours. None si ça n'a pas pris.
 
-        Token STREAMER et scope `channel:manage:clips` : l'annonce du
-        2025-12-20 remplace `clips:edit` par `editor:manage:clips` (compte
-        éditeur) ou `channel:manage:clips` (le broadcaster). On prend le second,
-        qui ne demande aucun réglage côté Twitch — l'éditeur, lui, se nomme à la
-        main dans les paramètres de la chaîne, comme le modérateur des annonces.
+        Token STREAMER et scope `clips:edit` — celui de CET endpoint. Les
+        `editor:manage:clips` / `channel:manage:clips` de l'annonce du
+        2025-12-20 appartiennent à **Create Video Clip**, qui clippe une VOD,
+        pas le live. Les avoir pris pour synonymes a coûté un « 401 Missing
+        scope: clips:edit » sur le premier clip demandé en direct.
 
         La fenêtre de capture fait ~90 s (≈85 s avant l'appel, ≈5 s après) : une
         demande de 40 s en arrière tient dedans, 90 s non — d'où le bornage à 60.

@@ -535,7 +535,7 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
         tools.append(FOLLOW_TOOL)
         # Clipper à la demande. Maison seulement, pour la même raison que le
         # pari : `broadcaster_id` est celui d'Azraël, et le scope
-        # `channel:manage:clips` de SON token ne vaut que sur SA chaîne. Ouvert
+        # `clips:edit` de SON token ne vaut que sur SA chaîne. Ouvert
         # à tous (arbitrage du 2026-09-01) — le garde-fou est le cooldown de
         # deux minutes, qui tient à la fenêtre de capture de Twitch, pas aux
         # badges.

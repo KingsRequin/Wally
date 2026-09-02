@@ -51,7 +51,7 @@ async def dispatch_command(
         await handle_pp_command(bot, channel_name)
         return True
 
-    # Chaîne MAISON uniquement, comme `!image` : le scope `channel:manage:clips`
+    # Chaîne MAISON uniquement, comme `!image` : le scope `clips:edit`
     # vit dans le token d'Azraël et ne vaut que sur SA chaîne — un `!clip` tapé
     # chez un invité clipperait le live d'Azraël, pas celui qu'on regarde.
     # `== "!clip"` ou `"!clip "` et jamais `startswith("!clip")` : sinon un

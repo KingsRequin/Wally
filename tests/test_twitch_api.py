@@ -306,7 +306,7 @@ async def test_create_clip_poste_titre_et_duree():
     envoye = http.posts[0]
     assert envoye["json"] == {"duration": 40, "title": "kill au wingman"}
     assert envoye["params"] == {"broadcaster_id": "bc_id"}
-    # Token STREAMER : c'est lui qui porte `channel:manage:clips`.
+    # Token STREAMER : c'est lui qui porte `clips:edit`.
     assert "str_tok" in envoye["headers"]["Authorization"]
 
 

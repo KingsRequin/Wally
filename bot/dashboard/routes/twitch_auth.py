@@ -31,13 +31,19 @@ _BOT_SCOPES        = ("user:read:chat user:write:chat user:bot moderator:read:fo
 # d'autre que ce que ce code demande — contrôle à refaire avant toute évolution.
 _STREAMER_SCOPES   = ("channel:read:subscriptions bits:read "
                       "channel:read:redemptions channel:manage:redemptions "
-                      "channel:manage:predictions channel:manage:clips")
-# `channel:manage:clips` (2026-09-01) : clipper le live à la demande du chat.
-# L'annonce Twitch du 2025-12-20 a remplacé `clips:edit` par `editor:manage:clips`
-# (compte nommé éditeur de la chaîne) ou `channel:manage:clips` (le broadcaster
-# lui-même) — on prend le second, qui ne demande AUCUN réglage côté Twitch.
-# Le guide `dev.twitch.tv/docs/api/clips/` cite encore `clips:edit` : il n'est
-# pas à jour, c'est la référence et l'annonce qui font foi.
+                      "channel:manage:predictions clips:edit")
+# `clips:edit` (2026-09-01) : clipper le live à la demande du chat.
+#
+# ⚠️ Twitch a DEUX endpoints de clip, et ils ne prennent pas le même scope :
+#   · **Create Clip** `POST /helix/clips` — clippe le LIVE en cours. C'est le
+#     nôtre, et il veut `clips:edit`.
+#   · **Create Video Clip** — clippe depuis une VOD. Lui prend
+#     `editor:manage:clips` ou `channel:manage:clips`.
+# Livré le 2026-09-01 avec `channel:manage:clips`, le scope de l'AUTRE endpoint :
+# le premier clip demandé en live a rendu « 401 Missing scope: clips:edit ».
+# Le message d'erreur de Twitch disait la vérité littérale ; c'est l'annonce du
+# 2025-12-20 (qui porte sur `title`/`duration`, pas sur le scope) qui a été lue
+# de travers. Corrigé le 2026-09-02 — une réautorisation du streamer est due.
 # `channel:manage:predictions` (2026-08-18, §13) : le token EN SERVICE ne le
 # porte pas — vérifié sur /oauth2/validate, il n'avait que les quatre premiers.
 # Il faut refaire l'autorisation du compte streamer depuis le dashboard pour

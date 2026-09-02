@@ -12,17 +12,21 @@ def test_les_six_scopes_streamer_sont_demandes():
     """Le compte EXACT, et pas seulement une inclusion : c'est ce qui rend
     visible un scope perdu en route.
 
-    Six depuis le 2026-09-01 : `channel:manage:clips` (clipper à la demande)
-    s'ajoute à `channel:manage:predictions` (2026-08-18, §13) et aux quatre
-    d'origine. Le token EN SERVICE n'en porte que cinq — il faut refaire
-    l'autorisation du streamer depuis le dashboard pour que le sixième prenne
-    effet, et `scopes_manquants()` le journalise désormais à chaque validation.
+    Six depuis le 2026-09-01 : `clips:edit` (clipper à la demande) s'ajoute à
+    `channel:manage:predictions` (2026-08-18, §13) et aux quatre d'origine.
+
+    ⚠️ Le sixième a été livré sous le nom `channel:manage:clips`, qui est le
+    scope de **Create Video Clip** (clipper une VOD) et non de **Create Clip**
+    (`POST /helix/clips`, le live). Twitch a répondu « 401 Missing scope:
+    clips:edit » au premier clip demandé en direct, le 2026-09-01 à 21 h 17.
+    Deux endpoints voisins, deux scopes : c'est le nom de l'ENDPOINT appelé qui
+    tranche, jamais la proximité des libellés.
     """
     scopes = set(_STREAMER_SCOPES.split())
     assert scopes == {
         "channel:read:subscriptions", "bits:read",
         "channel:read:redemptions", "channel:manage:redemptions",
-        "channel:manage:predictions", "channel:manage:clips",
+        "channel:manage:predictions", "clips:edit",
     }
 
 

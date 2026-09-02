@@ -77,7 +77,7 @@ async def handle_clip_command(bot: "WallyTwitch", author: str, args: str) -> Non
 
     Pas de `channel_name` à recevoir : le dispatch a déjà tenu la garde maison,
     comme pour `!image` et `!code`, et la réponse part sur la chaîne d'Azraël —
-    la seule où le scope `channel:manage:clips` du token streamer vaut.
+    la seule où le scope `clips:edit` du token streamer vaut.
     """
     duree, titre = parse_args(args)
     rendu = await creer_clip(bot, titre=titre, duree=duree, author=author)
