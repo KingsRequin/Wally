@@ -1,4 +1,4 @@
-"""Le sondage Discord : l'embed, les réactions, la cadence et la clôture.
+"""Le sondage Discord : la carte, les boutons, la cadence et la clôture.
 
 Le comptage vit dans `bot/core/sondage.py` et le dessin dans
 `bot/core/sondage_image.py` ; ici on ne fait que parler à Discord. Ce module
@@ -6,6 +6,18 @@ porte AUSSI la définition de l'outil offert au LLM — comme `web_search` ou
 `scrape`, un service qui expose le sien le garde collé à ce qu'il appelle
 (`tests/test_tools_rangement.py` : seuls les modules qui ne sont QU'un outil
 vont dans `bot/tools/`).
+
+Le message est en **Components V2** : la question, l'image et les boutons de
+vote tiennent dans un seul `Container`, au lieu d'un embed surmonté de
+réactions. Ce que la bascule a SUPPRIMÉ : voter par réaction obligeait Wally à
+retirer la précédente pour qu'une personne ne compte pas deux fois, ce qui exige
+`Gérer les messages` — sans cette permission le second clic était ignoré, et le
+pied de page devait s'en excuser. Un bouton n'a pas ce problème : le vote est
+une interaction, pas un état posé sur le message.
+
+⚠️ En Components V2, `content` est INTERDIT sur le message. Le `@everyone` d'un
+sondage pingué voyage donc dans un `TextDisplay`, où il mentionne pour de vrai ;
+`allowed_mentions` continue de décider si le ping part.
 
 Trois choses appartiennent au SERVEUR, jamais au modèle ni au demandeur :
 
@@ -15,12 +27,9 @@ Trois choses appartiennent au SERVEUR, jamais au modèle ni au demandeur :
 · **Le droit de ping.** Wally ne mentionne `@everyone` que si la personne qui
   demande a elle-même la permission dans le salon visé. Sans cette vérification,
   n'importe qui ferait sonner tout le serveur PAR PROCURATION.
-· **L'unicité du vote.** Deux réactions d'une même personne, c'est deux voix :
-  l'ancienne est retirée avant que la nouvelle compte.
-
-⚠️ Retirer la réaction de QUELQU'UN D'AUTRE exige `Gérer les messages`. Sans
-cette permission, le premier vote fait foi et le second est ignoré : laisser
-passer les deux ferait compter une personne deux fois.
+· **L'unicité du vote.** `Sondage.votes` est un dict par personne : deux voix
+  pour une même personne sont structurellement impossibles. Un clic sur son
+  propre choix le RETIRE, un clic sur un autre le REMPLACE.
 """
 from __future__ import annotations
 
@@ -40,18 +49,99 @@ from bot.core.sondage import (
     Sondages,
     creer,
     emoji_pour,
-    index_de_emoji,
 )
 from bot.core.sondage_image import rendre
 
 NOM_IMAGE = "sondage.png"
 _COULEUR_OUVERT = 0x9D7BFF        # --who-deep
 _COULEUR_CLOS = 0x7DFFB0          # --win
-_PIED = "Clique un chiffre pour voter — ton dernier clic remplace le précédent."
-# Sans `Gérer les messages`, on ne peut retirer la réaction de personne : le pied
-# doit alors dire la règle qui s'applique VRAIMENT, sinon quelqu'un change d'avis
-# et ne comprend pas pourquoi son second clic ne compte pas.
-_PIED_SANS_RETRAIT = "Clique un chiffre pour voter — seul ton premier clic compte."
+_PIED = "-# Clique une option pour voter — reclique-la pour retirer ta voix."
+# Le préfixe des `custom_id` de vote. FIXE, et sans identifiant de message :
+# c'est ce qui permet à UN seul enregistrement persistant de router les clics de
+# TOUS les sondages ouverts. Le message visé est lu sur l'interaction.
+_PREFIXE_VOTE = "sondage:vote:"
+_BOUTONS_PAR_RANG = 5             # plafond Discord d'une `ActionRow`
+
+
+class BoutonVote(discord.ui.Button):
+    """Une option du sondage.
+
+    Le `custom_id` porte l'INDEX de l'option, jamais l'identifiant du message :
+    c'est ce qui rend la vue persistante (cf. `vue_de_routage`). Le sondage
+    concerné se déduit de `interaction.message.id`.
+    """
+
+    def __init__(self, index: int, option: str, *, clos: bool = False) -> None:
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=option[:80],
+            emoji=emoji_pour(index),
+            custom_id=f"{_PREFIXE_VOTE}{index}",
+            disabled=clos,
+        )
+        self.index = index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        service = getattr(interaction.client, "sondages", None)
+        if service is None:
+            # Ne peut arriver qu'entre deux versions du bot ; sans ce mot, le
+            # clic reste sans réponse et Discord affiche « échoué ».
+            logger.warning("Sondage: clic reçu mais le service n'est pas branché")
+            await interaction.response.send_message(
+                "Le sondage n'est plus branché.", ephemeral=True)
+            return
+        await service.sur_clic(interaction, self.index)
+
+
+def _rangs_de_vote(options: list[str], *, clos: bool) -> list[discord.ui.ActionRow]:
+    """Les boutons, cinq par rang — le plafond d'une `ActionRow`."""
+    boutons = [BoutonVote(i, o, clos=clos) for i, o in enumerate(options)]
+    return [discord.ui.ActionRow(*boutons[d:d + _BOUTONS_PAR_RANG])
+            for d in range(0, len(boutons), _BOUTONS_PAR_RANG)]
+
+
+class VueSondage(discord.ui.LayoutView):
+    """La carte : la question en TEXTE, l'état en image, les options en boutons.
+
+    Le `TextDisplay` de la question n'est pas un doublon de l'image : c'est lui
+    qui part en notification et en aperçu mobile, là où un PNG ne dit rien.
+    """
+
+    def __init__(self, sondage: Sondage) -> None:
+        super().__init__(timeout=None)
+        if sondage.ping and not sondage.clos:
+            # Hors du `Container` : une mention se lit mieux au-dessus de la
+            # carte, et c'est `allowed_mentions` qui décide si elle sonne.
+            self.add_item(discord.ui.TextDisplay("@everyone"))
+        galerie: discord.ui.MediaGallery = discord.ui.MediaGallery()
+        galerie.add_item(media=f"attachment://{NOM_IMAGE}")
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(f"## {sondage.question}"),
+            galerie,
+            *_rangs_de_vote(sondage.options, clos=sondage.clos),
+            discord.ui.TextDisplay(sondage.ligne_resultat() if sondage.clos
+                                   else _PIED),
+            accent_colour=discord.Colour(_COULEUR_CLOS if sondage.clos
+                                         else _COULEUR_OUVERT),
+        ))
+
+
+def vue_de_routage() -> discord.ui.LayoutView:
+    """L'exemplaire enregistré au boot par `WallyDiscord.setup_hook` — JAMAIS envoyé.
+
+    discord.py route un clic par `custom_id` : un seul enregistrement portant
+    les `MAX_OPTIONS` boutons suffit donc à servir tous les sondages ouverts,
+    quel que soit leur nombre d'options.
+
+    Sans lui, un rebuild rendrait inertes les boutons déjà publiés et Discord
+    répondrait « Cette interaction a échoué » — là où une réaction, elle,
+    survivait toute seule.
+    """
+    vue = discord.ui.LayoutView(timeout=None)
+    for rang in _rangs_de_vote([f"option {i + 1}" for i in range(MAX_OPTIONS)],
+                               clos=False):
+        vue.add_item(rang)
+    return vue
 
 
 class SondageService:
@@ -79,14 +169,15 @@ class SondageService:
     async def creer(self, *, salon: Any, question: str, options: list[str],
                     auteur: str = "", duree_s: Optional[float] = None,
                     ping: bool = False) -> Optional[Sondage]:
-        """Publie le sondage et pose les réactions. None si la demande n'en est pas un."""
+        """Publie la carte du sondage. None si la demande n'en est pas un."""
         sondage = creer(question, options, channel_id=salon.id, auteur=auteur,
                         duree_s=duree_s, ping=ping)
         if sondage is None:
             return None
+        # Pas de `content=` : Components V2 l'interdit. Le `@everyone` est un
+        # `TextDisplay` de la vue, et `allowed_mentions` décide s'il sonne.
         message = await salon.send(
-            content="@everyone" if ping else None,
-            embed=self._embed(sondage),
+            view=VueSondage(sondage),
             file=discord.File(io.BytesIO(await self._png(sondage)),
                               filename=NOM_IMAGE),
             allowed_mentions=discord.AllowedMentions(everyone=ping, users=False,
@@ -94,8 +185,6 @@ class SondageService:
         )
         sondage.message_id = message.id
         self.sondages.ajouter(sondage)
-        for index in range(len(sondage.options)):
-            await message.add_reaction(emoji_pour(index))
         self._planifier_cloture(sondage)
         await self._ranger()
         logger.info("Sondage Discord ouvert par {a} : « {q} » ({n} options)",
@@ -105,55 +194,41 @@ class SondageService:
 
     # ── vote ────────────────────────────────────────────────────────────────
 
-    async def sur_reaction(self, payload: Any, *, ajout: bool) -> bool:
-        """Un clic sur une réaction : le vote, et le retrait du précédent.
+    async def sur_clic(self, interaction: Any, index: int) -> None:
+        """Un clic sur une option : la voix, ou son retrait.
 
-        Rend True quand la réaction était un VOTE. L'appelant s'arrête alors :
-        un vote ne vaut ni boost de joie ni ligne de perception — il ne dit pas
-        « j'aime ton message », il dit « je choisis l'option 2 ».
+        Recliquer SON PROPRE choix le retire — c'est ce que faisait le décochage
+        d'une réaction. Cliquer une autre option remplace la précédente sans que
+        Wally ait à retirer quoi que ce soit, donc sans `Gérer les messages` :
+        `Sondage.votes` est un dict par personne.
+
+        Aucun accusé écrit : le retour, c'est l'image qui se redessine. Une
+        confirmation éphémère par clic empilerait dix bulles chez un indécis.
         """
-        sondage = self.sondages.par_message(payload.message_id)
-        if sondage is None or sondage.clos:
-            return False
-        moi = getattr(self.bot, "user", None)
-        if moi is not None and payload.user_id == moi.id:
-            return False        # ce sont SES chiffres, pas des voix
-        index = index_de_emoji(str(payload.emoji))
-        if index is None or index >= len(sondage.options):
-            return False
-        votant = str(payload.user_id)
+        message = getattr(interaction, "message", None)
+        sondage = self.sondages.par_message(getattr(message, "id", 0))
+        if sondage is None:
+            await interaction.response.send_message(
+                "Ce sondage n'existe plus.", ephemeral=True)
+            return
+        if sondage.clos:
+            await interaction.response.send_message(
+                f"Ce sondage est clos. {sondage.ligne_resultat()}", ephemeral=True)
+            return
+        if index >= len(sondage.options):
+            # Un bouton de la vue de routage sur un sondage plus court : le
+            # message ne peut pas le porter, mais un client retardataire si.
+            await interaction.response.send_message(
+                "Cette option n'existe pas.", ephemeral=True)
+            return
 
-        if not ajout:
-            if sondage.retirer(votant, index):
-                self._planifier_maj(sondage)
-            return True
-
-        ancien = sondage.votes.get(votant)
-        if ancien == index:
-            return True
-        if ancien is not None and not await self._retirer_reaction(
-                sondage, ancien, payload.user_id):
-            return True         # deux réactions vivantes = deux voix : on refuse
-        if sondage.voter(votant, index):
+        votant = str(interaction.user.id)
+        change = (sondage.retirer(votant, index)
+                  if sondage.votes.get(votant) == index
+                  else sondage.voter(votant, index))
+        await interaction.response.defer()
+        if change:
             self._planifier_maj(sondage)
-        return True
-
-    async def _retirer_reaction(self, sondage: Sondage, index: int,
-                                user_id: int) -> bool:
-        message = self._message(sondage)
-        if message is None:
-            return False
-        try:
-            await message.remove_reaction(emoji_pour(index),
-                                          discord.Object(id=user_id))
-            return True
-        except discord.Forbidden as exc:
-            logger.warning("Sondage: pas le droit de retirer une réaction "
-                           "({e!r}) — le premier vote fera foi", e=exc)
-            return False
-        except discord.HTTPException as exc:
-            logger.warning("Sondage: retrait de réaction refusé ({e!r})", e=exc)
-            return False
 
     # ── affichage ───────────────────────────────────────────────────────────
 
@@ -180,9 +255,13 @@ class SondageService:
             return
         try:
             await message.edit(
-                embed=self._embed(sondage),
+                view=VueSondage(sondage),
                 attachments=[discord.File(io.BytesIO(await self._png(sondage)),
                                           filename=NOM_IMAGE)],
+                # Un sondage pingué garde son `@everyone` dans la vue et se
+                # redessine toutes les 1,5 s. Discord ne renotifie pas sur une
+                # édition, mais on ne laisse pas ça à la parole de la doc.
+                allowed_mentions=discord.AllowedMentions.none(),
             )
         except discord.NotFound as exc:
             # Message supprimé sous le sondage : il n'a plus de support, et le
@@ -199,38 +278,6 @@ class SondageService:
         # Pillow est CPU-bound : dans la boucle, il ferait bégayer le vocal.
         return await asyncio.to_thread(rendre, sondage)
 
-    def _embed(self, sondage: Sondage) -> discord.Embed:
-        """La question EN TEXTE, l'état en image.
-
-        Le titre n'est pas un doublon de l'image : c'est lui qui part en
-        notification et en aperçu mobile, là où un PNG ne dit rien.
-        """
-        embed = discord.Embed(
-            title=sondage.question,
-            colour=discord.Colour(_COULEUR_CLOS if sondage.clos
-                                  else _COULEUR_OUVERT),
-        )
-        embed.set_image(url=f"attachment://{NOM_IMAGE}")
-        if sondage.clos:
-            embed.description = sondage.ligne_resultat()
-        else:
-            embed.set_footer(text=_PIED if self._peut_retirer(sondage)
-                             else _PIED_SANS_RETRAIT)
-        return embed
-
-    def _peut_retirer(self, sondage: Sondage) -> bool:
-        """`Gérer les messages` dans le salon du sondage — ce qui décide si un
-        changement d'avis est possible, donc ce que le pied doit annoncer."""
-        salon = self.bot.get_channel(sondage.channel_id)
-        moi = getattr(getattr(salon, "guild", None), "me", None)
-        if salon is None or moi is None:
-            return True         # hors serveur (ou inconnu) : on n'affirme rien
-        try:
-            return bool(salon.permissions_for(moi).manage_messages)
-        except (AttributeError, TypeError) as exc:
-            logger.debug("Sondage: permissions illisibles ({e!r})", e=exc)
-            return True
-
     # ── clôture ─────────────────────────────────────────────────────────────
 
     def _planifier_cloture(self, sondage: Sondage) -> None:
@@ -245,7 +292,7 @@ class SondageService:
         self._clotures[sondage.message_id] = self._lancer(_a_l_heure())
 
     async def fermer(self, sondage: Sondage) -> None:
-        """Dépouille : réactions retirées, image figée, résultat annoncé."""
+        """Dépouille : boutons grisés, image figée, résultat annoncé."""
         if sondage.clos:
             return
         sondage.clos = True
@@ -257,12 +304,8 @@ class SondageService:
         maj = self._majs.pop(sondage.message_id, None)
         if maj is not None:
             maj.cancel()
-        message = self._message(sondage)
-        if message is not None:
-            try:
-                await message.clear_reactions()
-            except discord.HTTPException as exc:
-                logger.warning("Sondage: réactions non retirées ({e!r})", e=exc)
+        # `_redessiner` republie la vue avec `clos=True` : boutons désactivés
+        # et résultat en pied. Rien à nettoyer sur le message.
         await self._redessiner(sondage)
         self.sondages.oublier(sondage.message_id)
         await self._ranger()
@@ -274,9 +317,12 @@ class SondageService:
     async def reprendre(self) -> None:
         """Reprend les sondages laissés ouverts par le process précédent.
 
-        Le recomptage part des RÉACTIONS et non des votes rangés : celles posées
-        pendant que le process était éteint n'ont produit aucun événement, et
-        rien d'autre ne les porte.
+        Les votes viennent de l'ÉTAT RANGÉ, seul à les porter : un bouton ne
+        laisse aucune trace sur le message, contrairement à une réaction. Ce que
+        la bascule coûte : un clic tombé pendant la coupure est perdu — mais pas
+        EN SILENCE, Discord répond « Cette interaction a échoué » à qui l'a
+        tenté. Le `fetch_message` ne sert plus qu'à vérifier que la carte existe
+        encore.
         """
         self.sondages.from_dict(await self._etat.charger())
         for sondage in list(self.sondages.ouverts()):
@@ -287,13 +333,12 @@ class SondageService:
                 self.sondages.oublier(sondage.message_id)
                 continue
             try:
-                message = await salon.fetch_message(sondage.message_id)
+                await salon.fetch_message(sondage.message_id)
             except discord.HTTPException as exc:
                 logger.warning("Sondage: message {m} irrécupérable ({e!r})",
                                m=sondage.message_id, e=exc)
                 self.sondages.oublier(sondage.message_id)
                 continue
-            sondage.recompter(await self._reactions(message))
             if sondage.expire():
                 await self.fermer(sondage)
                 continue
@@ -302,18 +347,6 @@ class SondageService:
             logger.info("Sondage repris : « {q} » ({n} votes)",
                         q=sondage.question, n=sondage.depouiller().total)
         await self._ranger()
-
-    async def _reactions(self, message: Any) -> dict[str, list[str]]:
-        moi = getattr(self.bot, "user", None)
-        rendu: dict[str, list[str]] = {}
-        for reaction in getattr(message, "reactions", None) or []:
-            votants: list[str] = []
-            async for utilisateur in reaction.users():
-                if moi is not None and utilisateur.id == moi.id:
-                    continue
-                votants.append(str(utilisateur.id))
-            rendu[str(reaction.emoji)] = votants
-        return rendu
 
     # ── plomberie ───────────────────────────────────────────────────────────
 
@@ -352,9 +385,10 @@ SONDAGE_TOOL: dict[str, Any] = {
         "name": "sondage",
         "description": (
             "Lancer un sondage dans un salon Discord : tu publies une carte avec "
-            "la question et les options, les gens votent en cliquant 1️⃣ 2️⃣ 3️⃣… "
-            "sous le message, et l'image se met à jour à chaque vote. Un seul "
-            "vote par personne — un second clic remplace le premier. "
+            "la question et les options, les gens votent en cliquant le bouton "
+            "de leur choix, et l'image se met à jour à chaque vote. Un seul "
+            "vote par personne — cliquer une autre option remplace le vote, "
+            "recliquer la même le retire. "
             "Sers-t'en dès qu'on te demande un sondage, un vote, ou de faire "
             "choisir les gens entre plusieurs options. "
             "Dire « ok je lance le sondage » sans appeler l'outil ne lance RIEN. "
@@ -513,5 +547,5 @@ async def run_sondage_tool(bot: Any, args: dict[str, Any], *,
              if duree_s else " Il reste ouvert jusqu'à ce qu'on demande à le fermer.")
     return (f"Sondage publié{ou} : « {sondage.question} », "
             f"{len(sondage.options)} options, les gens votent en cliquant les "
-            f"chiffres.{quand}{refus_ping} Annonce-le avec tes mots ; ne "
+            f"boutons.{quand}{refus_ping} Annonce-le avec tes mots ; ne "
             "recopie pas les options, elles sont déjà à l'écran.")

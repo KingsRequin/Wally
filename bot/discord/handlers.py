@@ -1494,9 +1494,10 @@ async def build_chat_tools(bot, author_id: str) -> list[dict]:
     # C'est ce qui le distingue du duel et du shoutout, et ce qui lui vaut d'être
     # offert des deux côtés au lieu de figurer dans `_TWITCH_SEULEMENT`.
     tools.append(REBUS_TOOL)
-    # Le sondage a besoin d'un embed, d'une image qu'on réédite et de réactions
-    # cliquables : rien de tout ça n'existe dans le chat Twitch, qui a déjà son
-    # propre sondage sur l'overlay (on y vote en tapant un numéro).
+    # Le sondage a besoin d'une carte Components V2, d'une image qu'on réédite
+    # et de boutons cliquables : rien de tout ça n'existe dans le chat Twitch,
+    # qui a déjà son propre sondage sur l'overlay (on y vote en tapant un
+    # numéro).
     tools.append(SONDAGE_TOOL)
     # L'ancienneté d'un follower de la chaîne d'Azraël. Offert ici AUSSI : la
     # communauté est la même des deux côtés, et l'outil prend un pseudo Twitch —

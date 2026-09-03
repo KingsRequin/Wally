@@ -1,4 +1,9 @@
-"""Le sondage Discord de bout en bout : envoi, vote, clôture, reprise."""
+"""Le sondage Discord de bout en bout : envoi, vote, clôture, reprise.
+
+La carte est en Components V2 : on inspecte donc la VUE (`walk_children`) là où
+ces tests lisaient un embed, et on simule un clic de bouton là où ils posaient
+une réaction.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -7,46 +12,18 @@ from types import SimpleNamespace
 import discord
 import pytest
 
-from bot.core.sondage import EMOJIS_VOTE
-from bot.discord.sondage_service import SondageService
-
-
-class FausseReaction:
-    def __init__(self, emoji: str, users: list[int]) -> None:
-        self.emoji = emoji
-        self._users = users
-
-    def users(self):
-        async def _gen():
-            for uid in self._users:
-                yield SimpleNamespace(id=uid, bot=False)
-        return _gen()
+from bot.core.sondage import EMOJIS_VOTE, MAX_OPTIONS
+from bot.discord.sondage_service import SondageService, vue_de_routage
 
 
 class FauxMessage:
     def __init__(self, salon, message_id: int = 1234) -> None:
         self.id = message_id
         self.channel = salon
-        self.reactions: list[FausseReaction] = []
         self.editions: list[dict] = []
-        self.retirees: list[tuple[str, int]] = []
-        self.nettoyee = False
-        self.emojis_poses: list[str] = []
-        self.echec_retrait: Exception | None = None
 
     async def edit(self, **kwargs) -> None:
         self.editions.append(kwargs)
-
-    async def add_reaction(self, emoji: str) -> None:
-        self.emojis_poses.append(emoji)
-
-    async def remove_reaction(self, emoji, membre) -> None:
-        if self.echec_retrait is not None:
-            raise self.echec_retrait
-        self.retirees.append((str(emoji), membre.id))
-
-    async def clear_reactions(self) -> None:
-        self.nettoyee = True
 
 
 class FauxSalon:
@@ -76,6 +53,25 @@ class FauxBot:
         return self._salon if salon_id == self._salon.id else None
 
 
+class FausseReponse:
+    def __init__(self) -> None:
+        self.deferee = False
+        self.messages: list[str] = []
+
+    async def defer(self) -> None:
+        self.deferee = True
+
+    async def send_message(self, contenu: str, **_kw) -> None:
+        self.messages.append(contenu)
+
+
+class FausseInteraction:
+    def __init__(self, message, user_id: int = 7) -> None:
+        self.message = message
+        self.user = SimpleNamespace(id=user_id)
+        self.response = FausseReponse()
+
+
 @pytest.fixture
 def salon() -> FauxSalon:
     return FauxSalon()
@@ -97,49 +93,65 @@ async def _creer(service, salon, **kw):
     return sondage
 
 
-class _Emoji:
-    def __init__(self, valeur: str) -> None:
-        self.valeur = valeur
-
-    def __str__(self) -> str:
-        return self.valeur
+async def _cliquer(service, salon, index: int, user_id: int = 7) -> FausseInteraction:
+    interaction = FausseInteraction(salon.message, user_id=user_id)
+    await service.sur_clic(interaction, index)
+    return interaction
 
 
-def _payload_reel(message, emoji: str, user_id: int = 7):
-    return SimpleNamespace(message_id=message.id, channel_id=message.channel.id,
-                           user_id=user_id, emoji=_Emoji(emoji),
-                           member=SimpleNamespace(id=user_id, bot=False))
+def _boutons(vue) -> list[discord.ui.Button]:
+    return [c for c in vue.walk_children() if isinstance(c, discord.ui.Button)]
+
+
+def _textes(vue) -> list[str]:
+    return [c.content for c in vue.walk_children()
+            if isinstance(c, discord.ui.TextDisplay)]
+
+
+def _derniere_vue(salon):
+    return salon.message.editions[-1]["view"]
 
 
 # ── envoi ───────────────────────────────────────────────────────────────────
 
-async def test_creer_envoie_l_embed_et_pose_une_reaction_par_option(service, salon):
+async def test_creer_envoie_une_carte_avec_un_bouton_par_option(service, salon):
     await _creer(service, salon, options=["a", "b", "c"])
     assert len(salon.envois) == 1
-    assert salon.message.emojis_poses == list(EMOJIS_VOTE[:3])
+    boutons = _boutons(salon.envois[0]["view"])
+    assert [b.label for b in boutons] == ["a", "b", "c"]
+    assert [b.emoji.name for b in boutons] == list(EMOJIS_VOTE[:3])
 
 
-async def test_l_embed_porte_la_question_et_l_image(service, salon):
-    """La question DANS l'embed, pas seulement dans l'image : c'est elle qui
-    apparaît en notification et en aperçu mobile."""
+async def test_la_carte_porte_la_question_et_l_image(service, salon):
+    """La question EN TEXTE, pas seulement dans l'image : c'est elle qui part en
+    notification et en aperçu mobile, là où un PNG ne dit rien."""
     await _creer(service, salon, question="On joue à quoi ?")
     envoi = salon.envois[0]
-    assert envoi["embed"].title == "On joue à quoi ?"
-    assert envoi["embed"].image.url == "attachment://sondage.png"
+    assert any("On joue à quoi ?" in t for t in _textes(envoi["view"]))
+    galeries = [c for c in envoi["view"].walk_children()
+                if isinstance(c, discord.ui.MediaGallery)]
+    assert galeries and galeries[0].items[0].media.url == "attachment://sondage.png"
     assert envoi["file"].filename == "sondage.png"
+
+
+async def test_la_carte_ne_passe_aucun_content(service, salon):
+    """Components V2 refuse `content` : le message entier vit dans la vue."""
+    await _creer(service, salon)
+    assert salon.envois[0]["content"] is None
 
 
 async def test_sans_ping_rien_n_est_mentionne(service, salon):
     await _creer(service, salon)
     envoi = salon.envois[0]
-    assert not envoi["content"]
+    assert not any("@everyone" in t for t in _textes(envoi["view"]))
     assert envoi["allowed_mentions"].everyone is False
 
 
 async def test_avec_ping_everyone_est_mentionne(service, salon):
+    """Le ping voyage dans un TextDisplay — `content` étant interdit."""
     await _creer(service, salon, ping=True)
     envoi = salon.envois[0]
-    assert "@everyone" in envoi["content"]
+    assert any("@everyone" in t for t in _textes(envoi["view"]))
     assert envoi["allowed_mentions"].everyone is True
 
 
@@ -148,12 +160,22 @@ async def test_le_sondage_est_retrouvable_par_son_message(service, salon):
     assert service.sondages.par_message(salon.message.id) is sondage
 
 
+async def test_neuf_options_tiennent_en_deux_rangs(service, salon):
+    """Une `ActionRow` plafonne à cinq boutons : au-delà, il en faut une autre."""
+    await _creer(service, salon, options=[str(i) for i in range(MAX_OPTIONS)])
+    rangs = [c for c in salon.envois[0]["view"].walk_children()
+             if isinstance(c, discord.ui.ActionRow)]
+    assert len(rangs) == 2
+    assert len(_boutons(salon.envois[0]["view"])) == MAX_OPTIONS
+
+
 # ── vote ────────────────────────────────────────────────────────────────────
 
 async def test_un_vote_redessine_le_message(service, salon):
     await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
+    interaction = await _cliquer(service, salon, 0)
     await asyncio.sleep(0.05)
+    assert interaction.response.deferee, "le clic n'a pas été accusé"
     assert salon.message.editions, "le message n'a jamais été redessiné"
 
 
@@ -161,91 +183,67 @@ async def test_deux_votes_rapproches_ne_font_qu_une_edition(service, salon):
     """Discord limite les éditions : une rafale de votes doit se fondre en une."""
     await _creer(service, salon)
     for uid in (7, 8, 9):
-        await service.sur_reaction(
-            _payload_reel(salon.message, EMOJIS_VOTE[0], user_id=uid), ajout=True)
+        await _cliquer(service, salon, 0, user_id=uid)
     await asyncio.sleep(0.05)
     assert len(salon.message.editions) == 1
 
 
-async def test_changer_d_avis_retire_l_ancienne_reaction(service, salon):
-    """La demande de l'owner : le premier vote est annulé, pas cumulé."""
+async def test_changer_d_avis_remplace_le_vote(service, salon):
+    """La demande de l'owner : le premier vote est annulé, pas cumulé. Aucun
+    retrait de réaction n'est nécessaire — donc plus besoin de `Gérer les
+    messages`, qui manquait sur la moitié des salons."""
     sondage = await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[1]), ajout=True)
+    await _cliquer(service, salon, 0)
+    await _cliquer(service, salon, 1)
     await asyncio.sleep(0.05)
-    assert salon.message.retirees == [(EMOJIS_VOTE[0], 7)]
     assert sondage.depouiller().tally == [0, 1]
 
 
-async def test_sans_droit_de_retrait_le_premier_vote_fait_foi(service, salon):
-    """Sans `Gérer les messages`, retirer la réaction d'autrui est impossible :
-    on ne peut pas laisser deux réactions compter pour deux voix."""
-    salon.message.echec_retrait = discord.Forbidden(
-        SimpleNamespace(status=403, reason=""), "nope")
+async def test_recliquer_son_choix_retire_sa_voix(service, salon):
     sondage = await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[1]), ajout=True)
-    assert sondage.depouiller().tally == [1, 0]
-
-
-async def test_la_reaction_de_wally_est_ignoree(service, salon):
-    """Il pose lui-même les chiffres : sans ça, chaque sondage démarre avec une
-    voix pour chaque option."""
-    sondage = await _creer(service, salon)
-    await service.sur_reaction(
-        _payload_reel(salon.message, EMOJIS_VOTE[0], user_id=99), ajout=True)
-    assert sondage.depouiller().total == 0
-
-
-async def test_une_reaction_etrangere_ne_redessine_pas(service, salon):
-    await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, "🍕"), ajout=True)
-    await asyncio.sleep(0.05)
-    assert not salon.message.editions
-
-
-async def test_une_reaction_hors_sondage_est_ignoree(service, salon):
-    payload = _payload_reel(salon.message, EMOJIS_VOTE[0])
-    await service.sur_reaction(payload, ajout=True)   # aucun sondage créé
-    assert not salon.message.editions
-
-
-async def test_retirer_sa_reaction_retire_son_vote(service, salon):
-    sondage = await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=False)
+    await _cliquer(service, salon, 0)
+    await _cliquer(service, salon, 0)
     await asyncio.sleep(0.05)
     assert sondage.depouiller().total == 0
 
 
-async def test_le_retrait_fait_par_wally_ne_defait_pas_le_nouveau_vote(service, salon):
-    """Retirer une réaction déclenche l'événement de retrait : sans garde, le
-    changement d'avis s'annulerait lui-même."""
-    sondage = await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[1]), ajout=True)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=False)
-    assert sondage.depouiller().tally == [0, 1]
+async def test_un_clic_hors_sondage_le_dit_sans_rien_redessiner(service, salon):
+    interaction = await _cliquer(service, salon, 0)   # aucun sondage créé
+    await asyncio.sleep(0.05)
+    assert interaction.response.messages, "le clic est resté sans réponse"
+    assert not salon.message.editions
+
+
+async def test_une_option_inexistante_est_refusee(service, salon):
+    """La vue de routage porte les neuf boutons : un client retardataire peut
+    envoyer un index que ce sondage-ci ne propose pas."""
+    sondage = await _creer(service, salon, options=["a", "b"])
+    interaction = await _cliquer(service, salon, 8)
+    assert interaction.response.messages
+    assert sondage.depouiller().total == 0
 
 
 # ── clôture ─────────────────────────────────────────────────────────────────
 
-async def test_la_cloture_nettoie_les_reactions_et_annonce_le_resultat(service, salon):
+async def test_la_cloture_grise_les_boutons_et_annonce_le_resultat(service, salon):
     sondage = await _creer(service, salon)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
+    await _cliquer(service, salon, 0)
     await service.fermer(sondage)
-    assert sondage.clos and salon.message.nettoyee
-    assert "Apex" in salon.message.editions[-1]["embed"].description
+    assert sondage.clos
+    vue = _derniere_vue(salon)
+    assert all(b.disabled for b in _boutons(vue))
+    assert any("Apex" in t for t in _textes(vue))
 
 
 async def test_un_sondage_clos_ne_prend_plus_de_vote(service, salon):
     sondage = await _creer(service, salon)
     await service.fermer(sondage)
     editions = len(salon.message.editions)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
+    interaction = await _cliquer(service, salon, 0)
     await asyncio.sleep(0.05)
     assert sondage.depouiller().total == 0
     assert len(salon.message.editions) == editions
+    assert interaction.response.messages, "le clic tardif est resté sans réponse"
 
 
 async def test_la_duree_ferme_le_sondage_toute_seule(service, salon):
@@ -264,11 +262,23 @@ async def test_fermer_deux_fois_ne_casse_rien(service, salon):
 
 # ── reprise après redémarrage ───────────────────────────────────────────────
 
-async def test_la_reprise_recompte_depuis_les_reactions(service, salon):
-    """Les votes posés pendant que le process était éteint n'ont produit aucun
-    événement : seul le message les porte."""
+async def test_la_vue_de_routage_est_persistante(service):
+    """Le point qui décide de tout après un rebuild : sans vue persistante,
+    Discord répond « Cette interaction a échoué » sur les boutons déjà publiés,
+    et rien dans les logs ne le dirait."""
+    vue = vue_de_routage()
+    assert vue.is_persistent()
+    ids = [b.custom_id for b in _boutons(vue)]
+    assert ids == [f"sondage:vote:{i}" for i in range(MAX_OPTIONS)]
+
+
+async def test_la_reprise_relit_les_votes_ranges(service, salon):
+    """Un bouton ne laisse rien sur le message, contrairement à une réaction :
+    l'état rangé est la SEULE source de vérité au redémarrage."""
     sondage = await _creer(service, salon, duree_s=600)
-    salon.message.reactions = [FausseReaction(EMOJIS_VOTE[1], [3, 4])]
+    await _cliquer(service, salon, 1, user_id=3)
+    await _cliquer(service, salon, 1, user_id=4)
+    await asyncio.sleep(0.05)
 
     repris = SondageService(FauxBot(salon))
     repris.sondages.from_dict(service.sondages.to_dict())
@@ -286,7 +296,7 @@ async def test_la_reprise_ferme_un_sondage_echu_pendant_la_coupure(service, salo
     repris = SondageService(FauxBot(salon))
     repris.sondages.from_dict(service.sondages.to_dict())
     await repris.reprendre()
-    assert salon.message.nettoyee
+    assert all(b.disabled for b in _boutons(_derniere_vue(salon)))
 
 
 async def test_la_reprise_oublie_un_message_disparu(service, salon, monkeypatch):
@@ -303,22 +313,6 @@ async def test_la_reprise_oublie_un_message_disparu(service, salon, monkeypatch)
     assert repris.sondages.ouverts() == []
 
 
-# ── ce qu'un vote N'EST PAS ─────────────────────────────────────────────────
-
-async def test_un_vote_se_declare_comme_tel(service, salon):
-    """Le booléen commande l'arrêt du handler : sans lui, trente votants sur un
-    sondage de Wally lui font un pic de joie et trente lignes de perception."""
-    await _creer(service, salon)
-    assert await service.sur_reaction(
-        _payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True) is True
-
-
-async def test_une_reaction_ordinaire_n_est_pas_un_vote(service, salon):
-    await _creer(service, salon)
-    assert await service.sur_reaction(
-        _payload_reel(salon.message, "😂"), ajout=True) is False
-
-
 async def test_un_message_supprime_libere_le_salon(service, salon, monkeypatch):
     """Sans ça, un sondage sans support bloquerait tous les suivants du salon."""
     sondage = await _creer(service, salon)
@@ -327,7 +321,7 @@ async def test_un_message_supprime_libere_le_salon(service, salon, monkeypatch):
         raise discord.NotFound(SimpleNamespace(status=404, reason=""), "parti")
 
     monkeypatch.setattr(salon.message, "edit", _disparu)
-    await service.sur_reaction(_payload_reel(salon.message, EMOJIS_VOTE[0]), ajout=True)
+    await _cliquer(service, salon, 0)
     await asyncio.sleep(0.05)
     assert service.sondages.ouvert_dans(salon.id) is None
     assert sondage.clos

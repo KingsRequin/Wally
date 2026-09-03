@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import discord
+
 import pytest
 
 from bot.discord.sondage_service import SONDAGE_TOOL, SondageService, run_sondage_tool
@@ -10,10 +12,9 @@ from tests.test_sondage_service import FauxSalon
 
 
 class FauxDroits:
-    def __init__(self, *, ecrire=True, ping=False, gerer=True) -> None:
+    def __init__(self, *, ecrire=True, ping=False) -> None:
         self.send_messages = ecrire
         self.mention_everyone = ping
-        self.manage_messages = gerer
 
 
 class SalonDroits(FauxSalon):
@@ -120,7 +121,9 @@ async def test_un_seul_sondage_ouvert_par_salon(monde):
 async def test_ping_everyone_quand_le_demandeur_en_a_le_droit(monde):
     monde.ici._auteur = FauxDroits(ping=True)
     await _lancer(monde, ping_everyone=True)
-    assert "@everyone" in (monde.ici.envois[0]["content"] or "")
+    vue = monde.ici.envois[0]["view"]
+    assert any("@everyone" in c.content for c in vue.walk_children()
+               if isinstance(c, discord.ui.TextDisplay))
 
 
 async def test_sans_le_droit_le_sondage_part_mais_sans_ping(monde):
@@ -175,7 +178,8 @@ async def test_un_salon_ou_wally_ne_peut_pas_ecrire_est_refuse(monde):
 async def test_fermer_depouille_le_sondage_du_salon(monde):
     await _lancer(monde)
     rendu = await _lancer(monde, action="fermer")
-    assert monde.ici.message.nettoyee
+    assert all(b.disabled for b in monde.ici.message.editions[-1]["view"].walk_children()
+               if isinstance(b, discord.ui.Button))
     assert "Apex" in rendu or "aucun vote" in rendu.lower()
 
 
@@ -187,4 +191,5 @@ async def test_fermer_sans_sondage_ouvert_le_dit(monde):
 async def test_fermer_vise_le_salon_demande(monde):
     await _lancer(monde, salon="annonces")
     await _lancer(monde, action="fermer", salon="annonces")
-    assert monde.ailleurs.message.nettoyee
+    assert all(b.disabled for b in monde.ailleurs.message.editions[-1]["view"].walk_children()
+               if isinstance(b, discord.ui.Button))

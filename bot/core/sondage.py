@@ -1,13 +1,13 @@
 """Le moteur du sondage Discord : qui a voté quoi, et qui gagne.
 
 Séparé du sondage de l'overlay (`OverlayNarrator._poll`) et il doit le rester :
-là-bas le chat du live vote en tapant un numéro, ici les gens cliquent une
-réaction sous un embed. Les mêler ferait qu'un sondage Discord écrase celui du
-live — et l'overlay n'en tient qu'un seul à la fois.
+là-bas le chat du live vote en tapant un numéro, ici les gens cliquent un bouton
+sous la question. Les mêler ferait qu'un sondage Discord écrase celui du live —
+et l'overlay n'en tient qu'un seul à la fois.
 
 Ce module ne connaît ni Discord ni Pillow : il compte des votes. C'est ce qui le
-rend testable sans serveur, et ce qui rend le reste (image, réactions, cadence
-d'édition) remplaçable sans y toucher.
+rend testable sans serveur, et ce qui a permis de remplacer les réactions par
+des boutons sans y toucher.
 
 ⚠️ **L'échéance se range en temps MURAL** (`time.time()`), jamais en
 `time.monotonic()` : un sondage de dix minutes traverse volontiers un rebuild,
@@ -22,8 +22,8 @@ from typing import Any, Optional
 
 from loguru import logger
 
-# Un emoji par option. Dix serait possible (🔟), mais un sondage à dix branches
-# ne se lit plus sous un embed — et l'overlay s'arrête à quatre.
+# Un chiffre par option. Dix serait possible (🔟), mais un sondage à dix
+# branches ne se lit plus sur une carte — et l'overlay s'arrête à quatre.
 EMOJIS_VOTE: tuple[str, ...] = (
     "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣",
 )
@@ -31,26 +31,15 @@ MAX_OPTIONS = len(EMOJIS_VOTE)
 MIN_OPTIONS = 2
 MAX_QUESTION = 140
 MAX_OPTION = 50
-# Le sélecteur de présentation : selon le client, un même emoji arrive avec ou
-# sans. Comparer les chaînes brutes fait rater un vote sur deux, en silence.
-_VARIATEUR = "️"
-
-
-def _nu(emoji: str) -> str:
-    return (emoji or "").replace(_VARIATEUR, "")
-
-
-_INDEX_PAR_EMOJI: dict[str, int] = {_nu(e): i for i, e in enumerate(EMOJIS_VOTE)}
 
 
 def emoji_pour(index: int) -> str:
-    """L'emoji de vote d'une option, tel que Wally le pose sous le message."""
+    """Le chiffre porté par le bouton d'une option.
+
+    Le même numéro que la ligne « 1. … » de l'image : sans lui, un bouton et sa
+    barre de résultat n'auraient plus rien pour se répondre.
+    """
     return EMOJIS_VOTE[index]
-
-
-def index_de_emoji(emoji: str) -> Optional[int]:
-    """L'option visée par une réaction, ou None si ce n'est pas un vote."""
-    return _INDEX_PAR_EMOJI.get(_nu(emoji))
 
 
 @dataclass
@@ -83,9 +72,10 @@ class Sondage:
     def voter(self, user_id: str, index: int) -> bool:
         """Pose le vote de quelqu'un. Rend True si l'affichage doit bouger.
 
-        Un second vote REMPLACE le premier : c'est la règle demandée, et elle
-        vaut aussi bien quand la réaction précédente a pu être retirée que
-        quand elle n'a pas pu l'être.
+        Un second vote REMPLACE le premier. Le dict par personne rend deux voix
+        pour un même votant structurellement impossibles : c'est ce qui a permis
+        de se passer de `Gérer les messages`, jadis nécessaire pour retirer la
+        réaction précédente.
         """
         if self.clos or not 0 <= index < len(self.options):
             return False
@@ -95,38 +85,16 @@ class Sondage:
         return True
 
     def retirer(self, user_id: str, index: int) -> bool:
-        """Retire un vote quand la personne décoche SA réaction courante.
+        """Retire un vote quand la personne reclique SON choix courant.
 
-        La garde sur l'index est le cœur : quand Wally retire l'ancienne
-        réaction d'un changement d'avis, Discord renvoie l'événement de retrait.
-        Sans cette condition, l'écho effacerait le vote qui vient d'être pris.
+        La garde sur l'index est le cœur : elle rend l'appel sans effet si le
+        vote visé n'est plus celui de la personne. Sans elle, un clic en retard
+        effacerait le vote qui vient d'être pris.
         """
         if self.clos or self.votes.get(user_id) != index:
             return False
         del self.votes[user_id]
         return True
-
-    def recompter(self, reactions: dict[str, list[str]]) -> None:
-        """Reconstruit les votes à partir de ce que Discord AFFICHE.
-
-        C'est la vérité au redémarrage : les votes rangés en base peuvent être
-        en retard d'une écriture, et surtout les réactions posées pendant que le
-        process était éteint n'ont produit aucun événement. Le message, lui, les
-        porte toutes.
-
-        Un double votant survivant (Wally n'a pas pu retirer sa première
-        réaction) est tranché par l'ordre des options — le premier emoji fait
-        foi, comme le repli sans `Gérer les messages`.
-        """
-        votes: dict[str, int] = {}
-        indexes = sorted(
-            (i, users) for emoji, users in reactions.items()
-            if (i := index_de_emoji(emoji)) is not None and i < len(self.options)
-        )
-        for index, users in indexes:
-            for user_id in users:
-                votes.setdefault(str(user_id), index)
-        self.votes = votes
 
     # ── temps ───────────────────────────────────────────────────────────────
 

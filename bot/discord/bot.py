@@ -111,10 +111,10 @@ class WallyDiscord(commands.Bot):
         # Perception de la présence (statut + activité) des membres du serveur principal,
         # en lecture seule depuis le cache discord.py. Voir bot/discord/presence.py.
         self.presence = PresenceService(self)
-        # Sondages Discord : embed + image redessinée à chaque vote. Construit
-        # ICI et pas dans `setup_hook` parce que `on_raw_reaction_add` peut
-        # arriver avant la fin de celui-ci — un service absent à ce moment-là
-        # perdrait des votes sans rien dire.
+        # Sondages Discord : carte Components V2 + image redessinée à chaque
+        # vote. Construit ICI et pas dans `setup_hook` parce qu'un clic de vote
+        # peut arriver avant la fin de celui-ci — un service absent à ce
+        # moment-là perdrait des votes sans rien dire.
         self.sondages = SondageService(self)
         self.journal = None  # set by main.py after construction
         self.fact_extractor = None  # set by main.py after construction
@@ -182,6 +182,13 @@ class WallyDiscord(commands.Bot):
         )
 
     async def setup_hook(self) -> None:
+        # Les boutons des sondages déjà publiés : leurs `custom_id` sont fixes,
+        # donc UN enregistrement suffit à router les clics de tous les sondages
+        # ouverts après un rebuild. Sans lui, Discord répond « Cette interaction
+        # a échoué » — et rien dans les logs ne le dirait.
+        from bot.discord.sondage_service import vue_de_routage
+        self.add_view(vue_de_routage())
+
         # create_v2_tables : nécessaire au gate ET aux autres composants V2.
         if self._v2_db_path is not None:
             from bot.db.schema_v2 import create_v2_tables
@@ -659,9 +666,9 @@ class WallyDiscord(commands.Bot):
         if self.self_upgrade is not None:
             self.self_upgrade.start()
 
-        # Sondages laissés ouverts par le process précédent : on les recompte
-        # depuis les réactions du message (seules à porter les votes tombés
-        # pendant la coupure) et on replanifie leur dépouillement.
+        # Sondages laissés ouverts par le process précédent : on relit les votes
+        # rangés (un bouton ne laisse rien sur le message, contrairement à une
+        # réaction) et on replanifie leur dépouillement.
         from bot.discord.handlers import _fire
         _fire(self.sondages.reprendre())
         from bot.discord.channel_health import report_dead_channels

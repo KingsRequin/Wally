@@ -10,7 +10,6 @@ from bot.core.sondage import (
     Sondages,
     creer,
     emoji_pour,
-    index_de_emoji,
 )
 
 
@@ -59,21 +58,11 @@ def test_les_emojis_couvrent_le_maximum_d_options():
     assert len(EMOJIS_VOTE) == MAX_OPTIONS
 
 
-def test_aller_retour_emoji_index():
-    for i in range(MAX_OPTIONS):
-        assert index_de_emoji(emoji_pour(i)) == i
+def test_chaque_option_a_son_chiffre():
+    """Le bouton porte le MÊME numéro que la ligne « 1. … » de l'image : sans
+    ça, un bouton et sa barre de résultat n'ont plus rien pour se répondre."""
+    assert [emoji_pour(i) for i in range(MAX_OPTIONS)] == list(EMOJIS_VOTE)
 
-
-def test_un_emoji_etranger_ne_vaut_pas_un_vote():
-    assert index_de_emoji("🍕") is None
-
-
-def test_l_emoji_sans_variateur_est_reconnu():
-    """Certains clients envoient « 1⃣ » sans U+FE0F ; c'est le même vote."""
-    assert index_de_emoji("1⃣") == 0
-
-
-# ── vote ────────────────────────────────────────────────────────────────────
 
 def test_un_vote_compte():
     s = _sondage()
@@ -109,14 +98,14 @@ def test_un_sondage_clos_ne_prend_plus_de_vote():
     assert s.voter("u1", 0) is False
 
 
-def test_retirer_sa_reaction_retire_son_vote():
+def test_recliquer_son_choix_retire_son_vote():
     s = _sondage()
     s.voter("u1", 1)
     assert s.retirer("u1", 1) is True
     assert s.depouiller().total == 0
 
 
-def test_retirer_une_reaction_qui_n_est_plus_son_vote_ne_fait_rien():
+def test_retirer_un_choix_qui_n_est_plus_le_sien_ne_fait_rien():
     """Quand Wally retire l'ancienne réaction, l'événement revient : sans cette
     garde, le nouveau vote serait effacé par l'écho du précédent."""
     s = _sondage()
@@ -169,31 +158,6 @@ def test_ligne_resultat_sans_vote():
 
 
 # ── recomptage depuis les réactions ─────────────────────────────────────────
-
-def test_recompter_prend_les_reactions_pour_verite():
-    """Au boot, les votes rangés peuvent être en retard : Discord fait foi."""
-    s = _sondage()
-    s.voter("u1", 0)
-    s.recompter({"1⃣️": ["u2"], EMOJIS_VOTE[2]: ["u3", "u4"]})
-    assert s.depouiller().tally == [1, 0, 2]
-    assert s.votes == {"u2": 0, "u3": 2, "u4": 2}
-
-
-def test_recompter_ignore_un_emoji_etranger():
-    s = _sondage()
-    s.recompter({"🍕": ["u1"], EMOJIS_VOTE[0]: ["u2"]})
-    assert s.depouiller().tally == [1, 0, 0]
-
-
-def test_recompter_garde_le_premier_vote_d_un_double_votant():
-    """Deux réactions survivantes (Wally était éteint) : l'ordre des emojis
-    tranche, comme le repli sans `manage_messages`."""
-    s = _sondage()
-    s.recompter({EMOJIS_VOTE[2]: ["u1"], EMOJIS_VOTE[0]: ["u1"]})
-    assert s.votes == {"u1": 0}
-
-
-# ── expiration ──────────────────────────────────────────────────────────────
 
 def test_expire_quand_l_echeance_est_passee():
     s = creer("Q ?", ["a", "b"], channel_id=1, duree_s=60, maintenant=100.0)

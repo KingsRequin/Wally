@@ -4,6 +4,7 @@ import time
 import discord
 from discord import app_commands
 from discord.ext import commands
+from loguru import logger
 
 from bot.intelligence.identity import bot_name
 
@@ -51,6 +52,10 @@ class StatusCog(commands.Cog):
                     value=f"🎙️ {stt_h}h{stt_m:02d} d'écoute · {tts_k:.0f}k caractères de voix",
                     inline=False,
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001 — le statut s'affiche même sans le quota
+                # Le quota Azure F0 est plafonné (5 h de STT, 500 k car. de TTS
+                # par mois) : c'est justement l'information qu'on veut voir
+                # AVANT que la voix s'arrête. La faire disparaître sans un mot
+                # la retire au moment où elle devient utile.
+                logger.warning("Quota vocal illisible pour /status : {e!r}", e=e)
         await interaction.followup.send(embed=embed)
