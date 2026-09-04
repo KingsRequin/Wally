@@ -1,9 +1,12 @@
 // public-ui/pages/tcg.js — « Il collectionne aussi les cartes »
 //
-// Page d'annonce : rien n'est jouable, le code s'écrit. Elle ne consomme
-// AUCUNE API — tout ce qu'elle affiche est une intention, pas un état.
+// Annonce, puis MAQUETTE du plateau. Rien n'est jouable : le plateau affiche
+// des états écrits à la main dans `tcg-demo.js`, il n'en produit aucun. La page
+// ne consomme AUCUNE API et ne calcule aucune règle — le moteur vit côté
+// serveur, en Python.
 
 import { h, nomBot, pageFooter, sectionHead } from '../app.js';
+import { demonterPlateau, plateau } from './tcg-plateau.js';
 
 // L'invitation au serveur, en dur comme le lien du dépôt dans `app.js`. Elle
 // double la note persistante `lien_invitation_discord` que Wally donne quand on
@@ -109,8 +112,15 @@ function rappel() {
 
 export function mount(el) {
   el.appendChild(heros());
+  // La maquette juste sous l'annonce : c'est la seule chose de cette page
+  // qu'on vient voir. Elle dit d'elle-même qu'elle ne joue pas.
+  el.appendChild(plateau());
   el.appendChild(etapes());
   el.appendChild(rappel());
   el.appendChild(pageFooter());
+}
+
+export function unmount() {
+  demonterPlateau();
 }
 
