@@ -42,8 +42,8 @@ if TYPE_CHECKING:
 # et « im out ».
 CLE_RECOMPENSE = "voice:tts_viewer_reward_id"
 
-TITRE = "Faire lire ton message par Wally"
-COUT = 1000
+TITRE = "tts wally"
+COUT = 500
 PROMPT = "Écris ce que Wally doit lire à voix haute dans le vocal du stream."
 
 # Le viewer écrit : c'est toute la récompense.
