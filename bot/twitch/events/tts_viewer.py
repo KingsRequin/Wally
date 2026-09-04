@@ -71,10 +71,15 @@ SAISIE_REQUISE = True
 # paie d'un remboursement — c'est justement ce que ce module sait faire.
 RECHARGE_PERSONNE_S = 60
 
-# Twitch plafonne déjà la saisie à 200 caractères, mais c'est SA limite, pas la
-# nôtre : elle n'est pas dans le corps qu'on envoie, donc rien ne garantit
-# qu'elle ne bougera pas. Un plafond ici tient quoi qu'il arrive.
-LONGUEUR_MAX = 200
+# Le plafond est le NÔTRE : Twitch laisse passer plus que les 200 caractères
+# qu'on lui prêtait — mesuré en prod le 2026-09-04, une tirade est arrivée
+# entière et c'est ce plafond-ci qui l'a coupée en plein mot, en silence.
+# 500 caractères, soit une trentaine de secondes de lecture : de quoi placer
+# une tirade sans que la voix de Wally, qui est un canal unique, soit
+# monopolisée. Au-delà, la coupe se fait au dernier mot ENTIER et le viewer en
+# est prévenu dans le chat — une phrase tranchée au milieu d'une syllabe passe
+# pour une panne.
+LONGUEUR_MAX = 500
 
 # Ce que Wally prononce vraiment. En un seul endroit, comme la phrase de
 # « im out ».
@@ -122,8 +127,24 @@ def _armer_recharge(acheteur: str) -> None:
     _dernier_achat[_cle(acheteur)] = maintenant
 
 
-def _decouper(texte: str) -> tuple[str | None, str]:
-    """(style Azure demandé, message à prononcer) — message vide s'il n'y a rien.
+def _tronquer(texte: str) -> tuple[str, bool]:
+    """(message tenu sous le plafond, a-t-il fallu couper ?).
+
+    La coupe se fait au dernier mot ENTIER : Azure prononce ce qu'on lui donne,
+    et un mot tranché au milieu s'entend comme un bug de synthèse. Un mot seul
+    plus long que le plafond n'a pas de frontière où se replier — on le coupe
+    net plutôt que de rendre du vide.
+    """
+    if len(texte) <= LONGUEUR_MAX:
+        return texte, False
+    coupe = texte[:LONGUEUR_MAX].rsplit(" ", 1)[0] or texte[:LONGUEUR_MAX]
+    return coupe, True
+
+
+def _decouper(texte: str) -> tuple[str | None, str, bool]:
+    """(style Azure demandé, message à prononcer, message tronqué ?).
+
+    Message vide s'il n'y a rien à dire.
 
     Le tag de TÊTE est lu par `parse_style_tag`, exactement comme quand Wally
     s'écrit un ton à lui-même : une seule table de correspondance pour les
@@ -138,7 +159,8 @@ def _decouper(texte: str) -> tuple[str | None, str]:
     """
     style, reste = parse_style_tag(texte or "")
     sans_tags = re.sub(r"\[[^\]]*\]", " ", reste)
-    return style, " ".join(sans_tags.split())[:LONGUEUR_MAX]
+    message, tronque = _tronquer(" ".join(sans_tags.split()))
+    return style, message, tronque
 
 
 def _feed(bot, description: str) -> None:
@@ -177,6 +199,23 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
         logger.error("TTS viewer : refus non annoncé dans le chat : {e!r}", e=exc)
 
 
+async def _prevenir_coupe(bot, acheteur: str) -> None:
+    """Dit dans le chat que le message a été raccourci. Ne rembourse RIEN : le
+    viewer a bien été entendu, il a seulement été entendu en partie.
+
+    Sans ce mot, la coupe est indiscernable d'une panne — c'est exactement ce
+    qui s'est vu en live le 2026-09-04, où personne au vocal ne comprenait
+    pourquoi la tirade s'arrêtait au milieu.
+    """
+    mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
+    try:
+        await bot.twitch_api.send_automatic(
+            f"{mention}ton message dépassait {LONGUEUR_MAX} caractères, "
+            f"j'en ai lu le début seulement.")
+    except Exception as exc:  # noqa: BLE001 — le message est passé, lui
+        logger.error("TTS viewer : coupe non annoncée dans le chat : {e!r}", e=exc)
+
+
 async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                        reward_id: str, redemption_id: str) -> None:
     """Lit le message à voix haute, ou rend les points. Ne lève jamais."""
@@ -199,7 +238,7 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                           f"un autre")
             return
 
-        ton, texte = _decouper(saisie)
+        ton, texte, tronque = _decouper(saisie)
         if not texte:
             logger.info("TTS viewer : message vide de {u} — remboursement", u=acheteur)
             await _rendre(bot, acheteur, reward_id, redemption_id,
@@ -239,8 +278,11 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                           "ma voix n'est pas sortie")
             return
         _armer_recharge(acheteur)
-        logger.info("TTS viewer lu pour {u} ({s}) : {t!r}",
-                    u=acheteur, s=ton or "ton par défaut", t=texte)
+        logger.info("TTS viewer lu pour {u} ({s}{c}) : {t!r}",
+                    u=acheteur, s=ton or "ton par défaut",
+                    c=", TRONQUÉ" if tronque else "", t=texte)
+        if tronque:
+            await _prevenir_coupe(bot, acheteur)
         _feed(bot, f"{acheteur} a fait lire « {texte} » à Wally (points de chaîne)")
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
         logger.error("TTS viewer en erreur : {e!r}", e=exc)

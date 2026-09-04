@@ -137,14 +137,60 @@ async def test_un_message_qui_n_est_QUE_des_tags_rembourse():
 
 @pytest.mark.asyncio
 async def test_le_message_est_plafonne():
+    """Un mot seul plus long que le plafond n'a aucune frontière où se
+    replier : on le coupe net plutôt que de ne rien lire."""
     bot, service = _bot()
 
-    await tts_viewer.lire_message(bot, acheteur="alice", saisie="a" * 500,
+    await tts_viewer.lire_message(bot, acheteur="alice",
+                                  saisie="a" * (tts_viewer.LONGUEUR_MAX + 100),
                                   reward_id="RW", redemption_id="R1")
 
     dit = service.speak.call_args.args[0]
     assert "a" * tts_viewer.LONGUEUR_MAX in dit
     assert "a" * (tts_viewer.LONGUEUR_MAX + 1) not in dit
+
+
+@pytest.mark.asyncio
+async def test_un_message_sous_le_plafond_passe_ENTIER():
+    """Le défaut vu en live le 2026-09-04 : une tirade de 300 caractères que
+    Twitch avait laissée passer entière était coupée par NOTRE plafond."""
+    bot, service = _bot()
+    tirade = " ".join(["mot"] * 100)  # 399 caractères
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie=tirade,
+                                  reward_id="RW", redemption_id="R1")
+
+    assert tirade in service.speak.call_args.args[0]
+    bot.twitch_api.send_automatic.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_la_coupe_tombe_sur_un_mot_entier():
+    """Azure prononce ce qu'on lui donne : un mot tranché au milieu s'entend
+    comme un bug de synthèse."""
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice",
+                                  saisie="pomme " * 200,
+                                  reward_id="RW", redemption_id="R1")
+
+    dit = service.speak.call_args.args[0]
+    assert dit.endswith("pomme")
+
+
+@pytest.mark.asyncio
+async def test_une_coupe_est_dite_dans_le_chat():
+    """Sans ce mot, la coupe est indiscernable d'une panne — personne au vocal
+    ne comprenait pourquoi la tirade s'arrêtait au milieu."""
+    bot, _ = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="pomme " * 200,
+                                  reward_id="RW", redemption_id="R1")
+
+    dit = bot.twitch_api.send_automatic.call_args.args[0]
+    assert "dépassait" in dit and str(tts_viewer.LONGUEUR_MAX) in dit
+    # Le viewer a bien été entendu : il n'y a RIEN à rembourser.
+    bot.twitch_api.refund_redemption.assert_not_awaited()
 
 
 @pytest.mark.asyncio
