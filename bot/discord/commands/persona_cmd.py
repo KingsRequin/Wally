@@ -6,6 +6,8 @@ from discord import app_commands
 from discord.ext import commands
 from loguru import logger
 
+from bot.discord.fiches import ACCENT_ALERTE, ACCENT_OK, fiche
+
 
 class PersonaCog(commands.Cog):
     def __init__(self, bot):
@@ -26,14 +28,13 @@ class PersonaCog(commands.Cog):
                 icon = "✅" if ok else "⚠️"
                 statuses.append(f"{icon} `{filename}`")
 
-            embed = discord.Embed(
-                title="Persona rechargée",
-                description="\n".join(statuses),
-                color=discord.Color.green() if all(
-                    self.bot.persona._blocks.get(f) for f in self.bot.persona._FILES
-                ) else discord.Color.orange(),
+            complet = all(self.bot.persona._blocks.get(f)
+                          for f in self.bot.persona._FILES)
+            await interaction.followup.send(
+                view=fiche("Persona rechargée", ["\n".join(statuses)],
+                           accent=ACCENT_OK if complet else ACCENT_ALERTE),
+                ephemeral=True,
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.error("reload-persona error: {e!r}", e=e)
             await interaction.followup.send("Erreur lors du rechargement de la persona.", ephemeral=True)

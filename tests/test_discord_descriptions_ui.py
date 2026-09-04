@@ -16,6 +16,14 @@ from bot.discord.commands.journal_cmd import JournalCog
 from bot.discord.commands.setup import SetupCog
 
 
+def _textes_de_la_fiche(interaction) -> list[str]:
+    """Les `TextDisplay` de la fiche Components V2 envoyée."""
+    import discord
+    vue = interaction.followup.send.call_args.kwargs["view"]
+    return [i.content for i in vue.walk_children()
+            if isinstance(i, discord.ui.TextDisplay)]
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _make_bot(name: str = "Wally"):
@@ -65,9 +73,9 @@ async def test_status_embed_title_uses_bot_name_cindy(monkeypatch):
 
     await cog.status.callback(cog, interaction)
 
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert embed.title == "Statut de Cindy", (
-        f"Titre attendu 'Statut de Cindy', obtenu '{embed.title}'"
+    titres = _textes_de_la_fiche(interaction)
+    assert any("Statut de Cindy" in t for t in titres), (
+        f"Titre attendu 'Statut de Cindy', obtenu {titres}"
     )
 
 
@@ -82,8 +90,7 @@ async def test_status_embed_title_default_wally(monkeypatch):
 
     await cog.status.callback(cog, interaction)
 
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert embed.title == "Statut de Wally"
+    assert any("Statut de Wally" in t for t in _textes_de_la_fiche(interaction))
 
 
 @pytest.mark.asyncio

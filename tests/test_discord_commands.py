@@ -7,7 +7,7 @@ import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.discord.commands.mood import MoodCog, make_bar
+from bot.discord.commands.mood import EMOTION_LABELS, MoodCog, make_bar
 from bot.discord.commands.status import StatusCog
 from bot.discord.commands.ask import AskCog
 from bot.discord.commands.memory_cmd import MemoryCog
@@ -166,7 +166,7 @@ async def test_model_tab_lists_models_from_the_text_client():
 # ── /wally mood ───────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_mood_sends_embed():
+async def test_mood_sends_fiche():
     bot = make_bot()
     cog = MoodCog(bot)
     interaction = make_interaction()
@@ -174,23 +174,25 @@ async def test_mood_sends_embed():
     # call .callback(cog, ...) to invoke the underlying coroutine directly.
     await cog.mood.callback(cog, interaction)
     interaction.response.send_message.assert_awaited_once()
-    embed = interaction.response.send_message.call_args.kwargs["embed"]
-    assert embed.title == "Humeur de Wally"
-    assert len(embed.fields) == 5  # one per emotion
+    textes = _textes(interaction.response.send_message.call_args.kwargs["view"])
+    assert any("Humeur de Wally" in t for t in textes)
+    # Les cinq émotions tiennent dans UN bloc : en Components V2 chaque
+    # composant compte, et le message en plafonne 40.
+    corps = "\n".join(textes)
+    assert all(label in corps for label in EMOTION_LABELS.values())
 
 
 # ── /wally status ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_status_sends_embed():
+async def test_status_sends_fiche():
     bot = make_bot()
     cog = StatusCog(bot)
     interaction = make_interaction()
     await cog.status.callback(cog, interaction)
     interaction.response.defer.assert_awaited_once()
     interaction.followup.send.assert_awaited_once()
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert embed.title == "Statut de Wally"
+    assert any("Statut de Wally" in t for t in _textes_de_la_fiche(interaction))
 
 
 @pytest.mark.asyncio
@@ -199,9 +201,8 @@ async def test_status_shows_model_name():
     cog = StatusCog(bot)
     interaction = make_interaction()
     await cog.status.callback(cog, interaction)
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    model_field = next(f for f in embed.fields if f.name == "Modele principal")
-    assert model_field.value == "openai/gpt-4o-mini"
+    corps = "\n".join(_textes_de_la_fiche(interaction))
+    assert "openai/gpt-4o-mini" in corps
 
 
 # ── /wally ask ────────────────────────────────────────────────────────────────
@@ -271,11 +272,14 @@ async def test_ask_no_user_directive_for_other_user():
 
 # ── /wally memory ─────────────────────────────────────────────────────────────
 
-def _textes_de_la_fiche(interaction) -> list[str]:
-    """La fiche /memory est en Components V2 : plus d'embed, des `TextDisplay`."""
-    vue = interaction.followup.send.call_args.kwargs["view"]
+def _textes(vue) -> list[str]:
+    """Les `TextDisplay` d'une fiche Components V2 — il n'y a plus d'embed."""
     return [i.content for i in vue.walk_children()
             if isinstance(i, discord.ui.TextDisplay)]
+
+
+def _textes_de_la_fiche(interaction) -> list[str]:
+    return _textes(interaction.followup.send.call_args.kwargs["view"])
 
 
 @pytest.mark.asyncio
@@ -327,8 +331,9 @@ async def test_setup_command_sends_ephemeral():
 # ── /wally reload-persona ──────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_reload_persona_sends_embed():
-    """La commande reload-persona appelle persona.reload() et envoie un embed."""
+async def test_reload_persona_sends_fiche():
+    """La commande reload-persona appelle persona.reload() et envoie une fiche
+    qui dit fichier par fichier ce qui est chargé."""
     bot = make_bot()
     bot.persona = MagicMock()
     bot.persona.reload = MagicMock()
@@ -347,9 +352,9 @@ async def test_reload_persona_sends_embed():
 
     bot.persona.reload.assert_called_once()
     interaction.followup.send.assert_called_once()
-    call_kwargs = interaction.followup.send.call_args
-    # L'embed doit être passé en kwarg 'embed'
-    assert "embed" in call_kwargs.kwargs
+    corps = "\n".join(_textes_de_la_fiche(interaction))
+    assert "✅ `SOUL.md`" in corps
+    assert "⚠️ `VOICE.md`" in corps
 
 
 @pytest.mark.asyncio
@@ -370,13 +375,10 @@ async def test_mood_command_displays_percentage():
 
     await cog.mood.callback(cog, interaction)
 
-    call_kwargs = interaction.response.send_message.call_args
-    embed = call_kwargs.kwargs.get("embed") or (call_kwargs.args[0] if call_kwargs.args else None)
-    assert embed is not None
-    # Chercher "73%" dans les champs de l'embed
-    field_values = [f.value for f in embed.fields]
-    assert any("73%" in v for v in field_values)
-    assert not any("0.73" in v for v in field_values)
+    corps = "\n".join(_textes(
+        interaction.response.send_message.call_args.kwargs["view"]))
+    assert "73%" in corps
+    assert "0.73" not in corps
 
 
 @pytest.mark.asyncio

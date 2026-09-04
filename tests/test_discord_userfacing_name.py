@@ -57,9 +57,9 @@ async def test_mood_embed_title_uses_bot_name(monkeypatch):
 
     await cog.mood.callback(cog, interaction)
 
-    embed = interaction.response.send_message.call_args.kwargs["embed"]
-    assert embed.title == "Humeur de Cindy", (
-        f"Titre attendu 'Humeur de Cindy', obtenu '{embed.title}'"
+    titres = _textes_de(interaction.response.send_message)
+    assert any("Humeur de Cindy" in t for t in titres), (
+        f"Titre attendu 'Humeur de Cindy', obtenu {titres}"
     )
 
 
@@ -74,8 +74,16 @@ async def test_mood_embed_title_default_wally(monkeypatch):
 
     await cog.mood.callback(cog, interaction)
 
-    embed = interaction.response.send_message.call_args.kwargs["embed"]
-    assert embed.title == "Humeur de Wally"
+    assert any("Humeur de Wally" in t
+               for t in _textes_de(interaction.response.send_message))
+
+
+def _textes_de(envoi) -> list[str]:
+    """Les `TextDisplay` de la fiche passée à un `send` — plus d'embed nulle part."""
+    import discord
+    vue = envoi.call_args.kwargs["view"]
+    return [i.content for i in vue.walk_children()
+            if isinstance(i, discord.ui.TextDisplay)]
 
 
 def _textes_envoyes(interaction) -> list[str]:
