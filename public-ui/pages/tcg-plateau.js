@@ -14,8 +14,8 @@
 // l'Aura qui traverse les joueurs se voie.
 
 import { h } from '../app.js';
-import { FORMATS, HEROS, REGLES } from './tcg-demo.js';
-import { carteHeros, carteTactique, dosCarte, vignette } from './tcg-carte.js';
+import { FORMATS, HEROS, REGLES, TACTIQUES } from './tcg-demo.js';
+import { carteHeros, carteTactique, dosCarte } from './tcg-carte.js';
 
 // Le format d'entrée : celui sur lequel les règles sont écrites.
 const DEFAUT = FORMATS.find((f) => f.cle === '3v3');
@@ -75,10 +75,13 @@ function pioche(contenu, etiquette) {
 }
 
 function groupe(g, n, ouvrir) {
-  const ligne = h('div', { class: 'tcg-ligne', 'data-n': String(n) },
-    ...g.heros.map((e) => vignette(e, ouvrir)));
+  const ligne = h('div', { class: 'tcg-ligne' },
+    ...g.heros.map((e) => carteHeros(e, { surClic: ouvrir })));
 
-  return h('div', { class: 'tcg-groupe' },
+  // `data-n` vit sur le GROUPE et la ligne en hérite : la tête (énergie,
+  // réserve) doit tenir la même largeur que les cartes, sinon elle flotte à
+  // gauche d'une ligne centrée.
+  return h('div', { class: 'tcg-groupe', 'data-n': String(n) },
     h('div', { class: 'tcg-groupe-tete' },
       g.nom ? h('span', { class: 'tcg-groupe-nom', text: g.nom }) : null,
       energie(g.energie),
@@ -92,20 +95,19 @@ function groupe(g, n, ouvrir) {
 function boss(camp, ouvrir) {
   const b = camp.boss;
   const part = Math.max(0, Math.min(100, Math.round((b.pv / b.pvMax) * 100)));
-  const carte = h('button', {
-    class: 'tcg-boss' + (b.ultime ? ' est-ultime' : ''),
-    type: 'button',
-    'aria-label': `${HEROS[b.id].nom} — ${b.pv} points de vie sur ${b.pvMax}. Voir la carte.`,
-  },
-    h('div', { class: 'tcg-boss-nom', text: HEROS[b.id].nom }),
-    h('div', { class: 'tcg-boss-pv mono', text: `${b.pv} / ${b.pvMax} PV` }),
-    h('div', { class: 'tcg-jauge tcg-jauge--boss', 'aria-hidden': 'true' },
-      h('i', { style: `width:${part}%` })),
-    b.degats ? h('span', { class: 'tcg-degats', text: `−${b.degats}` }) : null,
-    b.ultime ? h('span', { class: 'tcg-chute mono', text: 'IL TRICHE' }) : null,
+  // La carte du boss est une carte comme les autres — c'en est une. Ce qui
+  // lui est propre, c'est la barre de PV : les siens ne sont pas une stat de
+  // carte, ils dérivent du nombre de joueurs.
+  return h('div', { class: 'tcg-boss' + (b.ultime ? ' est-ultime' : '') },
+    carteHeros({ id: b.id, pv: null, degats: b.degats, ultime: b.ultime },
+      { surClic: ouvrir }),
+    h('div', { class: 'tcg-boss-vie' },
+      h('div', { class: 'tcg-boss-pv mono', text: `${b.pv} / ${b.pvMax} PV` }),
+      h('div', { class: 'tcg-jauge tcg-jauge--boss', 'aria-hidden': 'true' },
+        h('i', { style: `width:${part}%` })),
+      b.ultime ? h('span', { class: 'tcg-sceau mono est-triche', text: 'IL TRICHE' }) : null,
+    ),
   );
-  carte.addEventListener('click', () => ouvrir(b.id));
-  return carte;
 }
 
 function cote(camp, n, ou, ouvrir) {
@@ -129,7 +131,10 @@ function main(camp) {
   if (!revelees.length) return null;
   const rail = h('div', { class: 'tcg-main-rail' });
   let n = 0;
-  revelees.forEach((g) => g.main.forEach((id) => { rail.appendChild(carteTactique(id)); n += 1; }));
+  revelees.forEach((g) => g.main.forEach((id) => {
+    rail.appendChild(carteTactique(id, { surClic: ouvrirFeuille }));
+    n += 1;
+  }));
   // Le COMPTE dans le libellé, et pas seulement un fondu au bord : sur
   // téléphone deux cartes sur trois sont hors champ, et un rail sans barre de
   // défilement ne dit rien de ce qu'il cache. Même piège que les onglets du
@@ -139,12 +144,15 @@ function main(camp) {
     rail);
 }
 
-function ouvrirFeuille(id) {
+function ouvrirFeuille(type, id) {
+  const nom = type === 'heros' ? HEROS[id].nom : TACTIQUES[id].nom;
   _feuilleCorps.textContent = '';
-  _feuilleCorps.appendChild(carteHeros(id));
+  _feuilleCorps.appendChild(type === 'heros'
+    ? carteHeros({ id, pv: null }, { grande: true })
+    : carteTactique(id, { grande: true }));
   // Sans ce libellé, un lecteur d'écran annonce « boîte de dialogue » et rien
   // d'autre : la carte qu'on vient d'ouvrir n'a pas de nom.
-  _feuille.setAttribute('aria-label', `Carte de ${HEROS[id].nom}`);
+  _feuille.setAttribute('aria-label', `Carte de ${nom}`);
   _feuille.showModal();
 }
 

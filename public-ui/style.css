@@ -1667,27 +1667,30 @@ body.vue-chat .companion { display: none; }
    ══════════════════════════════════════════════════════════════════════════
 
    Écrit MOBILE D'ABORD, et ce n'est pas une préférence : à 390 px une carte
-   fait 112 px de large, ce qui laisse la place à un portrait, un nom et trois
-   chiffres — pas à un texte d'Ultime. Le grand écran est l'exception qui
-   AJOUTE, jamais le cas de base qu'on rétrécit.
+   fait 104 px de large. Le grand écran est l'exception qui AJOUTE, jamais le
+   cas de base qu'on rétrécit.
+
+   🚨 UNE CARTE EST UNE ILLUSTRATION AVEC DES CHIFFRES DESSUS. Ratio 5:7 —
+   celui de la carte physique (63 × 88 mm). L'illustration occupe TOUT le
+   cadre ; les pastilles, le bandeau de nom et le cartouche se posent par
+   dessus. La première version rendait des tuiles de statistiques : un jeu de
+   cartes sans cartes perd son sens.
 
    ⚠️ Aucune couleur en dur : tout vient des tokens `:root` du thème braise.
-   ⚠️ Aucun `backdrop-filter` et aucune ombre animée sur ces cartes — ce sont
-   les deux causes déjà identifiées du lag mobile du site.
-   ⚠️ Le nombre de colonnes d'une ligne passe par `--n`, posé par un attribut
-   `data-ligne` sur la table. Un `grid-template-columns` en style EN LIGNE
-   battrait les media queries : le piège a déjà coûté 43 px de débordement sur
-   la section des émotions.  */
+   ⚠️ Aucun `backdrop-filter` et aucune ombre animée — les deux causes déjà
+   identifiées du lag mobile du site. Un cartouche se fait au DÉGRADÉ.
+   ⚠️ Le nombre de colonnes passe par `data-n` sur la ligne. Un
+   `grid-template-columns` en style EN LIGNE battrait les media queries : le
+   piège a déjà coûté 43 px de débordement sur la section des émotions.  */
 
 .tcg-plateau { border-top: 1px solid var(--line-soft); }
 .tcg-formats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
-.tcg-resume {
-  margin: 14px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.55;
-}
+.tcg-resume { margin: 14px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
 
 /* ── La table ────────────────────────────────────────────────────────── */
 .tcg-table {
-  --vig-w: 132px;
+  --carte-w: 104px;   /* largeur d'une carte en ligne */
+  --tac-w: 104px;     /* largeur d'une carte de la main */
   --n: 3;
   margin-top: 20px;
   display: flex;
@@ -1705,164 +1708,218 @@ body.vue-chat .companion { display: none; }
 .tcg-cote-nom { font-size: 10px; letter-spacing: .14em; color: var(--dim); }
 .tcg-groupes { display: flex; flex-direction: column; gap: 12px; }
 .tcg-groupe { display: flex; flex-direction: column; gap: 8px; }
-.tcg-groupe-tete {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
-}
-.tcg-groupe-nom {
-  font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--text-3);
-}
+.tcg-groupe-tete { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.tcg-groupe-nom { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--text-3); }
 
-/* La ligne. `minmax(0, 1fr)` n'est pas décoratif : sans le `0`, une colonne de
- * grille refuse de descendre sous la largeur de son contenu et la carte
- * déborde du plateau. Même raison que le `min-width: 0` de l'overlay.  */
-.tcg-ligne[data-n="1"] { --n: 1; }
-.tcg-ligne[data-n="2"] { --n: 2; }
-.tcg-ligne[data-n="3"] { --n: 3; }
+/* `minmax(0, 1fr)` n'est pas décoratif : sans le `0`, une colonne de grille
+ * refuse de descendre sous la largeur de son contenu et la carte déborde du
+ * plateau. Même raison que le `min-width: 0` de l'overlay.  */
+.tcg-groupe[data-n="1"] { --n: 1; }
+.tcg-groupe[data-n="2"] { --n: 2; }
+.tcg-groupe[data-n="3"] { --n: 3; }
+/* Hors coopératif, le groupe entier — tête comprise — tient la largeur de ses
+ * cartes : une tête pleine largeur au-dessus d'une ligne centrée est bancale. */
+.tcg-table:not([data-format="coop"]) .tcg-groupe {
+  width: 100%;
+  max-width: calc(var(--n) * var(--carte-w));
+  margin-inline: auto;
+}
 .tcg-ligne {
   display: grid;
   grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   gap: 8px;
   width: 100%;
-  max-width: calc(var(--n) * var(--vig-w));
+  max-width: calc(var(--n) * var(--carte-w));
   margin-inline: auto;
 }
 
-/* Le coopératif à trois joueurs empilait trois blocs de nom + énergie + ligne :
- * 441 px pour le seul camp des joueurs, sur un écran qui en offre 720. En
- * rangée, l'identité du joueur passe à gauche et ses deux héros à droite — la
- * hauteur d'un groupe redevient celle d'UNE carte. Le groupement par joueur
- * est conservé : c'est lui qui rend lisible l'Aura qui traverse les joueurs. */
-.tcg-table[data-format="coop"] .tcg-groupe {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
+/* Le coopératif sur écran étroit : le groupe devient une RANGÉE. Trois joueurs
+ * empilés coûtaient 441 px pour le seul camp allié, sur un écran qui en offre
+ * 720. En rangée — identité à gauche, héros à droite — la hauteur d'un groupe
+ * redevient celle d'UNE carte. Le groupement par joueur est conservé : c'est
+ * lui qui rend lisible l'Aura qui traverse les joueurs. */
+/* Trois joueurs, c'est trois lignes de cartes empilées : le plateau montait à
+ * 977 px sur un écran qui en offre 720. Des cartes un peu plus petites, et le
+ * raid redevient lisible d'un seul regard. */
+.tcg-table[data-format="coop"] { --carte-w: 96px; }
+.tcg-table[data-format="coop"] .tcg-groupe { flex-direction: row; align-items: center; gap: 10px; }
 .tcg-table[data-format="coop"] .tcg-groupe-tete {
-  flex: 0 0 96px;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
+  flex: 0 0 96px; flex-direction: column; align-items: flex-start; gap: 5px;
 }
 .tcg-table[data-format="coop"] .tcg-ligne { flex: 1 1 auto; margin-inline: 0; }
 .tcg-table[data-format="coop"] .tcg-nrj { flex: 1 1 auto; width: 100%; }
 
 /* ── La bande centrale ───────────────────────────────────────────────── */
-.tcg-bande {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px;
-  border-block: 1px solid var(--line-soft);
-}
+.tcg-bande { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-block: 1px solid var(--line-soft); }
 .tcg-de {
   flex: none; display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 9px; border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  color: var(--gold); font-size: 13px;
+  border: 1px solid var(--line-strong); color: var(--gold); font-size: 13px;
 }
 .tcg-de i { font-style: normal; opacity: .7; }
 .tcg-note { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--soft); }
 
-/* ── Une vignette de héros ───────────────────────────────────────────── */
-.tcg-vig {
+/* ══ LA CARTE ═════════════════════════════════════════════════════════ */
+.tcg-carte {
   position: relative;
-  display: flex; flex-direction: column; gap: 5px;
+  aspect-ratio: 5 / 7;
   min-width: 0;
-  padding: 7px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  overflow: hidden;
   background: var(--surface-2);
   color: inherit;
   text-align: left;
   font: inherit;
-  cursor: pointer;
-  transition: border-color .2s var(--ease), transform .2s var(--ease);
+  isolation: isolate;
 }
-.tcg-vig:hover { border-color: var(--line-strong); transform: translateY(-2px); }
-.tcg-vig:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+button.tcg-carte { cursor: pointer; transition: transform .2s var(--ease), border-color .2s var(--ease); }
+button.tcg-carte:hover { transform: translateY(-3px); border-color: var(--ember); }
+button.tcg-carte:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
 
-.tcg-por {
-  aspect-ratio: 4 / 3;
+/* L'illustration occupe TOUT le cadre. Le jour où `illustration` porte une
+ * URL, seul `background-image` change : la mise en page ne bouge pas d'un
+ * pixel, et c'est tout l'intérêt d'un remplaçant qui prend la place exacte. */
+.tcg-art {
+  position: absolute; inset: 0;
   display: grid; place-items: center;
-  border-radius: 8px;
-  font-family: var(--sans); font-size: 26px; font-weight: 700;
-  color: rgba(255, 255, 255, .82);
+  background-size: cover; background-position: center 22%;
 }
-.tcg-f--lumineuse { background: linear-gradient(160deg, #3a2410, #7a4a18); }
-.tcg-f--sombre    { background: linear-gradient(160deg, #2a1f3d, #4a2a52); }
-.tcg-f--neutre    { background: linear-gradient(160deg, #16141c, #2c2833); }
+.tcg-art.a-illu .tcg-art-ph { display: none; }
+.tcg-art-ph {
+  font-family: var(--sans); font-weight: 700;
+  font-size: calc(var(--carte-w) * .52);
+  line-height: 1;
+  color: rgba(255, 255, 255, .16);
+  transform: translateY(-14%);
+}
+.tcg-f--lumineuse .tcg-art { background-image: linear-gradient(155deg, #4a2c10 0%, #8a5218 55%, #2a1a08 100%); }
+.tcg-f--sombre    .tcg-art { background-image: linear-gradient(155deg, #2e2144 0%, #562f60 55%, #170f22 100%); }
+.tcg-f--neutre    .tcg-art { background-image: linear-gradient(155deg, #1b1822 0%, #34303e 55%, #100e15 100%); }
+.tcg-carte--tac   .tcg-art { background-image: linear-gradient(155deg, #14212c 0%, #1d4655 55%, #0b141b 100%); }
 
-.tcg-vig-nom {
-  font-family: var(--sans); font-size: 11.5px; font-weight: 600; color: var(--text-2);
+/* Le pied : nom PUIS cartouche, empilés. Un dégradé, jamais un flou. Il
+ * réserve sous lui la hauteur des pastilles du bas, sinon le nom passe
+ * dessous. Les pastilles gardent un étage supérieur : sur la grande carte,
+ * le cartouche recouvrait le nom ET les chiffres. */
+.tcg-pied {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1;
+  display: flex; flex-direction: column;
+  max-height: 100%;
+  background: linear-gradient(transparent, rgba(6, 4, 10, .55) 22%, rgba(6, 4, 10, .95) 45%);
+}
+.tcg-bandeau { flex: none; padding: 22px 7px 26px; }
+.tcg-nom {
+  display: block;
+  font-family: var(--sans); font-weight: 600;
+  font-size: 11px; line-height: 1.2;
+  color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Trois cartes de front sur un téléphone, c'est 94 px chacune : « Kassandre
- * Yunikon » n'y tient dans aucune police. Le nom entier reste atteignable —
- * il est dans l'`aria-label`, et un tap ouvre la carte pleine. */
-.tcg-ligne[data-n="3"] .tcg-vig-nom { font-size: 10.5px; letter-spacing: -.01em; }
 
-.tcg-stats { display: flex; gap: 4px; }
-.tcg-s {
-  flex: 1 1 0; min-width: 0;
-  display: inline-flex; align-items: center; justify-content: center; gap: 2px;
-  font-family: var(--mono); font-size: 9.5px;
-  color: var(--muted);
-}
-.tcg-s i { font-style: normal; opacity: .75; }
-.tcg-s b { color: var(--text-3); font-weight: 600; }
-.tcg-s--atk b   { color: var(--rose); }
-.tcg-s--pv b    { color: var(--green); }
-.tcg-s--aura b  { color: var(--cyan); }
-
-.tcg-jauge { height: 3px; border-radius: 999px; background: rgba(255, 255, 255, .08); overflow: hidden; }
-.tcg-jauge i { display: block; height: 100%; background: var(--green-lit); transition: width .35s var(--ease); }
-.tcg-jauge--boss { height: 8px; }
-.tcg-jauge--boss i { background: linear-gradient(90deg, var(--ember-lo), var(--ember-hi)); }
-
-/* Le bloc Ultime EST dans le DOM à toutes les tailles : c'est le CSS qui
- * décide de le montrer, pas un second rendu de la même carte. */
-.tcg-vig-ult { display: none; align-items: center; gap: 6px; font-size: 10.5px; color: var(--soft); }
-
-.tcg-cout {
-  flex: none;
-  display: inline-grid; place-items: center;
-  min-width: 18px; height: 18px; padding: 0 4px;
+/* Les pastilles, POSÉES SUR l'illustration — les quatre coins. */
+.tcg-pip {
+  position: absolute; z-index: 2;
+  display: grid; place-items: center;
+  min-width: 21px; height: 21px; padding: 0 5px;
   border-radius: 999px;
-  background: rgba(70, 217, 255, .12);
-  color: var(--cyan);
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .6);
 }
+.tcg-pip b { font-weight: 700; }
+.tcg-pip--cout { top: 5px; left: 5px;  background: var(--cyan);      color: #04161c; }
+.tcg-pip--aura { top: 5px; right: 5px; background: rgba(70,217,255,.16); color: var(--cyan); border: 1px solid rgba(70,217,255,.4); }
+.tcg-pip--atk  { bottom: 5px; left: 5px;  background: var(--gold);  color: #1a1002; }
+.tcg-pip--pv   { bottom: 5px; right: 5px; background: var(--green); color: #05170d; }
+.tcg-pip--pv.est-entame { background: var(--rose); color: #1a0710; }
 
 .tcg-degats {
-  position: absolute; top: 5px; right: 5px;
+  position: absolute; z-index: 2; top: 30px; right: 5px;
   padding: 1px 6px; border-radius: 999px;
   background: var(--rose); color: #12070c;
   font-family: var(--mono); font-size: 10px; font-weight: 700;
 }
-.tcg-chute, .tcg-entre {
-  position: absolute; left: 50%; top: 42%;
-  transform: translate(-50%, -50%) rotate(-8deg);
-  padding: 2px 8px; border-radius: 4px;
+/* Le sceau qui barre la carte : CHUTE, ENTRE, IL TRICHE. */
+.tcg-sceau {
+  position: absolute; z-index: 2; left: 50%; top: 44%;
+  transform: translate(-50%, -50%) rotate(-9deg);
+  padding: 3px 9px; border-radius: 4px;
   font-size: 9.5px; letter-spacing: .14em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
 }
-.tcg-chute { background: rgba(255, 61, 110, .92); color: #14070c; }
-.tcg-entre { background: rgba(125, 227, 164, .9); color: #06150d; }
+.est-chute  { background: rgba(255, 61, 110, .95); color: #14070c; }
+.est-entre  { background: rgba(125, 227, 164, .95); color: #06150d; }
+.est-triche { background: var(--gold); color: #1a1002; position: static; transform: none; display: inline-block; }
 
-.tcg-vig.est-tombe { opacity: .5; }
-.tcg-vig.est-tombe .tcg-por { filter: grayscale(1); }
-.tcg-vig.est-ultime, .tcg-boss.est-ultime { border-color: var(--ember); }
-.tcg-vig.est-nouveau { border-color: rgba(125, 227, 164, .45); }
+.tcg-carte.est-tombe { opacity: .55; }
+.tcg-carte.est-tombe .tcg-art { filter: grayscale(1); }
+.tcg-carte.est-ultime { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember), 0 6px 20px -8px rgba(255, 106, 43, .7); }
+.tcg-carte.est-nouveau { border-color: rgba(125, 227, 164, .6); }
 
-/* La rareté ne borde que les deux paliers que la démo utilise réellement.
- * Les quatre autres viendront avec la première carte qui les porte — une
- * règle sans donnée est du code mort qui a l'air d'une fonctionnalité. */
-.tcg-r--archange { border-color: rgba(255, 106, 43, .4); }
+/* Le texte d'une tactique n'apparaît que là où il tient. */
+.tcg-carte--tac:not(.tcg-carte--grande) .tcg-cartouche { display: none; }
+
+/* La rareté ne borde que le palier que la démo utilise réellement. Les autres
+ * viendront avec la première carte qui les porte — une règle sans donnée est
+ * du code mort qui a l'air d'une fonctionnalité. */
+.tcg-r--archange { border-color: rgba(255, 106, 43, .55); }
+
+.tcg-type {
+  position: absolute; z-index: 2; top: 7px; right: 6px;
+  font-size: 8px; letter-spacing: .12em; color: rgba(255, 255, 255, .6);
+}
+.tcg-tac--passif .tcg-art { background-image: linear-gradient(155deg, #241c3c 0%, #453070 55%, #120e20 100%); }
+
+.tcg-dos {
+  border-color: var(--line);
+  background: repeating-linear-gradient(45deg, #191423 0 4px, #241b31 4px 8px);
+}
+.tcg-dos--petit { width: 17px; }
+
+/* ── La grande carte : la MÊME, avec un cartouche par-dessus ─────────── */
+.tcg-carte--grande {
+  width: 100%;
+  --carte-w: 300px;
+  border-radius: 16px;
+}
+.tcg-carte--grande .tcg-nom { font-size: 21px; }
+.tcg-carte--grande .tcg-bandeau { padding: 26px 14px 8px; background: none; }
+.tcg-carte--grande .tcg-pip { min-width: 34px; height: 34px; font-size: 16px; }
+.tcg-carte--grande .tcg-pip--cout, .tcg-carte--grande .tcg-pip--aura { top: 10px; }
+.tcg-carte--grande .tcg-pip--cout { left: 10px; }
+.tcg-carte--grande .tcg-pip--aura { right: 10px; }
+.tcg-carte--grande .tcg-pip--atk { bottom: 10px; left: 10px; }
+.tcg-carte--grande .tcg-pip--pv  { bottom: 10px; right: 10px; }
+.tcg-carte--grande .tcg-type { top: 12px; right: 12px; font-size: 9.5px; }
+
+/* Le cartouche occupe le bas de l'illustration, il ne la remplace pas. Il
+ * DÉFILE si le texte est long : une carte tronquée cacherait justement la
+ * seule chose qu'on est venu lire. */
+.tcg-cartouche {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 14px 46px;
+  background: rgba(6, 4, 10, .95);
+}
+.tcg-carte--grande .tcg-pied { background: linear-gradient(transparent, rgba(6, 4, 10, .7) 14%, rgba(6, 4, 10, .95) 30%); }
+.tcg-carte--grande .tcg-bandeau { padding: 30px 14px 10px; }
+.tcg-cart-meta { font-size: 9.5px; letter-spacing: .1em; color: var(--dim); }
+.tcg-cart-trait { margin: 6px 0 0; font-size: 12px; font-style: italic; color: var(--muted); }
+.tcg-cart-titre {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--text-2);
+}
+.tcg-cart-tag { font-size: 8.5px; letter-spacing: .14em; color: var(--ember); }
+.tcg-cart-texte { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-3); }
+.tcg-affs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.tcg-aff { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 9.5px; color: var(--soft); }
 
 /* ── Énergie, réserve, main ──────────────────────────────────────────── */
 .tcg-nrj { flex: 1 1 160px; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tcg-nrj-pas { flex: 1 1 auto; display: flex; gap: 2px; min-width: 0; }
-.tcg-nrj-pas i {
-  flex: 1 1 0; height: 6px; border-radius: 2px;
-  background: rgba(255, 255, 255, .09);
-}
+.tcg-nrj-pas i { flex: 1 1 0; height: 6px; border-radius: 2px; background: rgba(255, 255, 255, .09); }
 .tcg-nrj-pas i.plein { background: var(--gold); }
 .tcg-nrj-n { flex: none; font-size: 10px; color: var(--muted); }
 
@@ -1875,28 +1932,19 @@ body.vue-chat .companion { display: none; }
   font-family: var(--mono); font-size: 9.5px; color: var(--muted);
 }
 
-.tcg-dos {
-  width: 26px; height: 36px; border-radius: 4px;
-  border: 1px solid var(--line);
-  background: repeating-linear-gradient(45deg, #191423 0 3px, #221a2f 3px 6px);
-}
-.tcg-dos--petit { width: 16px; height: 22px; }
-
 .tcg-main { position: relative; display: flex; flex-direction: column; gap: 7px; }
-/* Le fondu au bord droit dit qu'il reste des cartes. Il est posé sur `.tcg-main`
- * et NON sur le rail : `overflow` mange les pseudo-éléments de son propre
- * conteneur — leçon déjà payée sur la pointe des bulles de l'overlay. */
+.tcg-main-lbl { font-size: 9px; letter-spacing: .14em; color: var(--faint); }
+/* Le fondu au bord droit dit qu'il reste des cartes. Posé sur `.tcg-main` et
+ * NON sur le rail : `overflow` mange les pseudo-éléments de son propre
+ * conteneur — leçon payée sur la pointe des bulles de l'overlay. */
 .tcg-main::after {
   content: '';
-  position: absolute; right: 0; bottom: 4px; width: 34px; top: 22px;
+  position: absolute; right: 0; bottom: 4px; width: 30px; top: 22px;
   pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--surface));
 }
-.tcg-main-lbl { font-size: 9px; letter-spacing: .14em; color: var(--faint); }
-
 /* Cinq tactiques à plat sur 390 px n'existent pas : la main DÉFILE, et son
- * débordement reste enfermé dans ce conteneur — la page, elle, ne glisse pas.
- * `scroll-snap` évite de s'arrêter entre deux cartes.  */
+ * débordement reste enfermé ici — la page, elle, ne glisse pas. */
 .tcg-main-rail {
   display: flex; gap: 9px;
   overflow-x: auto;
@@ -1904,41 +1952,25 @@ body.vue-chat .companion { display: none; }
   padding-bottom: 4px;
   scrollbar-width: thin;
 }
-.tcg-tac {
-  flex: 0 0 180px;
-  scroll-snap-align: start;
-  display: flex; flex-direction: column; gap: 5px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-.tcg-tac--passif { border-left: 2px solid var(--violet); }
-.tcg-tac-haut { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.tcg-tac-type { font-size: 8.5px; letter-spacing: .12em; color: var(--faint); }
-.tcg-tac-nom { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.tcg-tac-texte { margin: 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.tcg-main-rail .tcg-carte { flex: 0 0 var(--tac-w); scroll-snap-align: start; }
 
 /* ── Le boss du mode coopératif ──────────────────────────────────────── */
-.tcg-boss {
-  position: relative;
-  display: flex; flex-direction: column; gap: 7px;
-  padding: 12px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background: linear-gradient(160deg, rgba(255, 106, 43, .08), var(--surface-2));
-  color: inherit; text-align: left; font: inherit; cursor: pointer;
-}
-.tcg-boss:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
-.tcg-boss-nom { font-family: var(--sans); font-size: 19px; font-weight: 700; color: var(--text); }
-.tcg-boss-pv { font-size: 11px; color: var(--muted); }
+.tcg-boss { display: flex; align-items: center; gap: 14px; }
+/* Sur la carte du boss, la pastille de PV est redondante avec la barre juste à
+ * côté — et « 40 × joueurs » n'est pas un chiffre, donc pas une pastille : elle
+ * s'étirait en rectangle sur une carte de 92 px. Sa fiche, elle, le garde. */
+.tcg-boss > .tcg-carte .tcg-pip--pv { display: none; }
+.tcg-boss .tcg-carte { flex: 0 0 92px; }
+.tcg-boss-vie { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.tcg-boss-pv { font-size: 15px; color: var(--text-2); }
+.tcg-jauge { width: 100%; height: 9px; border-radius: 999px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.tcg-jauge i { display: block; height: 100%; background: linear-gradient(90deg, var(--ember-lo), var(--ember-hi)); transition: width .35s var(--ease); }
 
 /* ── Navigation entre les tours ──────────────────────────────────────── */
 .tcg-tours { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; }
 .tcg-fleche {
   width: 46px; height: 46px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  border: 1px solid var(--line); border-radius: 999px;
   background: var(--surface-lift);
   color: var(--text-3); font-size: 15px; cursor: pointer;
   transition: border-color .2s var(--ease), color .2s var(--ease);
@@ -1953,99 +1985,81 @@ body.vue-chat .companion { display: none; }
 
 /* ── La carte pleine, au tap ─────────────────────────────────────────── */
 .tcg-feuille {
-  width: min(340px, calc(100vw - 32px));
-  padding: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 16px;
-  background: var(--surface);
-  color: var(--text);
+  width: min(300px, calc(100vw - 44px));
+  max-width: none;
+  padding: 0; border: none; background: none;
   overflow: visible;
 }
 .tcg-feuille::backdrop { background: rgba(4, 3, 7, .92); }
-/* .78 laissait lire le plateau derrière : la carte pleine ne se détachait
- * pas, et c'est le seul endroit où le texte d'Ultime est lisible. */
 .tcg-feuille-x {
-  position: absolute; top: -14px; right: -14px;
+  position: absolute; top: -17px; right: -8px; z-index: 3;
   width: 34px; height: 34px;
   border: 1px solid var(--line-strong); border-radius: 999px;
   background: var(--surface-2); color: var(--text-3); cursor: pointer;
 }
-.tcg-feuille-corps { padding: 18px; }
-
-.tcg-pleine { display: flex; flex-direction: column; gap: 12px; }
-.tcg-pleine-haut { display: flex; align-items: center; gap: 12px; }
-.tcg-pleine-haut .tcg-por { width: 74px; aspect-ratio: 1; flex: none; font-size: 30px; }
-.tcg-pleine-nom { font-family: var(--sans); font-size: 18px; font-weight: 700; color: var(--text); }
-.tcg-pleine-meta { font-size: 10px; letter-spacing: .1em; color: var(--dim); margin-top: 3px; }
-.tcg-pleine-trait { margin: 0; font-size: 12.5px; font-style: italic; color: var(--muted); }
-.tcg-pleine .tcg-stats { gap: 8px; }
-.tcg-pleine .tcg-s { font-size: 12px; padding: 5px 0; border: 1px solid var(--line); border-radius: 8px; }
-
-.tcg-ult { padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-lift); }
-.tcg-ult-titre { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--text-2); }
-.tcg-ult-tag { margin-left: auto; font-size: 8.5px; letter-spacing: .14em; color: var(--ember); }
-.tcg-ult-texte { margin: 7px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
-.tcg-affs { display: flex; flex-wrap: wrap; gap: 6px; }
-.tcg-aff { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 9.5px; color: var(--dim); }
+.tcg-feuille-corps { position: relative; }
 
 /* ── Grand écran : la place existe, on l'utilise ─────────────────────── */
 @media (min-width: 900px) {
-  .tcg-table { --vig-w: 196px; gap: 18px; padding: 20px 22px; }
-  .tcg-vig { padding: 10px; gap: 7px; }
-  .tcg-vig-nom { font-size: 13.5px; }
-  .tcg-s { font-size: 11px; }
-  .tcg-vig-ult { display: flex; }
+  .tcg-table { --carte-w: 168px; --tac-w: 168px; gap: 18px; padding: 20px 22px; }
+  .tcg-nom { font-size: 14px; }
+  .tcg-pip { min-width: 26px; height: 26px; font-size: 13px; }
+  .tcg-bandeau { padding: 26px 9px 32px; }
   .tcg-groupe-tete { flex-wrap: nowrap; }
   .tcg-nrj { flex: 0 1 260px; }
   .tcg-note { font-size: 13.5px; }
-  .tcg-tac { flex: 0 0 210px; }
-  .tcg-boss-nom { font-size: 24px; }
-  /* Le coopératif : les joueurs côte à côte. C'est ce groupement qui rend
-   * visible l'Aura qui TRAVERSE les joueurs — la relire en colonne ferait
-   * perdre le seul endroit du jeu où elle prend son sens. */
-  .tcg-table[data-format="coop"] .tcg-groupes {
-    flex-direction: row;
-    align-items: flex-start;
-  }
+  .tcg-boss .tcg-carte { flex: 0 0 150px; }
+  .tcg-boss-pv { font-size: 19px; }
+  .tcg-sceau { font-size: 12px; padding: 5px 13px; }
+  /* La place existe : le texte de la tactique se lit sans ouvrir la carte. */
+  .tcg-main-rail .tcg-carte--tac .tcg-cartouche { display: block; padding: 0 9px 10px; }
+  .tcg-main-rail .tcg-carte--tac .tcg-cart-texte { font-size: 10.5px; line-height: 1.4; }
+  .tcg-main-rail .tcg-carte--tac .tcg-bandeau { padding: 22px 9px 6px; }
+  /* Le coopératif : les joueurs côte à côte, chacun dans son cadre. Sans lui,
+   * les six héros forment UNE ligne continue et on ne voit plus qui joue avec
+   * qui — or le groupement est ce qui rend lisible l'Aura qui traverse les
+   * joueurs, la seule mécanique qui mesure les liens réels. */
+  .tcg-table[data-format="coop"] .tcg-groupes { flex-direction: row; align-items: flex-start; }
   .tcg-table[data-format="coop"] .tcg-groupe {
     flex: 1 1 0; min-width: 0;
     flex-direction: column; align-items: stretch;
+    padding: 8px; border: 1px solid var(--line-soft); border-radius: 12px;
+    background: var(--surface-lift);
   }
   .tcg-table[data-format="coop"] .tcg-groupe-tete { flex: none; flex-direction: row; align-items: center; }
   .tcg-table[data-format="coop"] .tcg-ligne { margin-inline: auto; }
-  /* Sans ce cadre, les six héros forment UNE ligne continue et on ne voit plus
-   * qui joue avec qui. Or le groupement par joueur est ce qui rend lisible
-   * l'Aura qui traverse les joueurs — la seule mécanique du jeu qui mesure les
-   * liens réels, et le meilleur moment du mode coopératif. */
-  .tcg-table[data-format="coop"] .tcg-groupe {
-    padding: 8px;
-    border: 1px solid var(--line-soft);
-    border-radius: 12px;
-    background: var(--surface-lift);
-  }
 }
 
 /* ── Paysage court : téléphone tourné ET iframe d'Activity Discord ───── */
+/*
+ * Ici la contrainte est la HAUTEUR, et la largeur est abondante (854 px pour
+ * 480). La main quitte donc le bas du plateau pour la colonne de droite : en
+ * pile verticale elle ne coûte plus un seul pixel de hauteur au plateau.
+ */
 @media (orientation: landscape) and (max-height: 560px) {
-  .tcg-table { --vig-w: 116px; gap: 8px; padding: 10px; }
-  .tcg-vig { padding: 5px; gap: 3px; }
-  .tcg-por { aspect-ratio: 16 / 9; font-size: 18px; }
-  .tcg-vig-nom { font-size: 10.5px; }
-  .tcg-bande { padding: 6px 8px; }
+  .tcg-table {
+    --carte-w: 96px; --tac-w: 132px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    grid-template-rows: auto auto auto;
+    column-gap: 14px; row-gap: 8px;
+    padding: 10px;
+  }
+  .tcg-cote--haut { grid-area: 1 / 1; }
+  .tcg-bande { grid-area: 2 / 1; padding: 5px 8px; }
+  .tcg-cote--bas { grid-area: 3 / 1; }
+  .tcg-main { grid-area: 1 / 2 / 4 / 3; min-height: 0; }
+  .tcg-main-rail { flex-direction: column; overflow-x: hidden; overflow-y: auto; scroll-snap-type: y mandatory; }
+  .tcg-main::after { top: auto; bottom: 0; left: 0; right: 0; width: auto; height: 24px;
+                     background: linear-gradient(transparent, var(--surface)); }
   .tcg-note { font-size: 11px; }
-  .tcg-tac { flex: 0 0 150px; padding: 6px 8px; gap: 3px; }
-  .tcg-tac-nom { font-size: 11.5px; }
-  .tcg-tac-texte { font-size: 9.5px; line-height: 1.35; }
-  .tcg-main { gap: 4px; }
   .tcg-journal li { font-size: 11px; }
   .tcg-groupe { gap: 5px; }
-  .tcg-cote { gap: 6px; }
-  .tcg-stats { gap: 3px; }
-  .tcg-jauge { height: 2px; }
-  .tcg-boss { padding: 8px 12px; gap: 4px; }
-  .tcg-boss-nom { font-size: 16px; }
+  .tcg-cote { gap: 5px; }
+  .tcg-boss .tcg-carte { flex: 0 0 88px; }
+  .tcg-boss-pv { font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tcg-vig, .tcg-jauge i { transition: none; }
+  button.tcg-carte, .tcg-jauge i { transition: none; }
 }

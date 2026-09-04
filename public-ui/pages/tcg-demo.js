@@ -23,6 +23,12 @@ export const REGLES = {
   energieParTour: 3,
 };
 
+// Le champ `illustration` (une URL) n'est écrit sur AUCUNE carte : elles ne
+// sont pas encore dessinées. `tcg-carte.js` le lit s'il est là et met un fond
+// de remplacement sinon — le jour où une carte reçoit son image, on ajoute la
+// ligne et rien d'autre ne bouge. Le lecteur existe AVANT le réglage, jamais
+// l'inverse.
+//
 // ── Les six héros ─────────────────────────────────────────────────────────
 //
 // ATK · PV · Aura calculés le 2026-09-04, budget 12, rareté Âme.
