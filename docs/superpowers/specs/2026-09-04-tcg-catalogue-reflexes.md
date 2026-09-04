@@ -53,15 +53,33 @@ valeur absolue (I01, B02).
 ### Qui peut porter quoi
 
 - **Carte-personne** : `prix ≤ budget − 1` (il faut garder `Voix ≥ 1`).
-- **Carte-objet** : pas de stats, donc elle convertit **tout** son budget en effet →
-  `prix ≤ budget_base(coût)` = `4 + 3 × coût` (C1=7 · C2=10 · C3=13 · C4=16 · C5=19).
-  Elle pose **0 Voix** sur la table et occupe une des 4 places : c'est son vrai coût.
-- **Exception, famille F** : une carte-objet portant une entrée de la famille F a un **coût
-  minimum de 3**. Sans cette ligne, un objet à 1 d'énergie annule une Chute — le plancher de prix
-  serait respecté, et le plancher d'**énergie** contourné.
+- **Carte-objet ou moment** : pas de stats, donc **elle paie son effet en ÉNERGIE, pas en
+  budget** → `coût = ⌈prix / 3⌉`, borné à 1-5. Le taux est celui du barème ci-dessus
+  (1 énergie ≈ 3 points), il n'y en a pas deux.
 
-Conséquence utile : les entrées à prix 5+ sont de fait réservées aux cartes chères, aux cartes
-rares, ou aux objets. Aucune règle de plus à écrire — l'inégalité s'en charge.
+  ⚠️ La règle précédente — `prix ≤ 4 + 3 × coût`, « elle convertit tout son budget en effet » —
+  **était fausse et je l'ai corrigée en construisant le contrôle de saisie**. Aucun prix du
+  catalogue ne dépasse 6, le budget minimum est 7 : *aucune* carte-objet n'aurait jamais pu
+  dépenser son budget, et toutes seraient nées sous-payées. Une règle qui ne peut être satisfaite
+  par aucun cas réel n'est pas une contrainte, c'est un angle mort.
+
+### Objet ou moment — ce qui décide, c'est le moment de l'effet
+
+| | Reste sur la table ? | Occupe une place ? | Déclencheurs concernés |
+|---|---|---|---|
+| **Objet** | oui, jusqu'à la fin | oui, une des 4 | `permanent`, `au décompte`, `fin de tour` |
+| **Moment** | non, il part aussitôt son effet produit | **non** | `à la pose`, `à la révélation` |
+
+C'est la seule compensation qu'un moment reçoit pour ne poser aucune Voix : il ne prend la place
+de personne. Un **objet**, lui, occupe une place à 0 Voix — c'est le point le plus fragile de tout
+le barème, et **le premier à calibrer en parties de test** (§5).
+- **Exception, famille F** : une carte-objet ou moment portant une entrée de la famille F a un
+  **coût minimum de 3**, quel que soit ce que donne `⌈prix / 3⌉`. Sans cette ligne, F06 (prix 6)
+  tomberait à 2 d'énergie et annulerait une Chute pour presque rien — le plancher de *prix* serait
+  respecté, et celui d'**énergie** contourné.
+
+Conséquence utile côté cartes-personnes : les entrées à prix 5+ sont de fait réservées aux cartes
+chères ou rares. Aucune règle de plus à écrire — l'inégalité `prix ≤ budget − 1` s'en charge.
 
 ---
 
@@ -180,8 +198,8 @@ Portée : **👤** habille une carte-personne · **🎴** peut être une carte-o
 
 | ID | Nom mécanique | Prix | Déclencheur | Effet | Portée |
 |---|---|---|---|---|---|
-| I01 | Critique — *« la manette »* | 4 | au décompte | si le Tirage du tour où elle a été posée ≥ 4, sa Voix est doublée, **dans la limite de +5** | 👤🎴 |
-| I02 | Esquive — *« clavier-souris »* | 3 | au décompte | si le Tirage ≥ 3, elle ignore tout le Piquant qui la vise | 👤🎴 |
+| I01 | Critique — *« la manette »* | 4 | au décompte | si le Tirage du tour où elle a été posée ≥ 4, sa Voix est doublée, **dans la limite de +5**. En objet : celle d'une alliée désignée (§4.6) | 👤🎴 |
+| I02 | Esquive — *« clavier-souris »* | 3 | au décompte | si le Tirage ≥ 3, elle ignore tout le Piquant qui la vise. En objet : protège une alliée désignée (§4.6) | 👤🎴 |
 | I03 | Ça compile ou ça casse — *« codage à la Requin »* | 4 | au décompte | Tirage ≥ 5 : +6 Voix · Tirage ≤ 2 : −3 Voix · sinon rien | 🎴 |
 | I04 | À la valeur | 5 | à la pose | gagne autant de Voix que le Tirage du tour (+1 à +6) | 👤 |
 | I05 | Superstition | 3 | au décompte | +3 Voix si le Tirage du tour est pair | 👤 |
@@ -191,7 +209,7 @@ Portée : **👤** habille une carte-personne · **🎴** peut être une carte-o
 | ID | Nom mécanique | Prix | Déclencheur | Effet | Portée |
 |---|---|---|---|---|---|
 | J01 | Soin | 2 | à la pose | rend 3 Voix perdues à une de tes cartes de cette table, jamais au-dessus de sa valeur d'origine | 🎴 |
-| J02 | Garde | 2 | permanent | le Piquant adverse de cette table la vise en premier | 👤🎴 |
+| J02 | Garde | 2 | permanent | le Piquant adverse de cette table la vise en premier | 👤 |
 | J03 | Bouclier | 3 | permanent | une carte alliée adjacente désignée ignore le Piquant | 👤 |
 | J04 | Rémission | 3 | au décompte | si le Piquant subi la réduit à 0, elle compte pour 3 | 👤 |
 | J05 | Trousse | 3 | fin de tour | +1 Voix à ta carte de plus basse Voix sur cette table | 👤🎴 |
@@ -216,7 +234,20 @@ contestations en pleine partie :
 4. **Un effet qui désigne une cible absente ne se déclenche pas** — il ne se reporte jamais sur
    une autre. Même règle que le Piquant (spec §2.3).
 5. **Une carte-objet ne donne ni Voix, ni Aura, ni Piquant, et n'a pas d'affinité** — sauf si son
-   entrée le dit explicitement. Elle occupe une place de table et rien d'autre.
+   entrée le dit explicitement. Elle occupe une place de table et rien d'autre. Un **moment**
+   n'occupe même pas de place : il part une fois son effet produit.
+6. **Un objet ne peut pas être la cible de son propre effet.** Toute entrée dont l'effet porte sur
+   « elle-même » désigne, quand elle est jouée comme objet, **une carte alliée de sa table**, à la
+   pose ; c'est elle qui reçoit l'effet.
+
+   > 🚨 Trouvé en remplissant les fiches des dix cartes de l'owner, pas en écrivant le catalogue.
+   > Un objet pose 0 Voix : **la manette doublait 0**, et le clavier-souris esquivait un Piquant
+   > qui ne l'avait jamais visée. Deux cartes qui ne faisaient littéralement rien, avec un prix,
+   > un coût et une illustration. Une règle générale plutôt qu'une exception par entrée : la
+   > prochaine entrée 👤🎴 écrite dans six mois est couverte sans que personne y repense.
+7. **Le Piquant ne vise jamais un objet** — il n'a pas de Voix à lui retirer. Sinon un objet à
+   0 Voix devient un absorbeur de Piquant gratuit : c'est pour ça que J02 (Garde) est réservée aux
+   cartes-personnes, et que C03 (Marquage) ne peut pas désigner un objet adverse.
 
 ---
 
@@ -232,6 +263,7 @@ indé le disent tous. Ce qui compte, c'est **par quoi** on les corrige :
 | Par famille | une famille entière sur- ou sous-représentée = c'est le **barème** (§1) qui est faux, pas l'entrée |
 | Famille I | si elle domine les decks, c'est que le §2 a été oublié et que les prix sont retombés à l'espérance |
 | Le plancher signature (F) | si les Chutes tombent sous ~1,2 par partie, F01/F06 sont trop accessibles |
+| **Les objets** (ceux qui restent) | **le premier point à mesurer.** Un objet occupe une place à 0 Voix ; s'ils sont absents des decks, c'est que la place vaut plus cher que l'effet, et `coût = ⌈prix/3⌉` doit descendre à `⌈prix/4⌉` pour eux seuls |
 
 Tout cela **sort du journal d'événements** (télémétrie demandée par l'owner le 2026-09-04) — et
 n'existe que si ce journal est posé **avec** la première partie, jamais après.
