@@ -32,7 +32,7 @@ from bot.discord.voice.brain import (
 )
 from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
-from bot.discord.voice.style import resolve_style
+from bot.discord.voice.style import adapt_style, resolve_style
 from bot.discord.voice.sink import (
     _MAX_FRAMES_PAR_SECONDE,
     _MAX_REMPLISSAGE_CONSECUTIF,
@@ -635,7 +635,8 @@ class VoiceService:
     # Parole (TTS → playback)
     # ------------------------------------------------------------------
 
-    async def speak(self, text: str, *, malgre_ecoute: bool = False) -> bool:
+    async def speak(self, text: str, *, malgre_ecoute: bool = False,
+                    style: str | None = None) -> bool:
         """Synthétise `text` en TTS puis le joue dans le salon (anti-larsen inclus).
 
         Rend VRAI si la parole a été entendue. Elle rendait `None` sur tous ses
@@ -654,6 +655,13 @@ class VoiceService:
         « im out » achetée aux points de chaîne. Le mode écoute existe pour
         qu'il ne prenne jamais la parole de lui-même pendant un live — pas pour
         qu'il refuse celle qu'on lui demande.
+
+        `style` impose un `express-as` Azure et prime sur le tag de tête comme
+        sur l'humeur. Il existe pour le texte qui n'est PAS de Wally : le TTS
+        acheté aux points de chaîne porte le ton voulu par le viewer, mais son
+        message est enchâssé dans un gabarit (« untel dit : … »), donc un tag
+        laissé dans le texte ne serait plus en tête et `parse_style_tag` ne le
+        verrait jamais. Le ton voyage en DONNÉE plutôt que d'être re-parsé.
         """
         if not text or self._vc is None:
             return False
@@ -672,7 +680,7 @@ class VoiceService:
         # captée par les micros ouverts entrait dans `history`, partait au
         # fact_extractor, et il pouvait se répondre à lui-même.
         async with self._speak_lock:
-            return await self._speak_locked(text)
+            return await self._speak_locked(text, style_impose=style)
 
     @property
     def style_voice(self) -> str:
@@ -685,7 +693,7 @@ class VoiceService:
         """
         return getattr(self._tts, "style_voice", "")
 
-    async def _speak_locked(self, text: str) -> bool:
+    async def _speak_locked(self, text: str, style_impose: str | None = None) -> bool:
         # Style de voix : tag explicite de Wally ([murmure]…), sinon son émotion
         # secondaire du moment, sinon son humeur dominante.
         try:
@@ -700,6 +708,13 @@ class VoiceService:
         # inconnu fait échouer la synthèse, et Azure ne le signale pas.
         style, text = resolve_style(text, emotion_state, voice=self.style_voice,
                                     secondaries=secondaries)
+        # Un ton IMPOSÉ par l'appelant prime sur tout le reste : il vient d'une
+        # demande explicite (le TTS acheté aux points de chaîne), pas d'une
+        # inférence. Il passe par `adapt_style` comme les autres — un
+        # `express-as` que la voix montée ignore rend un flux VIDE sans lever,
+        # et Wally deviendrait muet sans un mot dans les logs.
+        if style_impose and (impose := adapt_style(style_impose, self.style_voice)):
+            style = impose
         if not text:
             # Un texte réduit à rien par le nettoyage de style (une réplique qui
             # n'était QUE des tags) : rien n'a été entendu.

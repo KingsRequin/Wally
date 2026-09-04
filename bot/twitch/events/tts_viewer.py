@@ -7,10 +7,16 @@ voisin :
 
   · **Le texte est de la donnée, jamais une instruction.** Il ne passe par
     aucun modèle — il part au TTS tel quel. Rien à reformuler, rien à
-    interpréter : c'est un haut-parleur, pas une conversation. Les crochets
-    sont retirés parce qu'ils pilotent le style de la voix (`[murmure]`,
-    `[colère]` — cf. `voice/style.py`) : sans ça, le viewer choisirait le ton
-    de Wally, et un message qui ne serait QUE des tags sortirait vide.
+    interpréter : c'est un haut-parleur, pas une conversation.
+  · **Le ton, lui, appartient au viewer.** Un tag de tête (`[murmure]`,
+    `[colère]` — le vocabulaire de `voice/style.py`) est retenu et IMPOSÉ à
+    la synthèse. C'est ce qu'on vend, et l'invite de la récompense le dit.
+    Il voyage en donnée jusqu'à `speak(style=...)` plutôt que dans le texte :
+    le message est enchâssé dans un gabarit, un tag laissé dedans ne serait
+    plus en tête et `parse_style_tag` ne le verrait jamais. Les crochets
+    RESTANTS partent quand même — didascalies et tags inconnus n'ont rien à
+    faire dans la bouche de Wally — et un message qui n'était QUE des tags
+    n'a plus rien à lire : il rend les points.
   · **Le pseudo est dit.** Un TTS anonyme ne s'attribue à personne : les gens
     du vocal entendraient une phrase surgie de nulle part dans la bouche de
     Wally. Le gabarit vit ici, en un seul endroit.
@@ -33,6 +39,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot.discord.voice.style import parse_style_tag
+
 if TYPE_CHECKING:
     from bot.twitch.bot import WallyTwitch
 
@@ -44,7 +52,11 @@ CLE_RECOMPENSE = "voice:tts_viewer_reward_id"
 
 TITRE = "tts wally"
 COUT = 500
-PROMPT = "Écris ce que Wally doit lire à voix haute dans le vocal du stream."
+PROMPT = (
+    "Wally lit ton message à voix haute dans le vocal du stream. "
+    "Commence par un ton entre crochets pour colorer sa voix : "
+    "[murmure] [crie] [joyeux] [triste] [énervé] [excité] [peur] [surpris]"
+)
 
 # Le viewer écrit : c'est toute la récompense.
 SAISIE_REQUISE = True
@@ -65,17 +77,23 @@ LONGUEUR_MAX = 200
 GABARIT = "{acheteur} dit : {texte}"
 
 
-def _nettoyer(texte: str) -> str:
-    """Le message tel qu'il sera prononcé — vide s'il n'y a rien à dire.
+def _decouper(texte: str) -> tuple[str | None, str]:
+    """(style Azure demandé, message à prononcer) — message vide s'il n'y a rien.
 
-    Les crochets partent parce qu'ils SONT le langage de commande de la voix
-    (`resolve_style`) : les laisser passer donnerait au viewer la main sur le
-    ton de Wally, et un message qui n'était que des tags ressortirait vide bien
-    plus loin, dans `_speak_locked`, où plus personne ne sait qu'il y avait des
-    points à rendre.
+    Le tag de TÊTE est lu par `parse_style_tag`, exactement comme quand Wally
+    s'écrit un ton à lui-même : une seule table de correspondance pour les
+    deux, sinon `[colere]` marcherait d'un côté et pas de l'autre. Un tag
+    inconnu n'est pas une panne — il est retiré sans style, le message part
+    quand même.
+
+    Les crochets qui restent (didascalies, second tag) sont supprimés : ils
+    n'ont rien à faire dans la bouche de Wally. Ce qui n'en laisse rien
+    ressortirait vide bien plus loin, dans `_speak_locked`, où plus personne ne
+    sait qu'il y avait des points à rendre — d'où le message vide rendu ICI.
     """
-    sans_tags = re.sub(r"\[[^\]]*\]", " ", texte or "")
-    return " ".join(sans_tags.split())[:LONGUEUR_MAX]
+    style, reste = parse_style_tag(texte or "")
+    sans_tags = re.sub(r"\[[^\]]*\]", " ", reste)
+    return style, " ".join(sans_tags.split())[:LONGUEUR_MAX]
 
 
 def _feed(bot, description: str) -> None:
@@ -118,7 +136,7 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                        reward_id: str, redemption_id: str) -> None:
     """Lit le message à voix haute, ou rend les points. Ne lève jamais."""
     try:
-        texte = _nettoyer(saisie)
+        ton, texte = _decouper(saisie)
         if not texte:
             logger.info("TTS viewer : message vide de {u} — remboursement", u=acheteur)
             await _rendre(bot, acheteur, reward_id, redemption_id,
@@ -141,13 +159,17 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
         #
         # Le retour est LU : sans ça on encaisserait un silence. C'est le
         # `is_sent: false` du chat Twitch, transposé à la voix.
+        # Le ton part en DONNÉE, pas dans le texte : enchâssé dans le gabarit
+        # il ne serait plus en tête, et `parse_style_tag` ne le verrait jamais.
+        # `speak()` le ramène aux capacités de la voix montée.
         prononce = GABARIT.format(acheteur=acheteur, texte=texte)
-        if not await service.speak(prononce, malgre_ecoute=True):
+        if not await service.speak(prononce, malgre_ecoute=True, style=ton):
             logger.warning("TTS viewer : la parole n'est pas sortie — remboursement")
             await _rendre(bot, acheteur, reward_id, redemption_id,
                           "ma voix n'est pas sortie")
             return
-        logger.info("TTS viewer lu pour {u} : {t!r}", u=acheteur, t=texte)
+        logger.info("TTS viewer lu pour {u} ({s}) : {t!r}",
+                    u=acheteur, s=ton or "ton par défaut", t=texte)
         _feed(bot, f"{acheteur} a fait lire « {texte} » à Wally (points de chaîne)")
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
         logger.error("TTS viewer en erreur : {e!r}", e=exc)

@@ -2,9 +2,9 @@
 """Le TTS des viewers : on paie, Wally lit le message à voix haute (2026-08-31).
 
 Cousine de « im out », à ceci près que le texte vient du viewer. Ce qui s'y
-joue en plus : le message ne pilote PAS la voix (les tags entre crochets sont
-retirés), il est plafonné, le pseudo est dit, et un message vidé par le
-nettoyage rend les points au lieu de partir mourir dans `_speak_locked`.
+joue en plus : le TON est choisi par le viewer (tag de tête, imposé à la
+synthèse), le message est plafonné, le pseudo est dit, et un message vidé par
+le nettoyage rend les points au lieu de partir mourir dans `_speak_locked`.
 
 Comme partout ailleurs sur les points de chaîne, LE REMBOURSEMENT EST LA MOITIÉ
 SÉRIEUSE du module : chaque chemin où le message ne sort PAS rend les points et
@@ -54,17 +54,60 @@ async def test_le_pseudo_de_l_acheteur_est_prononce():
 
 
 @pytest.mark.asyncio
-async def test_les_tags_de_style_ne_pilotent_pas_la_voix():
-    """`[murmure]` est le langage de commande de `resolve_style` : laissé
-    passer, c'est le viewer qui choisit le ton de Wally."""
+async def test_le_ton_du_viewer_pilote_la_voix():
+    """C'est ce que la récompense VEND, et son invite le dit. Le ton voyage en
+    donnée jusqu'à `speak(style=...)` : enchâssé dans le gabarit il ne serait
+    plus en tête de phrase, et `parse_style_tag` ne le verrait jamais."""
     bot, service = _bot()
 
     await tts_viewer.lire_message(bot, acheteur="alice", saisie="[colère] bonjour",
                                   reward_id="RW", redemption_id="R1")
 
+    assert service.speak.call_args.kwargs["style"] == "angry"
     dit = service.speak.call_args.args[0]
     assert "[" not in dit and "colère" not in dit
     assert "bonjour" in dit
+
+
+@pytest.mark.asyncio
+async def test_le_tag_se_lit_avec_la_table_de_wally():
+    """Une seule table pour les deux : sans ça `[colere]` marcherait quand
+    Wally se l'écrit et pas quand un viewer l'achète."""
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="[chuchote] psst",
+                                  reward_id="RW", redemption_id="R1")
+
+    assert service.speak.call_args.kwargs["style"] == "whispering"
+
+
+@pytest.mark.asyncio
+async def test_un_ton_inconnu_n_est_pas_une_panne():
+    """Le tag est retiré, aucun style n'est imposé, le message part quand même :
+    rembourser une phrase parfaitement lisible serait absurde."""
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="[wtf] bonjour",
+                                  reward_id="RW", redemption_id="R1")
+
+    assert service.speak.call_args.kwargs["style"] is None
+    assert "bonjour" in service.speak.call_args.args[0]
+    assert "wtf" not in service.speak.call_args.args[0]
+    bot.twitch_api.refund_redemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_les_crochets_restants_ne_sont_pas_prononces():
+    """Une didascalie au milieu n'est pas un ton — elle n'a rien à faire dans
+    la bouche de Wally."""
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="salut [rire] ça va",
+                                  reward_id="RW", redemption_id="R1")
+
+    dit = service.speak.call_args.args[0]
+    assert "[" not in dit and "rire" not in dit
+    assert "salut ça va" in dit
 
 
 @pytest.mark.asyncio
