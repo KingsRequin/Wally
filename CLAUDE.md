@@ -527,6 +527,12 @@ les 60 s et alimente `bot._stream_info` par son `on_poll`. Injecté au prompt sy
 `stream_live`. ⚠️ Il n'y a pas de `_poll_stream_info()` — ce nom, longtemps écrit ici, n'a jamais
 existé.
 
+**Helix, fenêtre de clips** : `GET /helix/clips` compare `ended_at` non pas au `created_at` du
+clip, mais à la **fin du créneau de 10 minutes** qui le contient — un clip de 07:21:16 n'entre
+dans aucune fenêtre fermée avant 07:30:00 pile (permanent, pas un délai d'indexation). La borne
+se pose donc **dans le futur** (+1 h). Et elle reste OBLIGATOIRE : sans `ended_at`, Helix borne à
+`started_at + 1 semaine`.
+
 **Helix : 200 ≠ publié** — le refus d'envoi est dans le CORPS de la réponse (`is_sent: false`),
 pas dans le statut HTTP. Toujours lire le corps.
 
