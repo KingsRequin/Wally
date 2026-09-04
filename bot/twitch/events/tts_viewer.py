@@ -26,15 +26,18 @@ tout ce qu'il dit par `redact()`, quelle que soit la provenance.
 
 LE REMBOURSEMENT EST LA MOITIÉ SÉRIEUSE DU MODULE, comme chez toutes ses
 voisines. Hors salon vocal Wally n'a pas de bouche ; en panne de TTS rien ne
-sort ; un message vidé par le nettoyage n'a rien à lire. Chaque chemin où le
-message n'est pas entendu rend les points ET le dit dans le chat.
+sort ; un message vidé par le nettoyage n'a rien à lire ; une lecture déjà en
+cours ou une recharge non écoulée refusent l'achat. Chaque chemin où le message
+n'est pas entendu rend les points ET le dit dans le chat.
 
 Perception passive comme les autres événements de stream : on alimente le flux,
 on ne réveille aucune cadence de parole.
 """
 from __future__ import annotations
 
+import math
 import re
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -61,11 +64,12 @@ PROMPT = (
 # Le viewer écrit : c'est toute la récompense.
 SAISIE_REQUISE = True
 
-# Une minute entre deux achats. Le quota Azure est un plafond MENSUEL de
-# 500 k caractères (`voice/quota.py`) et la voix de Wally est un canal unique :
-# sans recharge, une poignée d'achats enchaînés monopolise le salon et personne
-# n'entend plus rien d'autre.
-RECHARGE_S = 60
+# Une minute entre deux achats D'UNE MÊME PERSONNE. Twitch ne sait poser qu'une
+# recharge GLOBALE, qui bloquait tout le chat dès qu'un seul viewer achetait :
+# la garde vit donc ici, et le module `main.py` n'arme plus aucun cooldown côté
+# Twitch. Contrepartie assumée : Twitch laisse l'achat partir, donc le refus se
+# paie d'un remboursement — c'est justement ce que ce module sait faire.
+RECHARGE_PERSONNE_S = 60
 
 # Twitch plafonne déjà la saisie à 200 caractères, mais c'est SA limite, pas la
 # nôtre : elle n'est pas dans le corps qu'on envoie, donc rien ne garantit
@@ -75,6 +79,47 @@ LONGUEUR_MAX = 200
 # Ce que Wally prononce vraiment. En un seul endroit, comme la phrase de
 # « im out ».
 GABARIT = "{acheteur} dit : {texte}"
+
+# Dernier achat ENTENDU, par personne. En RAM : la valeur ne vaut qu'une
+# minute, la persister coûterait une écriture en base pour un état qui a
+# expiré avant le prochain démarrage.
+_dernier_achat: dict[str, float] = {}
+
+# Vrai pendant qu'un message acheté passe à la voix. `speak()` sérialise déjà
+# ses appelants (`_speak_lock`), donc sans ce drapeau un second achat ne serait
+# pas refusé : il ATTENDRAIT son tour, et le viewer entendrait sa phrase une
+# minute plus tard sans comprendre pourquoi.
+_lecture_en_cours = False
+
+
+def _cle(acheteur: str) -> str:
+    """Le login Twitch, replié : « Alice » et « alice » sont la même personne."""
+    return (acheteur or "?").casefold()
+
+
+def _attente_restante(acheteur: str) -> int:
+    """Secondes restantes avant que `acheteur` puisse racheter — 0 s'il peut."""
+    dernier = _dernier_achat.get(_cle(acheteur))
+    if dernier is None:
+        return 0
+    return max(0, math.ceil(RECHARGE_PERSONNE_S - (time.monotonic() - dernier)))
+
+
+def _armer_recharge(acheteur: str) -> None:
+    """Démarre la recharge de `acheteur`, et purge celles qui ont expiré.
+
+    Appelé APRÈS une lecture réellement sortie, jamais avant : un achat
+    remboursé (hors vocal, panne Azure) ne doit pas bloquer une minute
+    quelqu'un qui n'a rien entendu.
+
+    Sans la purge, le dictionnaire garderait une entrée par viewer à vie, pour
+    une valeur qui ne dit plus rien passé la minute.
+    """
+    maintenant = time.monotonic()
+    for cle, quand in list(_dernier_achat.items()):
+        if maintenant - quand >= RECHARGE_PERSONNE_S:
+            del _dernier_achat[cle]
+    _dernier_achat[_cle(acheteur)] = maintenant
 
 
 def _decouper(texte: str) -> tuple[str | None, str]:
@@ -135,7 +180,25 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
 async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                        reward_id: str, redemption_id: str) -> None:
     """Lit le message à voix haute, ou rend les points. Ne lève jamais."""
+    global _lecture_en_cours
     try:
+        # Les deux gardes de cadence AVANT tout le reste : elles ne coûtent
+        # rien et ce sont les seuls refus où le viewer n'a rien fait de mal.
+        if _lecture_en_cours:
+            logger.info("TTS viewer : lecture déjà en cours, achat de {u} refusé",
+                        u=acheteur)
+            await _rendre(bot, acheteur, reward_id, redemption_id,
+                          "je suis déjà en train de lire le message de quelqu'un")
+            return
+        restant = _attente_restante(acheteur)
+        if restant:
+            logger.info("TTS viewer : {u} en recharge ({s} s restantes)",
+                        u=acheteur, s=restant)
+            await _rendre(bot, acheteur, reward_id, redemption_id,
+                          f"attends encore {restant} s avant de m'en faire lire "
+                          f"un autre")
+            return
+
         ton, texte = _decouper(saisie)
         if not texte:
             logger.info("TTS viewer : message vide de {u} — remboursement", u=acheteur)
@@ -163,11 +226,19 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
         # il ne serait plus en tête, et `parse_style_tag` ne le verrait jamais.
         # `speak()` le ramène aux capacités de la voix montée.
         prononce = GABARIT.format(acheteur=acheteur, texte=texte)
-        if not await service.speak(prononce, malgre_ecoute=True, style=ton):
+        # Le drapeau se pose SANS `await` entre le test plus haut et ici :
+        # c'est ce qui en fait un verrou dans une boucle d'événements.
+        _lecture_en_cours = True
+        try:
+            sortie = await service.speak(prononce, malgre_ecoute=True, style=ton)
+        finally:
+            _lecture_en_cours = False
+        if not sortie:
             logger.warning("TTS viewer : la parole n'est pas sortie — remboursement")
             await _rendre(bot, acheteur, reward_id, redemption_id,
                           "ma voix n'est pas sortie")
             return
+        _armer_recharge(acheteur)
         logger.info("TTS viewer lu pour {u} ({s}) : {t!r}",
                     u=acheteur, s=ton or "ton par défaut", t=texte)
         _feed(bot, f"{acheteur} a fait lire « {texte} » à Wally (points de chaîne)")

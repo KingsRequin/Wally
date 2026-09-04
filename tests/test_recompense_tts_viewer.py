@@ -10,11 +10,23 @@ Comme partout ailleurs sur les points de chaîne, LE REMBOURSEMENT EST LA MOITI�
 SÉRIEUSE du module : chaque chemin où le message ne sort PAS rend les points et
 le dit.
 """
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from bot.twitch.events import tts_viewer
+
+
+@pytest.fixture(autouse=True)
+def _cadence_neuve():
+    """L'état de cadence vit au niveau MODULE : sans remise à zéro, le premier
+    test à faire lire « alice » ferait rembourser tous les suivants."""
+    tts_viewer._dernier_achat.clear()
+    tts_viewer._lecture_en_cours = False
+    yield
+    tts_viewer._dernier_achat.clear()
+    tts_viewer._lecture_en_cours = False
 
 
 def _bot(*, connecte=True, speak=None):
@@ -188,6 +200,130 @@ async def test_un_remboursement_refuse_est_dit_franchement():
                                   reward_id="RW", redemption_id="R1")
 
     assert "PAS pu te rendre tes points" in bot.twitch_api.send_automatic.call_args.args[0]
+
+
+# ── Cadence : une lecture à la fois, une minute par personne ──────────────
+
+@pytest.mark.asyncio
+async def test_un_second_achat_pendant_une_lecture_est_refuse():
+    """`speak()` sérialise ses appelants : sans drapeau, le second achat ne
+    serait pas refusé — il ATTENDRAIT, et sa phrase sortirait bien plus tard,
+    sans que personne comprenne pourquoi."""
+    bot, service = _bot()
+    pendant = {}
+
+    async def _parle_longuement(*args, **kwargs):
+        # Pendant que la première lecture passe, un autre viewer achète.
+        await tts_viewer.lire_message(bot, acheteur="bob", saisie="moi aussi",
+                                      reward_id="RW", redemption_id="R2")
+        pendant["refus"] = bot.twitch_api.refund_redemption.await_args
+        return True
+
+    service.speak = AsyncMock(side_effect=_parle_longuement)
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",
+                                  reward_id="RW", redemption_id="R1")
+
+    assert pendant["refus"].args == ("RW", "R2")
+    assert service.speak.await_count == 1
+    assert "déjà en train de lire" in bot.twitch_api.send_automatic.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_la_meme_personne_attend_sa_recharge():
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="un",
+                                  reward_id="RW", redemption_id="R1")
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="deux",
+                                  reward_id="RW", redemption_id="R2")
+
+    assert service.speak.await_count == 1
+    bot.twitch_api.refund_redemption.assert_awaited_once_with("RW", "R2")
+    assert "attends encore" in bot.twitch_api.send_automatic.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_la_recharge_ne_vise_QUE_l_acheteur():
+    """C'est toute la raison de la garde maison : la recharge de Twitch est
+    GLOBALE et aurait bloqué tout le chat pour l'achat d'une seule personne."""
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="un",
+                                  reward_id="RW", redemption_id="R1")
+    await tts_viewer.lire_message(bot, acheteur="bob", saisie="deux",
+                                  reward_id="RW", redemption_id="R2")
+
+    assert service.speak.await_count == 2
+    bot.twitch_api.refund_redemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_la_casse_du_pseudo_ne_contourne_pas_la_recharge():
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="Alice", saisie="un",
+                                  reward_id="RW", redemption_id="R1")
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="deux",
+                                  reward_id="RW", redemption_id="R2")
+
+    assert service.speak.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_un_achat_rembourse_n_arme_pas_la_recharge():
+    """Bloquer une minute quelqu'un qui n'a RIEN entendu — et qu'on vient de
+    rembourser — serait une double peine."""
+    bot, service = _bot(connecte=False)
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",
+                                  reward_id="RW", redemption_id="R1")
+    service.is_connected = True
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",
+                                  reward_id="RW", redemption_id="R2")
+
+    service.speak.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_la_recharge_expire():
+    bot, service = _bot()
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="un",
+                                  reward_id="RW", redemption_id="R1")
+    # Le temps passe : l'entrée est vieillie d'une recharge complète.
+    tts_viewer._dernier_achat["alice"] -= tts_viewer.RECHARGE_PERSONNE_S
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="deux",
+                                  reward_id="RW", redemption_id="R2")
+
+    assert service.speak.await_count == 2
+    bot.twitch_api.refund_redemption.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_une_panne_de_voix_libere_le_verrou():
+    """Sinon la récompense resterait morte jusqu'au prochain redémarrage."""
+    bot, _ = _bot(speak=AsyncMock(side_effect=RuntimeError("azure down")))
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",
+                                  reward_id="RW", redemption_id="R1")
+
+    assert tts_viewer._lecture_en_cours is False
+
+
+@pytest.mark.asyncio
+async def test_les_recharges_expirees_ne_s_accumulent_pas():
+    """Une entrée par viewer à vie, pour une valeur qui ne dit plus rien passé
+    la minute : c'est une fuite, lente mais certaine."""
+    bot, _ = _bot()
+    tts_viewer._dernier_achat["parti_depuis_longtemps"] = (
+        time.monotonic() - 10 * tts_viewer.RECHARGE_PERSONNE_S)
+
+    await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",
+                                  reward_id="RW", redemption_id="R1")
+
+    assert list(tts_viewer._dernier_achat) == ["alice"]
+
 
 
 # ── La récompense est reconnue par son ID, jamais par son titre ───────────

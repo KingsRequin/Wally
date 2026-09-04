@@ -691,16 +691,21 @@ async def main() -> None:
         try:
             from bot.twitch.events.tts_viewer import (
                 CLE_RECOMPENSE as _CLE_TTS, COUT as _COUT_TTS,
-                PROMPT as _PROMPT_TTS, RECHARGE_S as _RECHARGE_TTS,
+                PROMPT as _PROMPT_TTS,
                 SAISIE_REQUISE as _SAISIE_TTS, TITRE as _TITRE_TTS,
             )
             from bot.twitch.recompenses import assurer_recompense
 
+            # Aucune recharge GLOBALE ici, contrairement à ses voisines : celle
+            # de Twitch bloque TOUT le chat dès qu'une seule personne achète.
+            # La garde est par PERSONNE, dans `tts_viewer.RECHARGE_PERSONNE_S`.
+            # Le `cooldown_s` par défaut vaut 0, ce qui DÉSACTIVE au prochain
+            # boot celle déjà posée sur la récompense en service.
             _tts_id = await assurer_recompense(
                 twitch_api, db, cle_etat=_CLE_TTS,
                 titre=_TITRE_TTS, cout=_COUT_TTS,
                 prompt=_PROMPT_TTS, libelle="TTS viewer",
-                saisie_requise=_SAISIE_TTS, cooldown_s=_RECHARGE_TTS,
+                saisie_requise=_SAISIE_TTS,
             )
             logger.info("Récompense TTS viewer armée ({r})",
                         r=_tts_id or "INDISPONIBLE")
