@@ -316,6 +316,72 @@ class MemoryMixin:
         )
         await self._conn.commit()
 
+    async def merge_user_facts(self, canonical_id: str, alias_id: str) -> dict[str, int]:
+        """Déplace la mémoire de `alias_id` vers `canonical_id`. Rend le bilan.
+
+        ⚠️ Ce déplacement n'est pas un confort : sans lui, lier deux comptes
+        REND LA MÉMOIRE DE L'ALIAS INVISIBLE. `MemoryService._user_id()` résout
+        l'alias vers le canonical et `search`/`get_all`/`add` passent tous par
+        lui, tandis que `get_by_user` filtre sur un `user_id` UNIQUE. Les faits
+        restés sous l'alias ne sont donc plus jamais lus — sans une seule
+        erreur, sans rien perdre en base. Mesuré le 2026-09-04 : 427 faits sur
+        trois personnes, invisibles à la seconde où la liaison est acceptée.
+
+        Le cas COURANT reste gratuit : on lie tôt, l'alias n'a rien accumulé,
+        et tout ce bilan vaut zéro. C'est le RATTRAPAGE tardif qui a besoin de
+        cette méthode.
+        """
+        bilan = {"atomic_facts": 0, "memory_questions": 0, "cost_log": 0,
+                 "gallery_images": 0, "doublons": 0, "portrait": 0}
+        if not canonical_id or not alias_id or canonical_id == alias_id:
+            return bilan
+
+        # `UPDATE OR IGNORE` et pas `UPDATE` : `idx_facts_actif_unique` porte sur
+        # (user_id, category, contenu) des faits ACTIFS, et `memory_questions` sur
+        # (user_id, question). Un conflit signifie que le canonical porte DÉJÀ
+        # l'information — la garder en double n'apporte rien, et faire échouer la
+        # liaison entière pour un doublon en coûterait des centaines. La ligne
+        # reste sur l'alias : on ne supprime la mémoire de personne.
+        for table in ("atomic_facts", "memory_questions", "cost_log", "gallery_images"):
+            async with self._conn.execute(
+                f"UPDATE OR IGNORE {table} SET user_id = ? WHERE user_id = ?",
+                (canonical_id, alias_id),
+            ) as cursor:
+                bilan[table] = cursor.rowcount or 0
+
+        async with self._conn.execute(
+            "SELECT COUNT(*) FROM atomic_facts WHERE user_id = ?", (alias_id,)
+        ) as cursor:
+            reste = await cursor.fetchone()
+            bilan["doublons"] = reste[0] if reste else 0
+
+        # `user_profiles.user_id` est CLÉ PRIMAIRE et les DEUX comptes ont
+        # souvent leur portrait : un UPDATE nu lèverait une contrainte. On garde
+        # le plus riche — un portrait est écrit par `UserModeler` à partir du
+        # volume de mémoire, donc le plus long est celui du compte le plus vécu.
+        async with self._conn.execute(
+            "SELECT user_id, portrait FROM user_profiles WHERE user_id IN (?, ?)",
+            (canonical_id, alias_id),
+        ) as cursor:
+            portraits = {r[0]: (r[1] or "") for r in await cursor.fetchall()}
+        if alias_id in portraits:
+            if len(portraits[alias_id]) > len(portraits.get(canonical_id, "")):
+                await self._conn.execute(
+                    "DELETE FROM user_profiles WHERE user_id = ?", (canonical_id,)
+                )
+                await self._conn.execute(
+                    "UPDATE user_profiles SET user_id = ? WHERE user_id = ?",
+                    (canonical_id, alias_id),
+                )
+                bilan["portrait"] = len(portraits[alias_id])
+            else:
+                await self._conn.execute(
+                    "DELETE FROM user_profiles WHERE user_id = ?", (alias_id,)
+                )
+
+        await self._conn.commit()
+        return bilan
+
     async def get_alias_map(self) -> dict[str, str]:
         """Retourne {alias_id: canonical_id} pour toutes les liaisons acceptees."""
         async with self._conn.execute(

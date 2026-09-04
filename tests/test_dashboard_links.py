@@ -21,6 +21,10 @@ def make_app():
     state.db.accept_link = AsyncMock(return_value={"canonical_id": "discord:123", "alias_id": "twitch:abc"})
     state.db.reject_link = AsyncMock()
     state.db.upsert_link_proposal = AsyncMock()
+    state.db.merge_user_facts = AsyncMock(return_value={
+        "atomic_facts": 0, "memory_questions": 0, "cost_log": 0,
+        "gallery_images": 0, "doublons": 0, "portrait": 0,
+    })
     state.db.list_memory_users = AsyncMock(return_value=[])
     state.memory = MagicMock()
     state.memory._alias_cache = {}
@@ -96,3 +100,30 @@ def test_manual_link_rejects_same_id():
         "alias_id": "discord:123",
     })
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_la_memoire_est_deplacee_AVANT_que_la_lecture_bascule():
+    """L'ordre est tout : `add_alias` fait basculer `search`/`get_all`/`add`.
+
+    Inverser les deux gestes laisserait une fenêtre où la lecture pointe sur un
+    compte qui n'a pas encore reçu les faits. Le test fixe donc l'ORDRE, pas
+    seulement la présence des deux appels.
+    """
+    from bot.dashboard.routes.links import _merge_memories
+    from unittest.mock import AsyncMock, MagicMock
+
+    ordre = []
+    state = MagicMock()
+    state.db.merge_user_facts = AsyncMock(
+        side_effect=lambda *a: ordre.append("deplace") or {
+            "atomic_facts": 3, "memory_questions": 0, "cost_log": 0,
+            "gallery_images": 0, "doublons": 0, "portrait": 0,
+        }
+    )
+    state.memory.add_alias = MagicMock(side_effect=lambda *a: ordre.append("redirige"))
+
+    await _merge_memories(state, "discord:111", "twitch:999")
+
+    assert ordre == ["deplace", "redirige"]
+    state.db.merge_user_facts.assert_awaited_once_with("discord:111", "twitch:999")

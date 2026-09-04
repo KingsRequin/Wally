@@ -48,12 +48,33 @@ async def analyze_links(request: Request):
 
 
 async def _merge_memories(state, canonical_id: str, alias_id: str) -> None:
-    """Met à jour le cache d'alias. La fusion mémoire V1 est supprimée (refonte V2)."""
+    """Déplace la mémoire de l'alias vers le canonical, PUIS redirige la lecture.
+
+    Cet ordre est le tout : `MemoryService._user_id()` fait basculer `search`,
+    `get_all` et `add` vers le canonical dès que l'alias est en cache. Entre
+    2026-08 et 2026-09-04, la moitié « déplacement » manquait — retirée avec le
+    store V1 — et la moitié « redirection » est restée. Lier deux comptes
+    rendait donc invisible tout ce que l'alias avait accumulé, sans une seule
+    erreur : 427 faits sur trois personnes au moment de la mesure.
+
+    Le cas courant (lier tôt, alias encore vide) ne coûte rien : le bilan vaut
+    zéro partout et le comportement est identique à avant.
+    """
+    bilan = await state.db.merge_user_facts(canonical_id, alias_id)
     state.memory.add_alias(alias_id, canonical_id)
-    logger.warning(
-        "Liaison {a} → {c} acceptée — fusion mémoire omise (store V1 supprimé)",
-        a=alias_id, c=canonical_id,
-    )
+    if any(bilan.values()):
+        logger.info(
+            "Liaison {a} → {c} : {f} faits, {q} questions, {g} images et {p} lignes de coût "
+            "déplacés · {d} doublon(s) laissé(s) sur l'alias",
+            a=alias_id, c=canonical_id, f=bilan["atomic_facts"],
+            q=bilan["memory_questions"], g=bilan["gallery_images"],
+            p=bilan["cost_log"], d=bilan["doublons"],
+        )
+    else:
+        logger.info(
+            "Liaison {a} → {c} acceptée — l'alias n'avait aucune mémoire à déplacer",
+            a=alias_id, c=canonical_id,
+        )
 
 
 async def _resolve_user_id(db, entered: str, platform: str) -> str | None:
