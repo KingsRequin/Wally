@@ -13,6 +13,12 @@ DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 LOADING_GIFS_DIR = DATA_DIR / "loading_gifs"
 LOADING_PHRASES_FILE = DATA_DIR / "loading_phrases.txt"
 
+NOM_GIF = "loading.gif"
+_COULEUR_ATTENTE = 0x06B6D4       # cyan d'accent du dashboard
+_COULEUR_IMAGE = 0xFFDD00
+_PREFIXE_VOTE = "gallery_vote:"
+_PREFIXE_TITRE = "gallery_edit:"
+
 
 def _load_phrases() -> list[str]:
     """Load loading phrases from file, one per line."""
@@ -22,62 +28,115 @@ def _load_phrases() -> list[str]:
     return lines or [f"{bot_name()} peint..."]
 
 
-class GalleryView(discord.ui.View):
-    """Boutons 🔥 et ✏️ d'une image de galerie.
+def _nom_piece_jointe(file_name: str) -> str:
+    """`abc123.png` → `image.png`. Le nom posté à l'envoi, redéduit au clic.
 
-    Les boutons N'ONT PAS de `callback` : tout passe par le listener
-    `ImagineCog.on_interaction`. Ce n'est pas un oubli.
-
-    La view est persistante (`timeout=None` + `custom_id`), donc enregistrée dans
-    le `ViewStore` dès le premier `message.edit(view=…)`. Or discord.py traite un
-    clic en DEUX temps : `parse_interaction_create` appelle `dispatch_view(…)`
-    — qui exécute le callback du bouton — PUIS `dispatch('interaction')`, qui
-    réveille le listener. Les deux chemins faisaient le même travail.
-
-    Chaque clic sur 🔥 appelait donc `toggle_gallery_vote` deux fois : le vote
-    s'ajoutait puis se retirait, net zéro. La fonctionnalité n'a jamais marché
-    tant que le bot tournait — seulement après un redémarrage, quand la view
-    n'est plus en mémoire. Et le second `interaction.response.edit_message`
-    levait un `InteractionResponded` non attrapé.
-
-    Le listener est gardé comme chemin unique parce qu'il fonctionne dans les
-    DEUX cas, et qu'il relit le créateur depuis la base au lieu de se fier au
-    `creator_id` capturé à la construction (qui vaut 0 après un redémarrage).
+    La pièce jointe survit aux éditions qui ne la renvoient pas : c'est ce qui
+    permet de redessiner la carte sur un simple vote, sans relire le PNG.
     """
-    def __init__(self, image_id: str, creator_id: int, db):
-        super().__init__(timeout=None)
-        self.add_item(FlameButton(image_id, db))
-        self.add_item(EditTitleButton(image_id, creator_id, db))
+    ext = file_name.rsplit(".", 1)[-1] if "." in file_name else "png"
+    return f"image.{ext}"
 
 
 class FlameButton(discord.ui.Button):
-    def __init__(self, image_id: str, db):
+    """Le 🔥 d'une image : son libellé EST le compteur de flammes.
+
+    Le style ne change JAMAIS. Il passait en `danger` quand la dernière personne
+    qui avait cliqué venait de voter — sur un message que tout le monde voit,
+    ce rouge annonçait aux autres un vote qui n'était pas le leur, et il
+    repartait au gris après un rebuild. Le retour d'un clic, c'est le compteur.
+    """
+
+    def __init__(self, image_id: str, votes: int = 0):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             emoji="🔥",
-            label="0",
-            custom_id=f"gallery_vote:{image_id}",
+            label=str(votes),
+            custom_id=f"{_PREFIXE_VOTE}{image_id}",
         )
         self.image_id = image_id
-        self.db = db
 
-    # Pas de `callback` : voir GalleryView. Le clic est traité une seule fois,
+    # Pas de `callback` : voir `VueGalerie`. Le clic est traité une seule fois,
     # par `ImagineCog.on_interaction`.
 
 
 class EditTitleButton(discord.ui.Button):
-    def __init__(self, image_id: str, creator_id: int, db):
+    def __init__(self, image_id: str):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             emoji="✏️",
-            custom_id=f"gallery_edit:{image_id}",
+            custom_id=f"{_PREFIXE_TITRE}{image_id}",
         )
         self.image_id = image_id
-        self.creator_id = creator_id
-        self.db = db
 
-    # Pas de `callback` : voir GalleryView. Le listener relit le créateur depuis
+    # Pas de `callback` : voir `VueGalerie`. Le listener relit le créateur depuis
     # la base, ce qui vaut aussi après un redémarrage — là où `creator_id` vaut 0.
+
+
+class VueChargement(discord.ui.LayoutView):
+    """Ce qu'on voit pendant que le modèle peint.
+
+    Envoyée en Components V2 dès le PREMIER message, et pas seulement à
+    l'arrivée de l'image : le drapeau `IS_COMPONENTS_V2` s'ajoute à l'édition
+    mais ne se retire plus, et Discord refuse un message V2 qui garde un embed.
+    Partir en V2 supprime toute bascule à mi-chemin.
+    """
+
+    def __init__(self, phrase: str, prompt: str, auteur: str, *, gif: bool):
+        super().__init__(timeout=None)
+        contenu: list[discord.ui.Item] = [
+            discord.ui.TextDisplay(f"## {phrase}"),
+            discord.ui.TextDisplay(f"*{prompt}*"),
+        ]
+        if gif:
+            galerie: discord.ui.MediaGallery = discord.ui.MediaGallery()
+            galerie.add_item(media=f"attachment://{NOM_GIF}")
+            contenu.append(galerie)
+        contenu.append(discord.ui.TextDisplay(f"-# Demandé par {auteur}"))
+        self.add_item(discord.ui.Container(
+            *contenu, accent_colour=discord.Colour(_COULEUR_ATTENTE)))
+
+
+class VueGalerie(discord.ui.LayoutView):
+    """La carte d'une image : titre, prompt, image, flammes et crayon.
+
+    Les boutons vivent DANS le conteneur, sous l'image : en Components V2 une
+    `ActionRow` est un composant comme un autre, et les coller à la carte évite
+    la rangée orpheline que Discord détachait sous l'embed.
+    """
+
+    def __init__(self, image_id: str, titre: str, prompt: str, auteur: str,
+                 piece_jointe: str, votes: int = 0):
+        super().__init__(timeout=None)
+        galerie: discord.ui.MediaGallery = discord.ui.MediaGallery()
+        galerie.add_item(media=f"attachment://{piece_jointe}")
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(f"## {titre}"),
+            discord.ui.TextDisplay(f"*{prompt}*"),
+            galerie,
+            discord.ui.ActionRow(FlameButton(image_id, votes),
+                                 EditTitleButton(image_id)),
+            discord.ui.TextDisplay(f"-# Par {auteur}"),
+            accent_colour=discord.Colour(_COULEUR_IMAGE),
+        ))
+
+
+def vue_depuis_base(image: dict) -> VueGalerie:
+    """Rebâtit la carte à partir de la LIGNE en base, jamais du message affiché.
+
+    Un clic n'arrive pas toujours dans le process qui a posté l'image : après un
+    rebuild, `creator_id` valait 0 et le titre n'existait plus qu'à l'écran. La
+    base porte tout ce qu'il faut — y compris le nom de la pièce jointe, déduit
+    de `file_path`, qui reste attachée au message tant qu'on ne la remplace pas.
+    """
+    return VueGalerie(
+        str(image["id"]),
+        str(image.get("title") or "Sans titre"),
+        str(image.get("prompt") or ""),
+        str(image.get("username") or "?"),
+        _nom_piece_jointe(str(image.get("file_path") or "image.png")),
+        int(image.get("votes") or 0),
+    )
 
 
 class EditTitleModal(discord.ui.Modal):
@@ -95,12 +154,13 @@ class EditTitleModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await self.db.update_gallery_title(self.image_id, self.new_title.value.strip())
-        embed = interaction.message.embeds[0] if interaction.message and interaction.message.embeds else None
-        if embed:
-            embed.title = self.new_title.value.strip()
-            await interaction.response.edit_message(embed=embed)
-        else:
-            await interaction.response.send_message("Titre mis à jour.", ephemeral=True)
+        image = await self.db.get_gallery_image(self.image_id)
+        if image is None:
+            # La ligne a disparu entre le clic et l'envoi du modal : redessiner
+            # la carte reviendrait à inventer son contenu.
+            await interaction.response.send_message("Image introuvable.", ephemeral=True)
+            return
+        await interaction.response.edit_message(view=vue_depuis_base(image))
 
 
 class ImagineCog(commands.Cog):
@@ -114,27 +174,22 @@ class ImagineCog(commands.Cog):
         try:
             sender_id = f"discord:{interaction.user.id}"
 
-            # Send loading embed with random GIF from local folder
             phrases = _load_phrases()
-            loading_embed = discord.Embed(
-                title=random.choice(phrases),
-                description=f"*{prompt}*",
-                color=discord.Color.from_str("#06b6d4"),
-            )
-            loading_embed.set_footer(text=f"Demandé par {interaction.user.display_name}")
-
             gifs = list(LOADING_GIFS_DIR.glob("*.gif"))
             loading_file = None
             if gifs:
-                gif_path = random.choice(gifs)
-                loading_file = discord.File(gif_path, filename="loading.gif")
-                loading_embed.set_image(url="attachment://loading.gif")
+                loading_file = discord.File(random.choice(gifs), filename=NOM_GIF)
+
+            def _vue_attente() -> VueChargement:
+                return VueChargement(random.choice(phrases), prompt,
+                                     interaction.user.display_name,
+                                     gif=loading_file is not None)
 
             loading_msg = await interaction.followup.send(
-                embed=loading_embed, file=loading_file, wait=True,
+                view=_vue_attente(), file=loading_file, wait=True,
             )
 
-            # Rotate loading phrases every 4 seconds
+            # Rotate loading phrases every 5 seconds
             rotate_done = asyncio.Event()
 
             async def _rotate_phrases():
@@ -143,8 +198,9 @@ class ImagineCog(commands.Cog):
                     if rotate_done.is_set():
                         break
                     try:
-                        loading_embed.title = random.choice(phrases)
-                        await loading_msg.edit(embed=loading_embed)
+                        # Sans `attachments=`, le GIF déjà posté reste en place :
+                        # la référence `attachment://` continue de se résoudre.
+                        await loading_msg.edit(view=_vue_attente())
                     except Exception:
                         # Rate limit probable, attendre plus longtemps avant de réessayer
                         await asyncio.sleep(6)
@@ -195,22 +251,11 @@ class ImagineCog(commands.Cog):
             except Exception as e:
                 logger.warning("Failed to add image memory: {e!r}", e=e)
 
-            # Build final embed with generated image
-            from datetime import datetime
-            embed = discord.Embed(
-                title=title,
-                description=f"*{prompt}*",
-                color=discord.Color.from_str("#ffdd00"),
-                timestamp=datetime.now(),
-            )
-            ext = result["file_name"].rsplit(".", 1)[-1]
-            attach_name = f"image.{ext}"
+            attach_name = _nom_piece_jointe(result["file_name"])
             file = discord.File(result["file_path"], filename=attach_name)
-            embed.set_image(url=f"attachment://{attach_name}")
-            embed.set_footer(text=f"Par {interaction.user.display_name}")
-
-            view = GalleryView(result["file_id"], interaction.user.id, self.bot.db)
-            await loading_msg.edit(embed=embed, attachments=[file], view=view)
+            vue = VueGalerie(result["file_id"], title, prompt,
+                             interaction.user.display_name, attach_name)
+            await loading_msg.edit(view=vue, attachments=[file])
 
         except ValueError as e:
             await interaction.followup.send(f"❌ {e}")
@@ -224,19 +269,18 @@ class ImagineCog(commands.Cog):
         if interaction.type != discord.InteractionType.component:
             return
         custom_id = interaction.data.get("custom_id", "")
-        if not (custom_id.startswith("gallery_vote:") or custom_id.startswith("gallery_edit:")):
+        if not (custom_id.startswith(_PREFIXE_VOTE) or custom_id.startswith(_PREFIXE_TITRE)):
             return
         image_id = custom_id.split(":", 1)[1]
-        if custom_id.startswith("gallery_vote:"):
+        if custom_id.startswith(_PREFIXE_VOTE):
             user_id = f"discord:{interaction.user.id}"
-            voted = await self.bot.db.toggle_gallery_vote(image_id, user_id)
+            await self.bot.db.toggle_gallery_vote(image_id, user_id)
             image = await self.bot.db.get_gallery_image(image_id)
-            votes = image["votes"] if image else 0
-            view = GalleryView(image_id, 0, self.bot.db)
-            view.children[0].label = str(votes)
-            view.children[0].style = discord.ButtonStyle.danger if voted else discord.ButtonStyle.secondary
-            await interaction.response.edit_message(view=view)
-        elif custom_id.startswith("gallery_edit:"):
+            if image is None:
+                await interaction.response.send_message("Image introuvable.", ephemeral=True)
+                return
+            await interaction.response.edit_message(view=vue_depuis_base(image))
+        elif custom_id.startswith(_PREFIXE_TITRE):
             image = await self.bot.db.get_gallery_image(image_id)
             if not image:
                 await interaction.response.send_message("Image introuvable.", ephemeral=True)

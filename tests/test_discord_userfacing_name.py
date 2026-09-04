@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from bot.intelligence import identity
 from bot.discord.commands.mood import MoodCog
-from bot.discord.commands.memory_cmd import MemoryPaginatedView, MemoryCog
+from bot.discord.commands.memory_cmd import VueMemoire, MemoryCog
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -78,24 +78,36 @@ async def test_mood_embed_title_default_wally(monkeypatch):
     assert embed.title == "Humeur de Wally"
 
 
-# ── memory embed titre ────────────────────────────────────────────────────────
+def _textes_envoyes(interaction) -> list[str]:
+    """Les `TextDisplay` de la vue envoyée — la fiche est en Components V2."""
+    import discord
+    vue = interaction.followup.send.call_args.kwargs["view"]
+    return [i.content for i in vue.walk_children()
+            if isinstance(i, discord.ui.TextDisplay)]
 
-def test_memory_paginated_view_title_uses_bot_name(monkeypatch):
-    """MemoryPaginatedView._make_embed utilise bot_name() dans le titre."""
+
+# ── memory titre ──────────────────────────────────────────────────────────────
+
+def test_memory_view_title_uses_bot_name(monkeypatch):
+    """Le titre de la fiche mémoire (Components V2) porte bot_name()."""
     monkeypatch.setattr(identity, "_NAME", "Cindy")
 
-    view = MemoryPaginatedView(["contenu mémoire"], "Alice")
-    embed = view._make_embed()
+    import discord
+    vue = VueMemoire(["contenu mémoire"], "Alice", 0.0, 0.0)
+    titres = [i.content for i in vue.walk_children()
+              if isinstance(i, discord.ui.TextDisplay)]
 
-    assert "Cindy" in embed.title, (
-        f"Titre attendu contenant 'Cindy', obtenu '{embed.title}'"
+    assert any("Cindy" in t and "Alice" in t for t in titres), (
+        f"Titre attendu contenant 'Cindy' et 'Alice', obtenu {titres}"
     )
-    assert "Alice" in embed.title
 
 
 @pytest.mark.asyncio
 async def test_memory_show_embed_title_uses_bot_name(monkeypatch):
-    """Le titre de l'embed /memory (cas sans souvenirs) contient le nom du bot."""
+    """Le titre de la fiche /memory (cas sans souvenirs) contient le nom du bot.
+
+    Sans souvenir la fiche part QUAND MÊME : confiance et affection existent
+    dès la première interaction."""
     monkeypatch.setattr(identity, "_NAME", "Cindy")
 
     bot = _make_bot_named("Cindy")
@@ -109,15 +121,15 @@ async def test_memory_show_embed_title_uses_bot_name(monkeypatch):
 
     await cog.memory_show.callback(cog, interaction, target_user)
 
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert "Cindy" in embed.title, (
-        f"Titre attendu contenant 'Cindy', obtenu '{embed.title}'"
+    titres = _textes_envoyes(interaction)
+    assert any("Cindy" in t for t in titres), (
+        f"Titre attendu contenant 'Cindy', obtenu {titres}"
     )
 
 
 @pytest.mark.asyncio
 async def test_memory_show_embed_title_with_memories_uses_bot_name(monkeypatch):
-    """Le titre de l'embed /memory (avec souvenirs, paginator) contient le nom du bot."""
+    """Le titre de la fiche /memory (avec souvenirs) contient le nom du bot."""
     monkeypatch.setattr(identity, "_NAME", "Cindy")
 
     bot = _make_bot_named("Cindy")
@@ -131,9 +143,9 @@ async def test_memory_show_embed_title_with_memories_uses_bot_name(monkeypatch):
 
     await cog.memory_show.callback(cog, interaction, target_user)
 
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert "Cindy" in embed.title, (
-        f"Titre attendu contenant 'Cindy', obtenu '{embed.title}'"
+    titres = _textes_envoyes(interaction)
+    assert any("Cindy" in t for t in titres), (
+        f"Titre attendu contenant 'Cindy', obtenu {titres}"
     )
 
 

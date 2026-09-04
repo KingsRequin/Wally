@@ -1,4 +1,12 @@
 # bot/discord/commands/memory_cmd.py
+"""`/wally memory` : ce que le bot retient de quelqu'un.
+
+La fiche est en **Components V2** : un `Container` qui porte le titre, les
+scores de relation, le texte de la page et les flèches. Ce que la bascule
+change pour de bon : confiance et affection ne sont plus COLLÉES en tête du
+texte paginé — elles vivaient dans la page 1 et disparaissaient dès qu'on
+tournait la page, alors qu'elles décrivent la personne entière.
+"""
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,7 +14,8 @@ from loguru import logger
 
 from bot.intelligence.identity import bot_name
 
-_PAGE_SIZE = 1800  # caractères par page (marge sous la limite Discord de 2000)
+_PAGE_SIZE = 1800  # caractères par page (marge sous le plafond V2 de 4000 par message)
+_COULEUR = 0x22C55E   # le vert « curiosity » du dashboard
 
 
 def _paginate(text: str) -> list[str]:
@@ -28,37 +37,58 @@ def _paginate(text: str) -> list[str]:
     return pages or [text[:_PAGE_SIZE]]
 
 
-class MemoryPaginatedView(discord.ui.View):
-    def __init__(self, pages: list[str], user_name: str):
+class _Fleche(discord.ui.Button):
+    """Une page en arrière ou en avant. `pas` vaut -1 ou +1."""
+
+    def __init__(self, vue: "VueMemoire", label: str, pas: int, *, disabled: bool):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary,
+                         disabled=disabled)
+        self.vue = vue
+        self.pas = pas
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self.vue.page += self.pas
+        # La vue se REBÂTIT : en Components V2 les flèches sont dans le
+        # conteneur, donc changer de page change tout l'arbre, pas un embed.
+        await interaction.response.edit_message(view=self.vue.rebatie())
+
+
+class VueMemoire(discord.ui.LayoutView):
+    """La fiche mémoire d'une personne, page par page."""
+
+    def __init__(self, pages: list[str], user_name: str, trust: float,
+                 love: float, page: int = 0):
         super().__init__(timeout=180)
         self.pages = pages
         self.user_name = user_name
-        self.current = 0
-        self._sync_buttons()
+        self.trust = trust
+        self.love = love
+        self.page = max(0, min(page, len(pages) - 1))
+        self._batir()
 
-    def _make_embed(self) -> discord.Embed:
-        suffix = f" ({self.current + 1}/{len(self.pages)})" if len(self.pages) > 1 else ""
-        return discord.Embed(
-            title=f"Mémoire de {bot_name()}, {self.user_name}{suffix}",
-            description=self.pages[self.current],
-            color=discord.Color.green(),
-        )
+    def rebatie(self) -> "VueMemoire":
+        return VueMemoire(self.pages, self.user_name, self.trust, self.love,
+                          self.page)
 
-    def _sync_buttons(self) -> None:
-        self.prev_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current >= len(self.pages) - 1
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
-    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current -= 1
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
-
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current += 1
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+    def _batir(self) -> None:
+        suffix = (f" ({self.page + 1}/{len(self.pages)})"
+                  if len(self.pages) > 1 else "")
+        contenu: list[discord.ui.Item] = [
+            discord.ui.TextDisplay(
+                f"## Mémoire de {bot_name()}, {self.user_name}{suffix}"),
+            discord.ui.TextDisplay(
+                f"-# 🛡️ Confiance : {self.trust:.2f}  ❤️ Affection : {self.love:.2f}"),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay(self.pages[self.page]),
+        ]
+        if len(self.pages) > 1:
+            contenu.append(discord.ui.ActionRow(
+                _Fleche(self, "◀", -1, disabled=self.page == 0),
+                _Fleche(self, "▶", +1,
+                        disabled=self.page >= len(self.pages) - 1),
+            ))
+        self.add_item(discord.ui.Container(
+            *contenu, accent_colour=discord.Colour(_COULEUR)))
 
 
 class MemoryCog(commands.Cog):
@@ -85,25 +115,11 @@ class MemoryCog(commands.Cog):
             trust = await self.bot.db.get_trust_score("discord", str(target.id))
             love = await self.bot.db.get_love_score("discord", str(target.id), self.bot.config.bot.love_decay_lambda)
 
-            # Prepend trust + love to memory text
-            header = f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\n"
-
-            if not mem:
-                # Still show trust+love even with no memories
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title=f"Mémoire de {bot_name()}, {target.display_name}",
-                        description=f"🛡️ Confiance : {trust:.2f}  ❤️ Affection : {love:.2f}\n\nAucun souvenir.",
-                        color=discord.Color.green(),
-                    ),
-                    ephemeral=True,
-                )
-                return
-            pages = _paginate(header + mem)
-            view = MemoryPaginatedView(pages, target.display_name)
-            await interaction.followup.send(
-                embed=view._make_embed(), view=view, ephemeral=True
-            )
+            # Sans souvenir, la fiche vaut quand même : confiance et affection
+            # existent dès la première interaction.
+            pages = _paginate(mem) if mem else ["*Aucun souvenir.*"]
+            vue = VueMemoire(pages, target.display_name, trust, love)
+            await interaction.followup.send(view=vue, ephemeral=True)
         except Exception as e:
             logger.error("Memory show error: {e!r}", e=e)
             await interaction.followup.send(

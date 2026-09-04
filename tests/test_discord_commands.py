@@ -3,6 +3,7 @@
 Tests for Discord slash commands.
 All discord objects and services are mocked.
 """
+import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -270,6 +271,13 @@ async def test_ask_no_user_directive_for_other_user():
 
 # ── /wally memory ─────────────────────────────────────────────────────────────
 
+def _textes_de_la_fiche(interaction) -> list[str]:
+    """La fiche /memory est en Components V2 : plus d'embed, des `TextDisplay`."""
+    vue = interaction.followup.send.call_args.kwargs["view"]
+    return [i.content for i in vue.walk_children()
+            if isinstance(i, discord.ui.TextDisplay)]
+
+
 @pytest.mark.asyncio
 async def test_memory_show_no_memory():
     bot = make_bot()
@@ -280,12 +288,11 @@ async def test_memory_show_no_memory():
     target_user.id = 999
     target_user.display_name = "Bob"
     await cog.memory_show.callback(cog, interaction, target_user)
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert "Aucun souvenir" in embed.description
+    assert any("Aucun souvenir" in t for t in _textes_de_la_fiche(interaction))
 
 
 @pytest.mark.asyncio
-async def test_memory_show_sends_embed():
+async def test_memory_show_sends_fiche():
     bot = make_bot()
     bot.memory.get_all = AsyncMock(return_value="Bob aime les chats.")
     cog = MemoryCog(bot)
@@ -294,8 +301,9 @@ async def test_memory_show_sends_embed():
     target_user.id = 999
     target_user.display_name = "Bob"
     await cog.memory_show.callback(cog, interaction, target_user)
-    embed = interaction.followup.send.call_args.kwargs["embed"]
-    assert "Bob" in embed.title
+    textes = _textes_de_la_fiche(interaction)
+    assert any("Bob" in t for t in textes)
+    assert any("Bob aime les chats." in t for t in textes)
 
 
 # ── /wally setup ──────────────────────────────────────────────────────────────

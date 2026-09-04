@@ -1,9 +1,9 @@
 {
   "max_silences": 60,
-  "max_erreurs_types": 202,
-  "max_ruff": 74,
+  "max_erreurs_types": 200,
+  "max_ruff": 73,
   "max_js": 0,
   "max_logs_aveugles": 0,
   "max_code_mort_certain": 0,
-  "max_code_mort": 79
+  "max_code_mort": 76
 }

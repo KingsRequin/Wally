@@ -56,44 +56,9 @@ async def test_un_tick_qui_leve_ne_tue_pas_la_boucle(monkeypatch):
 # exécutait le callback du bouton PUIS réveillait le listener. Les deux
 # appelaient `toggle_gallery_vote` — le vote s'ajoutait puis se retirait, net
 # zéro, et le second `edit_message` levait `InteractionResponded`.
-
-def test_les_boutons_de_galerie_nont_pas_de_callback_propre():
-    """Le seul chemin de traitement est `ImagineCog.on_interaction`."""
-    import discord
-
-    from bot.discord.commands.imagine import EditTitleButton, FlameButton
-
-    # `Item.callback` est un no-op : ne pas le surcharger rend `dispatch_view`
-    # inoffensif, et supprime la course avec le listener.
-    assert FlameButton.callback is discord.ui.Item.callback
-    assert EditTitleButton.callback is discord.ui.Item.callback
-
-
-async def test_un_clic_ne_bascule_le_vote_quune_fois():
-    from bot.discord.commands.imagine import GalleryView, ImagineCog
-
-    db = MagicMock()
-    db.toggle_gallery_vote = AsyncMock(return_value=True)
-    db.get_gallery_image = AsyncMock(return_value={"votes": 1, "user_id": "discord:610"})
-
-    bot = MagicMock()
-    bot.db = db
-    cog = ImagineCog(bot)
-
-    import discord
-
-    interaction = MagicMock()
-    interaction.type = discord.InteractionType.component
-    interaction.data = {"custom_id": "gallery_vote:img42"}
-    interaction.user.id = 610
-    interaction.response.edit_message = AsyncMock()
-
-    # Le clic tel que discord.py le livre : la view ne fait rien, le listener agit.
-    vue = GalleryView("img42", 610, db)
-    await vue.children[0].callback(interaction)      # dispatch_view → no-op
-    await cog.on_interaction(interaction)            # dispatch('interaction')
-
-    assert db.toggle_gallery_vote.await_count == 1
+#
+# Les deux tests qui le tenaient ont suivi la carte en Components V2 :
+# `tests/test_components_v2_imagine_memory.py`.
 
 
 # ── L'onglet Twitch de /wally setup s'ouvre ──────────────────────────────────
