@@ -25,18 +25,24 @@ from loguru import logger
 from bot.core import meme_import
 from bot.core.memes import MAX_DESCRIPTION, _EXTENSIONS, _EXTENSIONS_MEDIA, tronquer_description
 from bot.core.scrape import ScrapeService
+from bot.discord.fiches import fiche, url_avatar
 
 DOSSIER_MEMES = Path("data/memes")
 
 # Le cyan d'accent du projet, celui du dashboard et de l'écran de chargement
 # d'`/wally imagine`.
-COULEUR_ACCENT = "#06b6d4"
+ACCENT_MEME = 0x06B6D4
 
 # Ce qu'une annonce de lot peut porter en pièces jointes. Discord refuse le
 # message ENTIER au-delà : sans borne, dix memes bien rangés passeraient pour
 # perdus parce que leur annonce n'est jamais partie.
 _MAX_ANNONCE = 8 * 1024 * 1024
 _MAX_FICHIERS_ANNONCE = 10
+
+# La liste des noms dans une annonce de lot. Un message Components V2 plafonne
+# à 4 000 caractères pour TOUS ses textes réunis — le pied et le poids passent
+# après elle, et doivent tenir.
+_MAX_NOMS_ANNONCE = 1000
 
 # Un message Discord est refusé au-delà de 2 000 caractères : dix descriptions
 # de 160 y tiennent, mais leurs motifs d'écart peuvent déborder.
@@ -183,34 +189,39 @@ class Entree:
     converti: bool = False
 
 
-def _embed_annonce(resultat: meme_import.ResultatImport, auteur) -> discord.Embed:
-    """L'annonce publique d'un meme rangé.
+def _fiche_annonce(ranges: list[meme_import.ResultatImport], joints: list[str],
+                   auteur) -> discord.ui.LayoutView:
+    """L'annonce publique d'un ou plusieurs memes rangés.
 
     Ne porte PAS la description : elle est le contexte que Wally lit pour
     commenter une image qu'il ne voit pas, pas un texte à afficher. Même règle
     que sur l'overlay, où la légende a été retirée pour cette raison.
 
-    `set_image` n'est posé que sur un format affichable : Discord ne joue pas de
-    vidéo dans un embed, et l'y désigner rend un cadre qui ne se remplit jamais
-    — le meme paraîtrait manquant alors qu'il est joint juste en dessous.
+    ⚠️ En Components V2, une pièce jointe que rien ne référence N'APPARAÎT PAS.
+    `joints` porte donc les noms réellement envoyés, et chacun est placé : les
+    images dans la galerie, le reste (vidéos) en composant `File`. Les memes
+    rangés mais trop lourds pour l'annonce restent NOMMÉS dans le corps — c'est
+    le rangement qu'on annonce, pas la pièce jointe.
     """
-    embed = discord.Embed(
-        title="Nouveau meme dans la banque",
-        colour=discord.Colour.from_str(COULEUR_ACCENT),
-        timestamp=discord.utils.utcnow(),
+    images = [n for n in joints if Path(n).suffix.lower() in _EXTENSIONS]
+    autres = [n for n in joints if n not in images]
+    poids = sum(r.octets for r in ranges) / 1024
+    if len(ranges) == 1:
+        titre = "Nouveau meme dans la banque"
+        converti = " (WebP)" if ranges[0].converti else ""
+        corps = f"`{ranges[0].nom}` · {poids:.0f} Ko{converti}"
+        pied = f"Rangé par {auteur.display_name}"
+    else:
+        titre = f"{len(ranges)} nouveaux memes dans la banque"
+        corps = (" ".join(f"`{r.nom}`" for r in ranges)[:_MAX_NOMS_ANNONCE]
+                 + f"\n**Poids** {poids:.0f} Ko")
+        pied = f"Rangés par {auteur.display_name}"
+    return fiche(
+        titre, [corps], accent=ACCENT_MEME, vignette=url_avatar(auteur),
+        medias=[f"attachment://{n}" for n in images],
+        fichiers=[f"attachment://{n}" for n in autres],
+        pied=pied,
     )
-    embed.add_field(name="Fichier", value=f"`{resultat.nom}`", inline=True)
-    poids = f"{resultat.octets / 1024:.0f} Ko"
-    embed.add_field(
-        name="Poids", value=f"{poids} (WebP)" if resultat.converti else poids, inline=True
-    )
-    if Path(resultat.nom).suffix.lower() in _EXTENSIONS:
-        embed.set_image(url=f"attachment://{resultat.nom}")
-    embed.set_footer(
-        text=f"Rangé par {auteur.display_name}",
-        icon_url=getattr(getattr(auteur, "display_avatar", None), "url", None),
-    )
-    return embed
 
 
 class FormulaireDescription(discord.ui.Modal, title="Description du meme"):
@@ -265,32 +276,6 @@ def _recapitulatif(resultats: list[meme_import.ResultatImport]) -> str:
         lignes.append(" ".join(f"`{r.nom}`" for r in ranges))
     lignes += [f"· {r.raison}" for r in refuses[:3]]
     return "\n".join(lignes)
-
-
-def _embed_annonce_lot(resultats: list[meme_import.ResultatImport], auteur) -> discord.Embed:
-    """Une SEULE annonce pour tout le lot.
-
-    Un embed par meme, c'est dix messages à la suite dans le salon : le lot
-    passerait pour une avalanche du bot.
-    """
-    embed = discord.Embed(
-        title=f"{len(resultats)} nouveaux memes dans la banque",
-        colour=discord.Colour.from_str(COULEUR_ACCENT),
-        timestamp=discord.utils.utcnow(),
-    )
-    embed.add_field(
-        name="Fichiers",
-        value=" ".join(f"`{r.nom}`" for r in resultats)[:1024],
-        inline=False,
-    )
-    embed.add_field(
-        name="Poids", value=f"{sum(r.octets for r in resultats) / 1024:.0f} Ko", inline=True
-    )
-    embed.set_footer(
-        text=f"Rangés par {auteur.display_name}",
-        icon_url=getattr(getattr(auteur, "display_avatar", None), "url", None),
-    )
-    return embed
 
 
 class VueRangement(discord.ui.View):
@@ -391,19 +376,14 @@ class VueRangement(discord.ui.View):
         projet — et l'utilisateur restait sur un « Rangé » sans annonce.
         """
         try:
-            if len(ranges) == 1:
-                # `discord.File` OUVRE le fichier : bloquant, comme tout le reste ici.
-                fichier = await asyncio.to_thread(discord.File, DOSSIER_MEMES / ranges[0].nom)
-                await self.salon.send(
-                    embed=_embed_annonce(ranges[0], interaction.user), file=fichier
-                )
-                return
             joints = _joignables(ranges)
+            # `discord.File` OUVRE le fichier : bloquant, comme tout le reste ici.
             fichiers = await asyncio.to_thread(
                 lambda: [discord.File(DOSSIER_MEMES / r.nom) for r in joints]
             )
             await self.salon.send(
-                embed=_embed_annonce_lot(ranges, interaction.user), files=fichiers
+                view=_fiche_annonce(ranges, [r.nom for r in joints], interaction.user),
+                files=fichiers,
             )
         except Exception as e:  # noqa: BLE001 — le fichier EST rangé, seule l'annonce manque
             noms = ", ".join(r.nom for r in ranges)

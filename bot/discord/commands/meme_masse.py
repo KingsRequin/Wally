@@ -33,6 +33,7 @@ from loguru import logger
 from bot.core import meme_import
 from bot.core.memes import _EXTENSIONS_MEDIA
 from bot.core.temps import PARIS
+from bot.discord.fiches import ACCENT_NEUTRE, ACCENT_OK, fiche
 from bot.discord.commands.meme_cmd import (
     DOSSIER_MEMES,
     _MAX_CONTENU,
@@ -230,9 +231,11 @@ def _depot_actif(bot) -> int | None:
     return getattr(getattr(bot.config, "discord", None), "meme_channel_id", None)
 
 
-# Discord borne l'embed : 4096 caractères de description, 1024 par champ, 6000
-# au total. Deux cents memes rangés dépassent la description à eux seuls.
-_MAX_DESCRIPTION = 3900
+# Un message Components V2 plafonne à 4 000 caractères pour TOUS ses textes
+# réunis — moins qu'une description d'embed, qui en tenait 4 096 à elle seule.
+# Deux cents memes rangés dépassent cette liste à eux seuls, et l'en-tête du
+# rapport passe APRÈS elle : la marge lui est réservée.
+_MAX_LISTE = 3400
 
 
 # Vingt segments : au-delà, la barre passe à la ligne sur mobile et ne veut
@@ -296,8 +299,8 @@ def periode_lisible(apres: datetime | None, jusqu_a: datetime) -> str:
     return f"du {apres.astimezone(PARIS):%d/%m/%Y à %Hh%M} au {fin:%d/%m/%Y à %Hh%M}"
 
 
-def rapport_embed(cible, bilan: meme_import.Bilan, *, apres: datetime | None,
-                  fin: datetime, duree: float) -> discord.Embed:
+def rapport_fiche(cible, bilan: meme_import.Bilan, *, apres: datetime | None,
+                  fin: datetime, duree: float) -> discord.ui.LayoutView:
     """Le compte rendu d'un ratissage, destiné au SALON et pas à l'admin seul.
 
     Public par choix : ranger trois cents memes change la banque que tout le
@@ -307,24 +310,21 @@ def rapport_embed(cible, bilan: meme_import.Bilan, *, apres: datetime | None,
     Les refus restent NOMMÉS ici comme dans `Bilan.texte()` — un compte seul
     laisse chercher dans le dossier ce qui manque.
     """
-    embed = discord.Embed(
-        title="Memes rangés",
-        colour=discord.Colour.green() if bilan.ranges else discord.Colour.greyple(),
-    )
-    embed.add_field(name="Salon ratissé", value=getattr(cible, "mention", "?"), inline=True)
     # Un ratissage de trois cents memes se compte en minutes : « 214 s » oblige
     # le lecteur à diviser.
     lisible = f"{duree:.0f} s" if duree < 90 else f"{duree / 60:.0f} min"
-    embed.add_field(name="Durée", value=lisible, inline=True)
-    embed.add_field(name="Période", value=periode_lisible(apres, fin), inline=False)
-    embed.add_field(name="Rangés", value=str(len(bilan.ranges)), inline=True)
-    embed.add_field(name="Doublons", value=str(len(bilan.doublons)), inline=True)
+    entete = (f"**Salon ratissé** {getattr(cible, 'mention', '?')} · "
+              f"**Durée** {lisible}\n"
+              f"**Période** {periode_lisible(apres, fin)}")
+
+    comptes = [f"✅ **{len(bilan.ranges)}** rangés",
+               f"🔁 **{len(bilan.doublons)}** doublons"]
     # Zéro écarté est une bonne nouvelle qui n'a pas besoin d'une case ; un
     # écarté, lui, doit se voir sans qu'on aille lire les logs.
     if bilan.refus:
-        embed.add_field(name="Écartés", value=str(len(bilan.refus)), inline=True)
+        comptes.append(f"⚠️ **{len(bilan.refus)}** écartés")
     if bilan.muets:
-        embed.add_field(name="Sans description", value=str(bilan.muets), inline=True)
+        comptes.append(f"🤐 **{bilan.muets}** sans description")
 
     lignes: list[str] = []
     if bilan.ranges:
@@ -334,9 +334,12 @@ def rapport_embed(cible, bilan: meme_import.Bilan, *, apres: datetime | None,
         lignes.append(f"· … et {len(bilan.refus) - 3} autre(s)")
     if bilan.interrompu:
         lignes.append("_Limite atteinte : relance la commande pour la suite._")
-    if lignes:
-        embed.description = "\n".join(lignes)[:_MAX_DESCRIPTION]
-    return embed
+
+    return fiche(
+        "Memes rangés",
+        [entete, " · ".join(comptes), "\n".join(lignes)[:_MAX_LISTE]],
+        accent=ACCENT_OK if bilan.ranges else ACCENT_NEUTRE,
+    )
 
 
 class MemeMasseCog(commands.Cog):
@@ -456,7 +459,7 @@ class MemeMasseCog(commands.Cog):
         # premier followup d'une interaction déférée en éphémère hérite de ce
         # flag, et le rapport « public » serait resté invisible pour tout le
         # monde sauf l'admin, sans la moindre erreur pour le dire.
-        embed = rapport_embed(cible, bilan, apres=apres, fin=fin, duree=duree)
+        vue = rapport_fiche(cible, bilan, apres=apres, fin=fin, duree=duree)
         # Là où la commande a été tapée, sauf si ce n'est pas un salon qui sait
         # écrire (racine de forum, catégorie) — auquel cas le salon ratissé, qui
         # a déjà passé la garde plus haut, fait un destinataire valable.
@@ -464,7 +467,7 @@ class MemeMasseCog(commands.Cog):
         if not isinstance(ou, (discord.TextChannel, discord.Thread)):
             ou = cible
         try:
-            await ou.send(embed=embed)
+            await ou.send(view=vue)
         except Exception as e:  # noqa: BLE001 — salon fermé en écriture, ou supprimé
             logger.warning("Rapport de ratissage non remis au salon, envoi en DM : {e!r}", e=e)
             rapport = f"Ratissage de {cible.mention} ({depuis}), {bilan.texte()}"

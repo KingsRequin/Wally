@@ -32,7 +32,8 @@ ACCENTS_EMOTION = {
 
 def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
           vignette: str | None = None, pied: str | None = None,
-          medias: Sequence[str] = ()) -> discord.ui.LayoutView:
+          medias: Sequence[str] = (),
+          fichiers: Sequence[str] = ()) -> discord.ui.LayoutView:
     """Une fiche à un seul conteneur.
 
     `corps` est une liste de BLOCS : chacun devient un `TextDisplay`, séparés
@@ -42,6 +43,13 @@ def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
     `vignette` place le titre en `Section` avec l'image en accessoire (avatar,
     aperçu). `medias` pose une galerie sous le corps : jusqu'à dix images, ce
     qu'un embed ne savait pas faire.
+
+    ⚠️ En Components V2, une pièce jointe que RIEN ne référence n'est pas
+    affichée du tout — elle ne tombe pas en bas du message comme avant, elle
+    disparaît. Tout fichier envoyé avec la fiche doit donc passer par `medias`
+    (galerie d'images) ou par `fichiers` (composant `File`, pour ce qu'une
+    galerie ne montre pas : vidéos, archives). `Thumbnail` et galerie ne
+    prennent que des images — la doc Discord l'écrit pour la vignette.
     """
     blocs = [b for b in corps if b]
     contenu: list[discord.ui.Item] = []
@@ -60,6 +68,8 @@ def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
         for media in medias:
             galerie.add_item(media=media)
         contenu.append(galerie)
+    for chemin in fichiers:
+        contenu.append(discord.ui.File(chemin))
     if pied:
         contenu.append(discord.ui.TextDisplay(f"-# {pied}"))
 

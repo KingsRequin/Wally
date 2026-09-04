@@ -349,6 +349,15 @@ async def test_une_fenetre_illisible_est_dite_avant_de_ratisser(tmp_path, monkey
     assert interaction.response.defer.await_count == 0  # rien n'a commencé
 
 
+def _rapport(salon) -> str:
+    """Le rapport de ratissage est en Components V2 : plus d'embed ni de champs,
+    des `TextDisplay` dans un conteneur."""
+    import discord
+    vue = salon.send.call_args.kwargs["view"]
+    return "\n".join(i.content for i in vue.walk_children()
+                     if isinstance(i, discord.ui.TextDisplay))
+
+
 async def test_la_commande_rend_le_rapport_du_ratissage(tmp_path, monkeypatch):
     monkeypatch.setattr(meme_masse, "DOSSIER_MEMES", tmp_path)
     monkeypatch.setattr(meme_masse, "telecharger", AsyncMock(side_effect=_png_de))
@@ -359,8 +368,7 @@ async def test_la_commande_rend_le_rapport_du_ratissage(tmp_path, monkeypatch):
 
     await cog.importer.callback(cog, interaction, depuis="tout")
 
-    embed = salon.send.call_args.kwargs["embed"]
-    assert "`meme1.webp` `meme2.webp`" in embed.description
+    assert "`meme1.webp` `meme2.webp`" in _rapport(salon)
     assert sorted(p.name for p in tmp_path.glob("*.webp")) == ["meme1.webp", "meme2.webp"]
 
 
@@ -379,10 +387,10 @@ async def test_le_rapport_final_est_public_et_porte_les_comptes(tmp_path, monkey
     # Le rapport part par le salon : un followup d'interaction déférée en
     # éphémère peut hériter du flag et n'être vu que de l'admin.
     assert interaction.followup.send.await_count == 0
-    champs = {c.name: c.value for c in salon.send.call_args.kwargs["embed"].fields}
-    assert champs["Rangés"] == "1"
-    assert champs["Doublons"] == "1"
-    assert "tout l'historique" in champs["Période"]
+    rapport = _rapport(salon)
+    assert "✅ **1** rangés" in rapport
+    assert "🔁 **1** doublons" in rapport
+    assert "tout l'historique" in rapport
 
 
 async def test_le_message_d_attente_porte_la_barre_et_le_total(tmp_path, monkeypatch):
@@ -543,3 +551,26 @@ async def test_la_commande_refuse_le_message_prive(tmp_path, monkeypatch):
     await cog.importer.callback(cog, interaction, depuis="tout")
 
     assert "privé" in interaction.followup.send.call_args.kwargs["content"]
+
+
+async def test_un_ratissage_de_trois_cents_memes_tient_sous_le_plafond_v2():
+    """Un message Components V2 plafonne à 4 000 caractères pour TOUS ses
+    textes réunis — moins qu'une description d'embed, qui en tenait 4 096 à
+    elle seule. Dépasser ne tronque pas le rapport : Discord refuse le message,
+    et il n'y a plus de rapport du tout."""
+    import discord
+    from datetime import datetime, timezone
+
+    from bot.core.meme_import import Bilan
+
+    bilan = Bilan(ranges=[f"meme{i}.webp" for i in range(300)],
+                  doublons=[f"vieux{i}.webp" for i in range(50)],
+                  refus=[f"trop lourd : gros{i}.mp4" for i in range(20)],
+                  muets=7)
+    vue = meme_masse.rapport_fiche(
+        MagicMock(), bilan, apres=None,
+        fin=datetime(2026, 9, 4, 12, tzinfo=timezone.utc), duree=214.0)
+
+    total = sum(len(i.content) for i in vue.walk_children()
+                if isinstance(i, discord.ui.TextDisplay))
+    assert total <= 4000, f"{total} caractères — Discord refusera le message"

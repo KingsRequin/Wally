@@ -269,6 +269,33 @@ async def test_un_fichier_trop_gros_coupe_le_flux(monkeypatch):
         await telecharger("https://cdn.exemple.fr/x.png", limite=1024)
 
 
+# ── Ce que l'annonce publique montre ──────────────────────────────────────────
+#
+# Elle est en Components V2 : plus d'embed, et surtout ⚠️ une pièce jointe que
+# RIEN ne référence n'apparaît pas du tout — d'où la galerie pour les images et
+# le composant `File` pour les vidéos.
+
+def _annonce(salon):
+    return salon.send.call_args.kwargs["view"]
+
+
+def _textes_annonce(salon) -> str:
+    return "\n".join(i.content for i in _annonce(salon).walk_children()
+                      if isinstance(i, discord.ui.TextDisplay))
+
+
+def _medias_annonce(salon) -> list[str]:
+    """Ce que la carte AFFICHE : galerie d'images d'un côté, `File` de l'autre."""
+    galeries = [i for i in _annonce(salon).walk_children()
+                if isinstance(i, discord.ui.MediaGallery)]
+    return [item.media.url for g in galeries for item in g.items]
+
+
+def _fichiers_annonce(salon) -> list[str]:
+    return [i.media.url for i in _annonce(salon).walk_children()
+            if isinstance(i, discord.ui.File)]
+
+
 # ── Le rangement de bout en bout ───────────────────────────────────────────────
 
 
@@ -283,42 +310,40 @@ async def test_ranger_ecrit_le_fichier_le_sidecar_et_annonce(tmp_path, monkeypat
     assert (tmp_path / "meme1.mp4").read_bytes() == _MP4
     assert (tmp_path / "meme1.mp4.txt").read_text(encoding="utf-8") == "un clip qui tourne"
     assert salon.send.await_count == 1
-    embed = salon.send.call_args.kwargs["embed"]
-    assert "meme1.mp4" in str(embed.to_dict())
-    assert isinstance(salon.send.call_args.kwargs["file"], discord.File)
+    assert "meme1.mp4" in _textes_annonce(salon)
+    assert isinstance(salon.send.call_args.kwargs["files"][0], discord.File)
     assert vue.is_finished()
 
 
 @pytest.mark.asyncio
-async def test_l_annonce_montre_l_image_dans_l_embed(tmp_path, monkeypatch):
-    """Une image s'affiche DANS l'embed, via la pièce jointe qui l'accompagne."""
+async def test_l_annonce_montre_l_image_dans_la_galerie(tmp_path, monkeypatch):
+    """Une image s'affiche DANS la carte, via la pièce jointe qui l'accompagne."""
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
     vue = VueRangement(42, [Entree(_PNG, ".png", "un carré")], salon)
 
     await vue.ranger(_interaction())
 
-    embed = salon.send.call_args.kwargs["embed"]
-    nom = salon.send.call_args.kwargs["file"].filename
-    assert embed.image.url == f"attachment://{nom}"
-    assert "Testeur" in str(embed.to_dict())
+    nom = salon.send.call_args.kwargs["files"][0].filename
+    assert _medias_annonce(salon) == [f"attachment://{nom}"]
+    assert "Testeur" in _textes_annonce(salon)
 
 
 @pytest.mark.asyncio
-async def test_l_annonce_ne_pose_pas_de_video_en_image_d_embed(tmp_path, monkeypatch):
-    """Un `.mp4` en `set_image` donne un cadre vide : la vidéo reste en pièce jointe.
-
-    Discord n'affiche pas de vidéo dans un embed. L'y désigner ne casse rien
-    côté API, mais rend un embed avec un emplacement d'image qui ne se remplit
-    jamais — le meme paraît manquant alors qu'il est bien joint en dessous.
-    """
+async def test_une_video_passe_par_le_composant_fichier_et_pas_par_la_galerie(
+        tmp_path, monkeypatch):
+    """La galerie et la vignette ne prennent que des IMAGES (la doc Discord
+    l'écrit pour la vignette). Une vidéo y désignerait un cadre qui ne se
+    remplit jamais — et en Components V2, ne la référencer NULLE PART la ferait
+    disparaître du message au lieu de tomber en pièce jointe."""
     monkeypatch.setattr(meme_cmd, "DOSSIER_MEMES", tmp_path)
     salon = _salon()
     vue = VueRangement(42, [Entree(_MP4, ".mp4", "un clip")], salon)
 
     await vue.ranger(_interaction())
 
-    assert salon.send.call_args.kwargs["embed"].image.url is None
+    assert _medias_annonce(salon) == []
+    assert _fichiers_annonce(salon) == ["attachment://meme1.mp4"]
 
 
 @pytest.mark.asyncio
@@ -333,7 +358,7 @@ async def test_l_annonce_ne_publie_pas_la_description(tmp_path, monkeypatch):
 
     await vue.ranger(_interaction())
 
-    assert "SECRET DE POLICHINELLE" not in str(salon.send.call_args.kwargs["embed"].to_dict())
+    assert "SECRET DE POLICHINELLE" not in _textes_annonce(salon)
 
 
 @pytest.mark.asyncio
@@ -582,6 +607,12 @@ async def test_ranger_un_lot_ecrit_chaque_image_et_n_annonce_qu_une_fois(tmp_pat
     ]
     assert salon.send.await_count == 1
     assert len(salon.send.call_args.kwargs["files"]) == 3
+    # Le gain de la carte V2 : les deux images du lot s'affichent, là où
+    # l'embed n'en montrait AUCUNE et se contentait de les nommer.
+    assert _medias_annonce(salon) == [
+        "attachment://meme1.webp", "attachment://meme2.webp"]
+    assert _fichiers_annonce(salon) == ["attachment://meme3.mp4"]
+    assert "meme3.mp4" in _textes_annonce(salon)
 
 
 @pytest.mark.asyncio

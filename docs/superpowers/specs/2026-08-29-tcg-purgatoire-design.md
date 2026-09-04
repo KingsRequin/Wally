@@ -15,13 +15,15 @@ Fiches Notion sources : « TCG de la commu — Wally dessine une carte par perso
 | Question | Décision |
 |---|---|
 | Qui joue | **Viewer contre viewer**, Wally arbitre et commente |
-| Ce qu'on amène | **Son héros** (sa propre carte) + un deck de **11 cartes d'autres membres** |
+| Ce qu'on amène | **Son héros** (sa propre carte) + un deck de **11 cartes** — membres, objets ou moments de la commu |
 | Durée | **~5 min**, 5 manches |
 | Où | **Une app web unique**, servie en Activity Discord et sur la page `/tcg` du site |
-| Le stream | N'est **pas** une surface de jeu : boutique (lootbox) et vitrine (animations) |
+| Le stream | N'est **pas** une surface de jeu, **à aucun moment** : boutique (lootbox), vitrine (animations, annonce des duels). Une partie ne s'y joue pas, ne s'y regarde pas, et rien de la partie n'y est décidé — arbitré le 2026-09-04 |
+| Qui commente | Wally, **en vocal dans l'Activity Discord** (il y est déjà, avec son TTS) et en texte sur le site |
 | Les chiffres | **Calculés**, jamais écrits par le LLM. Budget constant par palier |
 | La rareté | **Six paliers adossés aux grades** Discord/Twitch |
 | La variabilité | Une **roulette** au lancement — pas l'humeur de Wally |
+| Le hasard en jeu | **Tiré et AFFICHÉ avant la pose**, jamais résolu en secret (2026-09-04) |
 
 **Le principe qui tient tout** : la mémoire de Wally décide de la **répartition**, jamais du
 **total**. Wally écrit le nom, l'illustration et le texte d'ambiance. Il ne touche pas un chiffre.
@@ -134,7 +136,9 @@ risque : elles sortent d'une formule. Les Réflexes, si.
 2. **Énergie = le numéro du tour** (T1 = 1 … T5 = 5). Non cumulable d'un tour à l'autre.
 3. Les deux joueurs posent **en simultané et à l'aveugle**. Personne n'attend l'autre : c'est ce
    qui tient le format en cinq minutes.
-4. **Révélation croisée**, et Wally commente. C'est le moment de spectacle.
+4. **Révélation croisée**, et Wally commente — **à voix haute dans le vocal Discord** quand la
+   partie se joue en Activity, en texte sur le site. C'est le moment de spectacle, et il a lieu
+   pour les deux joueurs, pas pour un stream.
 5. Fenêtre de **Chute** (§3.6), puis résolution des Réflexes.
 
 Total d'énergie sur la partie : 15. Coût moyen 3 → environ **5 cartes posées** sur les 7 vues.
@@ -166,7 +170,7 @@ vivants, présents, dont le moteur connaît les liens réels.
 
 | Greffe | Règle | Garde-fou |
 |---|---|---|
-| **Réveil** | Une carte posée dont la personne a parlé (Twitch ou Discord) dans les **10 dernières minutes** est *Réveillée* : **+2 Voix** pour la partie. Wally l'annonce à voix haute. | **3 réveils maximum par joueur et par partie**, sinon la partie devient un appel à venir spammer. Évalué **au moment de la pose**, jamais rétroactivement. Hors live, la fenêtre passe à **24 h** pour que la mécanique ne meure pas. |
+| **Réveil** | Une carte posée dont la personne a parlé (Twitch ou Discord) dans les **10 dernières minutes** est *Réveillée* : **+2 Voix** pour la partie. Wally l'annonce à voix haute. | **3 réveils maximum par joueur et par partie**, sinon la partie devient un appel à venir spammer. Évalué **au moment de la pose**, jamais rétroactivement. La fenêtre suit l'activité de la COMMU, jamais la surface de jeu : **10 min** quand un stream tourne ou qu'un salon est animé, **24 h** sinon, pour que la mécanique ne meure pas la nuit. |
 | **Duo** | Deux cartes **adjacentes sur la même table** dont les personnes ont un lien réel mesuré : l'Aura que chacune donne à l'autre est **doublée**. Aucun autre cumul — un Duo ne se propage pas à une troisième carte. Wally **raconte** le lien. | Table de liens **pré-calculée par saison**. Aucune requête en pleine partie. |
 | **Faction** | Deck mono-faction (héros exclu du calcul) : **+1 énergie au tour 1**. | Volontairement faible : la faction est un parfum, pas un mur. |
 
@@ -182,8 +186,8 @@ de 2) · *Court* (4 tours) · *Prolongations* (6 tours) · *Mains pleines* (5 ca
 départ) · *Rappel* (au tour 3, chacun reprend une carte posée) · *Terrain neutre* (les affinités
 ne rapportent rien) · *Grand oral* (les affinités rapportent +4).
 
-Pendant le live, la roulette est **lancée sur l'overlay** — le seul moment où le stream touche la
-partie.
+La roulette est lancée **dans l'app**, sous les yeux des deux joueurs. Elle ne passe pas par
+l'overlay : le stream ne touche la partie à aucun moment (§0).
 
 ### 3.6 La Chute — emprunté au Mindbug
 
@@ -213,8 +217,8 @@ Thématiquement, il tombe juste : dans une commu, tu ne possèdes pas les gens. 
 ni Piquant, et se révèle à la fin de la partie.
 
 Trois problèmes réglés d'un coup : la main qui ne colle jamais aux sujets tirés, l'absence de
-bluff dans un jeu à révélation simultanée, et — sur l'overlay — une manche entière où Wally peut
-spéculer à voix haute sur l'identité de la carte cachée.
+bluff dans un jeu à révélation simultanée, et une manche entière où Wally peut spéculer à voix
+haute sur l'identité de la carte cachée — **dans le vocal Discord**, aux deux joueurs.
 
 **Le Renoncement.** Une fois par partie, tu déclares une table perdue : tu **reprends en main**
 toutes tes cartes posées dessus (l'énergie n'est pas remboursée), tu ne peux plus rien y poser, et
@@ -299,7 +303,8 @@ des milliers) :
 |---|---|---|
 | **Activity Discord** | fournie nativement par l'iframe | Embedded App SDK, global depuis 2024, ouvert à tous |
 | **Page `/tcg` du site** | OAuth Discord déjà en place (`bot/dashboard/routes/chat_auth.py`) | même bundle, même moteur |
-| **Overlay** | — | boutique, animations d'ouverture, roulette, annonce des duels |
+| **Overlay** | — | boutique, animations d'ouverture, annonce des duels. **Jamais la partie
+elle-même** : ni roulette, ni pose, ni score |
 
 ⚠️ **Le moteur de règles vit côté serveur, en Python.** L'app web n'est qu'un client : elle
 affiche et transmet des intentions. Toute règle dupliquée en JavaScript est une porte de triche
