@@ -991,9 +991,31 @@ class TwitchAPI:
                             # donc que la semaine du 30e au 23e jour, et rien du
                             # présent. Constaté le 2026-08-11 : 3 clips (tous de
                             # mai) sur 90 jours, contre 16 avec cette ligne.
-                            "ended_at": datetime.now(timezone.utc).strftime(
-                                "%Y-%m-%dT%H:%M:%SZ"
-                            ),
+                            #
+                            # ⚠️ ...mais la borne se pose DANS LE FUTUR, et
+                            # c'est tout aussi obligatoire. Helix ne compare pas
+                            # `ended_at` au `created_at` du clip : il le compare
+                            # à la FIN DU CRÉNEAU DE 10 MINUTES qui contient ce
+                            # `created_at`. Un clip de 07:21:16 n'entre dans
+                            # aucune fenêtre fermée avant 07:30:00 pile —
+                            # mesuré à la seconde le 2026-09-04, et reproduit
+                            # sur un clip vieux de quatre jours (08:48:47 →
+                            # 08:50:00), donc ce n'est PAS un délai
+                            # d'indexation : c'est permanent.
+                            #
+                            # Avec `ended_at = maintenant`, les clips des 0 à 10
+                            # dernières minutes étaient donc invisibles — très
+                            # exactement ceux dont on parle en live. Vécu le
+                            # 2026-09-04 : Taki clippe, demande à Wally de
+                            # l'afficher, Wally joue un clip du 14 août et
+                            # annonce « le dernier clip de Taki ».
+                            #
+                            # Une heure de marge : aucun clip ne peut être créé
+                            # dans le futur, la borne haute ne coûte donc rien,
+                            # et elle absorbe au passage la dérive d'horloge.
+                            "ended_at": (
+                                datetime.now(timezone.utc) + timedelta(hours=1)
+                            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "first": max(1, min(100, int(first))),
                         },
                         headers={
