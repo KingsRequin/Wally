@@ -15,6 +15,7 @@ def make_bot(note_value=None):
     bot.db.get_persistent_note = AsyncMock(return_value=note_value)
     bot.db.upsert_persistent_note = AsyncMock()
     bot._channel_ids = {}
+    bot.twitch_api.send_message = AsyncMock()
     bot.twitch_api.send_automatic = AsyncMock()
     irc_channel = MagicMock()
     irc_channel.send = AsyncMock()
@@ -55,7 +56,7 @@ async def test_code_no_code_set_shows_no_code_message():
     from bot.twitch.commands.code import handle_code_command
     bot = make_bot(note_value=None)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "Pas de code" in text
 
 
@@ -67,7 +68,7 @@ async def test_code_displays_code_with_reminder():
     saved = json.dumps({"code": "ABC123", "date": today})
     bot = make_bot(note_value=saved)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "ABC123" in text
     assert "ON DIT BONJOUR" in text
     assert "RAPPEL" in text
@@ -85,7 +86,7 @@ async def test_code_set_by_moderator_saves_and_displays():
     saved_json = bot.db.upsert_persistent_note.call_args.args[1]
     assert "NEWCODE" in saved_json
     # Message affiché
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "NEWCODE" in text
     assert "ON DIT BONJOUR" in text
 
@@ -106,7 +107,7 @@ async def test_code_set_rejected_for_viewer():
     bot = make_bot(note_value=None)
     await handle_code_command(bot, "streamer", "viewer", "HACK", [make_viewer_badge()])
     bot.db.upsert_persistent_note.assert_not_awaited()
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "modérateurs" in text.lower() or "Seuls" in text
 
 
@@ -117,7 +118,7 @@ async def test_code_resets_if_date_changed():
     yesterday_note = json.dumps({"code": "OLDCODE", "date": "2000-01-01"})
     bot = make_bot(note_value=yesterday_note)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "Pas de code" in text
     # DB mise à jour avec date d'aujourd'hui et code None
     bot.db.upsert_persistent_note.assert_awaited_once()
@@ -135,7 +136,7 @@ async def test_code_loaded_from_db_on_first_access():
     bot = make_bot(note_value=saved)
     await handle_code_command(bot, "newchannel", "viewer1", "", [])
     bot.db.get_persistent_note.assert_awaited_once_with("twitch_code:newchannel")
-    text = bot.twitch_api.send_automatic.call_args.args[0]
+    text = bot.twitch_api.send_message.call_args.args[0]
     assert "DBCODE" in text
 
 
@@ -244,7 +245,7 @@ async def test_annonce_ignoree_si_salon_non_configure():
     bot, salon = make_bot_avec_discord(channel_id=None)
     await handle_code_command(bot, "streamer", "mod1", "ABC", [make_mod_badge()])
     salon.send.assert_not_awaited()
-    assert "ABC" in bot.twitch_api.send_automatic.call_args.args[0]
+    assert "ABC" in bot.twitch_api.send_message.call_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -258,7 +259,7 @@ async def test_echec_discord_ne_casse_pas_la_commande():
     bot, salon = make_bot_avec_discord()
     salon.send = AsyncMock(side_effect=RuntimeError("boom"))
     await handle_code_command(bot, "streamer", "mod1", "ABC", [make_mod_badge()])
-    assert "ABC" in bot.twitch_api.send_automatic.call_args.args[0]
+    assert "ABC" in bot.twitch_api.send_message.call_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -267,7 +268,7 @@ async def test_pp_donne_la_regle_des_demandes_d_ami():
     from bot.twitch.commands.code import handle_pp_command
     bot = make_bot()
     await handle_pp_command(bot, "streamer")
-    texte = bot.twitch_api.send_automatic.call_args.args[0]
+    texte = bot.twitch_api.send_message.call_args.args[0]
     assert "samedis" in texte
     assert "en amis" in texte
 
@@ -278,7 +279,7 @@ async def test_code_sans_code_donne_aussi_la_regle():
     from bot.twitch.commands.code import handle_code_command
     bot = make_bot(note_value=None)
     await handle_code_command(bot, "streamer", "viewer1", "", [])
-    texte = bot.twitch_api.send_automatic.call_args.args[0]
+    texte = bot.twitch_api.send_message.call_args.args[0]
     assert "Pas de code" in texte
     assert "en amis" in texte
     # Twitch coupe à 500 caractères : un message tronqué perdrait la fin de la règle.
@@ -295,7 +296,24 @@ async def test_le_chat_twitch_passe_avant_l_annonce_discord():
     from bot.twitch.commands.code import handle_code_command
     ordre = []
     bot, salon = make_bot_avec_discord()
-    bot.twitch_api.send_automatic = AsyncMock(side_effect=lambda *a, **k: ordre.append("twitch"))
+    bot.twitch_api.send_message = AsyncMock(side_effect=lambda *a, **k: ordre.append("twitch"))
     salon.send = AsyncMock(side_effect=lambda *a, **k: ordre.append("discord"))
     await handle_code_command(bot, "streamer", "mod1", "ABC", [make_mod_badge()])
     assert ordre == ["twitch", "discord"]
+
+
+@pytest.mark.asyncio
+async def test_le_code_ne_part_jamais_en_annonce():
+    """Une annonce Twitch ne s'ÉPINGLE pas, et le code est fait pour l'être.
+
+    Sorti sur le fond violet des annonces, il tenait le regard quelques
+    secondes puis remontait avec le chat : plus personne n'y avait accès de la
+    session. Et l'épinglage automatique n'existe pas côté Twitch —
+    `/helix/chat/messages/pin` rend 404.
+    """
+    from bot.twitch.commands.code import handle_code_command
+
+    bot = make_bot()
+    await handle_code_command(bot, "azrael_ttv", "mod", "ABC123", [make_mod_badge()])
+    assert bot.twitch_api.send_message.await_count == 1
+    assert bot.twitch_api.send_automatic.await_count == 0

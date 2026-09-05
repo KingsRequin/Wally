@@ -300,8 +300,12 @@ _AUTOMATIQUES = [
     ("bot/twitch/events/social.py", "follow, sub, bits, raid"),
     ("bot/twitch/events/virus_popups.py", "l'attaque de popups"),
     ("bot/twitch/commands/mood.py", "!mood — cinq valeurs, aucune rédaction"),
-    ("bot/twitch/commands/code.py", "!code — un lien, aucune rédaction"),
 ]
+# `code.py` a quitté cette liste le 2026-09-05. Il n'aurait jamais dû y être :
+# `!code` et `!pp` RÉPONDENT à quelqu'un qui a tapé une commande. Et surtout,
+# le code d'une partie privée est fait pour être ÉPINGLÉ le temps de la
+# session — or Twitch n'épingle pas les annonces. Il est vérifié plus bas, avec
+# les autres tours de parole.
 
 
 @pytest.mark.parametrize("chemin,quoi", _AUTOMATIQUES)
@@ -344,10 +348,15 @@ def test_les_chemins_de_CONVERSATION_restent_en_message_ordinaire():
     racine = Path(__file__).resolve().parents[1]
     handlers = (racine / "bot/twitch/handlers.py").read_text(encoding="utf-8")
     voice = (racine / "bot/discord/voice/request.py").read_text(encoding="utf-8")
+    code = (racine / "bot/twitch/commands/code.py").read_text(encoding="utf-8")
 
     # `_envoyer_reponse_twitch` (la réponse) et le chemin spontané.
     assert handlers.count("twitch_api.send_message(") == 2
     assert "api.send_message(" in voice
+    # `!code` / `!pp` : une réponse à une commande, ET un message qu'on épingle.
+    # Une annonce ne s'épingle pas — repassé en message ordinaire le 2026-09-05,
+    # à la demande de l'owner.
+    assert "send_message(" in code and "send_automatic(" not in code
 
 
 @pytest.mark.asyncio

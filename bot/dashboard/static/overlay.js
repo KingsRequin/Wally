@@ -1360,12 +1360,48 @@
     return bsod;
   }
 
+  // Le décompte du sondage bat TOUT SEUL.
+  //
+  // Les valeurs n'arrivent du serveur qu'à chaque VOTE : trente secondes sans
+  // personne, et la carte annonçait encore « 120s » pendant que le sablier,
+  // lui, avançait — deux affichages du même temps qui se contredisent à
+  // l'écran. Constaté en live le 2026-09-05.
+  //
+  // Une seule horloge pour toute la page : il n'y a jamais qu'un sondage, et
+  // chaque message du serveur RECALE l'échéance, donc la dérive ne s'accumule
+  // pas.
+  let horlogeSondage = null;
+
+  function arreterHorlogeSondage() {
+    clearInterval(horlogeSondage);
+    horlogeSondage = null;
+  }
+
+  function battreLeSondage() {
+    const box = document.querySelector(".poll[data-fin]");
+    // Plus de sondage à l'écran : l'horloge n'a plus rien à faire. Sans ça elle
+    // survivrait à la carte pour tout le reste du live.
+    if (!box) { arreterHorlogeSondage(); return; }
+    const reste = Math.max(0, Math.round((Number(box.dataset.fin) - Date.now()) / 1000));
+    const left = box.querySelector(".q .left");
+    if (left) left.textContent = reste > 0 ? `${reste}s` : "terminé";
+    if (reste <= 0) { delete box.dataset.fin; arreterHorlogeSondage(); }
+  }
+
   function updatePoll(box, p) {
     const tally = Array.isArray(p.tally) ? p.tally : [];
     const total = tally.reduce((a, b) => a + b, 0) || 0;
     const winner = Number.isInteger(p.winner) ? p.winner : -1;
     const left = box.querySelector(".q .left");
     if (left) left.textContent = p.seconds > 0 ? `${p.seconds}s` : "terminé";
+    // L'ÉCHÉANCE, pas la durée : c'est elle qui reste vraie entre deux votes.
+    if (p.seconds > 0 && !p.final) {
+      box.dataset.fin = String(Date.now() + p.seconds * 1000);
+      if (!horlogeSondage) horlogeSondage = setInterval(battreLeSondage, 1000);
+    } else {
+      delete box.dataset.fin;
+      arreterHorlogeSondage();
+    }
     if (p.final) box.classList.add("final");
 
     box.querySelectorAll(".opt").forEach((opt, i) => {

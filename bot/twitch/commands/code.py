@@ -87,13 +87,30 @@ async def handle_pp_command(bot: "WallyTwitch", channel_name: str) -> None:
 
 
 async def _repondre(bot: "WallyTwitch", channel_name: str, message: str) -> None:
-    """Répond sur la chaîne : IRC pour les invitées, API pour la maison."""
+    """Répond sur la chaîne : IRC pour les invitées, API pour la maison.
+
+    Message ORDINAIRE, jamais une annonce. Le code de la partie privée est fait
+    pour être ÉPINGLÉ le temps de la session — et Twitch n'épingle pas les
+    annonces. Sorti en annonce, il tenait quelques secondes sur son fond violet
+    puis remontait avec le reste du chat, et personne n'y avait plus accès ;
+    l'owner l'a dit le 2026-09-05 (« je vais repasser son message normal et pas
+    en annonce alors »).
+
+    L'épinglage AUTOMATIQUE, lui, n'est pas possible : `POST
+    /helix/chat/messages/pin` rend 404 (essayé le 2026-09-05 sur le token en
+    service) et Twitch a confirmé sur son forum en février 2024 qu'aucune API
+    n'épingle un message. Seule la main d'un modérateur le fait.
+
+    Et c'est de toute façon le bon poids : `!code` et `!pp` RÉPONDENT à
+    quelqu'un qui a tapé une commande. L'annonce colorée est faite pour ce que
+    personne n'a demandé.
+    """
     if channel_name in bot._channel_ids:
         irc_channel = bot.get_channel(channel_name)
         if irc_channel:
             await irc_channel.send(message)
     else:
-        await bot.twitch_api.send_automatic(message)
+        await bot.twitch_api.send_message(message)
 
 
 async def handle_code_command(
