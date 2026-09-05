@@ -11,6 +11,15 @@ _TOGGLE_CAPABILITIES = [
         "Je peux entendre et parler en vocal dans les salons audio.",
         "Le vocal existe dans mon code mais il n'est pas activé pour l'instant.",
     ),
+    (
+        lambda c: bool(getattr(getattr(getattr(c, "twitch", None),
+                                       "annonces_auto", None), "active", False)),
+        "Pendant un live, je publie tout seul des rappels dans le chat toutes les "
+        "demi-heures (le TikTok, le YouTube et le Discord d'Azraël, les memes, le "
+        "code créateur, et qu'on dit bonjour en arrivant). Personne ne me les "
+        "demande, et je saute mon tour si le chat est désert.",
+        "Les rappels automatiques du live sont coupés en ce moment.",
+    ),
 ]
 
 _SECTION_TITLE = "## Mes capacités techniques actuelles"

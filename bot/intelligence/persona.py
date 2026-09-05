@@ -30,6 +30,7 @@ class PersonaService:
         self._user_directives: dict[str, str] = {}
         self._event_directives: dict[str, str] = {}
         self._attente_phrases: list[str] = []
+        self._annonces_auto: dict[str, list[str]] = {}
         self.reload()
 
     def reload(self) -> None:
@@ -69,6 +70,21 @@ class PersonaService:
         self._event_directives = self._parse_events()
         self._fil_directives = self._parse_fil()
         self._attente_phrases = self._parse_attente()
+        self._annonces_auto = self._parse_annonces()
+
+    def _parse_annonces(self) -> dict[str, list[str]]:
+        """Les rappels publiés d'eux-mêmes pendant le live (ANNONCES.md).
+
+        Un dict et non une liste plate, contrairement à `ATTENTE.md` : ici les
+        sections sont des SUJETS (tiktok, discord, code créateur…) et non des
+        registres de ton. Le tirage doit passer par tous les sujets avant d'en
+        répéter un, ce qu'un sac unique ne saurait pas faire — six variantes de
+        TikTok d'affilée y seraient un tirage parfaitement valide.
+
+        Vider une section retire ce sujet de la rotation ; vider les six éteint
+        la fonction.
+        """
+        return self._parse_sections_liste("ANNONCES.md")
 
     def _parse_attente(self) -> list[str]:
         """Les phrases qu'il envoie quand une réponse Twitch tarde (ATTENTE.md).
@@ -172,6 +188,46 @@ class PersonaService:
         logger.info("{f} loaded: {n} directives", f=filename, n=len(directives))
         return directives
 
+    def _parse_sections_liste(self, filename: str) -> dict[str, list[str]]:
+        """Parse un fichier Markdown en {clé de section: puces de la section}.
+
+        Même découpage que `_parse_sections`, mais chaque puce `- …` reste une
+        entrée à part au lieu d'être recollée en une directive : ces fichiers
+        portent des variantes INTERCHANGEABLES d'une même phrase, pas un texte
+        continu. Le préambule et les citations (`>`) sont ignorés, comme dans
+        `_parse_liste` — les consignes de rédaction vivent à côté des phrases
+        qu'elles cadrent et ne doivent jamais partir dans le chat.
+        """
+        path = os.path.join(self._dir, filename)
+        try:
+            with open(path, encoding="utf-8") as f:
+                contenu = f.read()
+        except FileNotFoundError:
+            logger.warning("Persona file missing: {f}", f=filename)
+            return {}
+        except Exception as exc:
+            logger.warning("{f} read error: {e!r}", f=filename, e=exc)
+            return {}
+
+        sections: dict[str, list[str]] = {}
+        for bloc in ("\n" + contenu).split("\n## ")[1:]:
+            lignes = bloc.split("\n")
+            cle = lignes[0].strip()
+            puces = [
+                ligne.strip()[2:].strip()
+                for ligne in lignes[1:]
+                if ligne.strip().startswith("- ") and len(ligne.strip()) > 2
+            ]
+            # Une section sans puce est ignorée, pas rangée vide : c'est la
+            # façon documentée de retirer un sujet de la rotation sans
+            # supprimer son titre ni ses notes.
+            if cle and puces:
+                sections[cle] = puces
+        logger.info("{f} loaded: {n} sections, {p} phrases",
+                    f=filename, n=len(sections),
+                    p=sum(len(v) for v in sections.values()))
+        return sections
+
     def _parse_users(self) -> dict[str, str]:
         """Parse USERS.md en un dict {clé utilisateur: directive}."""
         return self._parse_sections("USERS.md")
@@ -234,6 +290,11 @@ class PersonaService:
     def attente_phrases(self) -> list[str]:
         """Phrases d'attente pour le chat Twitch (ATTENTE.md). Vide = fonction éteinte."""
         return self._attente_phrases
+
+    @property
+    def annonces_auto(self) -> dict[str, list[str]]:
+        """Rappels du live par sujet (ANNONCES.md). Vide = fonction éteinte."""
+        return self._annonces_auto
 
     @property
     def fil_directives(self) -> dict[str, str]:

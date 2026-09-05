@@ -745,6 +745,22 @@ async def main() -> None:
         _clip_task.add_done_callback(_stream_voice_tasks.discard)
         twitch_bot.stream_watcher = stream_watcher
 
+        # Rappels du live (TikTok, Discord, code créateur…), repris de
+        # PhantomBot. Câblé ICI et non dans `bootstrap.py` : il lui faut le bot
+        # Twitch — l'API de chat pour publier, `_stream_info` pour savoir si le
+        # live tourne, `stream_feed` pour savoir si le chat est vivant.
+        _annonces_conf = getattr(config.twitch, "annonces_auto", None)
+        if _annonces_conf is not None and _annonces_conf.active:
+            from bot.twitch.annonces_auto import AnnoncesAuto
+
+            _annonces = AnnoncesAuto(
+                twitch_bot,
+                cadence_s=float(_annonces_conf.cadence_minutes) * 60,
+            )
+            _annonces_task = asyncio.create_task(_annonces.run())
+            _stream_voice_tasks.add(_annonces_task)
+            _annonces_task.add_done_callback(_stream_voice_tasks.discard)
+
         # Overlay de stream : les événements du live (raid, sub, changement de
         # jeu…) deviennent des bulles. Le hook de StreamFeed est synchrone alors
         # que la réaction demande un appel LLM — d'où la tâche détachée, avec

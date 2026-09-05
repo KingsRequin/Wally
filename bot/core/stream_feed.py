@@ -135,6 +135,25 @@ class StreamFeed:
         # pour ne pas laisser croire que les votes transitent par ce chemin.
         self._chat.append((time.monotonic(), author, text[:160]))
 
+    def a_du_chat_frais(self, fenetre_s: float) -> bool:
+        """Quelqu'un a-t-il parlé dans le chat du live depuis `fenetre_s` ?
+
+        Sert aux rappels automatiques (`twitch/annonces_auto.py`), qui sautent
+        leur tour sur un chat désert : personne n'a besoin d'un lien Discord
+        publié devant zéro lecteur.
+
+        Lit le tampon BRUT et non `_fresh_chat` : le TTL de 15 minutes borne ce
+        que Wally *lit* dans son contexte, pas ce qu'on peut savoir de
+        l'activité du chat. Les horodatages, eux, survivent tant que la ligne
+        est dans le deque, et c'est exactement ce qu'il faut ici.
+
+        Reste la borne de `MAX_CHAT` : au-delà de huit lignes, les plus vieilles
+        tombent. Sans effet sur la réponse — perdre une ligne demande huit
+        lignes plus récentes, donc un chat tout sauf désert.
+        """
+        maintenant = time.monotonic()
+        return any(maintenant - ts <= fenetre_s for ts, _, _ in self._chat)
+
     def _fresh_events(self, now: float) -> list[tuple[float, str]]:
         return [(ts, d) for ts, d in self._events if now - ts <= self._event_ttl]
 

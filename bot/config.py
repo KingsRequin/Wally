@@ -210,6 +210,26 @@ class DiscordConfig:
 
 
 @dataclass
+class AnnoncesAutoConfig:
+    """Les rappels que Wally publie seul pendant le live (`ANNONCES.md`).
+
+    Deux réglages, deux lecteurs, et rien d'autre : le CONTENU vit dans le
+    fichier persona, pas ici. Une liste de messages en config aurait doublé
+    `ANNONCES.md` sans rien apporter, et c'est exactement comme ça qu'on se
+    retrouve avec deux sources qui divergent.
+
+    ⚠️ `config.yaml` n'est pas relu à chaud : changer la cadence demande un
+    `docker compose restart wally`. Le fichier de phrases, lui, se recharge
+    tout seul.
+    """
+
+    active: bool = True
+    # 30 min, la cadence de PhantomBot depuis des années. Un live de 4 h porte
+    # donc 8 rappels, soit un peu plus d'un tour complet des six sujets.
+    cadence_minutes: int = 30
+
+
+@dataclass
 class TwitchConfig:
     guest_channels: list[str]
     cooldown_seconds: int
@@ -229,6 +249,10 @@ class TwitchConfig:
     # dans ce projet veut dire `config.save()` depuis le dashboard, qui écrit
     # l'objet en MÉMOIRE vers le fichier, jamais l'inverse.
     attente_seuil_s: float = 5.0
+    # Sous-section imbriquée, construite à part dans `load()` — même patron que
+    # `discord.spam_detection` : `TwitchConfig(**twitch_raw)` recevrait sinon un
+    # dict brut là où le reste du code attend un objet.
+    annonces_auto: AnnoncesAutoConfig = field(default_factory=AnnoncesAutoConfig)
 
 
 @dataclass
@@ -655,6 +679,7 @@ class Config:
             else:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
+            annonces_raw = twitch_raw.pop("annonces_auto", None) or {}
             tavily_raw = raw.get("tavily", {})
             apex_raw = dict(raw.get("apex", {}))
             # `or {}` : un `duel:` présent mais toutes ses clés commentées rend
@@ -759,7 +784,10 @@ class Config:
                 openai=openai_config,
                 llm=llm_config,
                 discord=DiscordConfig(**discord_raw, spam_detection=SpamDetectionConfig(**spam_raw)),
-                twitch=TwitchConfig(**twitch_raw),
+                twitch=TwitchConfig(
+                    **twitch_raw,
+                    annonces_auto=AnnoncesAutoConfig(**annonces_raw),
+                ),
                 emotions=emotions,
                 twitch_events=twitch_events,
                 tavily=TavilyConfig(**tavily_raw),
