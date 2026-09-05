@@ -222,6 +222,9 @@ async def _reveler(bot, canal_id: str, nom: str, phrases: list[str], index: int)
         return
     fait = (f"Deux vérités, un mensonge sur {nom} : le mensonge était "
             f"« {phrases[index]} ».")
+    # Sans issue : révéler le mensonge n'est ni une victoire ni une défaite —
+    # personne n'a « gagné », le jeu se contente de dire la réponse. Le violet
+    # neutre est exactement ce que ça vaut.
     narrateur.annoncer_fin("deux_verites", fait)
     note_act(f"j'ai révélé le mensonge du jeu sur {nom} : « {phrases[index]} »")
 

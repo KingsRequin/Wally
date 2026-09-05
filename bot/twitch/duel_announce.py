@@ -24,10 +24,42 @@ from loguru import logger
 from bot.core.apex.duel import Evenement
 from bot.core.llm import FALLBACK_RESPONSE
 from bot.intelligence.prompts import load_prompt
+from bot.twitch.api import TwitchAPI
 
 # Plafond d'un message Twitch (500 caractères). Même marge que les événements
 # sociaux : de quoi ajouter les points de suspension sans dépasser.
 MAX_CHAT = 480
+
+# Le fond de chaque étape, par INTENTION et non par type d'événement — la même
+# grammaire que partout ailleurs, tenue dans `TwitchAPI`. Un duel enchaîne une
+# dizaine d'annonces en quelques minutes ; toutes violettes, le viewer ne
+# distingue pas « ta manche démarre » de « c'est fini, tu as perdu ».
+#
+# ⚠️ Le verdict se lit du point de vue du DUELLISTE, pas d'Azraël : c'est le
+# viewer qui a payé ses points, c'est lui que l'annonce concerne. Azraël
+# vainqueur sort donc en orange. Une égalité n'est ni l'un ni l'autre et garde
+# le violet neutre.
+_INTENTION = {
+    "duel_ouvert": TwitchAPI.COULEUR_DEBUT,
+    "manche_debut": TwitchAPI.COULEUR_DEBUT,
+    "recommence": TwitchAPI.COULEUR_DEBUT,
+    "manche_fin": "",                              # un score de mi-parcours
+    "refus": TwitchAPI.COULEUR_ECHEC,
+    "abandon": TwitchAPI.COULEUR_ECHEC,
+    "compte_introuvable": TwitchAPI.COULEUR_ECHEC,
+    "rattrapage": TwitchAPI.COULEUR_ECHEC,         # un achat jamais honoré
+}
+
+
+def couleur_etape(evt: Evenement) -> str:
+    """Le fond de cette étape. `""` = le violet neutre de `send_automatic`."""
+    if evt.type != "verdict":
+        return _INTENTION.get(evt.type, "")
+    gagnant = (evt.donnees or {}).get("gagnant")
+    if gagnant is None:
+        return ""
+    return (TwitchAPI.COULEUR_ECHEC if gagnant == "azrael"
+            else TwitchAPI.COULEUR_REUSSITE)
 
 
 def avertissement_mixtape(mode_jeu: str = "") -> str:
@@ -323,7 +355,7 @@ class DuelAnnonceur:
             suffixe = ""
 
         ligne = await self._rediger(evt.type, fait) or fait
-        await self._publier(ligne, suffixe=suffixe)
+        await self._publier(ligne, suffixe=suffixe, couleur=couleur_etape(evt))
         self._ecran(evt, ligne)
 
     # -- Rédaction ----------------------------------------------------------
@@ -361,7 +393,8 @@ class DuelAnnonceur:
         return reponse
 
     # -- Sorties ------------------------------------------------------------
-    async def _publier(self, texte: str, *, suffixe: str = "") -> None:
+    async def _publier(self, texte: str, *, suffixe: str = "",
+                       couleur: str = "") -> None:
         plafond = MAX_CHAT - (len(suffixe) + 1 if suffixe else 0)
         if plafond <= 3:
             # Un suffixe à lui seul plus long que le message : c'est lui qu'on
@@ -382,7 +415,7 @@ class DuelAnnonceur:
             # états du duel qui pousse. Fond violet, et repli en message
             # ordinaire si le canal manque — le viewer a payé ses points, sa
             # manche doit s'annoncer d'une façon ou d'une autre.
-            if not await self._bot.twitch_api.send_automatic(texte):
+            if not await self._bot.twitch_api.send_automatic(texte, color=couleur):
                 logger.warning("Duel : annonce refusée par Twitch — « {t} »",
                                t=texte[:80])
         except Exception as exc:  # noqa: BLE001 — l'overlay doit rester servi

@@ -21,15 +21,36 @@ Deux règles reprises telles quelles de l'annonceur du duel :
 Une troisième s'y ajoute, propre à ce canal : **un canal indisponible n'est pas
 une raison de se taire.** Le scope peut manquer, ou le compte bot ne pas être
 modérateur — le résultat retombe alors sur un message ordinaire.
+
+**L'ISSUE voyage avec le fait**, elle ne se devine pas du texte. Le fond vert
+d'un mot trouvé et le fond orange d'un mot que personne n'a eu se lisent d'un
+coup d'œil, avant la phrase — mais seul l'appelant sait laquelle des deux c'est.
+La deviner en cherchant « personne » dans la chaîne marcherait jusqu'au jour où
+une formulation change, en silence.
 """
 from __future__ import annotations
 
 from loguru import logger
 
 from bot.core.llm import FALLBACK_RESPONSE
+from bot.twitch.api import TwitchAPI
 
 # Plafond d'une annonce Twitch (500 caractères), même valeur que le message.
 MAX_ANNONCE = 500
+
+# La grammaire des couleurs est celle de `TwitchAPI`, jamais recopiée : deux
+# tables finiraient par diverger, et c'est le genre d'écart qu'on ne voit qu'en
+# live, sur une couleur qui ne veut plus rien dire.
+_COULEURS = {
+    "reussite": TwitchAPI.COULEUR_REUSSITE,
+    "echec": TwitchAPI.COULEUR_ECHEC,
+    "debut": TwitchAPI.COULEUR_DEBUT,
+}
+
+
+def couleur_de(issue: str) -> str:
+    """La couleur d'une issue. Inconnue ou vide → `""`, donc le violet neutre."""
+    return _COULEURS.get((issue or "").strip().lower(), "")
 
 _SOCLE = (
     "Une partie vient de se terminer sur le live. On te donne le RÉSULTAT : tu "
@@ -47,15 +68,21 @@ class JeuAnnouncer:
         self._bot = bot
         self._channel = channel
 
-    async def annoncer(self, genre: str, fait: str) -> None:
-        """`genre` sert au journal et au ton ; `fait` est le résultat, intouchable."""
+    async def annoncer(self, genre: str, fait: str, issue: str = "") -> None:
+        """`genre` sert au journal et au ton ; `fait` est le résultat, intouchable.
+
+        `issue` vaut `"reussite"` (le chat a trouvé, gagné), `"echec"` (personne
+        n'a eu le mot, la partie est perdue) ou `""` quand il n'y a ni l'un ni
+        l'autre — un sondage dépouillé n'a pas de gagnant. Elle ne décide QUE de
+        la couleur du fond ; le texte, lui, ne change pas d'un iota.
+        """
         fait = (fait or "").strip()
         if not fait:
             # Un pendu sans mot, un sondage sans vote : rien à dire, et une
             # annonce vide serait pire que le silence.
             return
         ligne = (await self._rediger(fait) or fait)[:MAX_ANNONCE]
-        await self._publier(ligne, genre)
+        await self._publier(ligne, genre, couleur_de(issue))
 
     async def _rediger(self, fait: str) -> str:
         """La phrase de Wally, ou `""` s'il n'a rien pu produire."""
@@ -84,7 +111,7 @@ class JeuAnnouncer:
             return ""
         return reponse
 
-    async def _publier(self, texte: str, genre: str) -> None:
+    async def _publier(self, texte: str, genre: str, couleur: str = "") -> None:
         api = getattr(self._bot, "twitch_api", None)
         if api is None:
             logger.warning("Fin de partie ({g}) : pas d'API Twitch, rien publié", g=genre)
@@ -94,7 +121,7 @@ class JeuAnnouncer:
             # `send_automatic`, avec les huit autres chemins qui publient sans
             # qu'on ait parlé à Wally. Il était écrit ici en premier ; le garder
             # en double aurait fait deux réponses à la même question.
-            if not await api.send_automatic(texte):
+            if not await api.send_automatic(texte, color=couleur):
                 logger.warning("Fin de partie ({g}) non publiée du tout", g=genre)
                 return
             logger.info("Fin de partie ({g}) annoncée : {t}", g=genre, t=texte[:80])

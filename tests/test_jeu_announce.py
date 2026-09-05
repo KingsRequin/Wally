@@ -84,8 +84,8 @@ def _narrateur(annonces: list):
     from bot.core.overlay_feed import OverlayFeed
     from bot.intelligence.overlay_narrator import OverlayNarrator
 
-    async def _hook(genre, fait):
-        annonces.append((genre, fait))
+    async def _hook(genre, fait, issue=""):
+        annonces.append((genre, fait, issue))
 
     n = OverlayNarrator(OverlayFeed(), _M(), lambda: True)
     n.set_annonceur_fin(_hook)
@@ -106,9 +106,13 @@ async def test_le_pendu_perdu_s_annonce_avec_le_mot():
     await asyncio.sleep(0)
 
     assert len(annonces) == 1
-    genre, fait = annonces[0]
+    genre, fait, issue = annonces[0]
     assert genre == "pendu"
     assert "fusée" in fait.lower()
+    # Le fond ORANGE : un mot que personne n'a eu se lit d'un coup d'œil, avant
+    # même la phrase. C'est l'appelant qui le sait — le deviner dans le texte
+    # tiendrait jusqu'à la première reformulation.
+    assert issue == "echec"
 
 
 @pytest.mark.asyncio
@@ -123,6 +127,7 @@ async def test_le_pendu_gagne_nomme_qui_a_trouve():
     await asyncio.sleep(0)
 
     assert annonces and "bob" in annonces[0][1]
+    assert annonces[0][2] == "reussite"      # fond vert
 
 
 @pytest.mark.asyncio
@@ -137,6 +142,9 @@ async def test_le_sondage_clos_s_annonce():
     await asyncio.sleep(0)
 
     assert annonces and annonces[0][0] == "sondage"
+    # Ni victoire ni défaite : un dépouillement n'a pas de gagnant, et le fond
+    # reste le violet neutre de tout ce que Wally publie sans qu'on demande.
+    assert annonces[0][2] == ""
 
 
 @pytest.mark.asyncio

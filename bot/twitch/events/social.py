@@ -186,7 +186,11 @@ async def _generate_and_send(
         )
         if len(reply) > 480:
             reply = reply[:477] + "..."
-        await bot.twitch_api.send_automatic(reply)
+        # VERT : follow, sub, resub, gift, bits, raid — cette voie ne porte
+        # que des arrivées et des cadeaux. Rien d'autre n'y passe, la couleur
+        # n'a donc pas à se décider par événement.
+        await bot.twitch_api.send_automatic(
+            reply, color=bot.twitch_api.COULEUR_REUSSITE)
     except Exception as e:
         logger.error("Twitch event send error: {e!r}", e=e)
 

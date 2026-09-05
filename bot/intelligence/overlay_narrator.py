@@ -978,11 +978,17 @@ class OverlayNarrator:
             logger.debug("Overlay: parties en cours non rangées: {e!r}", e=exc)
 
     def set_annonceur_fin(self, hook: Optional[Callable]) -> None:
-        """Branche la sortie CHAT des fins de partie — `(genre, fait)`, async."""
+        """Branche la sortie CHAT des fins de partie — `(genre, fait, issue)`, async."""
         self._hook_fin = hook
 
-    def annoncer_fin(self, genre: str, fait: str) -> None:
+    def annoncer_fin(self, genre: str, fait: str, issue: str = "") -> None:
         """Pousse une fin de partie vers le chat, sans attendre.
+
+        `issue` (`"reussite"`, `"echec"`, ou `""`) ne décide QUE de la couleur
+        du fond : un mot trouvé sur vert, un mot que personne n'a eu sur orange.
+        Elle est passée par celui qui CONCLUT la partie, seul à la connaître —
+        la relire dans le texte du fait tiendrait jusqu'à la première
+        reformulation, et lâcherait sans bruit.
 
         Publique parce que le narrateur n'est plus seul à conclure une partie :
         « deux vérités, un mensonge » vit dans `bot/tools/`, où sa mémoire lui
@@ -1003,7 +1009,7 @@ class OverlayNarrator:
         taches = getattr(self, "_flush_tasks", None)
         if taches is None:
             taches = self._flush_tasks = set()
-        tache = loop.create_task(self._hook_fin(genre, fait))
+        tache = loop.create_task(self._hook_fin(genre, fait, issue))
         taches.add(tache)
         tache.add_done_callback(taches.discard)
 
@@ -3074,7 +3080,8 @@ class OverlayNarrator:
             logger.info("Overlay: pendu gagné d'un coup par le chat ({w})",
                         w=game["display"])
             self.annoncer_fin("pendu", f"{author} a trouvé le mot du pendu du "
-                                    f"premier coup : « {game['display']} ».")
+                                    f"premier coup : « {game['display']} ».",
+                              "reussite")
             self._hangman = None
             self._planifier_flush()
             return
@@ -3094,7 +3101,7 @@ class OverlayNarrator:
             if won:
                 logger.info("Overlay: pendu gagné par le chat ({w})", w=game["display"])
                 self.annoncer_fin("pendu", f"{author} a complété le mot du pendu : "
-                                        f"« {game['display']} ».")
+                                        f"« {game['display']} ».", "reussite")
                 self._hangman = None
             # Chaque coup compte : reprendre la partie au redémarrage sans les
             # lettres déjà trouvées la ferait recommencer sous les yeux du chat.
@@ -3111,7 +3118,7 @@ class OverlayNarrator:
             # l'annonce : le chat apprend enfin ce qu'il cherchait. Le filet de
             # sortie a été levé juste au-dessus, il ne le masquera pas.
             self.annoncer_fin("pendu", "Personne n'a trouvé le mot du pendu : "
-                                    f"c'était « {game['display']} ».")
+                                    f"c'était « {game['display']} ».", "echec")
             self._hangman = None
         self._planifier_flush()
 

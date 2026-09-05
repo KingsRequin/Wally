@@ -466,7 +466,8 @@ class WallyDiscord(commands.Bot):
                 # traverser les lives, c'est toute sa raison d'être.
                 await _overlay_narrator.restore_mots_pendu()
 
-                async def _annoncer_fin_de_partie(genre: str, fait: str) -> None:
+                async def _annoncer_fin_de_partie(genre: str, fait: str,
+                                                  issue: str = "") -> None:
                     """Sondage dépouillé, pendu fini : le résultat part dans le chat.
 
                     Le bot Twitch est résolu À L'APPEL et non ici, comme
@@ -490,7 +491,7 @@ class WallyDiscord(commands.Bot):
                     # pour la home, mais laisserait « streamer » vide au prompt.
                     canal = (os.getenv("TWITCH_BROADCASTER_LOGIN", "")
                              or "Azrael_TTV").lower()
-                    await JeuAnnouncer(tb, canal).annoncer(genre, fait)
+                    await JeuAnnouncer(tb, canal).annoncer(genre, fait, issue)
 
                 _overlay_narrator.set_annonceur_fin(_annoncer_fin_de_partie)
                 # En INFO, et pas en DEBUG : c'est la PREUVE que ce hook est

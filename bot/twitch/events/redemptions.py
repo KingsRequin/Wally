@@ -51,7 +51,10 @@ async def _dire(bot, acheteur: str, texte: str) -> None:
     # vaut un message sans mention qu'un « @? » adressé à personne.
     mention = f"@{acheteur} " if acheteur and acheteur != "?" else ""
     try:
-        await bot.twitch_api.send_automatic(f"{mention}{texte}")
+        # ORANGE : cette voie ne sert QU'aux remboursements — une récompense
+        # que Wally n'a pas pu honorer, et des points qui reviennent.
+        await bot.twitch_api.send_automatic(
+            f"{mention}{texte}", color=bot.twitch_api.COULEUR_ECHEC)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
         logger.error("Duel : refus non annoncé dans le chat : {e!r}", e=exc)
 

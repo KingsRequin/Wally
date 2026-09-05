@@ -54,6 +54,11 @@ DELAI_INDICE_S = 40.0
 COOLDOWN_S = 120.0
 
 Ligne = Callable[[str], Awaitable[None]]
+# La fin de partie porte en plus son ISSUE, qui décide de la couleur du fond
+# côté Twitch (`"echec"` quand personne n'a trouvé). Discord l'ignore : il n'a
+# pas de canal d'annonce coloré, et un paramètre reçu sans effet y coûte moins
+# qu'une deuxième signature à tenir.
+Fin = Callable[[str, str], Awaitable[None]]
 
 
 @dataclass
@@ -68,7 +73,7 @@ class Partie:
     rebus: Rebus
     canal: str
     publier: Ligne
-    annoncer: Ligne
+    annoncer: Fin
     a_donner: list[str]
     tache: asyncio.Task | None = field(default=None, repr=False)
 
@@ -167,14 +172,15 @@ async def _minuteur() -> None:
         rebus = _oublier(gagne=False)
         if rebus is not None:
             await annoncer(f"personne n'a trouvé le rébus {rebus.enigme} : "
-                           f"c'était {rebus.mot.upper()} ({rebus.solution}).")
+                           f"c'était {rebus.mot.upper()} ({rebus.solution}).",
+                           "echec")
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # noqa: BLE001 — le minuteur ne tue pas le bot
         logger.error("Rébus : minuteur interrompu : {e!r}", e=exc)
 
 
-async def _lancer(canal: str, publier: Ligne, annoncer: Ligne) -> str:
+async def _lancer(canal: str, publier: Ligne, annoncer: Fin) -> str:
     """Le moteur, commun aux deux plateformes. Rend un compte rendu HONNÊTE.
 
     Honnête au sens des autres outils du projet : s'il n'a pas pu lancer, il le
@@ -299,12 +305,16 @@ async def run_rebus_tool(bot, canal: str) -> str:
 
     async def publier(texte: str) -> None:
         try:
-            await api.send_automatic(texte)
+            # BLEU : l'énigme et ses indices, c'est une partie qui S'OUVRE et
+            # qui court. La conclusion, elle, part en vert ou en orange par
+            # `JeuAnnouncer` — le chat voit le fil du jeu changer de couleur au
+            # moment où il se referme.
+            await api.send_automatic(texte, color=api.COULEUR_DEBUT)
         except Exception as exc:  # noqa: BLE001 — un jeu n'interrompt pas le bot
             logger.error("Rébus : ligne non publiée sur Twitch : {e!r}", e=exc)
 
-    async def annoncer(fait: str) -> None:
-        await JeuAnnouncer(bot, canal).annoncer("rébus", fait)
+    async def annoncer(fait: str, issue: str = "") -> None:
+        await JeuAnnouncer(bot, canal).annoncer("rébus", fait, issue)
 
     return await _lancer(canal, publier, annoncer)
 
@@ -323,7 +333,7 @@ async def run_rebus_tool_discord(channel) -> str:
         except Exception as exc:  # noqa: BLE001 — un jeu n'interrompt pas le bot
             logger.error("Rébus : ligne non publiée sur Discord : {e!r}", e=exc)
 
-    async def annoncer(fait: str) -> None:
+    async def annoncer(fait: str, issue: str = "") -> None:
         await publier(f"🧩 {fait[0].upper()}{fait[1:]}")
 
     return await _lancer(str(channel.id), publier, annoncer)

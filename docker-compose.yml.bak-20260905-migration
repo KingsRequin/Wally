@@ -68,24 +68,23 @@ services:
       - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
     restart: unless-stopped
 
-# [migre vers la VM Freebox le 2026-09-05 — ne pas reactiver]
-#  cloudflared:
-#    image: cloudflare/cloudflared:latest
-#    container_name: wally-cloudflared
-#    command: tunnel --no-autoupdate run
-#    networks:
-#      - wally-net
-#    environment:
-#      - TUNNEL_TOKEN=${CLOUDFLARED_WALLY_TOKEN}
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: wally-cloudflared
+    command: tunnel --no-autoupdate run
+    networks:
+      - wally-net
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_WALLY_TOKEN}
       # Adresse du serveur de métriques, d'où `/ready` est servi. Fixée
       # EXPLICITEMENT : sans elle, cloudflared essaie 20241 à 20245 puis se
       # rabat sur un port AU HASARD, et le healthcheck n'a plus d'adresse à
       # interroger. Sur la boucle locale : jamais exposée hors du conteneur.
-#      - TUNNEL_METRICS=127.0.0.1:20241
-#    depends_on:
-#      - wally
-#    restart: unless-stopped
-#    healthcheck:
+      - TUNNEL_METRICS=127.0.0.1:20241
+    depends_on:
+      - wally
+    restart: unless-stopped
+    healthcheck:
       # `tunnel info` exige l'ID du tunnel en argument. Le healthcheck d'origine
       # l'appelait sans, et échouait donc à CHAQUE passage : 2751 échecs
       # consécutifs constatés le 2026-08-20, pendant que le tunnel servait
@@ -94,8 +93,8 @@ services:
       # `tunnel ready` interroge /ready et rend le code de sortie correspondant.
       # C'est le binaire lui-même : seul exécutable de cette image distroless,
       # qui n'a ni shell, ni curl, ni wget.
-#      test: ["CMD", "cloudflared", "tunnel", "ready"]
-#      interval: 60s
-#      timeout: 10s
-#      retries: 3
-#      start_period: 30s
+      test: ["CMD", "cloudflared", "tunnel", "ready"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

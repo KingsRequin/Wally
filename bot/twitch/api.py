@@ -182,6 +182,23 @@ class TwitchAPI:
     # ce n'est pas une réponse », là où une couleur qui change à chaque fois ne
     # dit plus rien — elle décore.
     AUTO_COLOR = "purple"
+
+    # ── La grammaire des couleurs d'annonce ────────────────────────────────
+    #
+    # Twitch n'en accepte que quatre plus `primary`, et il y a plus de dix
+    # chemins qui publient sans qu'on ait rien demandé à Wally. Une couleur par
+    # CHEMIN reviendrait donc à réutiliser les mêmes teintes au hasard : le
+    # violet du duel, le violet du pendu et le violet du remboursement ne
+    # diraient rien. Elles disent une INTENTION — la même règle que les accents
+    # de l'overlay, et pour la même raison.
+    #
+    # ⚠️ Ce sont les seules valeurs à employer. Écrire `"green"` en dur sur un
+    # chemin, c'est perdre le lien avec la règle le jour où elle change.
+    COULEUR_DEBUT = "blue"       # ça commence : partie lancée, duel ouvert, manche
+    COULEUR_REUSSITE = "green"   # gagné, trouvé, arrivé : le chat a réussi, un sub
+    COULEUR_ECHEC = "orange"     # perdu, raté, annulé, remboursé
+    # Le neutre est l'`AUTO_COLOR` : une info qui n'est ni un début, ni une
+    # issue — `!mood`, un score de mi-parcours, un commentaire d'image.
     # Délai avant de retenter une annonce après un refus. Assez long pour ne pas
     # frapper à chaque ligne, assez court pour qu'une autorisation refaite en
     # plein live reprenne d'elle-même.

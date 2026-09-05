@@ -172,12 +172,14 @@ class Salon:
         self.nom = nom
         self.lignes: list[str] = []
         self.annonces: list[str] = []
+        self.issues: list[str] = []
 
     async def publier(self, texte):
         self.lignes.append(texte)
 
-    async def annoncer(self, fait):
+    async def annoncer(self, fait, issue=""):
         self.annonces.append(fait)
+        self.issues.append(issue)
 
     async def lancer(self):
         return await jeu._lancer(self.nom, self.publier, self.annoncer)

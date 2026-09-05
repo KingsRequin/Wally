@@ -74,7 +74,11 @@ async def _rendre(bot, acheteur: str, reward_id: str, redemption_id: str,
                  f"automatiquement, il faudra le faire manuellement "
                  f"(redemption {redemption_id}).")
     try:
-        await bot.twitch_api.send_automatic(texte)
+        # ORANGE : une récompense payée qui n'a pas pu être honorée. Le viewer
+        # doit repérer la ligne qui le concerne dans un chat qui défile — c'est
+        # la seule annonce où il a perdu quelque chose.
+        await bot.twitch_api.send_automatic(
+            texte, color=bot.twitch_api.COULEUR_ECHEC)
     except Exception as exc:  # noqa: BLE001 — le remboursement est déjà fait
         logger.error("Spam de virus : refus non annoncé dans le chat : {e!r}", e=exc)
 
