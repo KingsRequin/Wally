@@ -5050,9 +5050,14 @@ body.is-mobile .mobile-back-btn {
 .ovl-act.inactif { opacity: 0.4; }
 /* L'œil sous cadenas : le verrou bloque la visibilité comme la position. Grisé
    plutôt qu'absent — un bouton qui disparaît fait douter de ce qu'on voit ; son
-   infobulle dit pourquoi et où lever le verrou. */
-.ovl-act:disabled { opacity: 0.28; cursor: not-allowed; }
-.ovl-act:disabled:hover { background: transparent; }
+   infobulle dit pourquoi et où lever le verrou.
+   `.bloque` et non `:disabled` : un bouton désactivé n'émet AUCUN clic, donc
+   aucune explication à qui insiste. Il garde l'air éteint, il répond quand
+   même. */
+.ovl-act:disabled,
+.ovl-act.bloque { opacity: 0.28; cursor: not-allowed; }
+.ovl-act:disabled:hover,
+.ovl-act.bloque:hover { background: transparent; }
 
 /* ── La surface de placement ─────────────────────────────────────────── */
 

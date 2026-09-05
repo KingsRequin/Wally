@@ -2428,6 +2428,18 @@ window.OverlayAdmin = (function () {
       noeuds.reveler.textContent = "+ Rendre visible un des " + masques
         + " éléments masqués";
     }
+    // Le jumeau du « + » pour le cadenas. Ctrl+A ne prend QUE ce qui est libre
+    // — c'est voulu —, donc une scène entièrement verrouillée n'avait plus
+    // aucune voie de sortie en masse : trente-deux cadenas à cliquer un par un.
+    if (noeuds.liberer) {
+      const verrous = cles.filter(function (c) {
+        return scene.elements[c].locked;
+      });
+      noeuds.liberer.style.display = verrous.length ? "" : "none";
+      noeuds.liberer.textContent = "🔓 Libérer les " + verrous.length
+        + " éléments verrouillés";
+      noeuds.liberer.dataset.cles = verrous.join(",");
+    }
   }
 
   // ── Le sélecteur d'animation ────────────────────────────────────────────
@@ -2863,6 +2875,12 @@ window.OverlayAdmin = (function () {
     // le verrou bloque la visibilité au même titre que la position et la
     // taille. Grisé plutôt qu'absent — un bouton qui disparaît fait douter de
     // ce qu'on a sous les yeux.
+    //
+    // Grisé mais CLIQUABLE : un `disabled` n'émet aucun clic, donc aucune
+    // parole. Sur une scène entièrement verrouillée — c'est arrivé en prod, un
+    // Ctrl+A suivi d'un « l » —, les trente-sept yeux devenaient muets d'un
+    // coup et le panneau passait pour cassé. Le clic dit désormais ce que le
+    // cadenas retient, comme `direLesBloques()` le fait pour le déplacement.
     const oeil = bouton(
       element.hidden ? "🚫" : "👁",
       element.locked
@@ -2870,9 +2888,17 @@ window.OverlayAdmin = (function () {
           + "ci-contre le libère."
         : (element.hidden ? "Masqué dans cette scène — cliquer pour montrer"
                           : "Visible — cliquer pour masquer dans cette scène"),
-      element.hidden ? "actif" : "",
-      function () { element.hidden = !element.hidden; apresBascule(cle); });
-    oeil.disabled = !!element.locked;
+      [element.hidden ? "actif" : "", element.locked ? "bloque" : ""]
+        .filter(Boolean).join(" "),
+      function () {
+        if (element.locked) {
+          notifier("« " + libelle(cle) + " » est verrouillé : le cadenas "
+            + "ci-contre le libère.", "error");
+          return;
+        }
+        element.hidden = !element.hidden;
+        apresBascule(cle);
+      });
     actions.appendChild(oeil);
     actions.appendChild(bouton(
       element.locked ? "🔒" : "🔓",
@@ -7021,6 +7047,20 @@ window.OverlayAdmin = (function () {
       ouvrirMenuMasques(noeuds.reveler);
     });
     lateral.appendChild(noeuds.reveler);
+
+    // La sortie de secours du cadenas, quand il n'y a plus personne de libre à
+    // sélectionner. Il ne s'affiche que s'il y a quelque chose à libérer.
+    noeuds.liberer = creer("button", "ovl-reveler", "🔓 Libérer");
+    noeuds.liberer.title = "Lever le cadenas sur tous les éléments verrouillés "
+      + "de cette scène — rien ne part à l'antenne avant « Mettre à l'antenne ».";
+    noeuds.liberer.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      const cles = (noeuds.liberer.dataset.cles || "").split(",")
+        .filter(function (c) { return !!c; });
+      if (!cles.length) return;
+      basculerChamp("locked", "verrouillés", "libérés", cles);
+    });
+    lateral.appendChild(noeuds.liberer);
 
     noeuds.aideListe = creer("div", "ovl-aide",
       "Glisser pour changer le rang : ce qui est en haut passe devant. "
