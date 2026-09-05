@@ -15,6 +15,7 @@ from loguru import logger
 from bot.config import VoiceConfig
 from bot.core.secret_guard import redact
 from bot.core.self_trace import note_voice_speech
+from bot.discord.voice.rtp_borne import poser_la_borne_rtp
 
 POST_SPEAK_MUTE_S = 0.4  # durée de mute post-lecture pour éviter que la queue residu soit transcrite
 # Plafond dur d'une prise de parole. Généreux : une longue réplique en
@@ -368,6 +369,9 @@ class VoiceService:
         # salon jamais rejoint pendant que `_vc` valait None. `/wally status`,
         # le prélude et le journal citaient alors un salon où Wally n'était pas,
         # et `_pending_inviter` polluait la salutation du join suivant.
+        # La bibliothèque d'écoute comble les trous RTP paquet par paquet, sans
+        # borne : posée ici, la borne l'empêche d'affamer la réception.
+        poser_la_borne_rtp()
         vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
         self._vc = vc
         self._channel = channel
