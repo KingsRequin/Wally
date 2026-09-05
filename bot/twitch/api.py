@@ -360,6 +360,7 @@ class TwitchAPI:
 
     async def send_automatic(
         self, text: str, broadcaster_id: Optional[str] = None,
+        *, color: str = "",
     ) -> bool:
         """Publie un message que PERSONNE n'a demandé à Wally directement.
 
@@ -378,6 +379,16 @@ class TwitchAPI:
         scope, ou si le compte bot n'est pas modérateur, la ligne repart en
         message ordinaire. Une récompense payée en points doit produire une
         réponse visible, colorée ou non.
+
+        `color` change la teinte pour CE message seulement, sans rien retirer
+        du filet ci-dessous — c'est la raison d'être du paramètre plutôt que
+        d'un appel direct à `send_announcement`. Il sert aux rappels du live,
+        où la couleur dit le SUJET (le Discord en bleu, YouTube en orange).
+        Partout ailleurs, l'`AUTO_COLOR` violet reste la signature de « ça
+        vient de Wally, personne ne le lui a demandé », et il ne se choisit
+        pas au cas par cas. Twitch n'accepte que quatre teintes plus
+        `primary` : une valeur inconnue retombe sur l'accent de la chaîne
+        dans `send_announcement`, jamais sur une annonce perdue.
         """
         # Une fois le canal su indisponible, on n'y frappe plus pendant un
         # moment : sans ça, un raid de cinquante lignes ferait cinquante
@@ -385,7 +396,7 @@ class TwitchAPI:
         # que l'autorisation peut être refaite EN COURS de live et que personne
         # ne redémarrera le bot pour ça.
         if time.monotonic() >= self._annonce_ko_jusqu_a:
-            if await self.send_announcement(text, color=self.AUTO_COLOR,
+            if await self.send_announcement(text, color=color or self.AUTO_COLOR,
                                             broadcaster_id=broadcaster_id):
                 return True
             self._annonce_ko_jusqu_a = time.monotonic() + self.ANNONCE_RETRY_S

@@ -28,6 +28,7 @@ que le canal des annonces se refuse serait la pire des deux options.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from functools import partial
 
@@ -40,6 +41,22 @@ from bot.core.tirage import SacSansRemise
 # venue. Une boucle qui dormirait la cadence entière raterait le début du live
 # de la moitié de cette cadence, et ne verrait pas non plus qu'il s'est arrêté.
 PAS_S = 60.0
+
+# « ## youtube (orange) » → sujet « youtube », couleur « orange ». La couleur vit
+# dans le TITRE DE SECTION et non dans la config : elle appartient au sujet, et
+# un sujet ajouté au fichier arriverait sinon sans teinte, en silence, jusqu'à ce
+# qu'on pense à ouvrir `config.yaml`. Twitch n'en accepte que cinq — une valeur
+# inconnue retombe sur `primary` dans `send_announcement`, jamais sur une annonce
+# perdue, donc rien à valider ici.
+_TITRE = re.compile(r"^(?P<sujet>.*?)\s*\((?P<couleur>[a-z]+)\)\s*$")
+
+
+def sujet_et_couleur(titre: str) -> tuple[str, str]:
+    """Découpe un titre de section. Sans parenthèses, la couleur est vide."""
+    m = _TITRE.match(titre.strip())
+    if m is None:
+        return titre.strip(), ""
+    return m.group("sujet").strip(), m.group("couleur")
 
 
 class AnnoncesAuto:
@@ -71,11 +88,23 @@ class AnnoncesAuto:
         # répétition qu'on est venu corriger.
         self._variantes: dict[str, SacSansRemise] = {}
 
-    def _annonces(self) -> dict[str, list[str]]:
+    def _annonces(self) -> dict[str, tuple[str, list[str]]]:
+        """`{sujet: (couleur, phrases)}`, titres de section déjà découpés.
+
+        Le découpage se fait ICI et nulle part ailleurs : les sacs, les logs et
+        la trace de soi ne voient que le sujet propre, jamais « youtube
+        (orange) ».
+        """
         persona = getattr(self._bot, "persona", None)
         if persona is None:
             return {}
-        return dict(getattr(persona, "annonces_auto", {}) or {})
+        brut = getattr(persona, "annonces_auto", {}) or {}
+        sortie: dict[str, tuple[str, list[str]]] = {}
+        for titre, phrases in brut.items():
+            sujet, couleur = sujet_et_couleur(titre)
+            if sujet:
+                sortie[sujet] = (couleur, list(phrases))
+        return sortie
 
     def _variantes_de(self, sujet: str) -> list[str]:
         """Les phrases d'un sujet, relues à chaque rechargement du sac.
@@ -84,7 +113,7 @@ class AnnoncesAuto:
         seul moyen de capturer la valeur dans une lambda, et mypy ne sait pas
         en inférer le type.
         """
-        return list(self._annonces().get(sujet, []))
+        return list(self._annonces().get(sujet, ("", []))[1])
 
     def _en_live(self) -> bool:
         return bool((getattr(self._bot, "_stream_info", None) or {}).get("live"))
@@ -102,8 +131,8 @@ class AnnoncesAuto:
             return True
         return feed.a_du_chat_frais(self._cadence_s)
 
-    def choisir(self) -> tuple[str, str] | None:
-        """Le prochain rappel, `(sujet, phrase)`, ou None si le fichier est vide."""
+    def choisir(self) -> tuple[str, str, str] | None:
+        """Le prochain rappel, `(sujet, phrase, couleur)`, ou None si rien à dire."""
         annonces = self._annonces()
         if not annonces:
             return None
@@ -118,7 +147,7 @@ class AnnoncesAuto:
             sac = SacSansRemise(partial(self._variantes_de, sujet))
             self._variantes[sujet] = sac
         phrase = sac.tirer()
-        return (sujet, phrase) if phrase else None
+        return (sujet, phrase, annonces[sujet][0]) if phrase else None
 
     async def publier(self) -> bool:
         """Tire et publie un rappel. Rend True s'il est parti."""
@@ -126,19 +155,20 @@ class AnnoncesAuto:
         if choix is None:
             logger.debug("Rappels du live : rien à publier (ANNONCES.md vide ?)")
             return False
-        sujet, phrase = choix
+        sujet, phrase, couleur = choix
         api = getattr(self._bot, "twitch_api", None)
         if api is None:
             logger.warning("Rappels du live : pas d'API Twitch, « {s} » non publié", s=sujet)
             return False
         try:
-            if not await api.send_automatic(phrase):
+            if not await api.send_automatic(phrase, color=couleur):
                 logger.warning("Rappel « {s} » non publié du tout", s=sujet)
                 return False
         except Exception as exc:  # noqa: BLE001 — un rappel ne casse pas le live
             logger.error("Rappel « {s} » non publié : {e!r}", s=sujet, e=exc)
             return False
-        logger.info("Rappel du live publié ({s}) : {p}", s=sujet, p=phrase[:80])
+        logger.info("Rappel du live publié ({s}, {c}) : {p}",
+                    s=sujet, c=couleur or "défaut", p=phrase[:80])
         # Wally doit savoir ce qu'il vient de faire : sans ça, il dément avoir
         # posté le lien qu'un viewer a sous les yeux.
         note_act(f"tu as publié un rappel dans le chat du live : « {phrase[:120]} »")

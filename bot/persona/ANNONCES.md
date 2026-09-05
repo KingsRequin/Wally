@@ -15,9 +15,21 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 > n'envoie nulle part, et personne ne le signalera. C'est aussi pour ça que ces phrases sont
 > ÉCRITES ici et pas générées : je n'invente pas une adresse.
 >
+> **La couleur du fond se règle dans le titre de section**, entre parenthèses : `## youtube
+> (orange)`. Elle dit le SUJET d'un coup d'œil, avant même qu'on ait lu la phrase.
+>
+> ⚠️ Twitch n'en accepte que CINQ, et pas une de plus : `blue`, `green`, `orange`, `purple`,
+> `primary` (l'accent de la chaîne). **Il n'y a pas de rouge** — YouTube prend l'orange, qui
+> en est le plus proche. Une couleur mal orthographiée ne fait pas perdre l'annonce : elle
+> sort en `primary`.
+>
+> Le violet reste par ailleurs la signature de tout ce que Wally publie sans qu'on le lui
+> demande (récompenses, raids, fins de partie). Le réserver ici à un sujet serait perdre ce
+> repère, d'où les couleurs distinctes.
+>
 > Une section vide est ignorée. Vider les six éteint la fonction, sans rien casser.
 
-## tiktok
+## tiktok (purple)
 
 - Le TikTok d'Azraël, c'est là que ses meilleures trends finissent : https://www.tiktok.com/@azrael_twitch
 - Rappel pour ceux qui viennent d'arriver : https://www.tiktok.com/@azrael_twitch, le TikTok d'Azraël.
@@ -26,7 +38,7 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 - Petit passage sur le TikTok si c'est pas déjà fait : https://www.tiktok.com/@azrael_twitch
 - TikTok d'Azraël pour ceux qui collectionnent les trends : https://www.tiktok.com/@azrael_twitch
 
-## youtube
+## youtube (orange)
 
 - La chaîne YouTube d'Azraël, pour les tops 1 en entier : https://www.youtube.com/@Azrael_TTV
 - Ce qui ne rentre pas dans un live finit ici : https://www.youtube.com/@Azrael_TTV
@@ -35,7 +47,7 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 - Les meilleures parties sont en replay là-bas : https://www.youtube.com/@Azrael_TTV
 - Pour le Fuse en pleine forme, c'est sur YouTube : https://www.youtube.com/@Azrael_TTV
 
-## discord
+## discord (blue)
 
 - Le Discord, c'est là que ça se passe entre deux lives : https://discord.com/invite/qPx53paTGg
 - Annonces, memes et gens bizarres, tout est sur le Discord : https://discord.com/invite/qPx53paTGg
@@ -44,7 +56,7 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 - Le Discord est ouvert, on y parle même quand le live est fini : https://discord.com/invite/qPx53paTGg
 - Pour rester au courant des actus d'Azraël : https://discord.com/invite/qPx53paTGg
 
-## meme
+## meme (green)
 
 - Vos memes déposés sur le Discord finissent à l'écran pendant le live. Faites-vous plaisir.
 - Un meme posté sur le Discord peut très bien passer en intro de live. À vous de voir.
@@ -53,7 +65,7 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 - Les memes de la commu passent à l'écran pendant le stream. Il en faut toujours plus.
 - Postez vos memes sur le Discord, je m'occupe de les mettre sous le nez de tout le monde.
 
-## bonjour
+## bonjour (primary)
 
 - Un bonjour en arrivant, ça coûte rien et ça se remarque.
 - Pour ceux qui viennent d'arriver en silence : on dit bonjour, ici.
@@ -62,7 +74,7 @@ seule chose qui change, c'est que je ne récite plus la même phrase mot pour mo
 - On dit bonjour en arrivant. Bonsoir si vous êtes du soir.
 - Personne ne mord dans ce chat, vous pouvez dire bonjour.
 
-## code createur
+## code createur (green)
 
 - Code créateur AZRAEL sur l'EA App ou l'EA Store, si vous voulez le rendre riche.
 - Petit rappel : le code créateur AZRAEL s'entre sur l'EA App ou l'EA Store.

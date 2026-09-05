@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.core.stream_feed import StreamFeed
-from bot.twitch.annonces_auto import AnnoncesAuto
+from bot.twitch.annonces_auto import AnnoncesAuto, sujet_et_couleur
 
 ANNONCES = {
-    "tiktok": ["tik 1", "tik 2"],
-    "discord": ["dis 1", "dis 2"],
-    "bonjour": ["jour 1", "jour 2"],
+    "tiktok (purple)": ["tik 1", "tik 2"],
+    "discord (blue)": ["dis 1", "dis 2"],
+    "bonjour (primary)": ["jour 1", "jour 2"],
 }
 
 
@@ -48,7 +48,7 @@ def test_une_variante_ne_ressort_pas_avant_que_lautre_soit_passee():
     a = _annonceur(_bot())
     vues = []
     for _ in range(6):  # deux tours complets des trois sujets
-        sujet, phrase = a.choisir()
+        sujet, phrase, _couleur = a.choisir()
         if sujet == "tiktok":
             vues.append(phrase)
     assert sorted(vues) == ["tik 1", "tik 2"]
@@ -67,7 +67,7 @@ def test_une_section_effacee_entre_deux_tirages_ne_sert_plus():
     bot = _bot()
     a = _annonceur(bot)
     a.choisir()                       # amorce le sac avec les trois sujets
-    bot.persona.annonces_auto = {"discord": ["dis 1"]}
+    bot.persona.annonces_auto = {"discord (blue)": ["dis 1"]}
     for _ in range(3):
         choix = a.choisir()
         assert choix is None or choix[0] == "discord"
@@ -116,6 +116,32 @@ async def test_la_cadence_echue_publie_une_phrase_du_fichier():
     await a.tour()
     envoye = bot.twitch_api.send_automatic.await_args.args[0]
     assert envoye in [p for phrases in ANNONCES.values() for p in phrases]
+
+
+async def test_la_couleur_du_titre_part_avec_la_phrase():
+    """Le fond dit le SUJET : le Discord en bleu, YouTube en orange. Sans ça,
+    six rappels violets se ressemblent tous et ne se distinguent plus du reste
+    de ce que Wally publie sans qu'on le lui demande."""
+    bot = _bot({"discord (blue)": ["dis 1"]})
+    a = _annonceur(bot, cadence_s=0.0)
+    await a.tour()
+    assert bot.twitch_api.send_automatic.await_args.kwargs["color"] == "blue"
+
+
+async def test_un_titre_sans_couleur_laisse_le_defaut():
+    """Pas de parenthèses = pas de couleur imposée : `send_automatic` garde son
+    violet. Une section ajoutée à la va-vite ne doit pas perdre son annonce."""
+    bot = _bot({"discord": ["dis 1"]})
+    a = _annonceur(bot, cadence_s=0.0)
+    await a.tour()
+    assert bot.twitch_api.send_automatic.await_args.kwargs["color"] == ""
+
+
+def test_le_sujet_est_rendu_sans_sa_couleur():
+    """Les sacs, les logs et la trace de soi ne voient jamais « youtube
+    (orange) » — le découpage a UN seul endroit."""
+    a = _annonceur(_bot({"youtube (orange)": ["you 1"]}))
+    assert a.choisir() == ("youtube", "you 1", "orange")
 
 
 async def test_la_publication_passe_par_send_automatic():
@@ -193,9 +219,22 @@ def annonces_de_prod():
 
 
 def test_les_six_sujets_de_phantombot_sont_tous_repris(annonces_de_prod):
-    assert set(annonces_de_prod) == {
+    sujets = {sujet_et_couleur(t)[0] for t in annonces_de_prod}
+    assert sujets == {
         "tiktok", "youtube", "discord", "meme", "bonjour", "code createur",
     }
+
+
+def test_chaque_sujet_de_prod_porte_une_couleur_que_twitch_accepte(annonces_de_prod):
+    """Twitch n'en connaît que cinq. Une faute de frappe ne perd pas l'annonce
+    (elle sort en `primary`), mais elle perd le REPÈRE, et sans bruit — c'est
+    précisément ce qui ne se remarque jamais en live."""
+    from bot.twitch.api import TwitchAPI
+
+    valides = set(TwitchAPI.ANNOUNCE_COLORS) | {"primary"}
+    fautives = {t: sujet_et_couleur(t)[1] for t in annonces_de_prod
+                if sujet_et_couleur(t)[1] not in valides}
+    assert not fautives
 
 
 def test_chaque_sujet_a_plusieurs_variantes(annonces_de_prod):
