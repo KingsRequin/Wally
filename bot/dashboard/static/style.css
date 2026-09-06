@@ -4348,6 +4348,10 @@ body.is-mobile .mobile-back-btn {
   font-size: 0.8rem;
 }
 .apex-link-row input:focus { outline: none; border-color: var(--accent); }
+/* Les deux menus de « Discord › Salons ». `min-width: 0` et non une largeur
+   plancher : un nom de salon Discord peut faire trente caractères, et sur
+   390 px la ligne doit se replier plutôt que déborder de l'écran. */
+.apex-link-row select { flex: 1 1 200px; min-width: 0; max-width: 100%; }
 
 .apex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 

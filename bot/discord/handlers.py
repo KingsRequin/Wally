@@ -1685,11 +1685,24 @@ async def _fetch_discord_history(
 
 
 def _is_channel_allowed(config, channel_id: int, guild_id: int | None = None) -> bool:
-    """Vérifie si Wally peut répondre dans ce canal selon le mode de filtrage."""
+    """Vérifie si Wally peut répondre dans ce canal selon le mode de filtrage.
+
+    ``channel_blacklist`` — la liste des salons ignorés, celle qu'écrit la page
+    « Discord → Salons » — prime sur TOUT le reste : mode de filtrage et
+    whitelist par serveur compris. Elle était auparavant lue en dernier, et
+    seulement en mode ``blacklist`` : ``per_guild_channel_whitelist`` la
+    neutralisait en silence. Les sept salons exclus du Purgatoire (partie
+    privée, hors-stream, rediffusions…) étaient donc lus, répondus et
+    MÉMORISÉS depuis toujours, parce que la whitelist de ce serveur vaut
+    ``null`` (« tous les salons »). Un bouton « Ignorer » qui n'ignore pas
+    n'existe pas.
+    """
     if guild_id is None:
         # DM channel — toujours autorisé (Wally peut lui-même initier des DM,
         # les réponses doivent donc être traitées quel que soit le filtrage de guild).
         return True
+    if channel_id in (config.discord.channel_blacklist or []):
+        return False
     pgw = config.discord.per_guild_channel_whitelist
     guild_key = str(guild_id)
     if guild_key in pgw:
@@ -1701,10 +1714,9 @@ def _is_channel_allowed(config, channel_id: int, guild_id: int | None = None) ->
     if mode == "whitelist":
         wl = config.discord.channel_whitelist
         return not wl or channel_id in wl
-    if mode == "blacklist":
-        bl = config.discord.channel_blacklist
-        return channel_id not in bl
-    return True  # mode "none" ou inconnu : tout autorisé
+    # Le mode "blacklist" n'a plus rien à faire ici : la garde du haut a déjà
+    # écarté les salons ignorés, quel que soit le mode.
+    return True  # mode "blacklist", "none" ou inconnu : tout autorisé
 
 
 async def _check_spam(bot: "WallyDiscord", message: discord.Message) -> bool:
@@ -2186,8 +2198,15 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
         getattr(bot, "owner_gate", None), bot.config,
         author_id=user_id, is_dm=_is_dm,
     )
-    _is_always_trigger = _is_dm or message.channel.id in getattr(bot.config.discord, "always_trigger_channels", [])
-    channel_allowed = _is_always_trigger or _is_channel_allowed(bot.config, message.channel.id, message.guild.id if message.guild else None)
+    # Un salon ignoré le reste : `always_trigger_channels` dit « ici, tout
+    # message s'adresse à Wally », pas « ici, on passe outre la liste des
+    # salons ignorés ». L'inverse ferait d'une ligne oubliée dans un réglage
+    # de confort une porte dérobée sur un salon qu'on croyait muet.
+    channel_allowed = _is_channel_allowed(
+        bot.config, message.channel.id, message.guild.id if message.guild else None)
+    _is_always_trigger = _is_dm or (
+        channel_allowed
+        and message.channel.id in getattr(bot.config.discord, "always_trigger_channels", []))
 
     # Contenu enrichi : inclut un tag [image] si des images sont jointes
     _has_images = any(

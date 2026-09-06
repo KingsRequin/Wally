@@ -19,15 +19,16 @@ from bot.config import TwitchConfig
 from bot.dashboard.routes.admin import list_ignored
 
 
-def _request(*, ignores_twitch=None, bans=None):
+def _request(*, ignores_twitch=None, bans=None, salons=None):
     cfg = SimpleNamespace(
         twitch=TwitchConfig(guest_channels=[], cooldown_seconds=10,
                             ignored_users=list(ignores_twitch or [])),
+        discord=SimpleNamespace(channel_blacklist=list(salons or [])),
         save=lambda: None,
     )
     db = SimpleNamespace(list_chat_bans=AsyncMock(return_value=list(bans or [])))
     return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
-        wally=SimpleNamespace(config=cfg, db=db))))
+        wally=SimpleNamespace(config=cfg, db=db, discord_bot=None))))
 
 
 @pytest.mark.asyncio

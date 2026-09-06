@@ -14,7 +14,7 @@ jour, dans du code qui tournait en production :
 
 Ce que le script vérifie, et qui n'était vérifiable nulle part ailleurs :
   1. l'overlay charge, ses 37 éléments sont dans le DOM, aucune erreur JS ;
-  2. les onze pages du dashboard admin s'ouvrent sans erreur ;
+  2. les douze pages du dashboard admin s'ouvrent sans erreur ;
   3. les sous-onglets de Paramètres — dont Vocal — rendent du CONTENU.
 
 Le « sans erreur » ne suffit pas seul : un panneau peut rester vide en silence.
@@ -55,6 +55,7 @@ ONGLETS = [
     ("Mémoire commune", "cerveau/memoire"),
     ("Personnalité", "cerveau/personnalite"),
     ("Modèles & coûts", "cerveau/modeles"),
+    ("Salons", "discord/salons"),
     ("Scène & overlays", "live/scene"),
     ("Voix", "live/voix"),
     ("Médias & sons", "live/medias"),
@@ -840,7 +841,7 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
              "la barre du bas prend le relais")
 
     dest = page.locator(".barre-bas-item").count()
-    rap.dire(dest == 4, "quatre destinations, pas onze", f"{dest}")
+    rap.dire(dest == 5, "cinq destinations, pas douze", f"{dest}")
 
     # Les puces sont DÉRIVÉES de la sidebar : une seconde liste écrite à la
     # main divergerait au premier ajout, et personne ne le verrait puisqu'elle
@@ -878,7 +879,7 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
     #
     # On regarde donc chaque élément FEUILLE de la page active : dépasse-t-il
     # le bord droit de la colonne, ou coupe-t-il son propre contenu ? Et sur
-    # les onze pages, pas quatre.
+    # les douze pages, pas quatre.
     sonde = """(() => {
       const m = document.querySelector('.main-content');
       const lim = m.getBoundingClientRect().right;

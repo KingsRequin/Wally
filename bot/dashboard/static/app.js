@@ -325,6 +325,11 @@ const ROUTES = {
     sous: 'Quel modèle sert à quoi, et ce que ça coûte.',
     pane: 'admin-modeles',
   },
+  'discord/salons': {
+    titre: 'Salons',
+    sous: 'Les salons Discord que Wally ignore complètement.',
+    pane: 'admin-salons',
+  },
   'live/scene': {
     titre: 'Scène & overlays',
     sous: 'Le placement de ce que les viewers voient.',
@@ -483,6 +488,7 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-modeles') renderModeles();
   else if (def.pane === 'admin-medias') renderMedias();
   else if (def.pane === 'admin-connexions') renderConnexions();
+  else if (def.pane === 'admin-salons') renderSalons();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
   else if (def.pane === 'admin-memoire') renderMemoireCommune();
@@ -2675,6 +2681,202 @@ function _cnxCarte(nom, a, cle) {
         return '<div class="cnx-fait"><span>' + escHtml(f[0]) + '</span>'
           + '<b>' + escHtml(f[1]) + '</b></div>';
       }).join('') + '</div></div>';
+}
+
+// ── Discord › Salons ────────────────────────────────────────────────────────
+//
+// Les salons que Wally ignore complètement : il n'y répond pas, n'y réagit
+// pas, n'en perçoit rien et n'en mémorise rien. C'est la même liste que
+// `discord.channel_blacklist` dans la config — écrite ici par un choix dans
+// deux menus, plutôt qu'en collant un snowflake à la main.
+//
+// Les ids voyagent en CHAÎNES d'un bout à l'autre. Un id Discord dépasse
+// 2^53 : `JSON.parse` le rend en `Number`, et 882793497663537172 devient
+// 882793497663537200 sans que rien ne le signale. Le serveur les sert donc en
+// texte et les reconvertit en entiers à l'écriture.
+
+const _SALONS_SECTIONS = [
+  ['salons-liste-section', 'Salons ignorés'],
+  ['salons-ajout', 'Ajouter un salon'],
+];
+
+// Ce que le serveur a répondu au dernier chargement. `null` = pas encore lu.
+let _salonsIgnores = null;
+// Le catalogue des serveurs et de leurs salons textuels, tel que le bot les
+// voit. Vide quand l'adaptateur Discord est arrêté — la page le dit alors,
+// plutôt que d'afficher deux menus vides sans explication.
+let _salonsCatalogue = [];
+
+function renderSalons() {
+  const el = document.getElementById('tab-admin-salons');
+  if (!el) return;
+
+  if (!document.getElementById('salons-liste-section')) {
+    el.innerHTML = '<div class="page-section" id="salons-liste-section">'
+      + '<div class="page-section-titre">Salons ignorés</div>'
+      + '<div class="page-section-sous">Wally n\'y répond pas, n\'y réagit pas, '
+      + 'n\'en perçoit rien et n\'en mémorise rien. Un message posté dans un de '
+      + 'ces salons ne laisse aucune trace — ni fait, ni contexte, ni journal.'
+      + '</div><div id="salons-liste"></div></div>'
+      + '<div class="page-section" id="salons-ajout">'
+      + '<div class="page-section-titre">Ajouter un salon</div>'
+      + '<div class="page-section-sous">Choisis le serveur, puis le salon.</div>'
+      + '<div id="salons-form"></div></div>';
+  }
+
+  chargerSalons();
+  poserSommaire('discord/salons', _SALONS_SECTIONS, '');
+}
+
+async function chargerSalons() {
+  const liste = document.getElementById('salons-liste');
+  const form = document.getElementById('salons-form');
+  if (!liste || !form) return;
+  liste.textContent = 'Chargement…';
+
+  const [ri, rc] = await Promise.all([
+    apiFetch('/api/admin/ignored'),
+    apiFetch('/api/admin/notification-channels'),
+  ]);
+  if (!ri || !ri.ok) { liste.textContent = 'Erreur de chargement'; return; }
+  _salonsIgnores = ((await ri.json()) || {}).salons || [];
+  _salonsCatalogue = (rc && rc.ok) ? (((await rc.json()) || {}).guilds || []) : [];
+
+  _renderListeSalons(liste);
+  _renderFormSalons(form);
+}
+
+function _renderListeSalons(hote) {
+  hote.replaceChildren();
+  if (!_salonsIgnores.length) {
+    const vide = document.createElement('p');
+    vide.style.cssText = 'color:var(--text-secondary);margin:0';
+    vide.textContent = 'Aucun salon ignoré : Wally lit tous les salons qu\'il voit.';
+    hote.appendChild(vide);
+    return;
+  }
+  _salonsIgnores.forEach(function (s) {
+    const carte = document.createElement('div');
+    carte.className = 'twitch-channel-card';
+
+    const nom = document.createElement('span');
+    nom.className = 'tc-name';
+    // Sans nom, l'id : un salon supprimé ou d'un serveur quitté reste ignoré,
+    // et doit rester retirable — le faire disparaître de la page le rendrait
+    // définitif sans que personne ne puisse l'annuler.
+    nom.textContent = s.nom ? '#' + s.nom : s.id;
+    carte.appendChild(nom);
+
+    const detail = [];
+    if (s.serveur) detail.push(s.serveur);
+    else detail.push('serveur inconnu (Wally n\'y est plus, ou il est hors ligne)');
+    if (s.nom) detail.push(s.id);
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--text-secondary);font-size:0.75rem;margin-left:8px';
+    meta.textContent = detail.join(' · ');
+    carte.appendChild(meta);
+
+    const btn = document.createElement('button');
+    btn.className = 'tc-kick';
+    btn.textContent = 'Ne plus ignorer';
+    btn.onclick = function () { retirerSalonIgnore(s.id); };
+    carte.appendChild(btn);
+    hote.appendChild(carte);
+  });
+}
+
+function _renderFormSalons(hote) {
+  hote.replaceChildren();
+
+  if (!_salonsCatalogue.length) {
+    const p = document.createElement('p');
+    p.style.cssText = 'color:var(--text-secondary);margin:0';
+    p.textContent = 'Aucun serveur lisible : l\'adaptateur Discord est arrêté. '
+      + 'Démarre-le depuis Système → Connexions, puis reviens ici.';
+    hote.appendChild(p);
+    return;
+  }
+
+  const ligne = document.createElement('div');
+  ligne.className = 'apex-link-row';
+
+  const serveurs = document.createElement('select');
+  serveurs.id = 'salons-serveur';
+  _salonsCatalogue.forEach(function (g) {
+    const o = document.createElement('option');
+    o.value = g.id;
+    o.textContent = g.name;
+    serveurs.appendChild(o);
+  });
+
+  const salons = document.createElement('select');
+  salons.id = 'salons-salon';
+
+  serveurs.onchange = function () { _remplirSalonsDuServeur(serveurs.value, salons); };
+
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-success';
+  btn.textContent = '+ Ignorer ce salon';
+  btn.onclick = function () { ajouterSalonIgnore(salons.value); };
+
+  ligne.appendChild(serveurs);
+  ligne.appendChild(salons);
+  ligne.appendChild(btn);
+  hote.appendChild(ligne);
+
+  _remplirSalonsDuServeur(serveurs.value, salons);
+}
+
+function _remplirSalonsDuServeur(serveurId, select) {
+  select.replaceChildren();
+  const guilde = _salonsCatalogue.find(function (g) { return g.id === serveurId; });
+  const deja = (_salonsIgnores || []).map(function (s) { return String(s.id); });
+  const libres = ((guilde || {}).channels || []).filter(function (c) {
+    return deja.indexOf(String(c.id)) === -1;
+  });
+  if (!libres.length) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = guilde && (guilde.channels || []).length
+      ? 'Tous les salons de ce serveur sont déjà ignorés'
+      : 'Aucun salon textuel visible ici';
+    select.appendChild(o);
+    return;
+  }
+  libres.forEach(function (c) {
+    const o = document.createElement('option');
+    o.value = c.id;
+    o.textContent = '#' + c.name;
+    select.appendChild(o);
+  });
+}
+
+/** Écrit la liste ENTIÈRE : `/config` remplace, il ne fusionne pas. La liste
+ *  de départ vient du dernier chargement, jamais d'un cache plus ancien. */
+async function _ecrireSalonsIgnores(ids, message) {
+  const r = await apiFetch('/api/admin/config', {
+    method: 'POST',
+    body: JSON.stringify({ discord: { channel_blacklist: ids } }),
+  });
+  if (!r || !r.ok) { toast('Erreur d\'enregistrement', 'error'); return; }
+  toast(message, 'success');
+  await chargerSalons();
+}
+
+async function ajouterSalonIgnore(salonId) {
+  const cible = String(salonId || '').trim();
+  if (!cible) { toast('Choisis un salon', 'error'); return; }
+  const actuels = (_salonsIgnores || []).map(function (s) { return String(s.id); });
+  if (actuels.indexOf(cible) >= 0) { toast('Déjà ignoré', 'error'); return; }
+  await _ecrireSalonsIgnores(actuels.concat([cible]), 'Wally n\'y lira plus rien');
+}
+
+async function retirerSalonIgnore(salonId) {
+  const cible = String(salonId);
+  const restants = (_salonsIgnores || [])
+    .map(function (s) { return String(s.id); })
+    .filter(function (v) { return v !== cible; });
+  await _ecrireSalonsIgnores(restants, 'Wally lit de nouveau ce salon');
 }
 
 // ── Cerveau › Personnalité ──────────────────────────────────────────────────

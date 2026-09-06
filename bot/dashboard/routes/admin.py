@@ -29,11 +29,35 @@ _OPENAI_EXCLUDE = ["realtime", "preview", "audio", "vision"]
 _TWITCH_LOGIN_RE = re.compile(r'^[a-z0-9_]{1,25}$')
 
 
+def _ids_de_salons(brut: object, champ: str) -> list[int]:
+    """Une liste d'ids de salons, en `int`, quoi qu'envoie le navigateur.
+
+    Le front manipule les snowflakes en CHAÎNES (un `Number` JavaScript en
+    perdrait les derniers chiffres). Rangées telles quelles, elles ne seraient
+    jamais égales à `message.channel.id`, qui est un `int` : le salon
+    resterait lu, la page l'annoncerait ignoré, et rien ne le dirait.
+    """
+    if not isinstance(brut, list):
+        raise HTTPException(400, f"{champ} must be a list")
+    sortie: list[int] = []
+    for x in brut:
+        try:
+            sortie.append(int(str(x).strip()))
+        except (TypeError, ValueError) as e:
+            raise HTTPException(400, f"{champ}: « {x} » is not a channel id") from e
+    return sortie
+
+
 @router.get("/config")
 async def get_config(request: Request) -> dict:
     cfg = request.app.state.wally.config
+    # `notification_channel_id` en chaîne : cf. `/notification-channels`, un
+    # snowflake ne survit pas à un `Number` JavaScript.
+    bot_cfg = asdict(cfg.bot)
+    if bot_cfg.get("notification_channel_id") is not None:
+        bot_cfg["notification_channel_id"] = str(bot_cfg["notification_channel_id"])
     return {
-        "bot": asdict(cfg.bot),
+        "bot": bot_cfg,
         "openai": asdict(cfg.openai),
         "llm": asdict(cfg.llm),
         "discord": asdict(cfg.discord),
@@ -275,9 +299,9 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
         if "channel_filter_mode" in d:
             cfg.discord.channel_filter_mode = str(d["channel_filter_mode"])
         if "channel_whitelist" in d:
-            cfg.discord.channel_whitelist = list(d["channel_whitelist"])  # liste
+            cfg.discord.channel_whitelist = _ids_de_salons(d["channel_whitelist"], "channel_whitelist")
         if "channel_blacklist" in d:
-            cfg.discord.channel_blacklist = list(d["channel_blacklist"])  # liste
+            cfg.discord.channel_blacklist = _ids_de_salons(d["channel_blacklist"], "channel_blacklist")
         if "spam_detection" in d:
             sd = d["spam_detection"]
             spam = cfg.discord.spam_detection
@@ -576,13 +600,18 @@ async def list_notification_channels(request: Request) -> dict:
     if state.discord_bot is None:
         return {"guilds": []}
 
+    # Les ids partent en CHAÎNES, jamais en nombres : un snowflake Discord
+    # dépasse 2^53, et `JSON.parse` le rend en `Number` — 882793497663537172
+    # devient 882793497663537200 dans le navigateur, en silence. Le `<select>`
+    # du salon de notification renvoyait donc un id voisin inexistant à chaque
+    # sauvegarde. Une chaîne traverse le JSON sans perdre un chiffre.
     guilds = []
     for guild in state.discord_bot.guilds:
         channels = []
         for ch in guild.text_channels:
-            channels.append({"id": ch.id, "name": ch.name})
+            channels.append({"id": str(ch.id), "name": ch.name})
         guilds.append({
-            "id": guild.id,
+            "id": str(guild.id),
             "name": guild.name,
             "channels": channels,
         })
@@ -610,13 +639,39 @@ async def user_chat_messages(request: Request, discord_id: str, limit: int = 100
     return {"messages": messages}
 
 
+def _salons_ignores(state) -> list[dict]:
+    """Les salons Discord que Wally ignore, avec leur nom quand on le connaît.
+
+    L'id seul ne dit rien à personne : la carte porte le nom du salon et celui
+    du serveur, résolus par le bot. Un salon devenu invisible (serveur quitté,
+    salon supprimé) garde son id pour libellé — sans quoi il disparaîtrait de
+    la page tout en continuant d'être ignoré, et plus personne ne pourrait
+    l'en retirer.
+
+    Ids en chaînes : un snowflake ne survit pas à un `Number` JavaScript.
+    """
+    bot = state.discord_bot
+    sortie: list[dict] = []
+    for cid in list(getattr(state.config.discord, "channel_blacklist", None) or []):
+        salon = bot.get_channel(int(cid)) if bot is not None else None
+        guilde = getattr(salon, "guild", None)
+        sortie.append({
+            "id": str(cid),
+            "nom": getattr(salon, "name", "") or "",
+            "serveur": getattr(guilde, "name", "") or "",
+            "serveur_id": str(getattr(guilde, "id", "") or ""),
+        })
+    return sortie
+
+
 @router.get("/ignored")
 async def list_ignored(request: Request) -> dict:
     """Tout ce que Wally ignore, réglable ou non, en un seul appel.
 
-    Trois mécanismes coexistent et ne se voyaient nulle part ensemble : la
-    liste Twitch de la config, la table des bannis Discord, et deux socles
-    câblés en dur. Le panneau les montre côte à côte parce que la question
+    Quatre mécanismes coexistent et ne se voyaient nulle part ensemble : la
+    liste Twitch de la config, la table des bannis Discord, les salons
+    Discord exclus (`channel_blacklist`, servis ici pour la page
+    « Discord → Salons »), et deux socles câblés en dur. Le panneau les montre côte à côte parce que la question
     qu'on se pose est « pourquoi Wally lit-il encore ce compte ? » — et la
     réponse est dans celui des trois qu'on n'avait pas sous les yeux.
 
@@ -647,6 +702,7 @@ async def list_ignored(request: Request) -> dict:
         # `or []` et pas un défaut de `.get` : un `config.yaml` antérieur peut
         # porter `ignored_users: null`, que le défaut ne couvre PAS.
         "twitch": list(getattr(state.config.twitch, "ignored_users", None) or []),
+        "salons": _salons_ignores(state),
         "socle": {
             "discord": "Tous les bots Discord sont ignorés d'office "
                        "(Wally ne lit jamais un message dont l'auteur est un bot).",
