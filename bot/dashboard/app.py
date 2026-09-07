@@ -39,6 +39,33 @@ mimetypes.add_type("image/webp", ".webp")
 # en `application/octet-stream` est un pari sur le reniflage du navigateur.
 mimetypes.add_type("image/avif", ".avif")
 
+# Les extensions dont le contenu n'est PAS du code. Elles portent un nom
+# stable (`tcg-azrael-hero.avif`) et sont réécrites en place par
+# `scripts/generer_illustrations_tcg.py`.
+#
+# 🚨 D'où `no-cache` — « revalider avant de servir » — et jamais `immutable`
+# ni un `max-age` long, qui figeraient une illustration retouchée dans le
+# navigateur de chaque visiteur jusqu'à expiration.
+#
+# Le `no-store` du reste n'est PAS une négligence : c'est lui qui rend le
+# front modifiable sans rebuild (`public-ui/` est bind-monté), et le retirer
+# ferait servir du JavaScript périmé après une correction.
+_EXT_MEDIAS = (".avif", ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg",
+               ".webm", ".mp4", ".woff2", ".woff", ".ico")
+
+# `no-cache` n'est pas « pas de cache » : le navigateur garde le fichier et
+# revalide par ETag, ce à quoi Starlette répond 304 sans corps. Mesuré le
+# 2026-09-07 : une visite de `/tcg` retéléchargeait ~1 Mo d'illustrations à
+# chaque fois, et l'overlay l'aurait fait à chaque affichage de carte.
+_CACHE_CODE = "no-store, no-cache, must-revalidate, max-age=0"
+_CACHE_MEDIA = "no-cache"
+
+
+def _entete_cache(chemin: str) -> str:
+    """La valeur de `Cache-Control` pour un fichier du site public."""
+    return _CACHE_MEDIA if chemin.lower().endswith(_EXT_MEDIAS) else _CACHE_CODE
+
+
 # Les `?v=…` des feuilles et des scripts du panneau admin, quelle que soit
 # l'empreinte déjà écrite dans `index.html`.
 _ASSET_VERSION_RE = re.compile(r'(src|href)="(/static/[^"?]+\.(?:js|css))\?v=[^"]*"')
@@ -60,17 +87,24 @@ class NoCacheStaticFiles(StaticFiles):
 
 
 class SPAStaticFiles(StaticFiles):
-    """StaticFiles avec fallback vers index.html pour les routes SPA inconnues."""
+    """StaticFiles avec fallback vers index.html pour les routes SPA inconnues.
+
+    Le `Cache-Control` dépend de ce qui est servi (`_entete_cache`) : le code
+    du front n'est jamais gardé, les médias sont revalidés.
+    """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             response = await super().get_response(path, scope)
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Cache-Control"] = _entete_cache(path)
             return response
         except Exception as exc:
             if getattr(exc, "status_code", None) == 404:
+                # Le repli est de l'INDEX, quel que soit le chemin demandé :
+                # `_entete_cache` rendrait `no-cache` sur une route inconnue
+                # finissant par `.png`, et ferait garder du HTML.
                 response = await super().get_response("index.html", scope)
-                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Cache-Control"] = _CACHE_CODE
                 return response
             raise
 
