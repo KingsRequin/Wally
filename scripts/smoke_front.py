@@ -153,6 +153,72 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     rap.dire(n >= 37, f"{n} éléments dans le DOM", "attendu ≥ 37")
     rap.dire(not erreurs, "aucune erreur JS", " · ".join(erreurs[:2]))
 
+    # La chorégraphie de la carte du TCG. Rien d'autre ne la couvre : le
+    # builder charge son module en `import()` dynamique, donc une erreur dedans
+    # ne casse ni la page ni les autres widgets — elle laisse juste un trou à
+    # l'écran, en silence, pendant un live.
+    #
+    # ⚠️ `?preview=1` : le crochet local rend le widget SANS passer par le
+    # flux. Publier sur le bus l'afficherait dans l'OBS du streamer, en plein
+    # live, à chaque exécution du smoke test.
+    del erreurs[:]
+    page.goto(f"{BASE}/static/overlay.html?preview=1", wait_until="networkidle",
+              timeout=40000)
+    page.wait_for_timeout(2000)
+    carte = page.evaluate("""async () => {
+      const d = await (await fetch('/api/public/tcg/cartes')).json();
+      const c = d.cartes.find((x) => x.cle === 'lilith') || d.cartes[0];
+      // 6 s : au-delà des 2,2 s de temps fixe, donc la rotation a sa place.
+      window.__overlayPreview.showWidget('carte', Object.assign({}, c,
+        { duration: 6 }));
+      return c.nom;
+    }""")
+    rap.dire(bool(carte), "carte overlay : le widget est demandé", str(carte))
+
+    page.wait_for_selector(".tcg-carte-scene .chero", timeout=_ATTENTE_PANNEAU_MS)
+    # Phase 1 — elle arrive À PLAT. C'est tout l'intérêt de l'entrée : la 3D
+    # ne doit pas exister encore, sinon les couches se séparent d'emblée et la
+    # transition qui suit ne se voit pas.
+    page.wait_for_timeout(300)
+    plat = page.evaluate("""() => {
+      const c = document.querySelector('.tcg-carte-scene .chero');
+      return { perspective: getComputedStyle(c).perspective,
+               echelle: getComputedStyle(c.parentElement).getPropertyValue('--chero-k').trim() };
+    }""")
+    rap.dire(plat["perspective"] == "none",
+             "carte overlay : elle entre à plat", str(plat["perspective"]))
+    # 680 px sur un canvas de 1920, en DPR 1 : la résolution EXACTE pour
+    # laquelle les illustrations sont générées. À 3, tout serait flou.
+    rap.dire(plat["echelle"] == "2",
+             "carte overlay : à l'échelle 2", plat["echelle"])
+
+    # Phase 2 et 3 — la 3D se pose, puis la carte tourne d'elle-même. Deux
+    # relevés espacés : une carte immobile passerait le premier test.
+    page.wait_for_timeout(1600)
+    t1 = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.tcg-carte-scene .chero-carte')).transform")
+    persp = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.tcg-carte-scene .chero')).perspective")
+    page.wait_for_timeout(900)
+    t2 = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.tcg-carte-scene .chero-carte')).transform")
+    rap.dire(persp == "1100px", "carte overlay : la 3D se pose", str(persp))
+    rap.dire(t1.startswith("matrix3d"), "carte overlay : elle est inclinée", t1[:50])
+    rap.dire(t1 != t2, "carte overlay : et elle TOURNE toute seule",
+             f"immobile en {t1[:34]}")
+
+    if captures:
+        page.screenshot(path=str(captures / "overlay-carte.png"))
+
+    # Phase 4 — elle s'en va, et son ménage est fait : ni minuteur, ni
+    # abonnement à la boucle d'animation ne doit survivre au nœud.
+    page.wait_for_timeout(4000)
+    rap.dire(page.locator(".tcg-carte-scene").count() == 0,
+             "carte overlay : elle est repartie",
+             f"{page.locator('.tcg-carte-scene').count()} encore là")
+    rap.dire(not erreurs, "carte overlay : aucune erreur JS",
+             " · ".join(erreurs[:2]))
+
     if captures:
         page.screenshot(path=str(captures / "overlay.png"))
     page.close()

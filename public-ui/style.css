@@ -6,6 +6,66 @@
  * `Redesign du site Wally` — ne pas les redéfinir en dur dans les modules JS.
  */
 
+/* Space Grotesk et JetBrains Mono, vendorées (`vendor/PROVENANCE.md`) plutôt
+ * que tirées de Google Fonts : le premier affichage ne dépend plus du réseau
+ * d'un tiers, et le site perd une dépendance externe de plus. `swap` quand
+ * même — le texte reste lisible pendant le chargement. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/jetbrains-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/vendor/jetbrains-mono-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/vendor/jetbrains-mono-700.woff2') format('woff2');
+}
+
 :root {
   /* Fonds */
   --bg:           #07060a;

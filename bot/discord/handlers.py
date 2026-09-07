@@ -32,7 +32,9 @@ from bot.tools.follow_tool import FOLLOW_TOOL, api_twitch, run_follow_tool
 from bot.tools.galerie_tool import GALLERY_TOOL, run_gallery_tool
 from bot.tools.humeur_passee_tool import MOOD_HISTORY_TOOL, run_mood_history_tool
 from bot.tools.music_tool import MUSIC_TOOL, run_music_tool
+from bot.core import tcg_cartes
 from bot.core.secret_guard import redact
+from bot.core.self_trace import note_act
 from bot.core.text_clean import strip_stage_directions
 from bot.discord.message_split import split_for_discord
 from bot.intelligence import pending_question, thread_sense
@@ -578,6 +580,19 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
              if k not in ("widget", "comment", "result") and v is not None}
     if widget == "rps":
         extra["opponent"] = _display_only(requester)
+    if widget == "carte":
+        # La carte demandée, résolue AVANT de publier : le widget reçoit ses
+        # valeurs dans l'événement, il n'a rien à aller chercher.
+        demande = str(extra.pop("personne", "") or "")
+        carte = tcg_cartes.resoudre(demande)
+        if carte is None:
+            # Un refus qui NOMME ce qui existe : sans la liste, Wally réessaie
+            # au hasard, et il finirait par annoncer une carte inexistante.
+            return json.dumps({"status": "rejected", "message": (
+                f"Aucune carte au nom de « {demande} ». Celles qui existent : "
+                f"{', '.join(tcg_cartes.noms_disponibles())}."
+            )})
+        extra.update(tcg_cartes.en_json(carte))
     extra.pop("sollicite", None)   # le drapeau vient d'ici, jamais du modèle
     try:
         shown = narrator.show_widget(
@@ -591,6 +606,14 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
         logger.warning("show_overlay a échoué : {e!r}", e=exc)
         return json.dumps({"status": "error", "message": "L'affichage a échoué."})
     if shown:
+        if widget == "carte":
+            # `overlay_feed.widget()` consigne « tu as affiché le widget
+            # « carte » » — volontairement sans ses paramètres, qui portent
+            # ailleurs du texte libre. Un pseudo n'en est pas : sans cette
+            # ligne, Wally fait le geste et ne sait pas de QUI il a montré la
+            # carte. `self_trace` est le point d'entrée unique de « ce que
+            # Wally vient de faire ».
+            note_act(f"tu as montré la carte de {extra.get('nom', '?')} aux viewers")
         return json.dumps({"status": "ok", "message": _overlay_outcome(shown)})
     if not narrator.is_active():
         return json.dumps({"status": "offline", "message": (

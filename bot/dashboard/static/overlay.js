@@ -1054,7 +1054,51 @@
       box.append(who, msg);
       return box;
     },
+
+    // ── La carte du TCG ───────────────────────────────────────────────────
+    // Le RENDU d'une carte n'est pas ici : il vit dans `/partage/tcg-carte.js`,
+    // partagé avec le site public, et sa chorégraphie dans `overlay_tcg.js`.
+    // Deux rendus divergeraient au premier réglage, et la carte montrée aux
+    // viewers ne serait plus celle du site.
+    //
+    // ⚠️ `import()` DYNAMIQUE, et pas un import en tête : ce fichier est un
+    // script CLASSIQUE (`<script src>` sans `type="module"`), il ne peut pas
+    // importer statiquement. Et c'est mieux ainsi — le module, sa feuille et
+    // ses illustrations ne coûtent rien tant qu'aucune carte n'est demandée.
+    // `overlay.html` en fait un `modulepreload`, donc il est déjà en cache
+    // quand la première carte arrive.
+    carte(p) {
+      const hote = el("div", "tcg-carte-hote");
+      import("/static/overlay_tcg.js").then((m) => {
+        // La carte a pu être retirée pendant le chargement du module (une
+        // annulation, ou un autre widget solo). Y greffer la scène ferait
+        // tourner sa chorégraphie dans un nœud détaché, pour personne.
+        if (!hote.isConnected) return;
+        const { noeud, arreter } = m.carteOverlay(p);
+        hote.appendChild(noeud);
+        // Le pendant de `activeWheelBox` : la chorégraphie tient des minuteurs
+        // et un abonnement à la boucle d'animation, que `disposeWidget` doit
+        // pouvoir couper si la carte part avant la fin.
+        carteTcgBox = hote.closest(".widget");
+        arretCarteTcg = arreter;
+      }).catch((e) => {
+        console.warn("[carte] module non chargé", e);
+      });
+      return hote;
+    },
   };
+
+  // La carte du TCG en cours, et de quoi arrêter sa chorégraphie. Même patron
+  // que `activeWheelBox` : une carte sortante ne doit pas emporter celle que
+  // la suivante vient de monter pendant le recouvrement.
+  let carteTcgBox = null;
+  let arretCarteTcg = null;
+
+  function disposerCarteTcg() {
+    if (arretCarteTcg) arretCarteTcg();
+    arretCarteTcg = null;
+    carteTcgBox = null;
+  }
 
   // Les panneaux Apex vivent dans `overlay_apex.js`, chargé AVANT ce fichier.
   // Dans l'autre ordre la fusion lirait `undefined` en silence, et « wally
@@ -1531,6 +1575,10 @@
     // Uniquement SA roue : une carte sortante ne doit pas emporter celle que la
     // suivante vient de monter pendant le recouvrement.
     if (activeWheelBox === box) disposeWheel();
+    // Idem pour la carte du TCG : sans ça, ses minuteurs et son abonnement à
+    // la boucle d'animation survivraient au retrait du nœud — c'est le défaut
+    // exact que les deux ménages ci-dessus corrigent pour les autres widgets.
+    if (carteTcgBox === box) disposerCarteTcg();
     box.remove();
     // Une carte de moins : l'avatar et la bulle reviennent si plus aucun widget
     // solo ne tient la scène. Recalculé plutôt que retiré à la condition « plus

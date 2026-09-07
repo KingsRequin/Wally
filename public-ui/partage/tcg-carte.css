@@ -9,22 +9,76 @@
  * `.chero` par le JS (`--chero-acc`, `--chero-cote`…). Aucune valeur de carte
  * n'est écrite ici : ajouter une carte ne touche jamais cette feuille.
  *
+ * 🚨 Cette feuille est AUTONOME : elle ne lit aucun token d'une autre. Elle
+ * lisait `var(--chero-sans)` et `var(--chero-mono)`, définis dans le `style.css` du site
+ * public — que l'overlay ne charge pas. Résultat vu à l'écran : sur l'overlay,
+ * toutes les polices retombaient sur le défaut du navigateur, les libellés
+ * passaient sur deux lignes, et rien ne le signalait. Un module partagé ne peut
+ * pas supposer les tokens d'une seule des deux surfaces qui l'utilisent.
+ *
  * ⚠️ La 3D (`perspective`, `preserve-3d`, `translateZ`, `will-change`) n'est PAS
  * déclarée ici. Le JS la pose sous le curseur et la retire au repos : vingt
  * cartes en 3D permanente font vingt calques GPU, et la page rame avant même
  * qu'on survole quoi que ce soit. Voir `set3d()` dans le module.
  */
 
-/* Archivo Black, vendorée (`vendor/PROVENANCE.md`) plutôt que tirée de Google
- * Fonts : sur l'overlay OBS, un réseau lent au démarrage ferait afficher le
- * premier titre dans la police de repli, et sur un stream ça ne se rattrape
- * pas. `swap` quand même — le titre reste lisible pendant le chargement. */
+/* Les TROIS polices de la carte, vendorées (`vendor/PROVENANCE.md`).
+ *
+ * 🚨 Elles sont déclarées ICI et pas seulement dans le `style.css` du site :
+ * l'overlay OBS ne charge pas cette feuille-là. Sans ces blocs, la carte
+ * s'affichait sur l'overlay avec les polices de repli du navigateur — les
+ * libellés passaient sur deux lignes et rien ne le signalait.
+ *
+ * Le doublon de déclaration avec `style.css` ne coûte RIEN : même famille,
+ * même URL, le navigateur télécharge une fois. Seuls les quatre poids que la
+ * carte utilise vraiment sont ici — le reste du site charge les siens.
+ *
+ * Vendorées plutôt que tirées de Google Fonts : sur un stream, un réseau lent
+ * au démarrage d'OBS ferait afficher le premier titre dans la police de repli,
+ * et ça ne se rattrape pas. `swap` quand même — le texte reste lisible pendant
+ * le chargement. */
 @font-face {
   font-family: 'Archivo Black';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url('/vendor/archivo-black-400.woff2') format('woff2');
+}
+
+/* 400 pour la ligne d'ambiance (en italique SYNTHÉTISÉ — Space Grotesk n'a pas
+ * d'italique vraie, il n'y a donc pas de fichier à charger pour elle),
+ * 500 pour la description. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/vendor/space-grotesk-500.woff2') format('woff2');
+}
+
+/* 500 pour la légende sous la carte, 700 pour les libellés et les stats. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/vendor/jetbrains-mono-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/vendor/jetbrains-mono-700.woff2') format('woff2');
 }
 
 @keyframes chero-float {
@@ -39,6 +93,11 @@
 
 /* ── L'enveloppe ──────────────────────────────────────────────────────────*/
 .chero {
+  /* Les familles sont déclarées ICI, et pas héritées : cf. l'avertissement en
+   * tête. Les noms sont ceux du thème du site, qui les charge déjà ; l'overlay
+   * les charge de son côté. */
+  --chero-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --chero-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   --chero-acc: #ffb02e;
   --chero-cote: -14%;
   --chero-haut: 4%;
@@ -313,7 +372,7 @@
 .chero-cout-lbl {
   display: flex;
   align-items: center;
-  font: 700 9px/1 var(--mono);
+  font: 700 9px/1 var(--chero-mono);
   letter-spacing: .14em;
   color: var(--chero-acc);
   background: #12100c;
@@ -352,7 +411,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font: 700 9px/1 var(--mono);
+  font: 700 9px/1 var(--chero-mono);
   letter-spacing: .16em;
   color: #a3532a;
   margin-bottom: 6px;
@@ -362,14 +421,14 @@
 
 .chero-desc {
   margin: 0 0 7px;
-  font: 500 12px/1.4 var(--sans);
+  font: 500 12px/1.4 var(--chero-sans);
   color: #12100c;
   text-wrap: pretty;
 }
 
 .chero-ambiance {
   margin: 0 0 9px;
-  font: italic 400 10.5px/1.4 var(--sans);
+  font: italic 400 10.5px/1.4 var(--chero-sans);
   color: #6b5a4e;
   text-wrap: pretty;
 }
@@ -382,7 +441,7 @@
 .chero-stat {
   flex: 1;
   text-align: center;
-  font: 700 12px/1 var(--mono);
+  font: 700 12px/1 var(--chero-mono);
   color: #f7ecd9;
   padding: 7px 0;
 }

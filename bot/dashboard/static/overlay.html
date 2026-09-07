@@ -12,6 +12,14 @@
        réseau sortant d'OBS. Déclarée AVANT le style de la page, qui doit
        l'emporter. -->
   <link rel="stylesheet" href="/static/animate.min.css">
+  <!-- La carte du TCG. Sa feuille est chargée AU BOOT et non à l'affichage :
+       elle porte le `@font-face` d'Archivo Black, et une police qui arrive
+       après le titre se voit — sur un stream, ça ne se rattrape pas.
+       Le module de la chorégraphie, lui, est seulement PRÉCHARGÉ : mis en
+       cache sans être exécuté, le builder le charge en `import()` dynamique au
+       premier affichage. Aucune carte demandée, aucun coût. -->
+  <link rel="stylesheet" href="/partage/tcg-carte.css">
+  <link rel="modulepreload" href="/static/overlay_tcg.js">
   <style>
     /* Overlay OBS — destiné aux VIEWERS, jamais au streamer (il ne le voit pas
        pendant qu'il joue). Fond transparent, tout est en position fixe. */
@@ -490,6 +498,31 @@
     /* La bulle s'efface pendant un widget : l'écran est petit, mieux vaut une
        chose lisible que deux qui se disputent la place. */
     body.widget-on #bubble { opacity: 0; transform: translateY(6px) scale(.97); }
+
+    /* ── La carte du TCG ──────────────────────────────────────────────────
+       Elle arrive À PLAT (l'état de repos du composant), se déplie en 3D,
+       tourne, puis s'en va. Les trois temps fixes vivent dans
+       `overlay_tcg.js` ; ici, seulement l'entrée et la sortie de la scène.
+
+       ⚠️ Le `transform` de la scène et celui de la carte sont sur DEUX nœuds
+       distincts (scène > boîte > carte) : l'échelle de la boîte
+       (`--chero-k: 2`) et l'inclinaison de la carte ne se marchent pas
+       dessus. Les fusionner ici les ferait se remplacer. */
+    .tcg-carte-hote { display: block; }
+
+    .tcg-carte-scene {
+      opacity: 0;
+      transform: scale(.94);
+      transition: opacity .6s var(--ease), transform .6s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .tcg-carte-scene.tcg-carte-entre { opacity: 1; transform: none; }
+
+    .tcg-carte-scene.tcg-carte-sort {
+      opacity: 0;
+      transform: scale(.96) translateY(-10px);
+      transition: opacity .8s var(--ease), transform .8s cubic-bezier(.2, .8, .2, 1);
+    }
 
     /* L'avatar cède la place, sans disparaître brutalement. */
     #avatar-slot > * { transition: transform var(--t-slow) var(--ease), opacity var(--t-base) var(--ease); }
@@ -2087,6 +2120,10 @@
     <div data-element="apex_status"></div>
     <div data-element="apex_progress"></div>
     <div data-element="apex_rank"></div>
+    <!-- La carte du TCG (`overlay_tcg.js`) : elle passe comme un widget, et sa
+         place dans le document suit `_ORDRE_DEFAUT` à l'envers, juste devant
+         les huit panneaux Apex. -->
+    <div data-element="carte"></div>
     <div data-element="rps"></div>
     <div data-element="countdown"></div>
     <div data-element="gauge"></div>

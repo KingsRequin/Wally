@@ -31,20 +31,28 @@ import { h } from './dom.js';
 // et sur un stream, ça ne se rattrape pas.
 const FEUILLE = '/partage/tcg-carte.css';
 
-/** Déclare une illustration : l'AVIF et son repli WebP, depuis un chemin SANS
- * extension.
+/** L'AVIF et son repli WebP, depuis un chemin SANS extension.
  *
  * Les deux formats sont servis ensemble (`<picture>` pour les images,
  * `image-set()` pour le fond) : l'AVIF pèse deux fois et demie moins qu'un
  * WebP de même qualité, mais Safari ne le lit que depuis 16.4 et un téléphone
- * plus vieux n'afficherait RIEN. Écrire la paire en un seul appel rend
- * impossible d'oublier une moitié.
+ * plus vieux n'afficherait RIEN.
+ *
+ * 🚨 C'est le SEUL endroit qui sait comment une illustration se sert. Le site
+ * appliquait la transformation de son côté avant de construire la carte, pas
+ * l'overlay — qui reçoit les chemins bruts du bus. Résultat : `src.avif` valait
+ * `undefined` et l'overlay demandait `/static/undefined`, un 404 sans image et
+ * sans erreur JS. Un composant qui accepte les deux formes n'a plus ce piège.
+ *
+ * Une paire déjà construite passe telle quelle : l'appelant n'a pas à savoir
+ * dans quel état arrive ce qu'il transmet.
  */
-export function image(base) {
+function paire(base) {
+  if (base && typeof base === 'object') return base;
   // ⚠️ Le chemin porte une empreinte (`/assets/x?v=a1b2c3d4`) : l'extension
   // s'insère AVANT le `?`. Collée à la fin, on demanderait `x?v=….avif`, que
   // le serveur ne connaît pas — et la carte serait noire.
-  const [chemin, requete] = base.split('?');
+  const [chemin, requete] = String(base).split('?');
   const suffixe = requete ? `?${requete}` : '';
   return { avif: `${chemin}.avif${suffixe}`, webp: `${chemin}.webp${suffixe}` };
 }
@@ -131,6 +139,18 @@ const BOUCLE = (() => {
     retirer(fn) { abonnes.delete(fn); },
   };
 })();
+
+/** Abonne `fn` à la boucle de la page. Rend de quoi la désabonner.
+ *
+ * Exposé pour la chorégraphie de l'overlay, qui doit avancer image par image
+ * sans ouvrir un second `requestAnimationFrame` : une carte qui joue son
+ * animation pendant que ses particules tournent ferait deux réveils par image
+ * là où un seul suffit, et les deux se désynchroniseraient.
+ */
+export function abonnerAnimation(fn) {
+  BOUCLE.ajouter(fn);
+  return () => BOUCLE.retirer(fn);
+}
 
 /** L'œil qui dit quelles cartes sont à l'écran. Un observateur pour la page. */
 const OEIL = (() => {
@@ -296,10 +316,13 @@ export function carteHero(carte, options = {}) {
     ? h('canvas', { class: 'chero-canvas', 'aria-hidden': 'true' })
     : null;
 
-  const img = (src, alt, chargement) => h('picture', {},
-    h('source', { srcset: src.avif, type: 'image/avif' }),
-    h('img', { src: src.webp, alt, loading: chargement, decoding: 'async' }),
-  );
+  const img = (source, alt, chargement) => {
+    const { avif, webp } = paire(source);
+    return h('picture', {},
+      h('source', { srcset: avif, type: 'image/avif' }),
+      h('img', { src: webp, alt, loading: chargement, decoding: 'async' }),
+    );
+  };
   const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom, 'lazy'));
   // `eager` sur le calque de survol : quand c'est une SECONDE illustration, la
   // charger paresseusement ferait apparaître un trou à l'ouverture de la carte
@@ -381,9 +404,10 @@ export function carteHero(carte, options = {}) {
   // affectations SONT le repli : un navigateur qui ne comprend pas
   // `image-set()` (ou son `type()`) rejette la seconde et garde le WebP. Sans
   // la première, il n'aurait pas de fond du tout.
-  l1.style.backgroundImage = `url('${c.fond.webp}')`;
-  l1.style.backgroundImage = `image-set(url('${c.fond.avif}') type("image/avif"),`
-    + ` url('${c.fond.webp}') type("image/webp"))`;
+  const fondSrc = paire(c.fond);
+  l1.style.backgroundImage = `url('${fondSrc.webp}')`;
+  l1.style.backgroundImage = `image-set(url('${fondSrc.avif}') type("image/avif"),`
+    + ` url('${fondSrc.webp}') type("image/webp"))`;
 
   const boite = h('div', { class: 'chero-boite' }, racine);
 

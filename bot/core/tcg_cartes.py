@@ -220,6 +220,34 @@ def normaliser(nom: str) -> str:
     return sans_marques.casefold()
 
 
+def resoudre(nom: str) -> CarteTcg | None:
+    """La carte que désigne `nom`, ou None.
+
+    ⚠️ Correspondance EXACTE sur la table normalisée, jamais floue ni par
+    préfixe : accepter les approximations, c'est afficher devant les viewers
+    une carte que personne n'a demandée.
+    """
+    cible = normaliser(nom)
+    if not cible:
+        return None
+    for carte in CARTES.values():
+        if cible in (carte.cle, normaliser(carte.nom)):
+            return carte
+        if any(cible == normaliser(a) for a in carte.alias):
+            return carte
+    return None
+
+
+def noms_disponibles() -> list[str]:
+    """Ce qu'on peut ÉCRIRE pour désigner une carte, pour le message de refus.
+
+    Les CLÉS et non les noms d'affichage : un refus doit lister ce qui est
+    accepté en entrée, pas ce qui apparaît à l'écran en capitales. Sans cette
+    liste, Wally réessaie au hasard.
+    """
+    return list(CARTES)
+
+
 @lru_cache(maxsize=64)
 def empreinte(base: str) -> str:
     """Les 8 premiers caractères du sha256 de l'illustration, ou "".
@@ -251,3 +279,52 @@ def url(base: str) -> str:
     """Le chemin d'une illustration, empreinte comprise quand elle est lisible."""
     marque = empreinte(base)
     return f"{base}?v={marque}" if marque else base
+
+
+def en_json(carte: CarteTcg) -> dict:
+    """Une carte telle que le front la lit.
+
+    🚨 Les clés partent en **camelCase** : c'est le vocabulaire que le composant
+    de rendu lit déjà (`heroCote`, `avantPlanBas`…). Renommer de son côté
+    ferait toucher le rendu pendant un refactor dont le critère est « rien ne
+    change à l'écran ».
+
+    🚨 Les **alias ne sortent pas**. Cette route est publique : tout ce qu'elle
+    rend part à n'importe quel visiteur, et la liste des fautes d'orthographe
+    qu'on accepte sur un pseudo n'a rien à y faire.
+
+    Les illustrations sortent **versionnées** par l'empreinte de leur contenu
+    (`tcg_cartes.url`) : la zone Cloudflare écrase le `Cache-Control` de
+    l'origine, et sans ça une illustration retouchée resterait quatre heures
+    figée chez chaque visiteur.
+    """
+    return {
+        "cle": carte.cle,
+        "nom": carte.nom,
+        "legende": carte.legende,
+        "classe": carte.classe,
+        "ultime": carte.ultime,
+        "description": carte.description,
+        "ambiance": carte.ambiance,
+        "cout": carte.cout,
+        "atk": carte.atk,
+        "pv": carte.pv,
+        "aura": carte.aura,
+        "accent": carte.accent,
+        "hero": url(carte.hero),
+        "fond": url(carte.fond),
+        # `None` et non `""` : le front teste la présence, et une chaîne vide
+        # est fausse en JavaScript sans pour autant dire « absent ».
+        "avantPlan": url(carte.avant_plan) if carte.avant_plan else None,
+        "hero3d": url(carte.hero_3d) if carte.hero_3d else None,
+        "heroCote": carte.hero_cote,
+        "heroHaut": carte.hero_haut,
+        "heroEchelle": carte.hero_echelle,
+        "hero3dCote": carte.hero_3d_cote,
+        "hero3dHaut": carte.hero_3d_haut,
+        "avantPlanLargeur": carte.avant_plan_largeur,
+        "avantPlanBas": carte.avant_plan_bas,
+        "particules": carte.particules,
+        "parallaxe": carte.parallaxe,
+        "intensite": carte.intensite,
+    }

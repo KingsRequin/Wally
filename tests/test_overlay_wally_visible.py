@@ -40,7 +40,7 @@ class _State:
 
 def test_le_defaut_reproduit_lancien_comportement_pour_chaque_element():
     """Avant ce réglage, c'était `solo` qui effaçait l'avatar. Le défaut doit
-    donc valoir `not solo` — sur les 37 éléments, sans exception : un seul écart
+    donc valoir `not solo` — sur les 38 éléments, sans exception : un seul écart
     et le streamer découvre un overlay différent sans avoir rien touché.
 
     Le compte est volontairement figé : c'est un CLIQUET. Ajouter un élément
@@ -54,8 +54,11 @@ def test_le_defaut_reproduit_lancien_comportement_pour_chaque_element():
     que des étiquettes — elles cohabitent et le laissent.
     (`meme_storm`, l'avalanche de memes, a été retirée le même jour au profit du
     spam.)
+
+    38 depuis le 2026-09-07 : `carte` est `solo` — la carte du TCG occupe seule
+    la scène et Wally reste masqué pendant qu'elle passe, arbitrage de l'owner.
     """
-    assert len(ELEMENTS) == 37
+    assert len(ELEMENTS) == 38
     for cle, el in ELEMENTS.items():
         assert el["wally_visible"] is (not el["solo"]), cle
 

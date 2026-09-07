@@ -53,7 +53,7 @@ window.WallyLayout = (function () {
     "meme", "clip", "clip_top", "planning", "prediction", "quote", "raid", "wave",
     "virus_popup", "music_now", "apex_kills",
     "versus", "poll", "hangman", "pinned", "counter",
-    "coinflip", "dice", "wheel", "gauge", "countdown", "rps",
+    "coinflip", "dice", "wheel", "gauge", "countdown", "rps", "carte",
     "apex_rank", "apex_progress", "apex_status", "apex_stats",
     "apex_map", "apex_craft", "apex_predator", "apex_servers",
   ];

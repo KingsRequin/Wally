@@ -74,6 +74,13 @@ LIBELLES: dict[str, dict[str, str]] = {
         "description": "La bulle de bande dessinée où Wally écrit ses "
                        "commentaires et réactions spontanées au fil du live.",
     },
+    "carte": {
+        "nom": "Carte du Purgatoire",
+        "description": "La carte d'une personne de la communauté, telle "
+                       "qu'elle existe sur le site : elle arrive à plat, se "
+                       "déplie en 3D, tourne doucement, puis s'en va. Les "
+                       "chiffres qu'elle porte sont provisoires.",
+    },
     "clip": {
         "nom": "Alerte clip",
         "description": "Le clip Twitch demandé ou créé pendant le live, rejoué "

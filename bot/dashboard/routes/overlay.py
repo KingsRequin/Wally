@@ -18,10 +18,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from loguru import logger
 
+from bot.core import tcg_cartes
 from bot.core.memes import media_type
 from bot.core.music import vignette
 from bot.core.sons import _MAX_BYTES, _MEDIA_TYPES
 from bot.core.sons import media_type as son_media_type
+from bot.core.tcg_cartes import en_json as _publier_carte
 
 public_router = APIRouter()
 admin_router = APIRouter()
@@ -49,6 +51,11 @@ _OVERLAY_FILES = (
     "overlay_virus.js",
     "overlay_sons.js",
     "overlay_raid.js",
+    # La chorégraphie de la carte du TCG. Elle n'est pas chargée par un
+    # `<script>` mais par un `import()` dynamique depuis `overlay.js`, et
+    # `overlay.html` la précharge en `modulepreload` — ce qui la place bien
+    # dans le cache d'OBS, donc bien dans cette liste.
+    "overlay_tcg.js",
     "glitch.js",
     # Les animations d'entrée/sortie de l'image de la galerie. Feuille de style
     # et non script : la page en charge une depuis que ces deux zones y ont été
@@ -543,6 +550,15 @@ _ECHANTILLONS: dict[str, dict] = {
                                 "up": True},
                                {"name": "Tokyo", "status": "hors ligne",
                                 "up": False}]},
+    # La carte du TCG part de la SOURCE, pas d'une copie : `_publier` est la
+    # mise en forme camelCase que le composant de rendu lit déjà. Recopiée à la
+    # main, la table divergerait des vraies cartes dès le premier réglage de
+    # cadrage — et le ▶ montrerait un encombrement que personne n'aura en live.
+    #
+    # Lilith parce qu'elle est le PIRE cas : ailes déployées, son illustration
+    # fait presque deux fois la largeur de la carte (`heroCote: -40%`), là où
+    # les autres tiennent dans leur cadre. C'est la règle de ce dict.
+    "carte":     _publier_carte(tcg_cartes.CARTES["lilith"]),
     # `meme` et `planning` n'ont pas d'échantillon écrit : leur seul paramètre
     # est une URL d'image, et une URL inventée afficherait une image cassée.
     # `_source_image()` va chercher un vrai fichier au moment de l'appel.

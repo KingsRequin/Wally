@@ -316,6 +316,7 @@ ELEMENTS: dict[str, dict] = {
     "gauge":      _el(50.0, 50.0, "center"),
     "countdown":  _el(50.0, 50.0, "center"),
     "rps":        _el(50.0, 50.0, "center"),
+    "carte":      _el(50.0, 50.0, "center"),
     # Les panneaux Apex (`overlay_apex.js`) : ils passent comme les autres, et
     # partent donc du même endroit. Avant ce chantier, TOUS les widgets
     # occupaient la place de l'avatar ; aucun n'a de position propre à
@@ -465,7 +466,7 @@ _ORDRE_DEFAUT = [
     "virus_popup", "music_now", "apex_kills",
     "versus", "poll", "hangman",
     "pinned", "counter", "coinflip", "dice", "wheel", "gauge", "countdown",
-    "rps",
+    "rps", "carte",
     "apex_rank", "apex_progress", "apex_status", "apex_stats",
     "apex_map", "apex_craft", "apex_predator", "apex_servers",
     "rotator", "talkers", "bingo", "stats",

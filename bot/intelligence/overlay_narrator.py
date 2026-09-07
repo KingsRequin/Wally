@@ -418,7 +418,8 @@ OVERLAY_TOOL_SPEC: dict = {
                     "type": "string",
                     "enum": ["coinflip", "dice", "wheel", "countdown", "gauge",
                              "pinned", "uptime", "counter", "poll", "stats", "versus",
-                             "bingo", "meme", "rps", "hangman", "goal", "talkers"],
+                             "bingo", "meme", "rps", "hangman", "goal", "talkers",
+                             "carte"],
                     "description": (
                         "coinflip = pile ou face · dice = un dé · wheel = la roue "
                         "tranche entre 2-8 options · countdown = compte à rebours "
@@ -436,7 +437,10 @@ OVERLAY_TOOL_SPEC: dict = {
                         "une par message, ou tape le mot entier pour gagner "
                         "d'un coup · "
                         "goal = un objectif de follows/subs/bits qui se remplit "
-                        "tout seul · talkers = le podium des plus bavards"
+                        "tout seul · talkers = le podium des plus bavards · "
+                        "carte = la carte du Purgatoire de quelqu'un de la "
+                        "communauté, en grand, qui se déplie en 3D et tourne "
+                        "(demande `personne`)"
                     ),
                 },
                 "comment": {
@@ -463,6 +467,13 @@ OVERLAY_TOOL_SPEC: dict = {
                     "minuteur, c'est ce paramètre qu'il faut remplir."
                 )},
                 "percent": {"type": "number", "description": "Pour gauge : le remplissage, de 0 à 100."},
+                "personne": {"type": "string", "description": (
+                    "Pour carte UNIQUEMENT : le pseudo de la personne dont tu "
+                    "montres la carte. Un nom que tu ne connais pas te sera "
+                    "refusé AVEC la liste de celles qui existent — n'invente "
+                    "jamais de carte, et ne promets pas d'en montrer une que "
+                    "l'outil vient de refuser."
+                )},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
                 "cells": {
                     "type": "array", "items": {"type": "string"},

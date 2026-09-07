@@ -1,0 +1,147 @@
+// bot/dashboard/static/overlay_tcg.js — la carte du TCG sur l'overlay
+//
+// Le RENDU d'une carte n'est pas ici : il vit dans `/partage/tcg-carte.js`,
+// partagé avec le site public. Ce module ne fait que la faire ENTRER, la
+// tourner et la faire sortir. Deux rendus divergeraient au premier réglage, et
+// la carte montrée aux viewers ne serait plus celle du site.
+//
+// ⚠️ L'import traverse deux surfaces : cette page est servie depuis `/static/`
+// et `partage/` depuis `/`. C'est la même origine, donc un import absolu
+// fonctionne — mais il ne faut RIEN importer d'autre du site public, surtout
+// pas `app.js`, qui tirerait Lenis, le routeur d'historique et les flux SSE.
+import {
+  abonnerAnimation, carteHero, monterStylesCarte,
+} from '/partage/tcg-carte.js';
+
+// Les trois temps fixes de la chorégraphie, en SECONDES et non en fractions :
+// l'entrée et la sortie doivent durer pareil que la carte reste 5 s ou 20 s à
+// l'écran. Seule la rotation s'étire pour occuper ce qui reste.
+const ENTREE_S = 0.6;
+const OUVERTURE_S = 0.8;
+const SORTIE_S = 0.8;
+const FIXE_S = ENTREE_S + OUVERTURE_S + SORTIE_S;
+
+// La moitié de la course d'un curseur. À pleine amplitude la carte bascule
+// comme sous une souris qui balaie : ça se lit comme un bug d'animation, pas
+// comme une présentation. L'owner a demandé qu'elle « tourne légèrement ».
+const AMPLITUDE = 0.25;
+
+// 340 px CSS × 2 = 680 px sur un canvas de 1920, rendu en DPR 1 : exactement
+// la résolution pour laquelle les illustrations sont générées (340 CSS × DPR 2,
+// cf. `scripts/generer_illustrations_tcg.py`).
+//
+// 🚨 Passer à 3 rendrait TOUTES les cartes floues, sans que rien ne le
+// signale. La valeur ne se change pas sans régénérer les illustrations.
+const ECHELLE = 2;
+
+// Une carte qui apparaît pendant son propre décodage joue ses phases sur une
+// image absente. On attend — mais avec un PLAFOND : un `decode()` qui
+// n'aboutit jamais (illustration manquante, réseau coupé) transformerait une
+// précaution en panne silencieuse.
+const PLAFOND_DECODE_MS = 2000;
+
+let _styles = null;
+
+/** Charge la feuille de la carte une fois pour la vie de l'overlay.
+ *
+ * Au BOOT et non à l'affichage : une feuille qui arrive en même temps que la
+ * carte la ferait apparaître non stylée pendant une image ou deux, devant les
+ * viewers.
+ */
+export function preparerCarte() {
+  if (!_styles) _styles = monterStylesCarte();
+}
+
+/** Attend que les illustrations soient décodées, sans dépasser le plafond. */
+async function attendreImages(noeud) {
+  const images = [...noeud.querySelectorAll('img')];
+  let plafondAtteint = true;
+  await Promise.race([
+    Promise.all(images.map((i) => i.decode().catch((e) => {
+      // Une image qui refuse de se décoder n'empêche pas les autres : la carte
+      // s'affiche amputée plutôt que pas du tout, et la trace dit laquelle.
+      console.warn('[carte] illustration non décodée', i.currentSrc, e);
+    }))).then(() => { plafondAtteint = false; }),
+    new Promise((r) => setTimeout(r, PLAFOND_DECODE_MS)),
+  ]);
+  if (plafondAtteint) {
+    console.warn(`[carte] décodage au-delà de ${PLAFOND_DECODE_MS} ms — on joue quand même`);
+  }
+}
+
+/** Monte une carte et joue sa chorégraphie. Rend `{ noeud, arreter }`.
+ *
+ * `params` porte la carte entière, telle que le bus l'a envoyée, plus la durée
+ * totale en secondes.
+ *
+ * Les quatre temps :
+ *   1. elle arrive À PLAT, en fondu — c'est l'état de repos du composant ;
+ *   2. `ouvrir()` : les couches se séparent, exactement comme au survol ;
+ *   3. `incliner()` sur une trajectoire lente en huit — la rotation parallaxe ;
+ *   4. `fermer()`, puis retrait.
+ */
+export function carteOverlay(params) {
+  preparerCarte();
+
+  // `interactif: false` : l'overlay n'a ni curseur ni doigt. Sans ça, le
+  // composant brancherait des écouteurs de pointeur qui ne serviraient jamais.
+  const { boite, detruire, ouvrir, fermer, incliner } = carteHero(params, {
+    interactif: false,
+  });
+  boite.style.setProperty('--chero-k', String(ECHELLE));
+
+  const noeud = document.createElement('div');
+  noeud.className = 'tcg-carte-scene';
+  noeud.appendChild(boite);
+
+  let desabonner = null;
+  let minuteurs = [];
+  const plusTard = (fn, ms) => { minuteurs.push(setTimeout(fn, ms)); };
+
+  const arreter = () => {
+    minuteurs.forEach(clearTimeout);
+    minuteurs = [];
+    if (desabonner) { desabonner(); desabonner = null; }
+    detruire();
+  };
+
+  const jouer = async () => {
+    await attendreImages(noeud);
+
+    // La durée vient du RÉGLAGE du widget, jamais d'une constante d'ici :
+    // `duree = 0` vaut « auto, le serveur décide », et `showWidget` a déjà
+    // tranché avant de nous appeler.
+    const totale = Math.max(FIXE_S + 0.4, Number(params.duration) || 9);
+    // Ce qui reste pour tourner, une fois l'entrée, l'ouverture et la sortie
+    // prélevées. Le plancher ci-dessus garantit que ce reste est positif :
+    // sans lui, une durée réglée sous 2,2 s ferait tourner la carte À REBOURS.
+    const rotationS = totale - FIXE_S;
+
+    noeud.classList.add('tcg-carte-entre');
+
+    plusTard(() => {
+      ouvrir();
+      const depart = performance.now();
+      // Une Lissajous 2:1 : la carte revient à son point de départ sans
+      // à-coup, et les deux axes ne s'inversent jamais en même temps — c'est
+      // ce qui donne un mouvement de présentation plutôt qu'un balayage.
+      desabonner = abonnerAnimation((maintenant) => {
+        const t = ((maintenant - depart) / 1000 / rotationS) * Math.PI * 2;
+        incliner(AMPLITUDE * Math.sin(t), AMPLITUDE * Math.sin(2 * t) * 0.6);
+      });
+    }, ENTREE_S * 1000);
+
+    plusTard(() => {
+      if (desabonner) { desabonner(); desabonner = null; }
+      // Revenir au centre AVANT de fermer : sinon la carte sort en biais,
+      // depuis l'angle où la trajectoire l'a laissée.
+      incliner(0, 0);
+      fermer();
+      noeud.classList.remove('tcg-carte-entre');
+      noeud.classList.add('tcg-carte-sort');
+    }, (totale - SORTIE_S) * 1000);
+  };
+
+  jouer();
+  return { noeud, arreter };
+}
