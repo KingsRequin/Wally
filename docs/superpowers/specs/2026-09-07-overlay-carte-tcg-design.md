@@ -57,6 +57,34 @@ entrée sans image donne une carte noire annoncée comme terminée.
 sans rien demander. C'est le prix d'une source unique, et les deux autres pages
 de données du site (`/galerie`, `/clips`) le paient déjà.
 
+⚠️ **Un fetch qui échoue doit le DIRE.** Une grille vide se lit « il n'y a pas
+de cartes », ce qui est faux. La page rend un état d'échec nommé, avec de quoi
+réessayer — l'absence ne doit jamais être confondue avec le vide.
+
+⚠️ **Un seul appel pour les deux pages.** `/tcg` et `/demo/carte-azrael` lisent
+la même route ; le module de données mémorise la réponse. Deux fetchs pour la
+même liste, c'est deux occasions de diverger à l'écran.
+
+### 2.1 bis — Le cache des illustrations (défaut existant)
+
+`SPAStaticFiles` pose `Cache-Control: no-store` sur **tout** `public-ui/`, y
+compris `assets/`. Mesuré le 2026-09-07 : chaque visite de `/tcg` retélécharge
+**environ 1 Mo** d'illustrations, et l'overlay le ferait à **chaque affichage**
+de carte. Le `no-store` est délibéré pour le HTML, le JS et le CSS — c'est ce
+qui rend le front modifiable sans rebuild — mais une illustration n'est pas du
+code.
+
+Correctif : `no-cache` pour les médias (`.avif`, `.webp`, `.png`, `.jpg`,
+`.webm`, `.woff2`), `no-store` pour le reste. `no-cache` **n'est pas** « pas de
+cache » : le navigateur revalide par ETag et reçoit un `304` sans corps. Le
+contenu ne peut donc jamais être périmé — c'est ce qui permet au script de
+régénération de réécrire une illustration sous le même nom — et le coût passe
+de 400 ko à quelques centaines d'octets.
+
+⚠️ Ne PAS poser `immutable` avec un `max-age` long : nos noms de fichiers sont
+stables (`tcg-azrael-hero.avif`), une illustration retouchée ne serait jamais
+reprise.
+
 ### 2.2 Le composant devient pilotable, et partagé
 
 `carteHero()` est aujourd'hui **entièrement piloté par le curseur** : il lit
@@ -70,6 +98,14 @@ ni survol — la chorégraphie doit être **jouée**. Trois changements :
 - `ouvrir()` / `fermer()` s'exposent (ils existent déjà, en privé).
 - Un drapeau `interactif` (vrai par défaut) : l'overlay ne branche **aucun**
   écouteur de pointeur.
+
+**L'échelle sur l'overlay est FIGÉE à 2.** La carte fait 340 px CSS ; sur un
+canvas de 1920, elle occuperait 18 % de la largeur — illisible sur un stream.
+À `--chero-k: 2` elle fait 680 px, et l'overlay rend en DPR 1 : **680 pixels
+physiques, exactement ce pour quoi les illustrations sont générées** (340 CSS
+× DPR 2, cf. `generer_illustrations_tcg.py`). La coïncidence n'en est pas une,
+mais elle est fragile : passer à 3 rendrait toutes les cartes floues sans que
+rien ne le signale. La valeur est écrite une fois, avec ce commentaire.
 
 Le composant et le `h()` qu'il utilise déménagent dans **`public-ui/partage/`**,
 servi par le catch-all comme le reste du site. Le site importe
@@ -96,9 +132,19 @@ arrêtée quand l'onglet passe derrière).
 autres. ⚠️ `duree = 0` vaut « auto : le serveur décide » — c'est la valeur
 livrée, et le repli de `showWidget` (12 s) ne doit pas être écrit en dur.
 
-⚠️ **Attendre `img.decode()` avant la phase 1.** Sans ça la première carte
-affichée apparaît pendant son propre décodage : les phases avancent, l'image
-non.
+⚠️ **Attendre `img.decode()` avant la phase 1**, et le compte à rebours de la
+durée ne démarre qu'après. Sans ça la première carte affichée apparaît pendant
+son propre décodage : les phases avancent, l'image non.
+
+⚠️ **Avec un plafond de 2 s.** Un `decode()` qui n'aboutit pas — image manquante,
+réseau coupé — ne doit pas empêcher l'affichage indéfiniment : passé le délai on
+joue quand même, et on journalise. Une attente sans plafond est une panne
+silencieuse, pas une précaution.
+
+**Amplitude de la trajectoire : la moitié de la course** (±0,25 sur les deux
+axes normalisés, soit ~7° à intensité 1). L'owner a demandé qu'elle « tourne
+légèrement » ; à pleine amplitude la carte bascule comme sous un curseur qui
+balaie, ce qui se lit comme un bug d'animation plutôt que comme une présentation.
 
 ⚠️ La rotation se compose dans le `transform` du plateau (`.chero-carte`), là où
 le survol l'écrit déjà. Une seconde source d'écriture sur ce même transform le
@@ -121,6 +167,12 @@ Clé `carte`. Quatre points de câblage, tous existants :
 4. `overlay.html` — la feuille de la carte et la police **Archivo Black**
    déclarées **au boot**, pas au moment de l'affichage : une police qui arrive
    après le titre, sur un stream, se voit.
+
+⚠️ **La police est VENDORÉE**, pas chargée depuis Google Fonts. Un overlay OBS
+qui dépend d'une requête vers un tiers au démarrage affiche son premier titre
+dans la police de repli si le réseau traîne — et sur un stream, ça ne se
+rattrape pas. Elle rejoint `public-ui/vendor/` et son `PROVENANCE.md`, comme
+Lenis. Le site public en profite : une requête externe de moins sur `/tcg`.
 
 ---
 
@@ -196,3 +248,9 @@ phases, et le widget réglable depuis le panneau de mise en scène.
 la trace, les deux plateformes.
 *Critère de sortie* : Wally affiche une carte demandée en vrai, et sa trace le
 dit.
+
+⚠️ **Piège de cette phase** : `widgets_disponibles` retire de l'enum tout widget
+qu'AUCUNE scène n'affiche. Tant que `carte` n'a pas été posée sur une scène
+depuis le panneau de mise en scène, Wally ne voit pas la valeur et ne peut pas
+l'appeler — sans qu'aucune erreur ne le dise. Vérifier la scène AVANT de
+chercher un défaut dans l'outil.
