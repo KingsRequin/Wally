@@ -1,0 +1,84 @@
+/* public-ui/pages/tcg.css — la collection de cartes (`/tcg`)
+ *
+ * Les styles de la PAGE : le fond, l'en-tête, la grille. Ceux d'une carte
+ * vivent dans `tcg-carte-hero.css`, chargée par le composant — la page en
+ * affiche N, la démo en affiche une, et aucune des deux n'a à connaître
+ * l'intérieur d'une carte.
+ */
+
+.tcgal {
+  min-height: 100dvh;
+  /* La compensation de la barre : elle est `fixed` et `.vue` commence à ZÉRO
+   * sous elle. Sans ce padding, l'en-tête passe dessous. */
+  padding: calc(48px + var(--nav-h)) 40px 90px;
+  background: radial-gradient(120% 90% at 50% -10%,
+    #17101c 0%, #0a0810 48%, #07060a 100%);
+  color: var(--text);
+  /* Une carte ouverte laisse son héros déborder de 14 % de chaque côté : sur
+   * un téléphone il n'y a pas la place. `clip` et NON `hidden` — `hidden` sur
+   * un seul axe force l'autre en `auto` et rendrait la page scrollable. */
+  overflow-x: clip;
+}
+
+.tcgal-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.tcgal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.tcgal-titre {
+  margin: 0;
+  font: 600 20px/1.2 var(--sans);
+}
+
+.tcgal-compte {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .12em;
+  color: var(--muted);
+}
+
+.tcgal-chapo {
+  margin: 0 0 46px;
+  max-width: 60ch;
+  font: 400 13px/1.6 var(--sans);
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.tcgal-grille {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 74px 56px;
+  align-items: flex-start;
+}
+
+.tcgal-case {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+.tcgal-legende {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .14em;
+  color: var(--muted);
+}
+
+@media (max-width: 620px) {
+  .tcgal {
+    padding: calc(32px + var(--nav-h)) 24px 64px;
+  }
+
+  .tcgal-grille {
+    gap: 48px 32px;
+    justify-content: center;
+  }
+}

@@ -1,0 +1,413 @@
+/* public-ui/pages/tcg-carte-hero.css — une carte de héros du TCG
+ *
+ * Feuille du composant `tcg-carte-hero.js`, chargée par les pages qui en
+ * affichent (la collection sur `/tcg`, la démo sur `/demo/carte-azrael`) et
+ * déchargée avec elles. Elle ne vit pas dans `style.css` : ses 300 lignes ne
+ * concernent que les pages du TCG.
+ *
+ * 🚨 Tout ce qui dépend de la carte passe par une custom property posée sur
+ * `.chero` par le JS (`--chero-acc`, `--chero-cote`…). Aucune valeur de carte
+ * n'est écrite ici : ajouter une carte ne touche jamais cette feuille.
+ *
+ * ⚠️ La 3D (`perspective`, `preserve-3d`, `translateZ`, `will-change`) n'est PAS
+ * déclarée ici. Le JS la pose sous le curseur et la retire au repos : vingt
+ * cartes en 3D permanente font vingt calques GPU, et la page rame avant même
+ * qu'on survole quoi que ce soit. Voir `set3d()` dans le module.
+ */
+
+@keyframes chero-float {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1.4deg); }
+  50%      { transform: translate3d(2px, -6px, 0) rotate(-0.4deg); }
+}
+
+@keyframes chero-pulse {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+
+/* ── L'enveloppe ──────────────────────────────────────────────────────────*/
+.chero {
+  --chero-acc: #ffb02e;
+  --chero-cote: -14%;
+  --chero-haut: 4%;
+  --chero-echelle: 1.12;
+  --chero-ap-largeur: 86%;
+  --chero-ap-bas: -6%;
+  position: relative;
+  width: 340px;
+  height: 476px;
+  cursor: pointer;
+  /* Le survol d'une carte ne doit pas faire recalculer la grille entière. */
+  contain: layout style;
+}
+
+/* L'ombre portée est un DÉGRADÉ, pas un `filter: blur()` : un flou coûte une
+ * tuile de rendu par carte, et c'est ce qui hachait le défilement sur
+ * téléphone (cf. `project_site_refonte_braise`). */
+.chero-ombre {
+  position: absolute;
+  left: 14px; right: 14px; top: 30px; bottom: -14px;
+  border-radius: 20px;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .85), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.chero-carte {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  transition: transform .16s ease-out;
+}
+
+/* ── Le fond : illustration, trame, rayons, cadres ────────────────────────*/
+.chero-fond {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #12100c;
+}
+
+.chero-l1 {
+  position: absolute;
+  inset: -18%;
+  background-image: var(--chero-fond-url);
+  background-size: cover;
+  background-position: 50% 40%;
+  transform: scale(1.06);
+}
+
+.chero-l2 {
+  position: absolute;
+  inset: -12%;
+  opacity: .5;
+  background-image: radial-gradient(rgba(18, 16, 12, .9) 42%, transparent 43%);
+  background-size: 5px 5px;
+}
+
+.chero-l3 {
+  position: absolute;
+  left: 50%; top: 38%;
+  width: 190%; height: 190%;
+  opacity: .45;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    rgba(18, 16, 12, .85) 0deg 2.2deg, rgba(18, 16, 12, 0) 2.2deg 9deg);
+  transform: translate(-50%, -50%);
+}
+
+/* Les quatre cadres sont dans UN conteneur : c'est lui qui s'affiche et se
+ * déplace, pas les quatre. Quatre transitions d'opacité et quatre transforms
+ * par carte ne se voyaient pas mieux. */
+.chero-cadres {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .5s ease, visibility .5s;
+}
+
+.chero-cadres > div {
+  position: absolute;
+  border: 1.5px solid var(--chero-acc);
+}
+
+.chero-cadres > div:nth-child(1) { inset: 9%;  opacity: .55; }
+.chero-cadres > div:nth-child(2) { inset: 18%; opacity: .42; }
+.chero-cadres > div:nth-child(3) { inset: 26%; opacity: .3; }
+.chero-cadres > div:nth-child(4) { inset: 33%; opacity: .2; border-width: 1px; }
+
+.chero-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(18, 16, 12, .45) 0%, rgba(18, 16, 12, 0) 34%,
+    rgba(18, 16, 12, .55) 72%, rgba(18, 16, 12, .95) 100%);
+}
+
+.chero-halo {
+  position: absolute;
+  left: -20%; right: -20%; bottom: -30%;
+  height: 70%;
+  pointer-events: none;
+  background: radial-gradient(60% 70% at 50% 100%, var(--chero-acc) 0%, transparent 70%);
+  opacity: .7;
+}
+
+/* ── Les particules ──────────────────────────────────────────────────────
+ * Le canvas fait la MOITIÉ de la carte en pixels et s'étire : à cette
+ * échelle, une braise de deux pixels ne perd rien, et la surface à repeindre
+ * est divisée par quatre. */
+.chero-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* ── Le héros et l'avant-plan, en deux exemplaires ───────────────────────
+ * Au repos, chaque couche est DÉTOURÉE par la carte (conteneur en
+ * `overflow: hidden`). Au survol, on montre le second exemplaire, libre de
+ * déborder du cadre. Un seul nœud ne peut pas faire les deux. */
+.chero-cadrage {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.chero-clip,
+.chero-libre {
+  position: absolute;
+  left: var(--chero-cote);
+  right: var(--chero-cote);
+  top: var(--chero-haut);
+}
+
+.chero-clip { transition: opacity .28s ease; }
+
+.chero-libre {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease .04s, visibility .3s .04s,
+              transform .4s cubic-bezier(.2, .9, .2, 1);
+  transform-origin: 50% 100%;
+  /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
+   * texte doit rester lisible sous lui. */
+  clip-path: inset(-60% -30% 0 -30%);
+}
+
+.chero-ap-clip,
+.chero-ap-libre {
+  position: absolute;
+  left: 50%;
+  bottom: var(--chero-ap-bas);
+  width: var(--chero-ap-largeur);
+}
+
+.chero-ap-clip {
+  transform: translateX(-50%);
+  transition: opacity .28s ease;
+}
+
+.chero-ap-libre {
+  margin-left: calc(var(--chero-ap-largeur) / -2);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, visibility .2s,
+              transform .4s cubic-bezier(.2, .9, .2, 1);
+  transform-origin: 50% 50%;
+}
+
+.chero img {
+  width: 100%;
+  display: block;
+}
+
+/* ── Le liseré et son reflet ─────────────────────────────────────────────
+ * La double bordure est faite d'ombres INTERNES : une vraie bordure de 15 px
+ * mangerait 30 px de largeur au contenu. */
+.chero-bord {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+  border: 1.5px solid rgba(247, 236, 217, .85);
+  box-shadow: inset 0 0 0 14px #12100c, inset 0 0 0 15.5px var(--chero-acc);
+}
+
+/* Le reflet est fait de QUATRE bords, dont l'opacité suit la lumière selon
+ * l'inclinaison. Un balayage masqué en anneau (`mask-composite`) rendait la
+ * même chose, mais recomposait la carte entière à chaque image. */
+.chero-reflet {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .4s ease, visibility .4s;
+}
+
+.chero-reflet > div {
+  position: absolute;
+  opacity: .25;
+  transition: opacity .18s ease-out;
+}
+
+.chero-reflet > [data-bord='haut'] {
+  left: 0; right: 0; top: 0; height: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .7),
+    rgba(255, 255, 255, .22) 35%, rgba(255, 255, 255, .05) 70%, transparent);
+}
+
+.chero-reflet > [data-bord='bas'] {
+  left: 0; right: 0; bottom: 0; height: 26px;
+  background: linear-gradient(0deg, rgba(255, 255, 255, .7),
+    rgba(255, 255, 255, .22) 35%, rgba(255, 255, 255, .05) 70%, transparent);
+}
+
+.chero-reflet > [data-bord='gauche'] {
+  top: 0; bottom: 0; left: 0; width: 26px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .7),
+    rgba(255, 255, 255, .22) 35%, rgba(255, 255, 255, .05) 70%, transparent);
+}
+
+.chero-reflet > [data-bord='droite'] {
+  top: 0; bottom: 0; right: 0; width: 26px;
+  background: linear-gradient(270deg, rgba(255, 255, 255, .7),
+    rgba(255, 255, 255, .22) 35%, rgba(255, 255, 255, .05) 70%, transparent);
+}
+
+.chero-selection {
+  position: absolute;
+  inset: -2px;
+  border-radius: 8px;
+  border: 2px solid var(--chero-acc);
+  animation: chero-pulse 1.8s ease-in-out infinite;
+}
+
+/* ── Le coût et le bandeau ULTIME ────────────────────────────────────────*/
+.chero-cout {
+  position: absolute;
+  left: 18px; top: 18px;
+  pointer-events: none;
+  display: flex;
+  align-items: stretch;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+}
+
+.chero-cout-n {
+  font: 400 22px/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  color: #12100c;
+  background: var(--chero-acc);
+  padding: 9px 11px 8px;
+  border: 1.5px solid #12100c;
+}
+
+.chero-cout-lbl {
+  display: flex;
+  align-items: center;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: .14em;
+  color: var(--chero-acc);
+  background: #12100c;
+  border: 1.5px solid #12100c;
+  padding: 0 8px;
+}
+
+/* ── La fiche : nom, texte, stats ────────────────────────────────────────*/
+.chero-bas {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 44px 18px 18px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+}
+
+.chero-nom {
+  display: inline-block;
+  transform: rotate(-1.4deg);
+  font: 400 34px/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: -.02em;
+  color: #f7ecd9;
+  text-shadow: 4px 4px 0 #12100c;
+}
+
+.chero-fiche {
+  background: #f7ecd9;
+  border: 1.5px solid #12100c;
+  padding: 9px 11px 10px;
+}
+
+.chero-fiche-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: .16em;
+  color: #a3532a;
+  margin-bottom: 6px;
+}
+
+.chero-fiche-top .chero-ult { color: #12100c; }
+
+.chero-desc {
+  margin: 0 0 7px;
+  font: 500 12px/1.4 var(--sans);
+  color: #12100c;
+  text-wrap: pretty;
+}
+
+.chero-ambiance {
+  margin: 0 0 9px;
+  font: italic 400 10.5px/1.4 var(--sans);
+  color: #6b5a4e;
+  text-wrap: pretty;
+}
+
+.chero-stats {
+  display: flex;
+  gap: 6px;
+}
+
+.chero-stat {
+  flex: 1;
+  text-align: center;
+  font: 700 12px/1 var(--mono);
+  color: #f7ecd9;
+  padding: 7px 0;
+}
+
+.chero-stat-atk  { background: #c2410c; }
+.chero-stat-pv   { background: #166534; }
+.chero-stat-aura { background: #4c1d95; }
+
+/* ── Mise à l'échelle ────────────────────────────────────────────────────
+ * L'échelle est une VARIABLE lue par le conteneur, jamais un `scale()` posé
+ * sur la carte : un `scale()` laisse la largeur de LAYOUT à 340 px, et la
+ * page déborde horizontalement sur un téléphone étroit sans que rien ne le
+ * signale (le smoke test le refuse). */
+.chero-boite {
+  --chero-k: 1;
+  width: calc(340px * var(--chero-k));
+  height: calc(476px * var(--chero-k));
+}
+
+.chero-boite > .chero {
+  transform: scale(var(--chero-k));
+  transform-origin: top left;
+}
+
+@media (max-width: 430px) {
+  .chero-boite { --chero-k: .84; }
+}
+
+@media (max-width: 370px) {
+  .chero-boite { --chero-k: .74; }
+}
+
+/* Le mouvement n'est pas le sujet : sous `prefers-reduced-motion`, le JS ne
+ * démarre pas les particules du tout et n'incline plus la carte. Couper
+ * seulement les animations CSS laisserait tourner la boucle du canvas. */
+@media (prefers-reduced-motion: reduce) {
+  .chero-halo,
+  .chero-selection { animation: none; }
+  .chero-carte,
+  .chero-cadres,
+  .chero-clip,
+  .chero-libre,
+  .chero-ap-clip,
+  .chero-ap-libre,
+  .chero-bord,
+  .chero-reflet,
+  .chero-reflet > div,
+  .chero-cout,
+  .chero-bas { transition: none; }
+}

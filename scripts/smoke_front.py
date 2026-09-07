@@ -171,8 +171,9 @@ PAGES_PUBLIQUES = [
     ("Chat", "/chat", ".chat-vue", True),
     ("Galerie", "/galerie", ".gal-grid", True),
     ("Clips", "/clips", ".clip-grid", True),
-    ("TCG", "/tcg", ".tcg-hero", True),
-    ("Démo carte Azraël", "/demo/carte-azrael", ".dca-wrap", False),
+    ("TCG", "/tcg", ".tcgal-grille", True),
+    ("Démo carte Azraël", "/demo/carte-azrael", ".dca-scene .chero", False),
+    ("Démo plateau TCG", "/demo/plateau-tcg", ".tcg-hero", False),
 ]
 
 # Les onglets attendus dans les deux barres : celles de PAGES_PUBLIQUES qui en
