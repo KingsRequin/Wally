@@ -224,6 +224,25 @@ Attendu : `no-cache` sur l'image, `no-store` sur `app.js`, puis `304 0o`.
     plus `particules: str`, `parallaxe: float`, `intensite: float`.
     Les champs d'illustration portent un chemin **sans extension**
     (`/assets/tcg-azrael-hero`) : le front y ajoute `.avif` et `.webp`.
+  - `empreinte(base: str) -> str` — les 8 premiers caractères du sha256 du
+    fichier `.avif`, calculés au premier appel et mémorisés.
+
+⚠️ **Les URL d'illustration sont VERSIONNÉES** (`…-hero.avif?v=a1b2c3d4`).
+Mesuré en prod le 2026-09-07 : la zone Cloudflare porte
+`browser_cache_ttl = 14400`, qui **écrase le `Cache-Control` de l'origine**
+pour tout ce qu'elle juge cacheable — `CDN-Cache-Control` n'y change rien. Une
+illustration retouchée resterait donc quatre heures figée chez les visiteurs.
+Versionner par le contenu règle le problème sans dépendre d'un réglage de zone,
+et le dépôt a déjà ce mécanisme pour le panneau admin (`_ASSET_VERSION_RE`).
+
+⚠️ L'empreinte se calcule sur le fichier `.avif` seul et sert aux DEUX formats :
+le script les régénère toujours ensemble, et lire deux fichiers pour une seule
+version doublerait les I/O sans rien garantir de plus.
+
+⚠️ Un fichier manquant ne doit pas empêcher le boot : journaliser en
+`warning` et rendre une empreinte vide (l'URL reste valide, elle n'est
+simplement pas versionnée). Une illustration absente est un défaut de
+déploiement, pas une raison de ne pas démarrer.
   - `CARTES: dict[str, CarteTcg]` — le registre, clé = identifiant court.
   - `resoudre(nom: str) -> CarteTcg | None` — insensible à la casse et aux
     accents ; compare à la clé, au nom, et aux **alias déclarés par la carte**
