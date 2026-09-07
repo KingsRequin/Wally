@@ -154,6 +154,25 @@ remplacerait — deux `transform` sur un nœud ne se cumulent pas.
 
 ## 4. Le widget dans le registre
 
+🚨 **Ajouter un widget à cet overlay demande SEPT endroits, et six échouent en
+SILENCE si on les oublie.** Relevé le 2026-09-07 en les heurtant un par un ; le
+plan n'en connaissait aucun au départ, et la liste qu'il a dressée après cinq
+en manquait encore deux. À lire avant d'en ajouter un autre.
+
+| # | Endroit | Ce qui arrive si on l'oublie |
+|---|---|---|
+| 1 | `ELEMENTS` (`overlay_layout.py`) | le widget n'existe pas |
+| 2 | `_ORDRE_DEFAUT` (même fichier) | **réglable dans le panneau, JAMAIS rendu en live** |
+| 3 | `LIBELLES` (`overlay_elements.py`) | test rouge — le seul qui parle |
+| 4 | `_ECHANTILLONS` (`routes/overlay.py`) | invisible dans le panneau de mise en scène |
+| 5 | `_OVERLAY_FILES` (même fichier) | le script reste dans le cache d'OBS **pour toujours** |
+| 6 | `OverlayNarrator._WIDGETS` | `show_widget` refuse, et la valeur disparaît de l'enum : **Wally ne la voit jamais** |
+| 7 | `_WIDGET_WORDS` (`self_model.py`) | Wally POSSÈDE la capacité sans le savoir |
+| — | `<div data-element>` + `overlay_layout.js` | tests rouges |
+
+Les numéros 2 et 6 sont les plus coûteux : tout le reste peut être en place, et
+le widget reste introuvable ou invisible sans qu'une seule erreur ne le dise.
+
 Clé `carte`. Quatre points de câblage, tous existants :
 
 1. `ELEMENTS` (`overlay_layout.py`) — `_el(50.0, 50.0, "center")`, donc `solo`
