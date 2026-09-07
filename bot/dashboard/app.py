@@ -196,7 +196,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, person, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, person, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music, tcg
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -209,6 +209,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(journal.public_router, prefix="/api/public")
     app.include_router(cognitive.public_router, prefix="/api/public")
     app.include_router(overlay.public_router, prefix="/api/public")
+    app.include_router(tcg.public_router, prefix="/api/public")
 
     # Extension musique (§10) : appelée depuis l'onglet YouTube d'Azraël, donc
     # depuis un NAVIGATEUR TIERS et une autre origine. Deux conséquences, et il

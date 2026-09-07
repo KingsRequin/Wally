@@ -623,9 +623,33 @@ phases, et le widget réglable depuis le panneau de mise en scène.
 
 ### Tâche 5 : la clé dans le registre
 
+🚨 **Cette tâche N'EST PAS commitable seule.** Quatre verrous du projet la
+tiennent avec le front de l'overlay ; la clé ajoutée sans eux laisse la suite
+rouge. Découvert le 2026-09-07 en l'exécutant, et le plan avait tort de les
+séparer. À faire d'un seul geste avec la tâche 6.
+
+| Verrou | Ce qu'il réclame | Où |
+|---|---|---|
+| `_ORDRE_DEFAUT` | la clé DANS cette liste | `overlay_layout.py:826` |
+| `test_overlay_wally_visible` | le compte d'éléments (37 → 38) et une phrase disant que `carte` efface Wally | `tests/test_overlay_wally_visible.py:58` |
+| `test_overlay_preview` | une entrée dans `_ECHANTILLONS` | `bot/dashboard/routes/overlay.py:468` |
+| `test_overlay_layout_css` | `"carte"` en JS **et** `<div data-element="carte">` en HTML | `overlay_layout.js`, `overlay.html` |
+
+🚨 **`_ORDRE_DEFAUT` est le plus coûteux des quatre** : `fusionner()` complète
+l'empilement depuis cette liste et non depuis `ELEMENTS`. Une clé qui n'y
+figure pas n'entre jamais dans `ordre`, et un élément absent d'`ordre` **n'est
+pas rendu du tout**. Le widget aurait été réglable dans le panneau et invisible
+en live — le pire des deux mondes, et rien ne l'aurait dit.
+
+Le compte `37` du test `wally_visible` n'est pas un oubli : il est conçu pour
+obliger à passer par ce fichier et à se demander si le nouvel élément efface
+Wally.
+
 **Fichiers**
-- Modifier : `bot/core/overlay_layout.py` (`ELEMENTS`),
-  `bot/core/overlay_elements.py` (`LIBELLES`)
+- Modifier : `bot/core/overlay_layout.py` (`ELEMENTS` **et** `_ORDRE_DEFAUT`),
+  `bot/core/overlay_elements.py` (`LIBELLES`),
+  `bot/dashboard/routes/overlay.py` (`_ECHANTILLONS`),
+  `tests/test_overlay_wally_visible.py` (le compte)
 - Test : `tests/test_overlay_elements.py:12` garde déjà la parité
   (`set(ELEMENTS) - set(LIBELLES)`). Il échouera dès la clé ajoutée sans son
   libellé — c'est le filet, il n'y a rien à écrire.
