@@ -157,17 +157,22 @@
   overflow: hidden;
 }
 
-.chero-clip,
-.chero-libre {
+.chero-clip {
   position: absolute;
   left: var(--chero-cote);
   right: var(--chero-cote);
   top: var(--chero-haut);
+  transition: opacity .28s ease;
 }
 
-.chero-clip { transition: opacity .28s ease; }
-
+/* Le calque de survol a son PROPRE cadrage : son illustration peut être une
+ * autre image, plus large ou placée différemment (cf. `hero3d` dans le
+ * module). Le JS y recopie le cadrage du repos quand il n'y en a qu'une. */
 .chero-libre {
+  position: absolute;
+  left: var(--chero-3d-cote);
+  right: var(--chero-3d-cote);
+  top: var(--chero-3d-haut);
   visibility: hidden;
   opacity: 0;
   pointer-events: none;

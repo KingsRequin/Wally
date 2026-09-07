@@ -255,6 +255,11 @@ const DEFAUTS = {
   // n'existe pas (cf. la règle en tête de `tcg-collection.js`), et un défaut
   // vide donnerait une carte noire au lieu d'une erreur qu'on voit passer.
   heroCote: '-14%', heroHaut: '4%', heroEchelle: 1.12,
+  // Le calque de SURVOL peut porter une autre illustration, avec son propre
+  // cadrage : rhae___ montre un portrait assis au repos et un bond griffes en
+  // avant quand la carte s'ouvre. À `null`, il reprend le visuel du repos —
+  // c'est le cas d'Azraël et de Claker.
+  hero3d: null, hero3dCote: null, hero3dHaut: null,
   avantPlan: null, avantPlanLargeur: '86%', avantPlanBas: '-6%',
   particules: 'braises',
   intensite: 1, parallaxe: 1,
@@ -286,12 +291,18 @@ export function carteHero(carte) {
     ? h('canvas', { class: 'chero-canvas', 'aria-hidden': 'true' })
     : null;
 
-  const img = (src, alt) => h('picture', {},
+  const img = (src, alt, chargement) => h('picture', {},
     h('source', { srcset: src.avif, type: 'image/avif' }),
-    h('img', { src: src.webp, alt, loading: 'lazy', decoding: 'async' }),
+    h('img', { src: src.webp, alt, loading: chargement, decoding: 'async' }),
   );
-  const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom));
-  const libre = h('div', { class: 'chero-libre', 'aria-hidden': 'true' }, img(c.hero, ''));
+  const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom, 'lazy'));
+  // `eager` sur le calque de survol : quand c'est une SECONDE illustration, la
+  // charger paresseusement ferait apparaître un trou à l'ouverture de la carte
+  // — le calque du repos passe à `opacity: 0` en même temps. Quand les deux
+  // visuels sont la même image (le cas courant), la requête est déjà faite et
+  // `eager` ne coûte rien.
+  const libre = h('div', { class: 'chero-libre', 'aria-hidden': 'true' },
+    img(c.hero3d || c.hero, '', 'eager'));
 
   // L'avant-plan (les pieds de Claker, par exemple) : la couche qui passe
   // DEVANT le héros. Elle n'existe que si la carte en déclare une.
@@ -357,7 +368,9 @@ export function carteHero(carte) {
     + `;--chero-haut:${c.heroHaut}`
     + `;--chero-echelle:${c.heroEchelle}`
     + `;--chero-ap-largeur:${c.avantPlanLargeur}`
-    + `;--chero-ap-bas:${c.avantPlanBas}`;
+    + `;--chero-ap-bas:${c.avantPlanBas}`
+    + `;--chero-3d-cote:${c.hero3dCote || c.heroCote}`
+    + `;--chero-3d-haut:${c.hero3dHaut || c.heroHaut}`;
 
   // Le fond est un `background-image`, il n'a pas de `<picture>`. Les deux
   // affectations SONT le repli : un navigateur qui ne comprend pas

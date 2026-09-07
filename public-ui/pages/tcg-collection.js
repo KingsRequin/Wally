@@ -71,4 +71,35 @@ export const CARTES = [
       intensite: 0.6,
     },
   },
+  {
+    // ⚠️ « FÉLIN » n'est PAS un palier du barème de rareté (Âme · Fidèle ·
+    // Âme Promise · Élu · Ange · Archange). Le budget de 17 (8 + 5 + 4)
+    // correspond à Ange — 12 + 5. La classe est reprise telle quelle de la
+    // maquette : c'est un arbitrage éditorial de l'owner, pas une règle à
+    // corriger ici.
+    legende: 'RHAE___ · FÉLIN',
+    carte: {
+      nom: 'RHAE',
+      classe: 'FÉLIN · UNIQUE',
+      ultime: 'GRIFFE',
+      description: 'Inflige 3 au héros ciblé. Il ne peut plus bloquer '
+        + "jusqu'à la fin du tour.",
+      ambiance: 'Il dort vingt heures par jour. Les quatre autres, tu les paies.',
+      cout: 6, atk: 8, pv: 5, aura: 4,
+      accent: '#ffb02e',
+      fond: image('/assets/tcg-rhae-fond'),
+      // La seule carte à DEUX visuels : portrait assis, cadré serré, au repos ;
+      // bond griffes en avant, bien plus large que la carte, au survol.
+      hero: image('/assets/tcg-rhae-hero-2d'),
+      heroCote: '8%',
+      heroHaut: '-2%',
+      hero3d: image('/assets/tcg-rhae-hero-3d'),
+      hero3dCote: '-26%',
+      hero3dHaut: '6%',
+      heroEchelle: 1.12,
+      particules: 'poussiere',
+      parallaxe: 1.1,
+      intensite: 0.8,
+    },
+  },
 ];
