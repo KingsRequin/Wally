@@ -40,7 +40,7 @@ par définition. Tout le reste s'y ramène :
 | Qui touche l'adversaire (retirer, priver, bloquer) | × 1,25 — le tempo vaut plus que la masse |
 | 1 énergie | ≈ 3 points (une carte moyenne coûte 3) |
 | 1 carte piochée | ≈ 2 points (on en pioche déjà une par tour) |
-| Qui neutralise une mécanique signature (Chute, Anonyme, Renoncement) | **plancher 5**, quelle que soit la fréquence |
+| Qui neutralise une mécanique signature (Chute, Anonyme, Renoncement, **Ultime**) | **plancher 5**, quelle que soit la fréquence |
 
 Le dernier plancher n'est pas négociable : la Chute est l'auto-équilibrage de tout le jeu
 (spec §3.6). La rendre évitable à bas prix rouvre exactement la porte qu'elle ferme.
@@ -175,6 +175,23 @@ Portée : **👤** habille une carte-personne · **🎴** peut être une carte-o
 | F04 | Démasquage | 3 | à la pose | révèle immédiatement une carte Anonyme adverse de sa table | 👤🎴 |
 | F05 | Retenue | 3 | si tu Renonces à sa table | elle revient en main **et** tu récupères son coût en énergie | 👤 |
 | F06 | Rachat | 6 | une fois | récupère une de tes cartes Chutée par l'adversaire ; elle revient en main | 🎴 |
+| F07 | Rework | 6 | Ultime, à la résolution | désigne un héros adverse en ligne : pour **le reste de la partie**, son Ultime coûte **+3 d'énergie** (jamais au-delà du plafond de 12) et **tous ses nombres baissent de 2** (plancher 1) | 👤 Ultime |
+
+**F07 en détail** — trois cas que le moteur doit trancher, sinon ce sont des contestations en
+pleine partie :
+
+- **Le Rework ne bloque pas l'Ultime du tour même.** Les Ultimes se résolvent par coût croissant
+  (§4) ; un Rework à 10 passe donc après presque tout. C'est le contre-jeu, pas un défaut.
+- Il vise **l'Ultime, pas son usage** : chaque déclenchement suivant est affaibli.
+- Si l'Ultime visé **ne porte aucun nombre**, il ne subit que le surcoût de 3.
+- Un héros **déjà Reworké** ne peut pas l'être une seconde fois. Rien n'interdit de relancer le
+  Rework sur une **autre** cible, au prix de ré-épargner le coût entier.
+
+🚨 **Son prix de 6 n'est pas choisi, il est forcé.** Plancher 5 pour ce qui neutralise une
+mécanique signature, × 1,25 parce que l'effet frappe l'adversaire → 6,25 → 6, le haut de
+l'échelle. Il n'existe donc **aucune version moins chère de cet effet**, et 6 points de puissance
+exigent un coût d'Ultime de 10 (§2 des règles héros). Une entrée « Rework light » à 3 serait hors
+barème par construction.
 
 ### G — Affinités et factions
 
@@ -214,7 +231,7 @@ Portée : **👤** habille une carte-personne · **🎴** peut être une carte-o
 | J04 | Rémission | 3 | au décompte | si le Piquant subi la réduit à 0, elle compte pour 3 | 👤 |
 | J05 | Trousse | 3 | fin de tour | +1 Voix à ta carte de plus basse Voix sur cette table | 👤🎴 |
 
-**Total : 53 entrées** (A 6 · B 6 · C 7 · D 5 · E 5 · F 6 · G 4 · H 4 · I 5 · J 5) — la marge
+**Total : 54 entrées** (A 6 · B 6 · C 7 · D 5 · E 5 · F 7 · G 4 · H 4 · I 5 · J 5) — la marge
 jusqu'au plafond de 60 est volontaire.
 
 ---

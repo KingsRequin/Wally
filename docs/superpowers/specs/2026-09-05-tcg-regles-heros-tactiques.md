@@ -146,6 +146,11 @@ perdre :
 | B (Aura) · D (placement) · E (énergie) · G (affinités) · H (réveil) · J (soin, bouclier) | **Tactiques** jouables |
 | F (Chute, Anonyme, Renoncement) | **Tactiques rares** — la Chute devient une carte, plus une règle générale |
 
+⚠️ Une entrée de la famille F peut aussi porter un **Ultime** quand elle est marquée
+*👤 Ultime* dans le catalogue : c'est le cas de **F07 Rework** (l'Ultime d'Azraël), qui neutralise
+durablement l'Ultime d'un adversaire. La famille F reste le seul endroit où une entrée touche à
+une mécanique signature, qu'elle serve de tactique ou d'Ultime.
+
 **Les affinités survivent** : sans zones, elles servent de ciblage aux tactiques. « Tous tes héros
 d'affinité *Apex* gagnent +2 d'Attaque ce tour » relie encore la mémoire de Wally au plateau.
 

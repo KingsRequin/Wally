@@ -43,6 +43,17 @@ plus cher que la masse.
 
 ## 4. Les 24 cartes
 
+> ⚠️ Ce titre annonçait « 24 cartes » alors que la liste en contenait **25** — un écart d'une
+> carte, jamais recompté depuis l'écriture. Le retrait de « Fuse, jugé noob » ramène le compte à
+> 24, et il est désormais vérifié en comptant les lignes, pas en relisant le titre.
+
+> 🚨 **« Fuse, jugé noob » a été RETIRÉE le 2026-09-07, par l'owner.** Elle annulait l'Ultime d'un
+> héros adverse pour 2 d'énergie. La private joke Fuse sert désormais **une seule fois**, sur
+> l'Ultime d'Azraël (**F07 Rework**) — qui la mérite plus que personne : il est 3ᵉ mondial avec
+> Fuse, et c'est donc lui que le rework a puni. Au passage, la carte d'enorh rendait le Rework
+> injouable : payer 10 d'énergie pour affaiblir un Ultime n'a aucun sens tant qu'une tactique à 2
+> l'annule entièrement.
+
 ### Soin et protection
 
 | Carte | Type | Coût | Effet | Origine |
@@ -63,7 +74,6 @@ plus cher que la masse.
 | **Le cerveau de Rina a bug** | tactique | 3 | **dégâts de zone** : 3 dégâts à tous les héros adverses en ligne | le clip de Taki |
 | **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
-| **Fuse, jugé noob** | tactique | 2 | annule l'Ultime d'un héros adverse ce tour, il garde son énergie | enorh n'aime pas Fuse |
 
 ### Énergie et tempo
 
@@ -124,6 +134,6 @@ tout le jeu d'un coup.
   écrites — et elles doivent être conçues **contre** un groupe, pas contre un joueur.
 - **Les illustrations** : 24 cartes à générer. Coût à chiffrer avant d'ouvrir le robinet.
 - **Le consentement** : plusieurs cartes nomment des personnes réelles (Zeddo, Lilio, Malef,
-  Meliodas, Temcox, oyoloyoo, Taki, Kassandre, MrMakkx, enorh, KingsRequin). Chacune doit pouvoir
+  Meliodas, Temcox, oyoloyoo, Taki, Kassandre, MrMakkx, KingsRequin). Chacune doit pouvoir
   être retirée à la demande de la personne — c'est le point dur nommé depuis le premier jour et
   il n'est toujours pas résolu.

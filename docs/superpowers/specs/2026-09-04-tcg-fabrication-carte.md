@@ -82,9 +82,12 @@ poids_i       = score_i / Σ score
 stat_i        = budget × poids_i                            réparti au PLUS GRAND RESTE
 ```
 
-Puis, dans cet ordre : **plancher `Voix ≥ 1`** (on retire 1 à la plus haute des deux autres),
-puis **plafond 9** par stat (le surplus va à la plus basse). `Aura` et `Piquant` peuvent valoir 0
-— c'est une forme, pas un défaut.
+Puis **plancher `Voix ≥ 1`** (on retire 1 à la plus haute des deux autres). `Aura` et `Piquant`
+peuvent valoir 0 — c'est une forme, pas un défaut.
+
+⚠️ Le **plafond de 9 par stat** que décrivait cette ligne a été retiré le 2026-09-07 : cf.
+`2026-09-05-tcg-deux-modes-anatomie.md` §2, qui porte la formule en vigueur (z-score sur log,
+stats Attaque/PV/Aura).
 
 ### Pourquoi la racine carrée, et pas le percentile ni le log
 

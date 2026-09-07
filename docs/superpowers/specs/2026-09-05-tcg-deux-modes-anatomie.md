@@ -68,7 +68,15 @@ stat_i  = budget × poids_i / Σ poids       réparti au plus grand reste
 ```
 
 Puis planchers **Attaque ≥ 1** et **PV ≥ 1** (une carte sans attaque ne joue pas, une carte à
-0 PV est morte avant d'arriver), plafond 9. L'Aura peut valoir 0 : c'est une forme.
+0 PV est morte avant d'arriver). L'Aura peut valoir 0 : c'est une forme.
+
+🚨 **Le plafond de 9 par stat a été RETIRÉ le 2026-09-07, par l'owner.** Il datait de l'époque
+où le budget total valait 9 ; personne ne l'avait re-dérivé quand le budget est passé à
+`12 + rareté`, et il rabotait alors les formes les plus tranchées — Azraël, Archange à budget 20,
+sortait à 5/10/5 et se faisait ramener à 9 PV. Une carte qui met presque tout dans une seule stat
+est **mauvaise, pas cassée** : 10 PV avec 5 d'Attaque, c'est un mur qui tue lentement, et ça se
+punit tout seul. Un nombre écrit en dur pour un budget qui a changé depuis n'est plus une règle,
+c'est un reste.
 
 Pool de référence : personnes ayant **≥ 5 faits actifs et ≥ 20 messages** (70 au 2026-09-04).
 
