@@ -1,6 +1,6 @@
-/* public-ui/pages/tcg-carte-hero.css — une carte de héros du TCG
+/* public-ui/partage/tcg-carte.css — une carte de héros du TCG
  *
- * Feuille du composant `tcg-carte-hero.js`, chargée par les pages qui en
+ * Feuille du composant `tcg-carte.js`, chargée par les pages qui en
  * affichent (la collection sur `/tcg`, la démo sur `/demo/carte-azrael`) et
  * déchargée avec elles. Elle ne vit pas dans `style.css` : ses 300 lignes ne
  * concernent que les pages du TCG.
@@ -14,6 +14,18 @@
  * cartes en 3D permanente font vingt calques GPU, et la page rame avant même
  * qu'on survole quoi que ce soit. Voir `set3d()` dans le module.
  */
+
+/* Archivo Black, vendorée (`vendor/PROVENANCE.md`) plutôt que tirée de Google
+ * Fonts : sur l'overlay OBS, un réseau lent au démarrage ferait afficher le
+ * premier titre dans la police de repli, et sur un stream ça ne se rattrape
+ * pas. `swap` quand même — le titre reste lisible pendant le chargement. */
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/archivo-black-400.woff2') format('woff2');
+}
 
 @keyframes chero-float {
   0%, 100% { transform: translate3d(0, 0, 0) rotate(-1.4deg); }

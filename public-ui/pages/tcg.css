@@ -1,7 +1,7 @@
 /* public-ui/pages/tcg.css — la collection de cartes (`/tcg`)
  *
  * Les styles de la PAGE : le fond, l'en-tête, la grille. Ceux d'une carte
- * vivent dans `tcg-carte-hero.css`, chargée par le composant — la page en
+ * vivent dans `tcg-carte.css`, chargée par le composant — la page en
  * affiche N, la démo en affiche une, et aucune des deux n'a à connaître
  * l'intérieur d'une carte.
  */

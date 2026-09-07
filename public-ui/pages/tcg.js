@@ -10,7 +10,7 @@
 
 import { h, pageFooter } from '../app.js';
 import { CARTES } from './tcg-collection.js';
-import { carteHero, monterStylesCarte } from './tcg-carte-hero.js';
+import { carteHero, monterStylesCarte } from '../partage/tcg-carte.js';
 
 const FEUILLE = '/pages/tcg.css';
 

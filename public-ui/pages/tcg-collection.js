@@ -30,7 +30,7 @@
 // de la maquette du plateau (`/demo/plateau-tcg`) : ceux-là sont là pour avoir
 // quelque chose à l'écran, pas pour être exacts.
 
-import { image } from './tcg-carte-hero.js';
+import { image } from '../partage/tcg-carte.js';
 
 // Les réglages visuels (`heroCote`, `heroEchelle`, `avantPlan`…) viennent de la
 // maquette Claude Design : ils cadrent une illustration donnée dans le cadre de

@@ -1,4 +1,4 @@
-// public-ui/pages/tcg-carte-hero.js — une carte de héros du TCG
+// public-ui/partage/tcg-carte.js — une carte de héros du TCG
 //
 // Port de la maquette Claude Design `Carte Hero.dc.html`. Ce module RENDU du
 // DOM et ne calcule AUCUNE règle : il reçoit un objet décrivant une carte et
@@ -23,13 +23,13 @@
 //   3. **Les sprites de particules sont partagés** entre toutes les cartes, et
 //      le canvas fait la MOITIÉ de la carte en pixels.
 
-import { h } from '../app.js';
+import { h } from './dom.js';
 
-// La feuille de la carte et la police de son titre. Archivo Black ne sert
-// QU'ICI — l'ajouter à la ligne de polices d'`index.html` la ferait
-// télécharger par les cinq pages du site.
-const FEUILLE = '/pages/tcg-carte-hero.css';
-const POLICE = 'https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap';
+// La feuille de la carte. Elle porte aussi le `@font-face` d'Archivo Black,
+// VENDORÉE : un overlay OBS qui dépend d'une requête vers Google au démarrage
+// afficherait son premier titre dans la police de repli si le réseau traîne —
+// et sur un stream, ça ne se rattrape pas.
+const FEUILLE = '/partage/tcg-carte.css';
 
 /** Déclare une illustration : l'AVIF et son repli WebP, depuis un chemin SANS
  * extension.
@@ -44,21 +44,18 @@ export function image(base) {
   return { avif: `${base}.avif`, webp: `${base}.webp` };
 }
 
-/** Charge la feuille et la police de la carte. Rend de quoi les retirer.
+/** Charge la feuille de la carte. Rend de quoi la retirer.
  *
  * Appelé par la page, pas par la carte : une grille de vingt cartes ne doit
  * poser le `<link>` qu'une fois.
  */
 export function monterStylesCarte() {
-  const liens = [FEUILLE, POLICE].map((href) => {
-    if (document.head.querySelector(`link[href="${href}"]`)) return null;
-    const lien = document.createElement('link');
-    lien.rel = 'stylesheet';
-    lien.href = href;
-    document.head.appendChild(lien);
-    return lien;
-  });
-  return () => liens.forEach((l) => l && l.remove());
+  if (document.head.querySelector(`link[href="${FEUILLE}"]`)) return () => {};
+  const lien = document.createElement('link');
+  lien.rel = 'stylesheet';
+  lien.href = FEUILLE;
+  document.head.appendChild(lien);
+  return () => lien.remove();
 }
 
 // ── Les trois ressources partagées par toutes les cartes ──────────────────
@@ -274,8 +271,11 @@ const BORDS = ['haut', 'bas', 'gauche', 'droite'];
  * comprise) ; `detruire()` doit être appelé au démontage de la page, sinon la
  * carte reste abonnée à la boucle et à l'œil de la page.
  */
-export function carteHero(carte) {
+export function carteHero(carte, options = {}) {
   const c = { ...DEFAUTS, ...carte };
+  // `interactif` faux : aucun écouteur de pointeur, la carte est pilotée par
+  // du code. C'est le mode de l'overlay OBS.
+  const { interactif = true } = options;
 
   const l1 = h('div', { class: 'chero-l1' });
   const l2 = h('div', { class: 'chero-l2' });
@@ -447,20 +447,19 @@ export function carteHero(carte) {
     [l1, l2, l3, cadres].forEach((el) => { el.style.willChange = ''; });
   };
 
-  // L'inclinaison, coalescée dans un `requestAnimationFrame` : un
-  // `pointermove` arrive plus souvent qu'une image sur un pavé tactile, et
-  // chaque passage écrit sept transforms.
-  let attend = false;
-  let px = 0;
-  let py = 0;
-  const incliner = () => {
-    attend = false;
-    if (!etat.survol) return;
+  /** Incline la carte. `nx` et `ny` ∈ [−0.5, +0.5], 0,0 au centre.
+   *
+   * 🚨 Le calcul depuis un événement de pointeur ne disparaît pas : il vit
+   * chez l'appelant (`surMouvement`). C'est ce qui rend la carte jouable SANS
+   * curseur — l'overlay OBS n'en a pas, et sa chorégraphie appelle ici
+   * directement, depuis sa propre horloge.
+   *
+   * ⚠️ Un seul écrivain sur le `transform` du plateau. Deux `transform` sur un
+   * même nœud ne se cumulent pas, ils se REMPLACENT : une chorégraphie qui
+   * écrirait le style en parallèle effacerait l'inclinaison, ou l'inverse.
+   */
+  const incliner = (nx, ny) => {
     const max = 15 * c.intensite;
-    const r = racine.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    const nx = (px - r.left) / r.width - .5;
-    const ny = (py - r.top) / r.height - .5;
     const tiltX = nx * max * 2;
     const tiltY = ny * max * 2;
     plateau.style.transform = `rotateX(${(-tiltY).toFixed(2)}deg)`
@@ -490,12 +489,31 @@ export function carteHero(carte) {
     if (bords.bas) bords.bas.style.opacity = eclat(-ly);
   };
 
+  // Le suivi du pointeur, coalescé dans un `requestAnimationFrame` : un
+  // `pointermove` arrive plus souvent qu'une image sur un pavé tactile, et
+  // chaque passage écrit sept transforms.
+  //
+  // ⚠️ La coalescence reste ICI, sur le chemin du pointeur, et pas dans
+  // `incliner()` : la chorégraphie de l'overlay appelle déjà depuis une
+  // boucle, un second rAF lui coûterait une image de retard.
+  let attend = false;
+  let px = 0;
+  let py = 0;
+
+  const inclinerVersLeCurseur = () => {
+    attend = false;
+    if (!etat.survol) return;
+    const r = racine.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    incliner((px - r.left) / r.width - .5, (py - r.top) / r.height - .5);
+  };
+
   const surMouvement = (e) => {
     px = e.clientX;
     py = e.clientY;
     if (!attend) {
       attend = true;
-      requestAnimationFrame(incliner);
+      requestAnimationFrame(inclinerVersLeCurseur);
     }
   };
 
@@ -554,7 +572,10 @@ export function carteHero(carte) {
   // d'inclinaison là-bas — il n'y a pas de curseur à suivre.
   const basculer = () => { if (etat.survol) sortir(); else entrer(null); };
   const tactile = TACTILE();
-  if (tactile) {
+  if (!interactif) {
+    // L'overlay ne branche RIEN : il n'a ni curseur ni doigt, et sa
+    // chorégraphie appelle `ouvrir`, `incliner` et `fermer` elle-même.
+  } else if (tactile) {
     racine.addEventListener('click', basculer);
   } else if (!SOBRE()) {
     racine.addEventListener('pointerenter', entrer);
@@ -581,5 +602,8 @@ export function carteHero(carte) {
     racine.removeEventListener('pointerleave', sortir);
   };
 
-  return { boite, detruire };
+  // `ouvrir`, `fermer` et `incliner` sortent pour la chorégraphie de
+  // l'overlay. `ouvrir()` passe `null` : `entrer` sait déjà se passer d'un
+  // événement, c'est le chemin du tap sur téléphone.
+  return { boite, detruire, ouvrir: () => entrer(null), fermer: sortir, incliner };
 }

@@ -5,13 +5,13 @@
 // collection. Elle n'est ni dans la barre du haut, ni dans celle du pouce, ni
 // dans les ancres héritées.
 //
-// Le rendu de la carte vient de `tcg-carte-hero.js` et ses valeurs de
+// Le rendu de la carte vient de `tcg-carte.js` et ses valeurs de
 // `tcg-collection.js` : cette page n'écrit AUCUNE donnée de jeu. Une seconde
 // définition d'Azraël ici divergerait de la collection au premier réglage.
 
 import { h } from '../app.js';
 import { CARTES } from './tcg-collection.js';
-import { carteHero, monterStylesCarte } from './tcg-carte-hero.js';
+import { carteHero, monterStylesCarte } from '../partage/tcg-carte.js';
 
 const FEUILLE = '/pages/demo-carte-azrael.css';
 

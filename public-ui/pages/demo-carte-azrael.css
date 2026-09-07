@@ -1,7 +1,7 @@
 /* public-ui/pages/demo-carte-azrael.css — la scène de la démo (`/demo/carte-azrael`)
  *
  * Une carte, centrée, sur fond plein. Tout ce qui concerne la CARTE elle-même
- * vit dans `tcg-carte-hero.css` — cette feuille ne fait que poser la scène.
+ * vit dans `tcg-carte.css` — cette feuille ne fait que poser la scène.
  */
 
 .dca-scene {
