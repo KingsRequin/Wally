@@ -187,9 +187,16 @@ y ajoute :
 - un paramètre `personne` (le pseudo). Inconnu → refus **explicite** qui nomme
   les cartes disponibles, jamais un échec muet.
 
-La résolution pseudo → carte passe par les **alias déjà en base**
-(`memory.load_aliases`) : « claker », « ClakerNoJutsu » et « clacker » doivent
-tomber sur la même carte, sinon Wally aura raison et l'outil tort.
+**La résolution pseudo → carte : chaque carte porte SES alias**, écrits à la
+main (`alias: tuple[str, ...]`). « claker », « ClakerNoJutsu » et « clacker »
+doivent tomber sur la même carte, sinon Wally aura raison et l'outil tort.
+
+⚠️ Une première version de ce paragraphe disait « par les alias déjà en base
+(`memory.load_aliases`) ». C'est faux et c'était plus lourd : ces alias lient un
+pseudo à un `canonical_uid`, donc à une PERSONNE. Une carte n'a pas d'uid, et
+lui en donner un pour quatre cartes serait un champ de plus, une jointure de
+plus, et une lecture SQLite dans une fonction qui n'a aucune raison d'en faire.
+Le lien pseudo → carte est **éditorial**, pas une relation de mémoire.
 
 **La trace.** `overlay_feed.widget()` consigne déjà « tu as affiché le widget
 « carte » » — volontairement sans ses paramètres, qui portent ailleurs du texte
