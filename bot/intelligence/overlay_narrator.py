@@ -1592,7 +1592,7 @@ class OverlayNarrator:
     _WIDGETS = ("coinflip", "dice", "counter", "wheel", "countdown", "gauge",
                 "pinned", "uptime", "poll", "stats", "versus", "bingo",
                 "prediction", "meme", "rps", "hangman", "quote", "goal",
-                "talkers", "clip", "wave", "planning")
+                "talkers", "clip", "wave", "planning", "carte")
 
     # Sous-ensemble que `show_widget` sait rendre. `quote`, `prediction` et
     # `clip` sont déclenchés ailleurs (`show_quote`, `show_prediction`,

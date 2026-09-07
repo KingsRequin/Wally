@@ -49,6 +49,7 @@ _WIDGET_WORDS = {
     "goal": "un objectif de follows ou d'abonnements qui se remplit tout seul",
     "wave": "un signal quand le chat spamme le même emote",
     "talkers": "le classement des plus bavards du chat",
+    "carte": "la carte du Purgatoire de quelqu'un, en grand, qui se déplie et tourne",
     "clip": "une alerte quand quelqu'un crée un clip",
     "planning": "le planning des streams de la semaine",
 }

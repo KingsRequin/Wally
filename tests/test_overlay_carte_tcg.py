@@ -89,3 +89,21 @@ def test_l_affichage_est_consigne_avec_le_nom(bot_overlay, monkeypatch):
     monkeypatch.setattr("bot.discord.handlers.note_act", vues.append)
     run_overlay_tool(bot, {"widget": "carte", "personne": "azrael"})
     assert any("AZRAËL" in v for v in vues), vues
+
+
+def test_carte_est_connue_du_narrateur():
+    """🚨 Sixième verrou du chantier, et le plus discret : `show_widget` refuse
+    tout ce qui n'est pas dans `_WIDGETS`, et `widgets_disponibles` en dérive
+    le filtrage de l'enum. Absente d'ici, la valeur aurait disparu de l'outil —
+    Wally ne l'aurait jamais vue, et rien ne l'aurait dit.
+
+    Le lien est vérifié dans les deux sens : l'outil ne doit pas proposer un
+    widget que le narrateur ne sait pas afficher, et inversement.
+    """
+    from bot.intelligence.overlay_narrator import OverlayNarrator
+
+    assert "carte" in OverlayNarrator._WIDGETS
+    assert "carte" in OverlayNarrator._DIRECT_WIDGETS
+    enum = OVERLAY_TOOL_SPEC["function"]["parameters"]["properties"]["widget"]["enum"]
+    assert set(enum) <= set(OverlayNarrator._WIDGETS), (
+        set(enum) - set(OverlayNarrator._WIDGETS))
