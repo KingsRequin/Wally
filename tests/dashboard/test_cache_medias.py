@@ -41,6 +41,48 @@ def test_le_code_du_front_n_est_jamais_garde(chemin):
     assert "no-store" in _entete_cache(chemin)
 
 
+def test_les_entetes_du_site_public_sont_bien_servies(overlay_client):
+    """Cloudflare IGNORE `Cache-Control` sur une image et pose le sien : un
+    `no-cache` ressortait en `max-age=14400` en prod le 2026-09-07. Ce sont
+    `CDN-Cache-Control` et son équivalent Cloudflare qui tranchent pour l'edge.
+
+    On lit la RÉPONSE, jamais le source de la classe : un test qui cherche une
+    chaîne dans une implémentation passe encore le jour où l'en-tête est posé
+    au mauvais endroit, ou écrasé deux lignes plus bas.
+    """
+    image = overlay_client.get("/assets/tcg-azrael-hero.avif")
+    assert image.status_code == 200
+    assert image.headers["cache-control"] == "no-cache"
+    assert image.headers["cdn-cache-control"] == "no-cache"
+    assert image.headers["cloudflare-cdn-cache-control"] == "no-cache"
+
+    code = overlay_client.get("/app.js")
+    assert code.status_code == 200
+    assert "no-store" in code.headers["cache-control"]
+    assert "no-store" in code.headers["cdn-cache-control"]
+
+
+def test_une_route_spa_inconnue_ne_fait_pas_garder_du_html(overlay_client):
+    """`/route-inconnue.png` retombe sur `index.html`. Poser `no-cache` parce
+    que le CHEMIN finit par `.png` ferait garder du HTML sous une extension
+    d'image — et le site resterait figé sur une version pour ses visiteurs.
+    """
+    r = overlay_client.get("/route-inconnue.png")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "no-store" in r.headers["cache-control"]
+
+
+def test_la_police_vendoree_est_servie_comme_une_police(overlay_client):
+    """`mimetypes` ignore `.woff2` dans l'image Docker, comme il ignorait
+    `.webp` puis `.avif` — troisième fois le même trou.
+    """
+    r = overlay_client.get("/vendor/archivo-black-400.woff2")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "font/woff2"
+    assert r.headers["cache-control"] == "no-cache"
+
+
 def test_aucun_max_age_long_sur_les_medias():
     """Nos noms de fichiers sont STABLES : `generer_illustrations_tcg.py`
     réécrit `tcg-azrael-hero.avif` en place. Un `max-age` long, et pire

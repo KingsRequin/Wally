@@ -38,6 +38,11 @@ mimetypes.add_type("image/webp", ".webp")
 # avec un repli WebP : un `<source type="image/avif">` que le serveur annonce
 # en `application/octet-stream` est un pari sur le reniflage du navigateur.
 mimetypes.add_type("image/avif", ".avif")
+# Et une troisième fois, pour les polices vendorées. Un `@font-face` ne
+# vérifie pas le type et chargerait quand même — mais c'est le MÊME trou, et
+# le laisser ouvert garantit qu'on le repaiera sur la prochaine extension.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
 
 # Les extensions dont le contenu n'est PAS du code. Elles portent un nom
 # stable (`tcg-azrael-hero.avif`) et sont réécrites en place par
@@ -96,7 +101,20 @@ class SPAStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             response = await super().get_response(path, scope)
-            response.headers["Cache-Control"] = _entete_cache(path)
+            entete = _entete_cache(path)
+            response.headers["Cache-Control"] = entete
+            # 🚨 Sans ces deux-là, Cloudflare IGNORE le `Cache-Control` sur une
+            # image et pose le sien : mesuré en prod le 2026-09-07, un
+            # `no-cache` ressortait en `max-age=14400`. L'illustration restait
+            # donc quatre heures figée chez les visiteurs ET dans l'edge —
+            # invivable pendant qu'on itère sur le design des cartes.
+            #
+            # `no-cache` et non `no-store` : l'edge garde le fichier et
+            # revalide contre l'origine, donc le corps ne voyage que s'il a
+            # changé. `NoCacheStaticFiles` pose `no-store` parce que `/static`
+            # est du code d'admin, pas des médias.
+            response.headers["CDN-Cache-Control"] = entete
+            response.headers["Cloudflare-CDN-Cache-Control"] = entete
             return response
         except Exception as exc:
             if getattr(exc, "status_code", None) == 404:
