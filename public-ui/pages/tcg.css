@@ -52,6 +52,23 @@
   text-wrap: pretty;
 }
 
+/* L'avertissement sur les chiffres. Un liseré et rien d'autre : il doit se
+ * lire sans voler la vedette aux cartes, qui sont ce qu'on vient voir. */
+.tcgal-avis {
+  margin: -30px 0 46px;
+  max-width: 62ch;
+  padding: 10px 0 10px 14px;
+  border-left: 2px solid var(--gold);
+  font: 400 12px/1.6 var(--sans);
+  color: var(--soft);
+  text-wrap: pretty;
+}
+
+.tcgal-avis strong {
+  font-weight: 600;
+  color: var(--gold);
+}
+
 .tcgal-grille {
   display: flex;
   flex-wrap: wrap;

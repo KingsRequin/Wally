@@ -72,6 +72,11 @@ PLAN = [
     ("rhae-hero-2d.png", "tcg-rhae-hero-2d", 0.84, 1.00, 74),
     ("rhae-hero-3d.png", "tcg-rhae-hero-3d", 1.52, 1.12, 74),
     ("rhae-fond.png", "tcg-rhae-fond", 1.44, 1.06, 70),
+    # Lilith — ailes déployées : l'illustration fait presque DEUX fois la
+    # largeur de la carte (`heroCote: -40%`). Au repos les pointes d'ailes sont
+    # rognées, au survol elles sortent du cadre.
+    ("lilith-hero.png", "tcg-lilith-hero", 1.80, 1.08, 74),
+    ("lilith-fond.png", "tcg-lilith-fond", 1.44, 1.06, 70),
 ]
 
 QUALITE_WEBP = 88

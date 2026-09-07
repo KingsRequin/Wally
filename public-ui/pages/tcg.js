@@ -56,6 +56,16 @@ export function mount(el) {
         h('span', { class: 'tcgal-compte', text: `${CARTES.length} ${pluriel}` }),
       ),
       h('p', { class: 'tcgal-chapo', text: invitation() }),
+      // Les chiffres des cartes sont des PLACEHOLDERS (cf. l'en-tête de
+      // `tcg-collection.js`). Le dire À L'ÉCRAN et pas seulement en
+      // commentaire : sans ça, le premier lecteur construit un deck sur des
+      // valeurs qui vont toutes bouger, et c'est nous qui l'y avons invité.
+      h('p', { class: 'tcgal-avis' },
+        h('strong', { text: 'Les chiffres ne sont pas définitifs.' }),
+        ' Coût, ATK, PV et AURA sont provisoires : ils sont là pour montrer'
+        + ' la carte, pas pour être joués. Les vraies valeurs sont calculées'
+        + ' ailleurs et arrivent carte par carte.',
+      ),
       h('div', { class: 'tcgal-grille' }, ...rendues.map((r) => r.case_)),
     ),
   ));

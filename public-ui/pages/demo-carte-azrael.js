@@ -29,7 +29,8 @@ export function mount(el) {
   const { boite, detruire } = carteHero(AZRAEL.carte);
   el.appendChild(h('section', { class: 'dca-scene' },
     boite,
-    h('div', { class: 'dca-note', text: 'MAQUETTE — LA CARTE NE SE JOUE PAS ENCORE' }),
+    h('div', { class: 'dca-note', text: 'MAQUETTE — LA CARTE NE SE JOUE PAS ENCORE,'
+      + ' ET SES CHIFFRES SONT PROVISOIRES' }),
   ));
 
   _demonter = () => {

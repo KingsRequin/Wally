@@ -6,11 +6,21 @@
 // dérive. Une entrée sans image donnerait une carte noire annoncée comme
 // terminée.
 //
+// 🚨 **LES CHIFFRES SONT DES PLACEHOLDERS.** Coût, Attaque, PV, Aura, classe :
+// ce sont les valeurs de la maquette, écrites pour avoir quelque chose de
+// lisible à l'écran. Les vraies vivent dans la base Notion « 🃏 Cartes du
+// Purgatoire », qui est la SEULE source, et y sont recopiées carte par carte
+// au fur et à mesure. La page le dit aux visiteurs, en toutes lettres.
+//
+// Corollaire : ne JAMAIS justifier une valeur d'ici par le barème (« budget 12
+// + rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
+// écrits le 2026-09-07 sur des chiffres qui ne sortaient d'aucun calcul — une
+// justification fausse coûte plus cher qu'une absence de justification, elle
+// envoie vérifier une règle qui n'a jamais été appliquée.
+//
 // 🚨 Rien ici n'est calculé et rien ne le sera : le moteur de règles vit côté
-// serveur, en Python. Ces valeurs sont RECOPIÉES depuis la base Notion
-// « 🃏 Cartes du Purgatoire », qui est la source. Les faire dériver d'une
-// formule en JavaScript ouvrirait une porte de triche et un second jeu à
-// maintenir.
+// serveur, en Python. Le faire dériver d'une formule en JavaScript ouvrirait
+// une porte de triche et un second jeu à maintenir.
 //
 // Les illustrations sont déclarées SANS extension, via `image()` : chacune est
 // servie en AVIF avec un repli WebP, et les deux ne peuvent pas être oubliées
@@ -28,8 +38,6 @@ import { image } from './tcg-carte-hero.js';
 export const CARTES = [
   {
     legende: 'AZRAËL · ARCHANGE',
-    // Budget 12 + 8 (Archange) = 20, réparti en 5/10/5. Ultime F07 « Rework »
-    // à 10 d'énergie — catalogue des Réflexes §F07, arbitré le 2026-09-07.
     carte: {
       nom: 'AZRAËL',
       classe: 'ARCHANGE · UNIQUE',
@@ -47,7 +55,6 @@ export const CARTES = [
   },
   {
     legende: 'CLAKERNOJUTSU · ÂME',
-    // Budget 12 (rareté Âme, aucun bonus) réparti en 5/4/3.
     carte: {
       nom: 'CLAKER',
       classe: 'ÂME · NO JUTSU',
@@ -72,11 +79,6 @@ export const CARTES = [
     },
   },
   {
-    // ⚠️ « FÉLIN » n'est PAS un palier du barème de rareté (Âme · Fidèle ·
-    // Âme Promise · Élu · Ange · Archange). Le budget de 17 (8 + 5 + 4)
-    // correspond à Ange — 12 + 5. La classe est reprise telle quelle de la
-    // maquette : c'est un arbitrage éditorial de l'owner, pas une règle à
-    // corriger ici.
     legende: 'RHAE___ · FÉLIN',
     carte: {
       nom: 'RHAE',
@@ -100,6 +102,31 @@ export const CARTES = [
       particules: 'poussiere',
       parallaxe: 1.1,
       intensite: 0.8,
+    },
+  },
+  {
+    legende: 'LILITH · DÉMON',
+    carte: {
+      nom: 'LILITH',
+      classe: 'DÉMON · LÉGENDAIRE',
+      ultime: 'MORSURE',
+      description: 'Vole 2 PV au héros ciblé et les ajoute aux tiens.',
+      ambiance: 'Elle demande toujours avant de prendre. Une fois.',
+      cout: 7, atk: 6, pv: 6, aura: 5,
+      accent: '#e0332b',
+      fond: image('/assets/tcg-lilith-fond'),
+      // Ailes déployées : l'illustration est plus large que la carte. Au repos
+      // les pointes sont rognées, au survol le calque libre les laisse sortir.
+      hero: image('/assets/tcg-lilith-hero'),
+      heroCote: '-40%',
+      // 5 % et non 4 % : plus bas, le bas de l'illustration (elle s'arrête aux
+      // mollets) sort de derrière la fiche quand le parallaxe déplace le
+      // calque libre, et les jambes ont l'air coupées net.
+      heroHaut: '5%',
+      heroEchelle: 1.08,
+      particules: 'poussiere',
+      parallaxe: 1,
+      intensite: 0.75,
     },
   },
 ];
