@@ -92,3 +92,24 @@ def test_aucun_max_age_long_sur_les_medias():
     entete = _entete_cache("assets/tcg-azrael-hero.avif")
     assert "immutable" not in entete
     assert "max-age" not in entete
+
+
+def test_les_polices_du_dashboard_sont_revalidables(overlay_client):
+    """🚨 Régression introduite le 2026-09-07 en vendorant Inter : les polices
+    du panneau vivent sous `/static`, où `NoCacheStaticFiles` posait `no-store`
+    sans distinction. 260 ko repartaient à CHAQUE ouverture du panneau, là où
+    Google en servait 48 cachés un an — la dépendance externe était supprimée
+    et le réseau y perdait.
+    """
+    r = overlay_client.get("/static/vendor/inter-400.woff2")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-cache"
+    assert r.headers["cdn-cache-control"] == "no-cache"
+
+
+def test_le_code_du_dashboard_reste_non_garde(overlay_client):
+    """Le pendant : `/static/app.js` doit rester corrigible sans rebuild."""
+    r = overlay_client.get("/static/app.js")
+    assert r.status_code == 200
+    assert "no-store" in r.headers["cache-control"]
+    assert "no-store" in r.headers["cdn-cache-control"]

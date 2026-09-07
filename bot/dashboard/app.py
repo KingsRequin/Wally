@@ -67,7 +67,15 @@ _CACHE_MEDIA = "no-cache"
 
 
 def _entete_cache(chemin: str) -> str:
-    """La valeur de `Cache-Control` pour un fichier du site public."""
+    """La valeur de `Cache-Control` pour un fichier du front.
+
+    Vaut pour les DEUX surfaces — le site public et `/static`. Le distinguo
+    n'existait que pour le site : les polices d'Inter, vendorées pour le
+    dashboard le 2026-09-07, tombaient donc sous le `no-store` de `/static` et
+    partaient en entier à CHAQUE ouverture du panneau. 260 ko là où Google en
+    servait 48 cachés un an : la dépendance externe était supprimée, et le
+    réseau y perdait. Une police n'est pas plus du code ici que là-bas.
+    """
     return _CACHE_MEDIA if chemin.lower().endswith(_EXT_MEDIAS) else _CACHE_CODE
 
 
@@ -81,13 +89,24 @@ STARTER_DIR = STATIC_DIR / "public-starter"
 
 
 class NoCacheStaticFiles(StaticFiles):
-    """StaticFiles avec Cache-Control: no-store pour bypasser le cache CDN (Cloudflare)."""
+    """StaticFiles qui contourne le cache CDN (Cloudflare) pour le CODE.
+
+    Les médias — polices, images — sont seulement REVALIDÉS (`_entete_cache`) :
+    ils portent un nom stable et ne changent pas sous les pieds du navigateur,
+    alors que le JS et le CSS du panneau doivent pouvoir être corrigés sans
+    rebuild.
+    """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["CDN-Cache-Control"] = "no-store"
-        response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+        # Les trois en-têtes reçoivent la MÊME valeur : sans ça, l'edge
+        # Cloudflare garderait `no-store` sur une police que le navigateur a
+        # pourtant le droit de revalider, et le 304 n'arriverait jamais
+        # jusqu'à lui.
+        entete = _entete_cache(path)
+        response.headers["Cache-Control"] = entete
+        response.headers["CDN-Cache-Control"] = entete
+        response.headers["Cloudflare-CDN-Cache-Control"] = entete
         return response
 
 

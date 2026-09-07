@@ -3241,6 +3241,13 @@ select option, .neo-select option {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+  /* Point + nom + badge + « Déconnecter » ne tiennent pas sur une ligne à
+     390 px : le bouton sortait de 12 px de l'écran, hors de portée du pouce.
+     `wrap` et non une media query — sur un écran large tout tient déjà sur une
+     ligne, et la borne n'aurait servi qu'à choisir arbitrairement où ça casse.
+     Défaut antérieur au vendorage des polices : vérifié en restaurant
+     `style.css` depuis b8d6bc0e, même débordement de 12 px au pixel près. */
+  flex-wrap: wrap;
 }
 
 .twitch-channel-card .tc-dot {
