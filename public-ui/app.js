@@ -128,28 +128,18 @@ import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
 
 // ── Fabrique de DOM ───────────────────────────────────────────────────────
-// Les pages construisent leur arbre avec `h()` : jamais d'innerHTML, jamais de
-// chaîne HTML interpolée. Un titre d'image ou un pseudo peut contenir du code
-// (vécu : un nom de fichier de son exécutait un `onclick` interpolé).
-export function h(tag, attrs, ...kids) {
-  const el = document.createElement(tag);
-  if (attrs) {
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === 'class') el.className = v;
-      else if (k === 'text') el.textContent = v;
-      else if (k === 'style') el.style.cssText = v;
-      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
-      else if (k.startsWith('data-') || k === 'role' || k.startsWith('aria-')) el.setAttribute(k, v);
-      else el[k] = v;
-    }
-  }
-  kids.flat().forEach((k) => {
-    if (k === null || k === undefined || k === false) return;
-    el.appendChild(typeof k === 'string' || typeof k === 'number' ? document.createTextNode(String(k)) : k);
-  });
-  return el;
-}
+// `h()` vit dans `partage/dom.js` : l'overlay OBS en a besoin et ne peut pas
+// importer cette coquille — il tirerait Lenis, le routeur et les flux SSE pour
+// une seule fonction. Réexporté ici parce que SIX pages l'importent de là.
+//
+// ⚠️ IMPORT **et** export, pas un `export { h } from …` seul : cette forme
+// réexporte sans mettre `h` dans la portée du module, et ce fichier l'appelle
+// lui-même (`sectionHead`, `pageFooter`, `openModal`…). Le site entier tombait
+// sur « h is not defined » — invisible pour `node --check`, la syntaxe étant
+// parfaitement valide. Seul le smoke test l'a vu.
+import { h } from './partage/dom.js';
+
+export { h };
 
 /** Bandeau de titre d'une section : « 03 · CHAT WEB » + h2 + chapô facultatif. */
 export function sectionHead(eyebrow, titre, chapo) {
