@@ -163,13 +163,22 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
 # l'accueil sur les quatre routes sans que personne ne le voie.
 RAIL_ATTENDU = ["HAUT", "CERVEAU", "ÉMOTIONS", "CHAT", "GALERIE", "JOURNAL", "CAPOT"]
 
+# Le 4e champ dit si la route a un onglet dans la nav. La démo de carte n'en a
+# PAS — c'est une URL qu'on donne à la main — et exiger « un seul onglet actif »
+# sur elle échouerait pour la bonne raison.
 PAGES_PUBLIQUES = [
-    ("Accueil", "/", "#a-cerveau .feed-body"),
-    ("Chat", "/chat", ".chat-vue"),
-    ("Galerie", "/galerie", ".gal-grid"),
-    ("Clips", "/clips", ".clip-grid"),
-    ("TCG", "/tcg", ".tcg-hero"),
+    ("Accueil", "/", "#a-cerveau .feed-body", True),
+    ("Chat", "/chat", ".chat-vue", True),
+    ("Galerie", "/galerie", ".gal-grid", True),
+    ("Clips", "/clips", ".clip-grid", True),
+    ("TCG", "/tcg", ".tcg-hero", True),
+    ("Démo carte Azraël", "/demo/carte-azrael", ".dca-wrap", False),
 ]
+
+# Les onglets attendus dans les deux barres : celles de PAGES_PUBLIQUES qui en
+# ont une. CALCULÉ et non écrit en dur — une liste à la main laisserait la
+# prochaine page hors du compte, en silence.
+ONGLETS_ATTENDUS = sum(1 for *_, dans_nav in PAGES_PUBLIQUES if dans_nav)
 
 
 def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
@@ -184,7 +193,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     page = nav.new_page(viewport={"width": 1440, "height": 1000})
     erreurs = _brancher_erreurs(page)
 
-    for nom, route, marqueur in PAGES_PUBLIQUES:
+    for nom, route, marqueur, dans_nav in PAGES_PUBLIQUES:
         del erreurs[:]
         page.goto(f"{BASE}{route}", wait_until="networkidle", timeout=40000)
         page.wait_for_timeout(2000)
@@ -206,14 +215,17 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         # L'onglet actif de la nav DOIT suivre la route : c'est le seul repère
         # visuel du visiteur sur un site sans rechargement.
         actifs = page.locator(".nav-link.active").all_inner_texts()
-        rap.dire(len(actifs) == 1, f"page {nom} : un seul onglet actif", " · ".join(actifs))
+        if dans_nav:
+            rap.dire(len(actifs) == 1, f"page {nom} : un seul onglet actif", " · ".join(actifs))
+        else:
+            rap.dire(not actifs, f"page {nom} : aucun onglet actif", " · ".join(actifs))
 
         trop = page.evaluate(
             "document.documentElement.scrollWidth - document.documentElement.clientWidth")
         rap.dire(trop <= 0, f"page {nom} : pas de débordement horizontal", f"{trop} px")
 
         if captures:
-            page.screenshot(path=str(captures / f"public-{route.strip('/') or 'accueil'}.png"),
+            page.screenshot(path=str(captures / f"public-{route.strip('/').replace('/', '-') or 'accueil'}.png"),
                             full_page=(route != "/chat"))
 
     # Les filtres des clips. Tout se joue en JavaScript sur une liste déjà
@@ -482,7 +494,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # le bouton de connexion hors de portée du pouce.
     mob = nav.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
     erreurs_mob = _brancher_erreurs(mob)
-    for nom, route, _ in PAGES_PUBLIQUES:
+    for nom, route, _, dans_nav in PAGES_PUBLIQUES:
         del erreurs_mob[:]
         mob.goto(f"{BASE}{route}", wait_until="networkidle", timeout=40000)
         mob.wait_for_timeout(1800)
@@ -523,10 +535,12 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         }""")
         rap.dire(barre["visible"] and barre["hautMasque"],
                  f"390 px · {nom} : la barre du pouce remplace les onglets du haut", str(barre))
-        rap.dire(barre["onglets"] == len(PAGES_PUBLIQUES),
+        rap.dire(barre["onglets"] == ONGLETS_ATTENDUS,
                  f"390 px · {nom} : {barre['onglets']} onglets en bas",
-                 f"attendu {len(PAGES_PUBLIQUES)}")
-        rap.dire(barre["actifs"] == 1, f"390 px · {nom} : un seul onglet actif en bas",
+                 f"attendu {ONGLETS_ATTENDUS}")
+        attendu_actifs = 1 if dans_nav else 0
+        rap.dire(barre["actifs"] == attendu_actifs,
+                 f"390 px · {nom} : {attendu_actifs} onglet actif en bas",
                  f"{barre['actifs']} actif(s)")
         rap.dire(barre["recouvre"] <= 2, f"390 px · {nom} : la barre ne recouvre pas le pied",
                  f"{barre['recouvre']} px de chevauchement")

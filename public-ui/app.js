@@ -122,6 +122,7 @@ export function surInclinaison(fn) {
 import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
 import * as pageClips from './pages/clips.js';
+import * as pageDemoCarteAzrael from './pages/demo-carte-azrael.js';
 import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
 
@@ -383,6 +384,10 @@ const ROUTES = {
   '/galerie': { page: pageGalerie, plein: false },
   '/clips':   { page: pageClips,   plein: false },
   '/tcg':     { page: pageTcg,     plein: false },
+  // Démo HORS NAVIGATION : une URL qu'on donne à la main pour montrer une
+  // carte du TCG. Volontairement absente de `.nav-links`, de `.tabbar` et de
+  // `HASH_LEGACY` — elle n'a rien à faire dans un menu.
+  '/demo/carte-azrael': { page: pageDemoCarteAzrael, plein: false },
 };
 
 // Les ancres de l'ancien site arcade. Un lien partagé ou un marque-page ne doit
