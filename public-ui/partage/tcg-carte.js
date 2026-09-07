@@ -41,7 +41,12 @@ const FEUILLE = '/partage/tcg-carte.css';
  * impossible d'oublier une moitié.
  */
 export function image(base) {
-  return { avif: `${base}.avif`, webp: `${base}.webp` };
+  // ⚠️ Le chemin porte une empreinte (`/assets/x?v=a1b2c3d4`) : l'extension
+  // s'insère AVANT le `?`. Collée à la fin, on demanderait `x?v=….avif`, que
+  // le serveur ne connaît pas — et la carte serait noire.
+  const [chemin, requete] = base.split('?');
+  const suffixe = requete ? `?${requete}` : '';
+  return { avif: `${chemin}.avif${suffixe}`, webp: `${chemin}.webp${suffixe}` };
 }
 
 /** Charge la feuille de la carte. Rend de quoi la retirer.
@@ -249,7 +254,7 @@ const DEFAUTS = {
   cout: 0, atk: 0, pv: 0, aura: 0,
   accent: '#ffb02e',
   // `hero` et `fond` n'ont PAS de défaut : une carte sans illustration
-  // n'existe pas (cf. la règle en tête de `tcg-collection.js`), et un défaut
+  // n'existe pas (cf. la règle en tête de `bot/core/tcg_cartes.py`), et un défaut
   // vide donnerait une carte noire au lieu d'une erreur qu'on voit passer.
   heroCote: '-14%', heroHaut: '4%', heroEchelle: 1.12,
   // Le calque de SURVOL peut porter une autre illustration, avec son propre

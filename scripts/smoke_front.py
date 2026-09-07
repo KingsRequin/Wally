@@ -229,6 +229,54 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
             page.screenshot(path=str(captures / f"public-{route.strip('/').replace('/', '-') or 'accueil'}.png"),
                             full_page=(route != "/chat"))
 
+    # L'effet 3D des cartes du TCG n'était couvert par RIEN : le test de relief
+    # existant vise les `[data-tilt]` du site, pas `.chero`. Une carte peut
+    # monter, s'afficher, et ne plus s'incliner du tout sans qu'un test bronche
+    # — c'est arrivé de justesse au refactor du 2026-09-07.
+    #
+    # ⚠️ On mesure l'ÉTAT RENDU (perspective, transform, visibilité), jamais le
+    # fait qu'une fonction ait été appelée : un test qui assère une ligne
+    # d'implémentation fige le défaut le jour où elle change.
+    del erreurs[:]
+    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector(".chero", timeout=_ATTENTE_PANNEAU_MS)
+    page.wait_for_timeout(1500)
+    boite = page.locator(".chero").first.bounding_box()
+    page.mouse.move(boite["x"] + boite["width"] * 0.28,
+                    boite["y"] + boite["height"] * 0.22)
+    page.wait_for_timeout(1300)
+    ouverte = page.evaluate("""() => {
+      const c = document.querySelector('.chero');
+      return {
+        perspective: getComputedStyle(c).perspective,
+        transform: getComputedStyle(c.querySelector('.chero-carte')).transform,
+        cadres: getComputedStyle(c.querySelector('.chero-cadres')).visibility,
+      };
+    }""")
+    rap.dire(ouverte["perspective"] == "1100px",
+             "carte TCG : la 3D est posée au survol", str(ouverte["perspective"]))
+    rap.dire(ouverte["transform"].startswith("matrix3d"),
+             "carte TCG : elle s'incline vraiment", ouverte["transform"][:60])
+    rap.dire(ouverte["cadres"] == "visible",
+             "carte TCG : les cadres s'allument", ouverte["cadres"])
+
+    page.mouse.move(10, 10)
+    page.wait_for_timeout(1300)
+    fermee = page.evaluate("""() => {
+      const c = document.querySelector('.chero');
+      return {
+        perspective: getComputedStyle(c).perspective,
+        cadres: getComputedStyle(c.querySelector('.chero-cadres')).visibility,
+      };
+    }""")
+    # La 3D RETIRÉE au repos est la moitié qui compte : c'est elle qui garde
+    # une grille de vingt cartes à un calque GPU au lieu de neuf par carte.
+    rap.dire(fermee["perspective"] == "none",
+             "carte TCG : et revient à plat en sortant", str(fermee["perspective"]))
+    rap.dire(fermee["cadres"] == "hidden",
+             "carte TCG : les cadres s'éteignent", fermee["cadres"])
+    rap.dire(not erreurs, "carte TCG : aucune erreur JS", " · ".join(erreurs[:2]))
+
     # Les filtres des clips. Tout se joue en JavaScript sur une liste déjà
     # chargée : aucun appel réseau ne le trahirait, et aucun test Python ne
     # l'exécute. Le compteur est le seul témoin visible du tri en cours.
