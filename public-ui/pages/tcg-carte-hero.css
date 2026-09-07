@@ -68,10 +68,11 @@
   background: #12100c;
 }
 
+/* `background-image` est posé par le JS : il y écrit DEUX fois, l'AVIF et son
+ * repli WebP (cf. le module). */
 .chero-l1 {
   position: absolute;
   inset: -18%;
-  background-image: var(--chero-fond-url);
   background-size: cover;
   background-position: 50% 40%;
   transform: scale(1.06);
@@ -201,6 +202,10 @@
   transform-origin: 50% 50%;
 }
 
+/* `<picture>` est `inline` par défaut : sans ça, la ligne de base ajoute
+ * quelques pixels sous chaque illustration et le héros ne tombe pas où le
+ * cadrage le place. */
+.chero picture,
 .chero img {
   width: 100%;
   display: block;

@@ -33,6 +33,11 @@ if TYPE_CHECKING:
 # se fie au Content-Type et refuse l'aperçu. Une ligne au démarrage vaut mieux
 # qu'un correctif par route, celles à venir comprises.
 mimetypes.add_type("image/webp", ".webp")
+# Même trou pour `.avif`, et le même remède. Les illustrations du TCG sont
+# servies en AVIF (deux fois et demie plus légères qu'un WebP de même qualité)
+# avec un repli WebP : un `<source type="image/avif">` que le serveur annonce
+# en `application/octet-stream` est un pari sur le reniflage du navigateur.
+mimetypes.add_type("image/avif", ".avif")
 
 # Les `?v=…` des feuilles et des scripts du panneau admin, quelle que soit
 # l'empreinte déjà écrite dans `index.html`.

@@ -31,6 +31,19 @@ import { h } from '../app.js';
 const FEUILLE = '/pages/tcg-carte-hero.css';
 const POLICE = 'https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap';
 
+/** Déclare une illustration : l'AVIF et son repli WebP, depuis un chemin SANS
+ * extension.
+ *
+ * Les deux formats sont servis ensemble (`<picture>` pour les images,
+ * `image-set()` pour le fond) : l'AVIF pèse deux fois et demie moins qu'un
+ * WebP de même qualité, mais Safari ne le lit que depuis 16.4 et un téléphone
+ * plus vieux n'afficherait RIEN. Écrire la paire en un seul appel rend
+ * impossible d'oublier une moitié.
+ */
+export function image(base) {
+  return { avif: `${base}.avif`, webp: `${base}.webp` };
+}
+
 /** Charge la feuille et la police de la carte. Rend de quoi les retirer.
  *
  * Appelé par la page, pas par la carte : une grille de vingt cartes ne doit
@@ -238,9 +251,11 @@ const DEFAUTS = {
   ambiance: '',
   cout: 0, atk: 0, pv: 0, aura: 0,
   accent: '#ffb02e',
-  fond: '', hero: '',
+  // `hero` et `fond` n'ont PAS de défaut : une carte sans illustration
+  // n'existe pas (cf. la règle en tête de `tcg-collection.js`), et un défaut
+  // vide donnerait une carte noire au lieu d'une erreur qu'on voit passer.
   heroCote: '-14%', heroHaut: '4%', heroEchelle: 1.12,
-  avantPlan: '', avantPlanLargeur: '86%', avantPlanBas: '-6%',
+  avantPlan: null, avantPlanLargeur: '86%', avantPlanBas: '-6%',
   particules: 'braises',
   intensite: 1, parallaxe: 1,
   reflet: true, pulsation: true, debordement: true, selectionnee: false,
@@ -271,7 +286,10 @@ export function carteHero(carte) {
     ? h('canvas', { class: 'chero-canvas', 'aria-hidden': 'true' })
     : null;
 
-  const img = (src, alt) => h('img', { src, alt, loading: 'lazy', decoding: 'async' });
+  const img = (src, alt) => h('picture', {},
+    h('source', { srcset: src.avif, type: 'image/avif' }),
+    h('img', { src: src.webp, alt, loading: 'lazy', decoding: 'async' }),
+  );
   const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom));
   const libre = h('div', { class: 'chero-libre', 'aria-hidden': 'true' }, img(c.hero, ''));
 
@@ -339,8 +357,15 @@ export function carteHero(carte) {
     + `;--chero-haut:${c.heroHaut}`
     + `;--chero-echelle:${c.heroEchelle}`
     + `;--chero-ap-largeur:${c.avantPlanLargeur}`
-    + `;--chero-ap-bas:${c.avantPlanBas}`
-    + `;--chero-fond-url:url('${c.fond}')`;
+    + `;--chero-ap-bas:${c.avantPlanBas}`;
+
+  // Le fond est un `background-image`, il n'a pas de `<picture>`. Les deux
+  // affectations SONT le repli : un navigateur qui ne comprend pas
+  // `image-set()` (ou son `type()`) rejette la seconde et garde le WebP. Sans
+  // la première, il n'aurait pas de fond du tout.
+  l1.style.backgroundImage = `url('${c.fond.webp}')`;
+  l1.style.backgroundImage = `image-set(url('${c.fond.avif}') type("image/avif"),`
+    + ` url('${c.fond.webp}') type("image/webp"))`;
 
   const boite = h('div', { class: 'chero-boite' }, racine);
 
