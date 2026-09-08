@@ -56,11 +56,16 @@ const ECHELLE = 2;
 // image absente. On attend — mais avec un PLAFOND : un `decode()` qui
 // n'aboutit jamais (illustration manquante, réseau coupé) transformerait une
 // précaution en panne silencieuse.
-// 5 s et non 2 : quatre illustrations sur une machine qui encode un stream en
-// même temps, cache froid, dépassaient les deux secondes — et la carte partait
-// alors nue. Le plafond est un garde-fou contre l'attente INFINIE, pas une
-// limite de patience.
-const PLAFOND_DECODE_MS = 5000;
+// 🚨 400 ms, et surtout : on n'attend RIEN quand les illustrations sont déjà
+// chargées — ce qui est le cas normal, `overlay.js` les mettant en cache au
+// boot.
+//
+// Ce plafond a été à 2 s, puis 5. C'était l'erreur : Wally s'efface dès que le
+// widget est monté, donc chaque seconde d'attente est une seconde d'écran VIDE
+// devant les viewers. L'owner voyait « Wally disparaît, la carte apparaît
+// cinq secondes après » — exactement la valeur du plafond. Attendre une image
+// qui ne vient pas coûte plus cher que l'afficher une demi-seconde plus tard.
+const PLAFOND_DECODE_MS = 400;
 
 let _styles = null;
 
@@ -82,18 +87,23 @@ export function preparerCarte() {
  */
 async function attendreImages(noeud) {
   const images = [...noeud.querySelectorAll('img')];
-  let plafondAtteint = true;
+  // Le chemin normal : tout est déjà en cache, on ne rend pas la main au
+  // navigateur pour rien. `complete` est vrai dès que les octets sont là ; le
+  // décodage d'une image en cache tient dans la même image d'animation.
+  const enAttente = images.filter((i) => !i.complete || !i.naturalWidth);
+  if (!enAttente.length) return;
+
+  console.warn(`[carte] ${enAttente.length} illustration(s) pas encore prête(s) — `
+               + `attente plafonnée à ${PLAFOND_DECODE_MS} ms`,
+               enAttente.map((i) => i.currentSrc || i.src));
   await Promise.race([
-    Promise.all(images.map((i) => i.decode().catch((e) => {
+    Promise.all(enAttente.map((i) => i.decode().catch((e) => {
       // Une image qui refuse de se décoder n'empêche pas les autres : la carte
       // s'affiche amputée plutôt que pas du tout, et la trace dit laquelle.
       console.warn('[carte] illustration non décodée', i.currentSrc, e);
-    }))).then(() => { plafondAtteint = false; }),
+    }))),
     new Promise((r) => setTimeout(r, PLAFOND_DECODE_MS)),
   ]);
-  if (plafondAtteint) {
-    console.warn(`[carte] décodage au-delà de ${PLAFOND_DECODE_MS} ms — on joue quand même`);
-  }
 }
 
 /** Monte une carte. Rend `{ noeud, demarrer, arreter }`.

@@ -1110,22 +1110,61 @@
   //
   // Différé de 4 s : le boot de l'overlay a la priorité, une carte demandée
   // dans les quatre premières secondes est un cas qui n'existe pas.
+  // 🚨 Le préchargement utilise la MÊME structure que le rendu — un
+  // `<picture>` avec sa source AVIF et son repli WebP — et laisse le
+  // navigateur trancher. C'est la seule façon d'être sûr de mettre en cache
+  // ce qu'il servira vraiment.
+  //
+  // Deux essais avant celui-là. Précharger l'AVIF sans vérifier : si le CEF
+  // d'OBS ne le décode pas, le rendu retombe sur un WebP jamais préchargé et
+  // deux fois et demie plus lourd — cinq secondes d'écran vide et parfois un
+  // héros manquant, que cette machine n'a jamais reproduits. Puis un AVIF de
+  // 1×1 en data-URI pour trancher à l'exécution : Chromium a répondu « webp »
+  // alors qu'il charge des AVIF sans peine. Un test dont la réponse est
+  // fausse est pire que pas de test.
+  //
+  // Différé de 1,5 s : assez pour laisser le boot de la page passer devant,
+  // assez tôt pour qu'une carte demandée dans la foulée d'un démarrage d'OBS
+  // trouve déjà ses illustrations. À 4 s, ce cas-là s'affichait incomplet.
   setTimeout(() => {
     fetch("/api/public/tcg/cartes")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => {
-        (d.cartes || []).forEach((c) => {
+        // Hors champ mais RENDU : un conteneur en `display: none` ne fait pas
+        // choisir `<picture>`, et rien ne serait préchargé du tout.
+        const reserve = el("div", "tcg-preload");
+        reserve.setAttribute("aria-hidden", "true");
+        const cartes = d.cartes || [];
+        cartes.forEach((c) => {
           ["hero", "fond", "avantPlan", "hero3d"].forEach((champ) => {
             const base = c[champ];
             if (!base) return;
-            // L'AVIF seul : c'est celui que ce navigateur servira (le CEF
-            // d'OBS est un Chromium récent). S'il échouait, le repli WebP se
-            // chargerait à l'affichage comme avant — on ne perd rien.
             const [chemin, requete] = String(base).split("?");
+            const suffixe = requete ? `?${requete}` : "";
+            const pic = document.createElement("picture");
+            const src = document.createElement("source");
+            src.type = "image/avif";
+            src.srcset = `${chemin}.avif${suffixe}`;
             const img = new Image();
-            img.src = `${chemin}.avif${requete ? `?${requete}` : ""}`;
+            img.decoding = "async";
+            img.src = `${chemin}.webp${suffixe}`;
+            pic.append(src, img);
+            reserve.appendChild(pic);
           });
         });
+        document.body.appendChild(reserve);
+        // Dit à voix haute quel format a été retenu : c'est la seule façon de
+        // le savoir depuis OBS, dont la version de Chromium change à chaque
+        // mise à jour.
+        setTimeout(() => {
+          const pris = [...reserve.querySelectorAll("img")]
+            .map((i) => (i.currentSrc || "").split(".").pop().split("?")[0]);
+          const formats = [...new Set(pris)].join(", ") || "aucun";
+          const prets = [...reserve.querySelectorAll("img")]
+            .filter((i) => i.complete && i.naturalWidth).length;
+          console.info(`[carte] ${prets}/${pris.length} illustration(s) `
+                       + `préchargée(s), format ${formats}`);
+        }, 8000);
       })
       .catch((e) => {
         // Un préchargement raté n'est pas une panne : la carte se chargera à
@@ -1133,7 +1172,7 @@
         // ailleurs.
         console.warn("[carte] préchargement des illustrations impossible", e);
       });
-  }, 4000);
+  }, 1500);
 
   function disposerCarteTcg() {
     if (arretCarteTcg) arretCarteTcg();

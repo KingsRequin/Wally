@@ -510,6 +510,21 @@
        dessus. Les fusionner ici les ferait se remplacer. */
     .tcg-carte-hote { display: block; }
 
+    /* La réserve qui met les illustrations des cartes en cache au boot. Hors
+       champ mais RENDUE : `display: none` empêcherait `<picture>` de choisir
+       sa source, et rien ne serait préchargé. `contain` la sort du calcul de
+       mise en page du reste. */
+    .tcg-preload {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      contain: strict;
+      pointer-events: none;
+    }
+
     .tcg-carte-scene {
       opacity: 0;
       transform: scale(.94);
