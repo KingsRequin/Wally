@@ -56,7 +56,11 @@ const ECHELLE = 2;
 // image absente. On attend — mais avec un PLAFOND : un `decode()` qui
 // n'aboutit jamais (illustration manquante, réseau coupé) transformerait une
 // précaution en panne silencieuse.
-const PLAFOND_DECODE_MS = 2000;
+// 5 s et non 2 : quatre illustrations sur une machine qui encode un stream en
+// même temps, cache froid, dépassaient les deux secondes — et la carte partait
+// alors nue. Le plafond est un garde-fou contre l'attente INFINIE, pas une
+// limite de patience.
+const PLAFOND_DECODE_MS = 5000;
 
 let _styles = null;
 
@@ -70,7 +74,12 @@ export function preparerCarte() {
   if (!_styles) _styles = monterStylesCarte();
 }
 
-/** Attend que les illustrations soient décodées, sans dépasser le plafond. */
+/** Attend que les illustrations soient décodées, sans dépasser le plafond.
+ *
+ * ⚠️ À n'appeler que sur un nœud DÉJÀ inséré dans le document : hors DOM, une
+ * image ne charge pas (et pas du tout si elle est `lazy`), donc `decode()` ne
+ * peut pas aboutir. C'est pour ça que `demarrer()` existe.
+ */
 async function attendreImages(noeud) {
   const images = [...noeud.querySelectorAll('img')];
   let plafondAtteint = true;
@@ -87,7 +96,11 @@ async function attendreImages(noeud) {
   }
 }
 
-/** Monte une carte et joue sa chorégraphie. Rend `{ noeud, arreter }`.
+/** Monte une carte. Rend `{ noeud, demarrer, arreter }`.
+ *
+ * 🚨 `demarrer()` est appelé par l'appelant APRÈS avoir inséré `noeud` dans le
+ * document, et jamais avant : la chorégraphie commence par attendre le
+ * décodage des illustrations, ce qui n'aboutit pas sur un nœud détaché.
  *
  * `params` porte la carte entière, telle que le bus l'a envoyée, plus la durée
  * totale en secondes.
@@ -171,6 +184,5 @@ export function carteOverlay(params) {
     }, (totale - SORTIE_S) * 1000);
   };
 
-  jouer();
-  return { noeud, arreter };
+  return { noeud, demarrer: jouer, arreter };
 }

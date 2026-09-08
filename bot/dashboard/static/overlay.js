@@ -1074,8 +1074,11 @@
         // annulation, ou un autre widget solo). Y greffer la scène ferait
         // tourner sa chorégraphie dans un nœud détaché, pour personne.
         if (!hote.isConnected) return;
-        const { noeud, arreter } = m.carteOverlay(p);
+        const { noeud, demarrer, arreter } = m.carteOverlay(p);
+        // Insérer AVANT de démarrer : la chorégraphie attend le décodage des
+        // illustrations, et une image dont le nœud est détaché ne charge pas.
         hote.appendChild(noeud);
+        demarrer();
         // Le pendant de `activeWheelBox` : la chorégraphie tient des minuteurs
         // et un abonnement à la boucle d'animation, que `disposeWidget` doit
         // pouvoir couper si la carte part avant la fin.
@@ -1093,6 +1096,44 @@
   // la suivante vient de monter pendant le recouvrement.
   let carteTcgBox = null;
   let arretCarteTcg = null;
+
+  // 🚨 Les illustrations des cartes sont mises en cache AU BOOT, pas à
+  // l'affichage. Cette page tourne des heures dans OBS avant qu'on demande
+  // une carte : elle a tout le temps de charger un mégaoctet tranquillement.
+  //
+  // Sans ça, la carte demandée attendait ses images au moment de s'afficher.
+  // Mesuré le 2026-09-08 sur cache froid à 700 kbit/s — le débit d'une machine
+  // qui encode un stream : quatre illustrations prennent une DIZAINE de
+  // secondes, la chorégraphie tombait sur son plafond d'attente et jouait la
+  // carte nue. Trois cartes sur quatre apparaissaient incomplètes ; celle de
+  // Claker perdait ses pieds, d'autres n'avaient que le fond.
+  //
+  // Différé de 4 s : le boot de l'overlay a la priorité, une carte demandée
+  // dans les quatre premières secondes est un cas qui n'existe pas.
+  setTimeout(() => {
+    fetch("/api/public/tcg/cartes")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        (d.cartes || []).forEach((c) => {
+          ["hero", "fond", "avantPlan", "hero3d"].forEach((champ) => {
+            const base = c[champ];
+            if (!base) return;
+            // L'AVIF seul : c'est celui que ce navigateur servira (le CEF
+            // d'OBS est un Chromium récent). S'il échouait, le repli WebP se
+            // chargerait à l'affichage comme avant — on ne perd rien.
+            const [chemin, requete] = String(base).split("?");
+            const img = new Image();
+            img.src = `${chemin}.avif${requete ? `?${requete}` : ""}`;
+          });
+        });
+      })
+      .catch((e) => {
+        // Un préchargement raté n'est pas une panne : la carte se chargera à
+        // l'affichage. On le DIT quand même — sinon on chercherait la lenteur
+        // ailleurs.
+        console.warn("[carte] préchargement des illustrations impossible", e);
+      });
+  }, 4000);
 
   function disposerCarteTcg() {
     if (arretCarteTcg) arretCarteTcg();

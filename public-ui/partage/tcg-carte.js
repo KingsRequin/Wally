@@ -336,7 +336,16 @@ export function carteHero(carte, options = {}) {
       h('img', { src: webp, alt, loading: chargement, decoding: 'async' }),
     );
   };
-  const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom, 'lazy'));
+  // 🚨 `lazy` seulement quand un humain pointe la carte. Piloté par script
+  // (l'overlay), TOUT est `eager` : une image `loading="lazy"` dont le nœud
+  // n'est pas encore dans le document ne commence JAMAIS son chargement, et
+  // son `decode()` reste en attente indéfiniment — vérifié au navigateur le
+  // 2026-09-08. La chorégraphie attendait donc pour rien, tombait sur son
+  // plafond et jouait la carte SANS ses illustrations, qui apparaissaient
+  // ensuite une par une. C'est ce qui donnait « parfois il n'y a que le
+  // fond », et l'avant-plan de Claker manquant.
+  const chargement = interactif ? 'lazy' : 'eager';
+  const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom, chargement));
   // `eager` sur le calque de survol : quand c'est une SECONDE illustration, la
   // charger paresseusement ferait apparaître un trou à l'ouverture de la carte
   // — le calque du repos passe à `opacity: 0` en même temps. Quand les deux
@@ -348,10 +357,11 @@ export function carteHero(carte, options = {}) {
   // L'avant-plan (les pieds de Claker, par exemple) : la couche qui passe
   // DEVANT le héros. Elle n'existe que si la carte en déclare une.
   const apClip = c.avantPlan
-    ? h('div', { class: 'chero-ap-clip' }, img(c.avantPlan, ''))
+    ? h('div', { class: 'chero-ap-clip' }, img(c.avantPlan, '', chargement))
     : null;
   const apLibre = c.avantPlan
-    ? h('div', { class: 'chero-ap-libre', 'aria-hidden': 'true' }, img(c.avantPlan, ''))
+    ? h('div', { class: 'chero-ap-libre', 'aria-hidden': 'true' },
+        img(c.avantPlan, '', 'eager'))
     : null;
 
   const bords = {};

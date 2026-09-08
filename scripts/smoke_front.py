@@ -275,6 +275,55 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
         page.screenshot(path=str(captures / "overlay.png"))
     page.close()
 
+    # 🚨 Aucune carte ne doit s'AFFICHER avec une illustration manquante.
+    #
+    # Le défaut vécu le 2026-09-08 : sur cache froid, la chorégraphie attendait
+    # le décodage des images, tombait sur son plafond, et jouait la carte nue —
+    # « parfois il n'y a que le fond », les pieds de Claker absents. Trois
+    # cartes sur quatre. Rien ne pouvait le voir depuis cette machine : en
+    # local les illustrations arrivent en un dixième de seconde.
+    #
+    # Il faut donc DEUX conditions réunies, et c'est ce que ce test met en
+    # place : un contexte NEUF (cache vide, comme un OBS qui démarre) et un
+    # débit contraint à 700 kbit/s (une machine qui encode un stream).
+    print("   · cartes sur cache froid, à 700 kbit/s")
+    for cle in ("azrael", "claker", "rhae", "lilith"):
+        ctx = nav.new_context(viewport={"width": 1400, "height": 1000})
+        p_froid = ctx.new_page()
+        cdp = ctx.new_cdp_session(p_froid)
+        cdp.send("Network.enable")
+        cdp.send("Network.emulateNetworkConditions", {
+            "offline": False, "latency": 120,
+            "downloadThroughput": 700 * 1024 / 8,
+            "uploadThroughput": 700 * 1024 / 8})
+        p_froid.goto(f"{BASE}/static/overlay.html?preview=1",
+                     wait_until="domcontentloaded", timeout=40000)
+        # Le préchargement de l'overlay est différé de 4 s puis prend le temps
+        # du débit : on lui laisse de quoi finir, comme un OBS déjà allumé.
+        p_froid.wait_for_timeout(22000)
+        p_froid.evaluate("""(cle) => (async () => {
+          const d = await (await fetch('/api/public/tcg/cartes')).json();
+          window.__overlayPreview.showWidget('carte',
+            Object.assign({}, d.cartes.find(x => x.cle === cle), {duration: 16}));
+        })()""", cle)
+        vu = None
+        for _ in range(60):
+            p_froid.wait_for_timeout(120)
+            vu = p_froid.evaluate("""() => {
+              const sc = document.querySelector('.tcg-carte-scene');
+              if (!sc || +getComputedStyle(sc).opacity < 0.5) return null;
+              const imgs = [...sc.querySelectorAll('img')];
+              return [imgs.filter(i => !i.complete || !i.naturalWidth).length,
+                      imgs.length];
+            }""")
+            if vu is not None:
+                break
+        manque, total = vu if vu else (-1, 0)
+        rap.dire(manque == 0,
+                 f"carte {cle} : {total} illustration(s), aucune manquante à l'écran",
+                 f"{manque} manquante(s) — la carte s'affiche incomplète")
+        ctx.close()
+
 
 # Les cinq pages du site public, et le sélecteur d'un élément que SEULE cette
 # page monte. Un `<main>` non vide ne prouve rien : le routeur pourrait rendre
