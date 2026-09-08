@@ -111,3 +111,23 @@ def test_le_repli_webp_accompagne_toujours_l_avif():
             avif = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.avif").exists()
             webp = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.webp").exists()
             assert avif == webp, f"{nom} : avif={avif} webp={webp}"
+
+
+def test_le_reflet_holographique_est_reserve_aux_cartes_qui_le_declarent():
+    """Un marqueur que tout le monde porterait ne marquerait plus rien.
+
+    Le champ est écrit du CONSOMMATEUR vers l'UI : la couche n'existe dans le
+    DOM que si la carte le demande (cf. `chero-holo` dans le composant).
+    """
+    holos = [c.cle for c in tcg_cartes.CARTES.values() if c.holographique]
+    assert holos == ["azrael"], holos
+
+
+def test_le_defaut_est_sans_reflet():
+    """Une carte ajoutée sans y penser ne doit pas hériter du marqueur."""
+    from bot.core.tcg_cartes import CarteTcg
+
+    nue = CarteTcg(cle="x", nom="X", legende="X", classe="X", ultime="X",
+                   description="", ambiance="", cout=0, atk=0, pv=0, aura=0,
+                   accent="#fff", hero="/assets/x", fond="/assets/y")
+    assert nue.holographique is False

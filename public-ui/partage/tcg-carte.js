@@ -174,6 +174,16 @@ const OEIL = (() => {
   };
 })();
 
+// L'intensité du reflet holographique, comparée à l'écran sur trois valeurs :
+// à 0,50 le fond orange d'Azraël virait au vert olive et l'illustration était
+// dénaturée ; à 0,22 le chatoiement se devinait à peine. 0,34 se voit et
+// laisse l'orange orange.
+//
+// ⚠️ Indépendant de `gainReflet`, qui règle l'éclat des quatre BORDS. Les
+// multiplier ensemble portait l'holo à 0,80 sur l'overlay — la carte y était
+// repeinte.
+const OPACITE_HOLO = 0.34;
+
 const SOBRE = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TACTILE = () => window.matchMedia('(hover: none)').matches;
 
@@ -284,6 +294,7 @@ const DEFAUTS = {
   hero3d: null, hero3dCote: null, hero3dHaut: null,
   avantPlan: null, avantPlanLargeur: '86%', avantPlanBas: '-6%',
   particules: 'braises',
+  holographique: false,
   intensite: 1, parallaxe: 1,
   reflet: true, pulsation: true, debordement: true, selectionnee: false,
 };
@@ -308,6 +319,7 @@ export function carteHero(carte, options = {}) {
   const cadres = h('div', { class: 'chero-cadres' },
     h('div'), h('div'), h('div'), h('div'));
   const halo = h('div', { class: 'chero-halo' });
+  const holo = c.holographique ? h('div', { class: 'chero-holo' }) : null;
   const fond = h('div', { class: 'chero-fond' },
     l1, l2, l3, cadres, h('div', { class: 'chero-vignette' }), halo);
 
@@ -384,6 +396,10 @@ export function carteHero(carte, options = {}) {
     libre,
     apClip ? h('div', { class: 'chero-cadrage' }, apClip) : null,
     apLibre,
+    // Par-dessus l'illustration et l'avant-plan, sous le liseré : le reflet
+    // court sur la SURFACE de la carte. Dans un cadrage, sinon les bandes
+    // dépassent du cadre avec le héros qui déborde.
+    holo ? h('div', { class: 'chero-cadrage' }, holo) : null,
     bord,
     cout,
     bas,
@@ -515,6 +531,17 @@ export function carteHero(carte, options = {}) {
     // carte de galerie, à 340 px, où un éclat franc serait criard ; l'overlay
     // la montre à 680 px, seule sur l'écran et regardée — il le monte.
     const eclat = (v) => Math.min(1, .12 + Math.max(0, v) * .95 * gainReflet).toFixed(2);
+    // Le chatoiement suit l'inclinaison : la teinte tourne avec l'angle et le
+    // dégradé glisse. Trois variables, écrites dans la même image que le
+    // reste — pas de boucle propre, pas de second réveil par frame.
+    if (holo) {
+      // L'ORIENTATION des bandes tourne avec l'inclinaison, et le dégradé
+      // glisse : c'est la combinaison des deux qui donne le reflet qui
+      // « coule » sur la carte plutôt qu'un motif qui se translate.
+      holo.style.setProperty('--chero-holo-a', `${(108 + nx * 40).toFixed(1)}deg`);
+      holo.style.setProperty('--chero-holo-x', `${(50 + nx * 160).toFixed(1)}%`);
+      holo.style.setProperty('--chero-holo-y', `${(50 + ny * 160).toFixed(1)}%`);
+    }
     if (bords.gauche) bords.gauche.style.opacity = eclat(lx);
     if (bords.droite) bords.droite.style.opacity = eclat(-lx);
     if (bords.haut) bords.haut.style.opacity = eclat(ly);
@@ -566,6 +593,7 @@ export function carteHero(carte, options = {}) {
     cadres.style.visibility = 'visible';
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
+    if (holo) holo.style.opacity = String(OPACITE_HOLO);
     if (!SOBRE()) nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (particulesCarte) particulesCarte.bouffee();
     if (c.debordement) {
@@ -594,6 +622,7 @@ export function carteHero(carte, options = {}) {
     cadres.style.visibility = 'hidden';
     cadres.style.transform = '';
     if (reflet) { reflet.style.opacity = '0'; reflet.style.visibility = 'hidden'; }
+    if (holo) holo.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
     libre.style.opacity = '0';

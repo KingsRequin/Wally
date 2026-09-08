@@ -102,6 +102,10 @@ class CarteTcg:
     particules: str = "braises"
     parallaxe: float = 1.0
     intensite: float = 1.0
+    # Un chatoiement irisé sur le fond, qui se déplace avec l'inclinaison —
+    # comme une carte à collectionner sous une lampe. Par carte et non global :
+    # c'est un marqueur, et tout le monde l'aurait plus rien ne le serait.
+    holographique: bool = False
 
 
 CARTES: dict[str, CarteTcg] = {}
@@ -127,6 +131,7 @@ _poser(CarteTcg(
     fond="/assets/tcg-azrael-fond",
     alias=(),
     particules="braises",
+    holographique=True,
 ))
 
 _poser(CarteTcg(
@@ -351,4 +356,5 @@ def en_json(carte: CarteTcg) -> dict:
         "particules": carte.particules,
         "parallaxe": carte.parallaxe,
         "intensite": carte.intensite,
+        "holographique": carte.holographique,
     }

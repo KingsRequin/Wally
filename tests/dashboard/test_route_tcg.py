@@ -16,7 +16,7 @@ def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):
         "cout", "atk", "pv", "aura", "accent", "hero", "fond", "avantPlan",
         "hero3d", "heroCote", "heroHaut", "heroEchelle", "hero3dCote",
         "hero3dHaut", "avantPlanLargeur", "avantPlanBas", "particules",
-        "parallaxe", "intensite",
+        "parallaxe", "intensite", "holographique",
     }
     for carte in overlay_client.get("/api/public/tcg/cartes").json()["cartes"]:
         assert set(carte) <= autorisees, set(carte) - autorisees

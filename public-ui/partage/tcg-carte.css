@@ -205,6 +205,57 @@
   opacity: .7;
 }
 
+/* ── Le chatoiement holographique ────────────────────────────────────────
+ * Des bandes irisées qui glissent sur la SURFACE de la carte quand on la
+ * penche, comme une carte à collectionner sous une lampe. Réservé à celles
+ * qui le déclarent (`holographique`).
+ *
+ * 🚨 Elle est posée PAR-DESSUS l'illustration, et c'est tout le sujet. Un
+ * premier essai la mettait dans le fond, sous le personnage : mesuré au
+ * navigateur sur les dix modes de fusion possibles, AUCUN ne produisait
+ * d'irisation. Le fond d'Azraël est une explosion orange saturée — un dégradé
+ * mélangé dessus rend de l'orange clair ou du jaune, jamais du bleu ni du
+ * violet. Un reflet holographique a besoin de passer sur la surface, pas de
+ * se cacher dessous.
+ *
+ * 🚨 Elle s'arrête AVANT la fiche de texte (`bottom: 34%`) : des bandes
+ * irisées sur une description grise la rendraient illisible, et l'illisible
+ * n'est pas décoratif.
+ *
+ * 🚨 AUCUNE animation en boucle. Les recettes du web animent le
+ * `background-position` en `@keyframes` — sur une grille de vingt cartes,
+ * c'est vingt dégradés recomposés en permanence, y compris hors écran. Ici la
+ * couche ne bouge QUE quand `incliner()` écrit ses variables : sous le
+ * curseur, ou pendant la chorégraphie de l'overlay. Au repos elle est à
+ * `opacity: 0` et ne coûte rien. */
+.chero-holo {
+  position: absolute;
+  inset: 0 0 34% 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .45s ease;
+  /* `plus-lighter` additionne : c'est le seul du banc d'essai qui garde les
+   * teintes du dégradé au lieu de les ramener vers la couleur du dessous. */
+  mix-blend-mode: plus-lighter;
+  background-image:
+    repeating-linear-gradient(var(--chero-holo-a, 108deg),
+      rgba(255, 0, 128, .40) 0%,
+      rgba(255, 140, 0, .30) 5%,
+      rgba(255, 231, 74, .34) 10%,
+      rgba(64, 224, 208, .38) 16%,
+      rgba(123, 104, 238, .40) 22%,
+      rgba(255, 0, 128, .40) 28%),
+    repeating-linear-gradient(var(--chero-holo-a, 108deg),
+      rgba(255, 255, 255, .07) 0 2px, transparent 2px 7px);
+  background-position: var(--chero-holo-x, 50%) var(--chero-holo-y, 50%), 0 0;
+  background-size: 260% 260%, auto;
+  /* Le flou fond les bandes les unes dans les autres : sans lui on lit des
+   * rayures, pas un reflet. Posé une fois sur une couche qui ne se redessine
+   * pas — le mouvement se fait à la position du dégradé, jamais en
+   * refiltrant. */
+  filter: blur(9px);
+}
+
 /* ── Les particules ──────────────────────────────────────────────────────
  * Le canvas fait la MOITIÉ de la carte en pixels et s'étire : à cette
  * échelle, une braise de deux pixels ne perd rien, et la surface à repeindre
