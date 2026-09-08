@@ -39,16 +39,36 @@ RACINE = pathlib.Path(__file__).resolve().parent.parent
 SOURCES = pathlib.Path("/opt/design-tcg")
 CIBLE = RACINE / "public-ui" / "assets"
 
-# La carte fait 340 × 476 px CSS.
-CARTE_L = 340
+# La carte fait 680 px de large là où elle est REGARDÉE : sur l'overlay OBS,
+# où l'owner l'a dimensionnée à ~680 × 952 le 2026-09-08, et sur le site à
+# 340 px CSS × DPR 2. Le même chiffre des deux côtés, ce n'est pas une
+# coïncidence heureuse — c'est `--chero-k: 2` qui l'aligne.
+CARTE_L = 680
 
 # Marge au-dessus du strict nécessaire : un cadrage se retouche d'une version à
 # l'autre, et repasser sous la cible se voit tout de suite alors que 15 % de
 # pixels en trop ne se voient jamais.
-MARGE = 1.15
-# Les écrans des téléphones et des portables récents. Au-delà, le gain est
-# invisible et le poids, lui, ne l'est pas.
-DPR = 2
+MARGE = 1.10
+# 1 : `CARTE_L` est déjà exprimé en pixels PHYSIQUES (680, cf. ci-dessus). Le
+# facteur était compté deux fois, et toutes les illustrations sortaient deux
+# fois trop grandes.
+DPR = 1
+
+# 🚨 Deux qualités, et la différence n'est pas cosmétique.
+#
+# Les HÉROS sont regardés : ce sont eux qu'on reconnaît. Les FONDS sont
+# recouverts d'une trame de points, assombris par une vignette, et parcourus
+# par un reflet — personne ne les lit en détail. Les servir à la qualité d'un
+# portrait, c'est payer deux fois pour un décor.
+#
+# Mesuré le 2026-09-08 : à q52 l'écart avec q74 est de 2,4/255 en moyenne, soit
+# 1 % — imperceptible sur une illustration à aplats — pour 37 % de poids en
+# moins. Un jeu de 45 cartes passe de 11 Mo à 4.
+QUALITE_HEROS = 56
+QUALITE_FOND = 48
+# Le fond est en plus servi RÉDUIT : sous la trame et la vignette, sa
+# définition ne se voit pas. 65 % de la largeur utile.
+PART_FOND = 0.65
 
 # fichier source · nom servi · largeur relative à la carte · échelle au survol
 #
@@ -59,24 +79,24 @@ DPR = 2
 # « échelle au survol » = heroEchelle pour un calque qui grandit, 1 sinon.
 PLAN = [
     # Azraël — un seul visuel, au repos comme au survol (heroCote -14 %).
-    ("hero-azrael.png", "tcg-azrael-hero", 1.28, 1.12, 74),
-    ("fond-explosion.png", "tcg-azrael-fond", 1.44, 1.06, 70),
+    ("hero-azrael.png", "tcg-azrael-hero", 1.28, 1.12),
+    ("fond-explosion.png", "tcg-azrael-fond", 1.44, 1.06),
     # ClakerNoJutsu — visuel unique cadré serré (5 %), plus ses pieds en
     # avant-plan (pleine largeur, agrandis de 16 % au survol).
-    ("claker-hero.png", "tcg-claker-hero", 0.90, 1.10, 74),
-    ("claker-pieds.png", "tcg-claker-pieds", 1.00, 1.16, 74),
-    ("claker-fond.png", "tcg-claker-fond", 1.44, 1.06, 70),
+    ("claker-hero.png", "tcg-claker-hero", 0.90, 1.10),
+    ("claker-pieds.png", "tcg-claker-pieds", 1.00, 1.16),
+    ("claker-fond.png", "tcg-claker-fond", 1.44, 1.06),
     # rhae___ — DEUX visuels : le portrait assis au repos (cadré à 8 %, jamais
     # agrandi) et le bond griffes en avant au survol (−26 %, donc bien plus
     # large que la carte, et agrandi de 12 %).
-    ("rhae-hero-2d.png", "tcg-rhae-hero-2d", 0.84, 1.00, 74),
-    ("rhae-hero-3d.png", "tcg-rhae-hero-3d", 1.52, 1.12, 74),
-    ("rhae-fond.png", "tcg-rhae-fond", 1.44, 1.06, 70),
+    ("rhae-hero-2d.png", "tcg-rhae-hero-2d", 0.84, 1.00),
+    ("rhae-hero-3d.png", "tcg-rhae-hero-3d", 1.52, 1.12),
+    ("rhae-fond.png", "tcg-rhae-fond", 1.44, 1.06),
     # Lilith — ailes déployées : l'illustration fait presque DEUX fois la
     # largeur de la carte (`heroCote: -40%`). Au repos les pointes d'ailes sont
     # rognées, au survol elles sortent du cadre.
-    ("lilith-hero.png", "tcg-lilith-hero", 1.80, 1.08, 74),
-    ("lilith-fond.png", "tcg-lilith-fond", 1.44, 1.06, 70),
+    ("lilith-hero.png", "tcg-lilith-hero", 1.80, 1.08),
+    ("lilith-fond.png", "tcg-lilith-fond", 1.44, 1.06),
 ]
 
 QUALITE_WEBP = 88
@@ -115,13 +135,19 @@ def main() -> int:
         if not assets.is_dir():
             raise SystemExit(f"{archive.name} n'a pas de dossier `assets/`")
 
-        for nom, base, part, echelle, q_avif in PLAN:
+        for nom, base, part, echelle in PLAN:
+            # Un fond se reconnaît à son nom : c'est le seul endroit du plan
+            # où la distinction héros/décor a besoin d'être faite.
+            est_fond = base.endswith("-fond")
+            q_avif = QUALITE_FOND if est_fond else QUALITE_HEROS
             src = assets / nom
             if not src.exists():
                 print(f"  ⚠  {nom} absent de l'archive — ignoré")
                 continue
             im = Image.open(src)
             cible = largeur_cible(part, echelle)
+            if est_fond:
+                cible = round(cible * PART_FOND)
             note = ""
             if im.width > cible:
                 im = im.resize((cible, round(im.height * cible / im.width)),

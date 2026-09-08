@@ -300,7 +300,9 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
                      wait_until="domcontentloaded", timeout=40000)
         # Le préchargement de l'overlay est différé de 4 s puis prend le temps
         # du débit : on lui laisse de quoi finir, comme un OBS déjà allumé.
-        p_froid.wait_for_timeout(22000)
+        # 14 s suffisent depuis que les illustrations sont passées de 993 à
+        # 574 ko — quatre cartes tiennent dans les dix secondes de transfert.
+        p_froid.wait_for_timeout(14000)
         p_froid.evaluate("""(cle) => (async () => {
           const d = await (await fetch('/api/public/tcg/cartes')).json();
           window.__overlayPreview.showWidget('carte',
