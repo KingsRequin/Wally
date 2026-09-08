@@ -552,7 +552,14 @@ export function carteHero(carte, options = {}) {
     if (e) { px = e.clientX; py = e.clientY; }
     clearTimeout(minuteurAplat);
     set3d(true);
-    plateau.style.transition = 'transform .16s ease-out';
+    // 🚨 La transition lisse le SAUT du curseur qui arrive d'un coup sur la
+    // carte. Piloté par script, il n'y a pas de saut : la chorégraphie écrit
+    // une nouvelle cible toutes les 33 ms, et une transition de 160 ms
+    // n'atteint jamais celle-ci avant d'être remplacée — elle traîne à un
+    // cinquième du parcours. Mesuré sur l'overlay : ±0,3° d'inclinaison au
+    // lieu de ±5,6°, soit un mouvement invisible. C'est le lissage qui écrase
+    // l'amplitude, pas l'amplitude qui est trop faible.
+    plateau.style.transition = interactif ? 'transform .16s ease-out' : 'none';
     cadres.style.visibility = 'visible';
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
@@ -573,6 +580,8 @@ export function carteHero(carte, options = {}) {
     if (!etat.survol) return;
     etat.survol = false;
     etat.vent = 0;
+    // Au retour au repos la transition sert dans les DEUX modes : là, il y a
+    // bien un saut à lisser — de l'angle courant vers zéro, en une écriture.
     plateau.style.transition = 'transform .5s cubic-bezier(.03,.98,.52,.99)';
     plateau.style.transform = '';
     l1.style.transform = 'scale(1.06)';

@@ -207,6 +207,27 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     rap.dire(t1 != t2, "carte overlay : et elle TOURNE toute seule",
              f"immobile en {t1[:34]}")
 
+    # 🚨 L'AMPLITUDE, et pas seulement le mouvement. Le 2026-09-08, la carte
+    # bougeait — le test ci-dessus passait — mais de ±0,3° au lieu de ±5,8° :
+    # la transition de 160 ms posée sur le plateau n'atteignait jamais sa cible
+    # avant d'être remplacée 33 ms plus tard, et écrasait la torsion d'un
+    # facteur DIX-NEUF. À l'écran, la carte semblait parfaitement immobile.
+    angles = []
+    for _ in range(12):
+        page.wait_for_timeout(260)
+        a = page.evaluate("""() => {
+          const e = document.querySelector('.tcg-carte-scene .chero-carte');
+          if (!e) return null;
+          const m = new DOMMatrixReadOnly(getComputedStyle(e).transform);
+          return Math.asin(Math.max(-1, Math.min(1, m.m13))) * 180 / Math.PI;
+        }""")
+        if a is not None:
+            angles.append(a)
+    course = (max(angles) - min(angles)) if angles else 0.0
+    rap.dire(course >= 6.0, f"carte overlay : elle se TORD de {course:.1f}°",
+             "attendu ≥ 6° — un mouvement écrasé par une transition se lit "
+             "comme une carte immobile")
+
     if captures:
         page.screenshot(path=str(captures / "overlay-carte.png"))
 

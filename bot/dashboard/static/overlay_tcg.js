@@ -21,10 +21,16 @@ const OUVERTURE_S = 0.8;
 const SORTIE_S = 0.8;
 const FIXE_S = ENTREE_S + OUVERTURE_S + SORTIE_S;
 
-// La moitié de la course d'un curseur. À pleine amplitude la carte bascule
-// comme sous une souris qui balaie : ça se lit comme un bug d'animation, pas
-// comme une présentation. L'owner a demandé qu'elle « tourne légèrement ».
-const AMPLITUDE = 0.25;
+// Quatre cinquièmes de la course d'un curseur, soit ±12° d'inclinaison à
+// intensité 1. On était parti sur la moitié en lisant « tourne légèrement »,
+// mais à l'écran la torsion ne se voyait pas — et pour une bonne part parce
+// que la transition du plateau écrasait l'amplitude d'un facteur DIX-NEUF
+// (cf. le commentaire de `entrer()` dans `partage/tcg-carte.js`). Le lissage
+// corrigé, il restait à rapprocher l'effet de celui du survol sur le site.
+//
+// Pas la course entière : au maximum, la carte bascule comme sous une souris
+// qui balaie, et ça se lit comme un défaut d'animation.
+const AMPLITUDE = 0.4;
 
 // 340 px CSS × 2 = 680 px sur un canvas de 1920, rendu en DPR 1 : exactement
 // la résolution pour laquelle les illustrations sont générées (340 CSS × DPR 2,
