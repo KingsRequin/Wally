@@ -304,6 +304,14 @@ const DEFAUTS = {
   avantPlan: null, avantPlanLargeur: '86%', avantPlanBas: '-6%',
   particules: 'braises',
   holographique: false,
+  // Où court le chatoiement : sur la SURFACE de l'illustration (le défaut),
+  // ou seulement dans l'épaisseur du LISERÉ (`'bords'`). Le second existe
+  // pour les fonds déjà très colorés, où une irisation de surface se noie —
+  // c'est le cas de KingsRequin, dont le fond est un bleu saturé.
+  holoZone: 'surface',
+  // Deux nappes de bulles qui montent derrière l'illustration. Réservé aux
+  // cartes aquatiques : ailleurs, ce sont des taches claires sans raison.
+  bulles: false,
   intensite: 1, parallaxe: 1,
   reflet: true, pulsation: true, debordement: true, selectionnee: false,
 };
@@ -356,20 +364,48 @@ export function carteHero(carte, options = {}) {
   const cadres = h('div', { class: 'chero-cadres' },
     h('div'), h('div'), h('div'), h('div'));
   const halo = h('div', { class: 'chero-halo' });
-  const holo = c.holographique ? h('div', { class: 'chero-holo' }) : null;
+  // 🚨 Le chatoiement des BORDS ne vit pas au même endroit que celui de la
+  // surface : il monte en Z avec le liseré (`data-z="30"`) et doit donc en
+  // être l'enfant. Posé dans un cadrage à plat comme l'autre, il se décalait
+  // du liseré dès que la carte s'ouvre — le reflet flottait à côté du cadre.
+  const holoBords = c.holographique && c.holoZone === 'bords';
+  const holo = c.holographique
+    ? h('div', { class: `chero-holo${holoBords ? ' chero-holo--bords' : ''}` })
+    : null;
+  // Les deux nappes de bulles montent en boucle et se SÉPARENT en profondeur
+  // sous l'inclinaison : la proche se déplace 2,5 fois plus que la lointaine.
+  // Sous `prefers-reduced-motion`, pas de nappes du tout — une animation en
+  // boucle infinie ne se coupe pas seulement au survol.
+  const bullesLoin = c.bulles && !SOBRE()
+    ? h('div', { class: 'chero-bulles chero-bulles--loin' }, h('div')) : null;
+  const bullesPres = c.bulles && !SOBRE()
+    ? h('div', { class: 'chero-bulles chero-bulles--pres' }, h('div')) : null;
   const fond = h('div', { class: 'chero-fond' },
-    l1, l2, l3, cadres, h('div', { class: 'chero-vignette' }), halo);
+    l1, l2, l3, cadres, bullesLoin, bullesPres,
+    h('div', { class: 'chero-vignette' }), halo);
 
   const avecParticules = c.particules !== 'aucune' && !SOBRE();
   const canvas = avecParticules
     ? h('canvas', { class: 'chero-canvas', 'aria-hidden': 'true' })
     : null;
 
+  // 🚨 En mode piloté (l'overlay), les illustrations passent DEVANT tout le
+  // reste. Mesuré le 2026-09-08 à 700 kbit/s : l'overlay précharge le jeu
+  // entier au boot, et la carte demandée pendant ce préchargement partait en
+  // FIN de file — ses deux images n'avaient pas commencé à charger 14 s après
+  // l'ouverture, et la carte s'affichait sans son héros. Le symptôme grandit
+  // avec le nombre de cartes : à cinq il coûtait la dernière du registre.
+  // `high` ne réserve pas de bande passante, il réordonne la file — c'est
+  // exactement ce qu'il faut ici, puisque le préchargement peut attendre.
+  const priorite = interactif ? null : 'high';
   const img = (source, alt, chargement) => {
     const { avif, webp } = paire(source);
     return h('picture', {},
       h('source', { srcset: avif, type: 'image/avif' }),
-      h('img', { src: webp, alt, loading: chargement, decoding: 'async' }),
+      h('img', {
+        src: webp, alt, loading: chargement, decoding: 'async',
+        fetchPriority: priorite,
+      }),
     );
   };
   // 🚨 `lazy` seulement quand un humain pointe la carte. Piloté par script
@@ -410,6 +446,7 @@ export function carteHero(carte, options = {}) {
     : null;
   const bord = h('div', { class: 'chero-bord', 'data-z': '30' },
     reflet,
+    holoBords ? holo : null,
     c.selectionnee ? h('div', { class: 'chero-selection' }) : null,
   );
 
@@ -446,7 +483,7 @@ export function carteHero(carte, options = {}) {
     // Par-dessus l'illustration et l'avant-plan, sous le liseré : le reflet
     // court sur la SURFACE de la carte. Dans un cadrage, sinon les bandes
     // dépassent du cadre avec le héros qui déborde.
-    holo ? h('div', { class: 'chero-cadrage' }, holo) : null,
+    holo && !holoBords ? h('div', { class: 'chero-cadrage' }, holo) : null,
     bord,
     cout,
     bas,
@@ -600,6 +637,11 @@ export function carteHero(carte, options = {}) {
     l2.style.transform = `translate3d(${(tx * .5).toFixed(1)}px,${(ty * .5).toFixed(1)}px,0)`;
     l3.style.transform = `translate(-50%,-50%) translate3d(${(tx * 1.6).toFixed(1)}px,${(ty * 1.6).toFixed(1)}px,0)`;
     cadres.style.transform = `translate3d(${(tx * 2.4).toFixed(1)}px,${(ty * 2.4).toFixed(1)}px,0)`;
+    // Les deux nappes de bulles se séparent en profondeur : la proche bouge
+    // 2,5 fois la lointaine. C'est cet écart, et pas leur montée, qui donne
+    // l'impression d'eau — la montée seule se lit comme un fond animé.
+    if (bullesLoin) bullesLoin.style.transform = `translate3d(${(tx * .7).toFixed(1)}px,${(ty * .7).toFixed(1)}px,0)`;
+    if (bullesPres) bullesPres.style.transform = `translate3d(${(tx * 1.8).toFixed(1)}px,${(ty * 1.8).toFixed(1)}px,0)`;
     // Héros et avant-plan sont écrits dans la MÊME image : sinon le héros
     // monte en Z avant les pieds et lui passe devant quelques frames.
     // Le Z et l'échelle suivent l'avancement : la couche s'élève et grandit
@@ -735,6 +777,11 @@ export function carteHero(carte, options = {}) {
     cadres.style.opacity = '0';
     cadres.style.visibility = 'hidden';
     cadres.style.transform = '';
+    // Le `transform` est RETIRÉ et non remis à zéro : l'animation de montée
+    // vit dans l'enfant, mais un `translate3d(0,0,0)` laissé sur le parent y
+    // fabrique un contexte d'empilement pour rien.
+    if (bullesLoin) bullesLoin.style.transform = '';
+    if (bullesPres) bullesPres.style.transform = '';
     if (reflet) { reflet.style.opacity = '0'; reflet.style.visibility = 'hidden'; }
     if (holo) holo.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });

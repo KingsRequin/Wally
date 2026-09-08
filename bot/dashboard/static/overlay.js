@@ -1147,6 +1147,12 @@
             src.srcset = `${chemin}.avif${suffixe}`;
             const img = new Image();
             img.decoding = "async";
+            // 🚨 Priorité BASSE, et c'est le point : ce préchargement peut
+            // attendre, une carte demandée à l'écran non. Sans ça, le jeu
+            // entier occupait la file et la carte réellement affichée partait
+            // derrière — mesuré à 700 kbit/s le 2026-09-08, ses illustrations
+            // n'avaient pas commencé 14 s après l'ouverture de l'overlay.
+            img.fetchPriority = "low";
             img.src = `${chemin}.webp${suffixe}`;
             pic.append(src, img);
             reserve.appendChild(pic);

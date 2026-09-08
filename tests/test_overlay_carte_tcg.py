@@ -133,8 +133,8 @@ def test_un_nom_introuvable_n_est_JAMAIS_remplace_par_un_tirage(bot_overlay):
 
 
 def test_le_tirage_epuise_le_registre_avant_de_repeter():
-    """Avec quatre cartes, un `random.choice` en répéterait une une fois sur
-    quatre — visible tout de suite sur un stream. C'est le défaut payé sur le
+    """Avec cinq cartes, un `random.choice` en répéterait une une fois sur
+    cinq — visible tout de suite sur un stream. C'est le défaut payé sur le
     pendu (deux « peacekeeper » d'affilée).
 
     ⚠️ Un sac NEUF, et non le singleton du module : celui-ci est partagé avec

@@ -198,6 +198,64 @@
 .chero-cadres > div:nth-child(3) { inset: 26%; opacity: .3; }
 .chero-cadres > div:nth-child(4) { inset: 33%; opacity: .2; border-width: 1px; }
 
+/* ── Les bulles ──────────────────────────────────────────────────────────
+ * Deux nappes qui montent en boucle derrière l'illustration, pour les cartes
+ * aquatiques (`bulles`). Elles vivent DANS le fond, sous la vignette : par
+ * dessus, elles éclairciraient le bas de la carte là où la fiche de texte a
+ * besoin d'un aplat sombre.
+ *
+ * 🚨 La montée est une TRANSLATION d'un motif répété deux fois plus haut que
+ * son cadre, pas une animation de `background-position` : le premier coûte un
+ * calque composité une fois pour toutes, le second recompose le fond à chaque
+ * image. La boucle est donc parfaite à −50 % — le motif s'y superpose à
+ * lui-même.
+ *
+ * Les deux nappes ne portent PAS la même animation : 110 s pour la lointaine,
+ * 60 s pour la proche. Une durée commune les ferait monter du même pas et
+ * l'eau se lirait comme un seul plan. */
+@keyframes chero-bulles {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -50%, 0); }
+}
+
+.chero-bulles {
+  position: absolute;
+  overflow: hidden;
+}
+
+/* Chaque nappe déborde de son cadre — c'est ce débordement que le parallaxe
+ * fait glisser sans jamais découvrir de bord vide. La proche déborde plus :
+ * elle se déplace 2,5 fois plus. */
+.chero-bulles--loin { inset: -10%; }
+.chero-bulles--pres { inset: -16%; }
+
+.chero-bulles > div {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 200%;
+  background-repeat: repeat;
+}
+
+.chero-bulles--loin > div {
+  animation: chero-bulles 110s linear infinite;
+  background-image:
+    radial-gradient(circle 13px at 30% 60%, rgba(214, 244, 255, .10) 55%,
+      rgba(214, 244, 255, .40) 78%, transparent 80%),
+    radial-gradient(circle 8px at 75% 25%, rgba(214, 244, 255, .12) 50%,
+      rgba(214, 244, 255, .46) 80%, transparent 82%);
+  background-size: 46% 25%, 31% 12.5%;
+}
+
+.chero-bulles--pres > div {
+  animation: chero-bulles 60s linear infinite;
+  background-image:
+    radial-gradient(circle 6px at 20% 40%, rgba(232, 250, 255, .45) 60%,
+      rgba(232, 250, 255, .8) 85%, transparent 87%),
+    radial-gradient(circle 3.5px at 65% 75%, rgba(232, 250, 255, .8) 70%,
+      transparent 75%);
+  background-size: 19% 10%, 13% 6.25%;
+}
+
 .chero-vignette {
   position: absolute;
   inset: 0;
@@ -265,6 +323,30 @@
    * Posé une fois sur une couche qui ne se redessine pas — le mouvement se
    * fait à la position du dégradé, jamais en refiltrant. */
   filter: blur(6px) saturate(1.5);
+}
+
+/* La variante `bords` : le même dégradé, mais confiné dans l'ÉPAISSEUR du
+ * liseré. Le masque est un exclusif entre deux rectangles — la boîte entière
+ * moins sa boîte de contenu — et le `padding` de 15,5 px est exactement la
+ * largeur du liseré (`box-shadow: inset … 15.5px` de `.chero-bord`). Changer
+ * l'un sans l'autre laisse un anneau qui déborde du cadre ou qui n'y arrive
+ * pas.
+ *
+ * Elle existe pour les fonds déjà très saturés : sur le bleu de KingsRequin,
+ * une irisation de surface se lit comme un voile blanc, alors qu'un cadre qui
+ * s'irise se voit tout de suite. Le flou descend à 4 px — sur une bande de
+ * 15 px, 6 px de flou débordent des deux côtés et rendent le contour mou. */
+.chero-holo--bords {
+  inset: 0;
+  border-radius: 6px;
+  padding: 15.5px;
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  -webkit-mask-clip: content-box, border-box;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  mask-clip: content-box, border-box;
+  mask-composite: exclude;
+  filter: blur(4px) saturate(1.5);
 }
 
 /* ── Les particules ──────────────────────────────────────────────────────

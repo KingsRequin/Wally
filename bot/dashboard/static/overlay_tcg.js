@@ -88,7 +88,15 @@ export function preparerCarte() {
  * peut pas aboutir. C'est pour ça que `demarrer()` existe.
  */
 async function attendreImages(noeud) {
-  const images = [...noeud.querySelectorAll('img')];
+  // 🚨 Seulement les calques VISIBLES à l'entrée. Les deux couches de survol
+  // (`chero-libre`, `chero-ap-libre`) n'apparaissent qu'au dépliage, une
+  // seconde plus tard : les attendre ici, c'est retarder une carte pour une
+  // image que personne ne regarde encore. Mesuré le 2026-09-08 à 700 kbit/s
+  // sur KingsRequin — son visuel de survol (58 ko, le plus lourd des deux)
+  // manquait 300 ms au moment de l'affichage, et arrivait 700 ms AVANT le
+  // dépliage. Le plafond partait donc pour rien.
+  const images = [...noeud.querySelectorAll('img')]
+    .filter((i) => !i.closest('.chero-libre, .chero-ap-libre'));
   // Le chemin normal : tout est déjà en cache, on ne rend pas la main au
   // navigateur pour rien. `complete` est vrai dès que les octets sont là ; le
   // décodage d'une image en cache tient dans la même image d'animation.

@@ -92,6 +92,11 @@ PLAN = [
     ("rhae-hero-2d.png", "tcg-rhae-hero-2d", 0.84, 1.00),
     ("rhae-hero-3d.png", "tcg-rhae-hero-3d", 1.52, 1.12),
     ("rhae-fond.png", "tcg-rhae-fond", 1.44, 1.06),
+    # KingsRequin — DEUX visuels comme rhae___ : le portrait au repos (cadré
+    # à −8 %, jamais agrandi) et le second au survol (−22 %, agrandi de 14 %).
+    ("requin-hero-2d.png", "tcg-requin-hero-2d", 1.16, 1.00),
+    ("requin-hero-3d.png", "tcg-requin-hero-3d", 1.44, 1.14),
+    ("requin-fond.png", "tcg-requin-fond", 1.44, 1.06),
     # Lilith — ailes déployées : l'illustration fait presque DEUX fois la
     # largeur de la carte (`heroCote: -40%`). Au repos les pointes d'ailes sont
     # rognées, au survol elles sortent du cadre.

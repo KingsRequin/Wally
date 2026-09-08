@@ -36,8 +36,10 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sys
+import urllib.request
 
 BASE = "http://127.0.0.1:8080"
 _RACINE = pathlib.Path(__file__).resolve().parent.parent
@@ -286,8 +288,13 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     # Il faut donc DEUX conditions réunies, et c'est ce que ce test met en
     # place : un contexte NEUF (cache vide, comme un OBS qui démarre) et un
     # débit contraint à 700 kbit/s (une machine qui encode un stream).
+    #
+    # ⚠️ Les clés viennent du REGISTRE, jamais d'une liste écrite ici : quatre
+    # noms en dur laissaient la carte suivante hors du filet, en silence.
     print("   · cartes sur cache froid, à 700 kbit/s")
-    for cle in ("azrael", "claker", "rhae", "lilith"):
+    with urllib.request.urlopen(f"{BASE}/api/public/tcg/cartes", timeout=10) as rep:
+        cles = [c["cle"] for c in json.load(rep)["cartes"]]
+    for cle in cles:
         ctx = nav.new_context(viewport={"width": 1400, "height": 1000})
         p_froid = ctx.new_page()
         cdp = ctx.new_cdp_session(p_froid)
@@ -308,22 +315,37 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
           window.__overlayPreview.showWidget('carte',
             Object.assign({}, d.cartes.find(x => x.cle === cle), {duration: 16}));
         })()""", cle)
+        # Deux instants, deux exigences — et c'est la seule façon de tenir les
+        # deux bouts. À l'ENTRÉE, ce qui est à l'écran doit être complet : le
+        # fond et le visuel de repos. Au DÉPLIAGE (une seconde plus tard), les
+        # calques de survol prennent la place du repos, et c'est là qu'une
+        # illustration manquante donne la carte nue vue le 2026-09-08.
+        # Exiger tout dès l'entrée retarderait la carte pour une image que
+        # personne ne regarde encore.
+        compte = """(survol) => {
+              const sc = document.querySelector('.tcg-carte-scene');
+              if (!sc || +getComputedStyle(sc).opacity < 0.5) return null;
+              const imgs = [...sc.querySelectorAll('img')].filter((i) =>
+                survol || !i.closest('.chero-libre, .chero-ap-libre'));
+              return [imgs.filter(i => !i.complete || !i.naturalWidth).length,
+                      imgs.length];
+            }"""
         vu = None
         for _ in range(60):
             p_froid.wait_for_timeout(120)
-            vu = p_froid.evaluate("""() => {
-              const sc = document.querySelector('.tcg-carte-scene');
-              if (!sc || +getComputedStyle(sc).opacity < 0.5) return null;
-              const imgs = [...sc.querySelectorAll('img')];
-              return [imgs.filter(i => !i.complete || !i.naturalWidth).length,
-                      imgs.length];
-            }""")
+            vu = p_froid.evaluate(compte, False)
             if vu is not None:
                 break
         manque, total = vu if vu else (-1, 0)
         rap.dire(manque == 0,
-                 f"carte {cle} : {total} illustration(s), aucune manquante à l'écran",
+                 f"carte {cle} : {total} illustration(s) à l'entrée, aucune manquante",
                  f"{manque} manquante(s) — la carte s'affiche incomplète")
+        # ENTREE_S vaut 0,6 s dans la chorégraphie : à 2 s le dépliage a joué.
+        p_froid.wait_for_timeout(2000)
+        vu = p_froid.evaluate(compte, True) or (-1, 0)
+        rap.dire(vu[0] == 0,
+                 f"carte {cle} : {vu[1]} illustration(s) une fois dépliée",
+                 f"{vu[0]} manquante(s) — la carte se déplie sans son héros")
         ctx.close()
 
 

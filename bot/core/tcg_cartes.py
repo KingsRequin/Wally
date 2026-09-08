@@ -103,10 +103,19 @@ class CarteTcg:
     parallaxe: float = 1.0
     intensite: float = 1.0
     # Le reflet irisé qui court sur la carte quand elle se penche, comme une
-    # carte à collectionner sous une lampe. C'est le marqueur des DEUX raretés
-    # les plus hautes — arbitrage de l'owner du 2026-09-08. Par carte et non
-    # global : si tout le monde l'avait, il ne marquerait plus rien.
+    # carte à collectionner sous une lampe. Choisi CARTE PAR CARTE au moment
+    # du cadrage, et pas dérivé de la rareté : Lilith est légendaire et ne
+    # l'a pas, KingsRequin l'est aussi et le porte. Par carte et non global —
+    # si tout le monde l'avait, il ne marquerait plus rien.
     holographique: bool = False
+    # Où court ce reflet : sur la SURFACE de l'illustration, ou seulement dans
+    # l'épaisseur du liseré (`"bords"`). Sur un fond déjà très saturé, une
+    # irisation de surface se lit comme un voile blanc — d'où la seconde
+    # option, choisie carte par carte au moment du cadrage.
+    holo_zone: str = "surface"
+    # Deux nappes de bulles qui montent derrière l'illustration. Aquatique et
+    # rien d'autre : ailleurs ce sont des taches claires sans raison.
+    bulles: bool = False
 
 
 CARTES: dict[str, CarteTcg] = {}
@@ -173,8 +182,8 @@ _poser(CarteTcg(
     cout=6, atk=8, pv=5, aura=4,
     accent="#ffb02e",
     fond="/assets/tcg-rhae-fond",
-    # La seule carte à DEUX visuels : portrait assis, cadré serré, au repos ;
-    # bond griffes en avant, bien plus large que la carte, au survol.
+    # DEUX visuels (comme KingsRequin) : portrait assis, cadré serré, au
+    # repos ; bond griffes en avant, bien plus large que la carte, au survol.
     hero="/assets/tcg-rhae-hero-2d",
     hero_cote="8%",
     hero_haut="-2%",
@@ -213,6 +222,38 @@ _poser(CarteTcg(
     particules="poussiere",
     parallaxe=1.0,
     intensite=0.75,
+))
+
+
+_poser(CarteTcg(
+    cle="kingsrequin",
+    nom="KINGSREQUIN",
+    legende="KINGSREQUIN · REQUIN",
+    classe="REQUIN · LÉGENDAIRE",
+    ultime="RAZ-DE-MARÉE",
+    description="Inflige 4 à tous les héros adverses. Les héros touchés ne "
+                "peuvent pas bloquer au tour suivant.",
+    ambiance="Il sourit tout le temps. C'est ça, le problème.",
+    cout=8, atk=9, pv=7, aura=4,
+    accent="#c9a227",
+    fond="/assets/tcg-requin-fond",
+    # Deux visuels comme rhae___ : le portrait au repos, le second au survol.
+    hero="/assets/tcg-requin-hero-2d",
+    hero_cote="-8%",
+    hero_haut="13%",
+    hero_3d="/assets/tcg-requin-hero-3d",
+    hero_3d_cote="-22%",
+    hero_3d_haut="2%",
+    hero_echelle=1.14,
+    alias=("kingsrequin", "requin", "kingrequin"),
+    particules="poussiere",
+    parallaxe=1.2,
+    intensite=0.8,
+    holographique=True,
+    # Son fond est un bleu saturé : un chatoiement de surface y rendrait un
+    # voile blanc. Il court donc dans le liseré.
+    holo_zone="bords",
+    bulles=True,
 ))
 
 
@@ -258,8 +299,8 @@ def noms_disponibles() -> list[str]:
 
 
 # Le tirage « une carte, n'importe laquelle ». Un sac sans remise et non un
-# `random.choice` : avec QUATRE cartes, un tirage uniforme en répète une une
-# fois sur quatre, et deux fois de suite une fois sur seize. Sur un stream,
+# `random.choice` : avec CINQ cartes, un tirage uniforme en répète une une
+# fois sur cinq, et deux fois de suite une fois sur vingt-cinq. Sur un stream,
 # cette répétition-là se voit tout de suite — c'est le défaut payé sur le pendu
 # (deux « peacekeeper » d'affilée), et la leçon y était déjà : un vivier élargi
 # sans mémoire répète quand même.
@@ -359,4 +400,6 @@ def en_json(carte: CarteTcg) -> dict:
         "parallaxe": carte.parallaxe,
         "intensite": carte.intensite,
         "holographique": carte.holographique,
+        "holoZone": carte.holo_zone,
+        "bulles": carte.bulles,
     }

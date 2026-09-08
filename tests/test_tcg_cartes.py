@@ -8,8 +8,9 @@ noire sur un stream, une résolution floue montre la carte de quelqu'un d'autre.
 from bot.core import tcg_cartes
 
 
-def test_les_quatre_cartes_terminees_sont_la():
-    assert set(tcg_cartes.CARTES) == {"azrael", "claker", "rhae", "lilith"}
+def test_les_cartes_terminees_sont_la():
+    assert set(tcg_cartes.CARTES) == {
+        "azrael", "claker", "rhae", "lilith", "kingsrequin"}
 
 
 def test_toute_carte_declare_ses_illustrations_sans_extension():
@@ -113,15 +114,29 @@ def test_le_repli_webp_accompagne_toujours_l_avif():
             assert avif == webp, f"{nom} : avif={avif} webp={webp}"
 
 
-def test_le_reflet_holographique_marque_les_deux_plus_hautes_raretes():
+def test_le_reflet_holographique_ne_marque_pas_tout_le_monde():
     """Un marqueur que tout le monde porterait ne marquerait plus rien.
 
-    Azraël et rhae___, arbitrage de l'owner du 2026-09-08. Le champ est écrit
-    du CONSOMMATEUR vers l'UI : la couche n'existe dans le DOM que si la carte
-    le demande (cf. `chero-holo` dans le composant).
+    Le choix est éditorial et se fait CARTE PAR CARTE, au cadrage : Lilith est
+    légendaire et ne l'a pas, KingsRequin l'est aussi et le porte. Ce test ne
+    fige donc pas une liste — il tient la seule propriété qui compte, que le
+    reflet reste l'exception.
+
+    Le champ est écrit du CONSOMMATEUR vers l'UI : la couche n'existe dans le
+    DOM que si la carte le demande (cf. `chero-holo` dans le composant).
     """
-    holos = sorted(c.cle for c in tcg_cartes.CARTES.values() if c.holographique)
-    assert holos == ["azrael", "rhae"], holos
+    holos = [c.cle for c in tcg_cartes.CARTES.values() if c.holographique]
+    assert holos, "aucune carte holographique : le marqueur a disparu"
+    assert len(holos) < len(tcg_cartes.CARTES), holos
+
+
+def test_le_chatoiement_des_bords_suppose_le_reflet():
+    """`holo_zone` ne dit QUE l'endroit : sans `holographique`, aucune couche
+    n'est construite et le réglage serait un bouton branché sur rien."""
+    for carte in tcg_cartes.CARTES.values():
+        if carte.holo_zone != "surface":
+            assert carte.holographique, carte.cle
+        assert carte.holo_zone in ("surface", "bords"), carte.cle
 
 
 def test_le_defaut_est_sans_reflet():

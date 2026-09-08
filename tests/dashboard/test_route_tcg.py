@@ -5,7 +5,8 @@ def test_la_route_rend_les_cartes_dans_l_ordre_du_registre(overlay_client):
     r = overlay_client.get("/api/public/tcg/cartes")
     assert r.status_code == 200
     cartes = r.json()["cartes"]
-    assert [c["nom"] for c in cartes] == ["AZRAËL", "CLAKER", "RHAE", "LILITH"]
+    assert [c["nom"] for c in cartes] == [
+        "AZRAËL", "CLAKER", "RHAE", "LILITH", "KINGSREQUIN"]
 
 
 def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):
@@ -16,7 +17,7 @@ def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):
         "cout", "atk", "pv", "aura", "accent", "hero", "fond", "avantPlan",
         "hero3d", "heroCote", "heroHaut", "heroEchelle", "hero3dCote",
         "hero3dHaut", "avantPlanLargeur", "avantPlanBas", "particules",
-        "parallaxe", "intensite", "holographique",
+        "parallaxe", "intensite", "holographique", "holoZone", "bulles",
     }
     for carte in overlay_client.get("/api/public/tcg/cartes").json()["cartes"]:
         assert set(carte) <= autorisees, set(carte) - autorisees
