@@ -300,7 +300,7 @@ export function carteHero(carte, options = {}) {
   const c = { ...DEFAUTS, ...carte };
   // `interactif` faux : aucun écouteur de pointeur, la carte est pilotée par
   // du code. C'est le mode de l'overlay OBS.
-  const { interactif = true } = options;
+  const { interactif = true, gainReflet = 1 } = options;
 
   const l1 = h('div', { class: 'chero-l1' });
   const l2 = h('div', { class: 'chero-l2' });
@@ -511,7 +511,10 @@ export function carteHero(carte, options = {}) {
     // s'éteint : c'est ça qui fait « carte plastifiée » plutôt qu'un balayage.
     const lx = -nx * 2;
     const ly = -ny * 2;
-    const eclat = (v) => Math.min(1, .12 + Math.max(0, v) * .95).toFixed(2);
+    // `--chero-reflet` module le contraste des quatre bords. Réglé pour une
+    // carte de galerie, à 340 px, où un éclat franc serait criard ; l'overlay
+    // la montre à 680 px, seule sur l'écran et regardée — il le monte.
+    const eclat = (v) => Math.min(1, .12 + Math.max(0, v) * .95 * gainReflet).toFixed(2);
     if (bords.gauche) bords.gauche.style.opacity = eclat(lx);
     if (bords.droite) bords.droite.style.opacity = eclat(-lx);
     if (bords.haut) bords.haut.style.opacity = eclat(ly);

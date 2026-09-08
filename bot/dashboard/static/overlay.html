@@ -518,10 +518,13 @@
 
     .tcg-carte-scene.tcg-carte-entre { opacity: 1; transform: none; }
 
+    /* 0,9 s comme `SORTIE_S` dans `overlay_tcg.js` : la carte est déjà
+       revenue à plat quand ce fondu commence, il n'a plus à composer avec le
+       repli des couches. */
     .tcg-carte-scene.tcg-carte-sort {
       opacity: 0;
       transform: scale(.96) translateY(-10px);
-      transition: opacity .8s var(--ease), transform .8s cubic-bezier(.2, .8, .2, 1);
+      transition: opacity .9s var(--ease), transform .9s cubic-bezier(.2, .8, .2, 1);
     }
 
     /* L'avatar cède la place, sans disparaître brutalement. */

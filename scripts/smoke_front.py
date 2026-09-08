@@ -168,9 +168,12 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     carte = page.evaluate("""async () => {
       const d = await (await fetch('/api/public/tcg/cartes')).json();
       const c = d.cartes.find((x) => x.cle === 'lilith') || d.cartes[0];
-      // 6 s : au-delà des 2,2 s de temps fixe, donc la rotation a sa place.
+      // 14 s, et ce n'est pas du luxe : les relevés qui suivent mesurent
+      // l'amplitude sur douze points, puis guettent le repli et le fondu. À
+      // 6 s la carte était déjà partie quand la dernière boucle commençait,
+      // et le test échouait sur son propre minutage.
       window.__overlayPreview.showWidget('carte', Object.assign({}, c,
-        { duration: 6 }));
+        { duration: 14 }));
       return c.nom;
     }""")
     rap.dire(bool(carte), "carte overlay : le widget est demandé", str(carte))
@@ -231,9 +234,37 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     if captures:
         page.screenshot(path=str(captures / "overlay-carte.png"))
 
-    # Phase 4 — elle s'en va, et son ménage est fait : ni minuteur, ni
-    # abonnement à la boucle d'animation ne doit survivre au nœud.
-    page.wait_for_timeout(4000)
+    # Phase 4 — elle revient À PLAT, reste visible un instant, PUIS s'efface.
+    #
+    # 🚨 L'ordre est le sujet. Replier la 3D et lancer le fondu dans le même
+    # geste faisait partir la carte pendant que ses couches se remettaient à
+    # plat : cadres qui s'éteignent, héros qui rentre et opacité qui tombe
+    # ensemble, ce qui se lit comme un défaut d'affichage. On vérifie donc que
+    # la carte est à plat AVANT que son opacité commence à baisser.
+    plat_a = None
+    fondu_a = None
+    for i in range(70):
+        page.wait_for_timeout(150)
+        vu = page.evaluate("""() => {
+          const sc = document.querySelector('.tcg-carte-scene');
+          if (!sc) return null;
+          return [getComputedStyle(sc.querySelector('.chero')).perspective,
+                  +getComputedStyle(sc).opacity];
+        }""")
+        if vu is None:
+            break
+        instant = (i + 1) * 0.15
+        if vu[0] == "none" and plat_a is None and instant > 1.5:
+            plat_a = instant
+        if vu[1] < 0.98 and fondu_a is None and instant > 1.5:
+            fondu_a = instant
+    marge = (fondu_a - plat_a) if (plat_a and fondu_a) else -1.0
+    rap.dire(marge >= 0.2,
+             f"carte overlay : à plat {marge:.2f} s avant de s'effacer",
+             "attendu ≥ 0,2 s — repli et fondu simultanés se lisent comme un "
+             "défaut d'affichage")
+
+    page.wait_for_timeout(2500)
     rap.dire(page.locator(".tcg-carte-scene").count() == 0,
              "carte overlay : elle est repartie",
              f"{page.locator('.tcg-carte-scene').count()} encore là")

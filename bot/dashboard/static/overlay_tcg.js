@@ -18,8 +18,20 @@ import {
 // l'écran. Seule la rotation s'étire pour occuper ce qui reste.
 const ENTREE_S = 0.6;
 const OUVERTURE_S = 0.8;
-const SORTIE_S = 0.8;
-const FIXE_S = ENTREE_S + OUVERTURE_S + SORTIE_S;
+// 🚨 Le REPLI est un temps à part entière, et non la première moitié de la
+// sortie. Replier la 3D et lancer le fondu dans le même geste faisait partir
+// la carte PENDANT que ses couches se remettaient à plat : les cadres
+// s'éteignaient, le héros rentrait dans son cadre et l'opacité tombait tous
+// ensemble — ça se lisait comme un défaut d'affichage, pas comme une sortie.
+//
+// 0,9 s et non 0,7 : mesuré, la carte n'est réellement À PLAT qu'après le
+// minuteur d'aplatissement du composant — 0,52 s après `fermer()`, le temps
+// que les Z reviennent à zéro (retirer la perspective avant se verrait). À
+// 0,7 s il ne restait que 180 ms de marge avant le fondu ; sous une machine
+// chargée, les deux se chevauchaient de nouveau.
+const REPLI_S = 0.9;
+const SORTIE_S = 0.9;
+const FIXE_S = ENTREE_S + OUVERTURE_S + REPLI_S + SORTIE_S;
 
 // Quatre cinquièmes de la course d'un curseur, soit ±12° d'inclinaison à
 // intensité 1. On était parti sur la moitié en lisant « tourne légèrement »,
@@ -93,6 +105,10 @@ export function carteOverlay(params) {
   // composant brancherait des écouteurs de pointeur qui ne serviraient jamais.
   const { boite, detruire, ouvrir, fermer, incliner } = carteHero(params, {
     interactif: false,
+    // Le reflet des quatre bords est réglé pour une carte de galerie, à
+    // 340 px. Ici elle en fait 680, seule à l'écran : sans ce gain, l'éclat
+    // qui suit la lumière ne se voit pas.
+    gainReflet: 1.6,
   });
   boite.style.setProperty('--chero-k', String(ECHELLE));
 
@@ -137,12 +153,19 @@ export function carteOverlay(params) {
       });
     }, ENTREE_S * 1000);
 
+    // Le repli : la carte revient À PLAT, et rien d'autre. Elle reste
+    // pleinement visible pendant ce temps — c'est le geste inverse de
+    // l'ouverture, et il doit se lire comme tel.
     plusTard(() => {
       if (desabonner) { desabonner(); desabonner = null; }
-      // Revenir au centre AVANT de fermer : sinon la carte sort en biais,
-      // depuis l'angle où la trajectoire l'a laissée.
+      // Revenir au centre AVANT de fermer : sinon la carte se replie en
+      // biais, depuis l'angle où la trajectoire l'a laissée.
       incliner(0, 0);
       fermer();
+    }, (totale - SORTIE_S - REPLI_S) * 1000);
+
+    // Puis seulement, la disparition — sur une carte déjà à plat.
+    plusTard(() => {
       noeud.classList.remove('tcg-carte-entre');
       noeud.classList.add('tcg-carte-sort');
     }, (totale - SORTIE_S) * 1000);
