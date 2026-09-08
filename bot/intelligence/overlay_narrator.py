@@ -38,6 +38,8 @@ from bot.core.text_clean import retirer_tirets_cadratins
 from bot.core.audit_log import journal, note_audience, note_speech
 from bot.core.conversation_log import new_trace_id
 from bot.core.mots_joues import MotsJoues
+from bot.core.tcg_cartes import CARTES as CARTES_TCG
+from bot.core.tcg_cartes import en_json as carte_en_json
 from bot.core.music import vignette
 from bot.core.overlay_feed import ecourter
 from bot.core.secret_guard import guard_secret, release_secret
@@ -1993,6 +1995,23 @@ class OverlayNarrator:
                 params["duel"] = True
                 if extra.get("final") is True:
                     params["final"] = True
+
+        elif widget == "carte":
+            # 🚨 Les valeurs sont relues DANS LE REGISTRE, à partir de la seule
+            # clé transmise. `show_widget` filtre ses paramètres widget par
+            # widget, par liste blanche — c'est ce qui empêche du texte libre
+            # du modèle d'atteindre l'écran. Une carte poussée en vingt-six
+            # champs par l'appelant était donc jetée en silence, et publiée
+            # VIDE : le composant retombait sur ses défauts (« AZRAËL »,
+            # ATK 0/PV 0/AURA 0) et cherchait ses images à `undefined.avif`.
+            #
+            # Passer la clé et relire ici garde le filtre utile ET la source
+            # unique : aucun champ de carte ne traverse le modèle.
+            fiche = CARTES_TCG.get(str(extra.get("carte") or ""))
+            if fiche is None:
+                return self._refuser(
+                    "cette carte n'existe pas dans la collection.")
+            params = carte_en_json(fiche)
 
         elif widget == "uptime":
             label = self._uptime_label()

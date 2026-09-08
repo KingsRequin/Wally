@@ -576,6 +576,10 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
         return json.dumps({"status": "unavailable",
                            "message": "L'overlay n'est pas branché en ce moment."})
     widget = str(args.get("widget") or "").strip()
+    # Retenu au moment de la résolution, pour la trace posée bien plus bas :
+    # `carte` y serait encore typée `CarteTcg | None` alors que les deux refus
+    # ont déjà rendu. Une variable dédiée dit ce qu'on sait, et mypy le voit.
+    nom_carte = ""
     extra = {k: v for k, v in args.items()
              if k not in ("widget", "comment", "result") and v is not None}
     if widget == "rps":
@@ -603,7 +607,11 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
             return json.dumps({"status": "rejected", "message": (
                 "Aucune carte n'est terminée pour l'instant."
             )})
-        extra.update(tcg_cartes.en_json(carte))
+        # La CLÉ seule : `show_widget` relit la fiche dans le registre. Y
+        # pousser les vingt-six champs ne servait à rien — son filtre par
+        # liste blanche les jetait, et la carte partait vide à l'écran.
+        extra["carte"] = carte.cle
+        nom_carte = carte.nom
     extra.pop("sollicite", None)   # le drapeau vient d'ici, jamais du modèle
     try:
         shown = narrator.show_widget(
@@ -624,7 +632,7 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
             # ligne, Wally fait le geste et ne sait pas de QUI il a montré la
             # carte. `self_trace` est le point d'entrée unique de « ce que
             # Wally vient de faire ».
-            note_act(f"tu as montré la carte de {extra.get('nom', '?')} aux viewers")
+            note_act(f"tu as montré la carte de {nom_carte} aux viewers")
         return json.dumps({"status": "ok", "message": _overlay_outcome(shown)})
     if not narrator.is_active():
         return json.dumps({"status": "offline", "message": (
