@@ -44,6 +44,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from bot.core.tirage import SacSansRemise
+
 # Là où vivent les AVIF et les WebP, produits par
 # `scripts/generer_illustrations_tcg.py`. Chemin relatif au dépôt, comme
 # `PUBLIC_UI_DIR` dans le dashboard — le conteneur y bind-monte `public-ui/`.
@@ -246,6 +248,28 @@ def noms_disponibles() -> list[str]:
     liste, Wally réessaie au hasard.
     """
     return list(CARTES)
+
+
+# Le tirage « une carte, n'importe laquelle ». Un sac sans remise et non un
+# `random.choice` : avec QUATRE cartes, un tirage uniforme en répète une une
+# fois sur quatre, et deux fois de suite une fois sur seize. Sur un stream,
+# cette répétition-là se voit tout de suite — c'est le défaut payé sur le pendu
+# (deux « peacekeeper » d'affilée), et la leçon y était déjà : un vivier élargi
+# sans mémoire répète quand même.
+#
+# La source est relue à chaque rechargement du sac, donc une carte terminée
+# entre dans le tirage sans redémarrage.
+_SAC = SacSansRemise(lambda: list(CARTES))
+
+
+def tirer_au_hasard() -> CarteTcg | None:
+    """Une carte au hasard, en épuisant le registre avant d'en répéter une.
+
+    None si le registre est vide — ce qui n'arrive pas aujourd'hui, mais reste
+    la réponse honnête plutôt qu'une exception.
+    """
+    cle = _SAC.tirer()
+    return CARTES.get(cle) if cle else None
 
 
 @lru_cache(maxsize=64)

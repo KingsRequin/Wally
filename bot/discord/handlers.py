@@ -583,14 +583,25 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
     if widget == "carte":
         # La carte demandée, résolue AVANT de publier : le widget reçoit ses
         # valeurs dans l'événement, il n'a rien à aller chercher.
-        demande = str(extra.pop("personne", "") or "")
-        carte = tcg_cartes.resoudre(demande)
-        if carte is None:
-            # Un refus qui NOMME ce qui existe : sans la liste, Wally réessaie
-            # au hasard, et il finirait par annoncer une carte inexistante.
+        #
+        # Sans nom, on TIRE — comme pour un meme. Le sac épuise le registre
+        # avant de répéter une carte (`tcg_cartes.tirer_au_hasard`).
+        demande = str(extra.pop("personne", "") or "").strip()
+        carte = (tcg_cartes.resoudre(demande) if demande
+                 else tcg_cartes.tirer_au_hasard())
+        if carte is None and demande:
+            # 🚨 Un nom DEMANDÉ et introuvable ne se remplace JAMAIS par un
+            # tirage : on montrerait la carte de quelqu'un d'autre que celui
+            # dont on parlait, devant les viewers. Le refus nomme ce qui
+            # existe — sans la liste, Wally réessaie au hasard et finit par
+            # annoncer une carte inexistante.
             return json.dumps({"status": "rejected", "message": (
                 f"Aucune carte au nom de « {demande} ». Celles qui existent : "
                 f"{', '.join(tcg_cartes.noms_disponibles())}."
+            )})
+        if carte is None:
+            return json.dumps({"status": "rejected", "message": (
+                "Aucune carte n'est terminée pour l'instant."
             )})
         extra.update(tcg_cartes.en_json(carte))
     extra.pop("sollicite", None)   # le drapeau vient d'ici, jamais du modèle

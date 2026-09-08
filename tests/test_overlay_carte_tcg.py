@@ -107,3 +107,53 @@ def test_carte_est_connue_du_narrateur():
     enum = OVERLAY_TOOL_SPEC["function"]["parameters"]["properties"]["widget"]["enum"]
     assert set(enum) <= set(OverlayNarrator._WIDGETS), (
         set(enum) - set(OverlayNarrator._WIDGETS))
+
+
+def test_sans_nom_une_carte_est_tiree(bot_overlay):
+    """« montre une carte » sans préciser qui doit marcher, comme pour un meme."""
+    bot, recu = bot_overlay
+    reponse = json.loads(run_overlay_tool(bot, {"widget": "carte"}))
+    assert reponse["status"] == "ok"
+    assert recu["nom"] in [c.nom for c in tcg_cartes.CARTES.values()]
+
+
+def test_un_nom_vide_ou_blanc_vaut_pas_de_nom(bot_overlay):
+    """Le modèle remplit parfois un paramètre facultatif d'une chaîne vide.
+    La traiter comme un nom introuvable refuserait un appel légitime."""
+    bot, recu = bot_overlay
+    for vide in ("", "   ", None):
+        recu.clear()
+        reponse = json.loads(
+            run_overlay_tool(bot, {"widget": "carte", "personne": vide}))
+        assert reponse["status"] == "ok", vide
+        assert recu.get("nom")
+
+
+def test_un_nom_introuvable_n_est_JAMAIS_remplace_par_un_tirage(bot_overlay):
+    """🚨 Le point qui compte. Tirer au hasard sur un nom qu'on n'a pas trouvé
+    montrerait la carte de quelqu'un d'AUTRE que celui dont on parlait, devant
+    les viewers — et Wally l'annoncerait sous le nom demandé.
+    """
+    bot, recu = bot_overlay
+    reponse = json.loads(
+        run_overlay_tool(bot, {"widget": "carte", "personne": "quelquun-dautre"}))
+    assert reponse["status"] == "rejected"
+    assert not recu, "rien ne doit partir à l'écran"
+
+
+def test_le_tirage_epuise_le_registre_avant_de_repeter():
+    """Avec quatre cartes, un `random.choice` en répéterait une une fois sur
+    quatre — visible tout de suite sur un stream. C'est le défaut payé sur le
+    pendu (deux « peacekeeper » d'affilée)."""
+    n = len(tcg_cartes.CARTES)
+    tires = [tcg_cartes.tirer_au_hasard().cle for _ in range(n)]
+    assert len(set(tires)) == n, tires
+
+
+def test_le_tirage_ne_repete_pas_a_la_jointure_des_sacs():
+    """Le seul endroit où le sans-remise ne protège de rien : la dernière du
+    sac suivie de la première du suivant."""
+    suite = [tcg_cartes.tirer_au_hasard().cle
+             for _ in range(len(tcg_cartes.CARTES) * 6)]
+    doublons = [(a, b) for a, b in zip(suite, suite[1:]) if a == b]
+    assert not doublons, doublons

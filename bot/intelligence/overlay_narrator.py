@@ -440,7 +440,7 @@ OVERLAY_TOOL_SPEC: dict = {
                         "tout seul · talkers = le podium des plus bavards · "
                         "carte = la carte du Purgatoire de quelqu'un de la "
                         "communauté, en grand, qui se déplie en 3D et tourne "
-                        "(demande `personne`)"
+                        "(`personne` pour choisir, sinon une au hasard)"
                     ),
                 },
                 "comment": {
@@ -468,11 +468,13 @@ OVERLAY_TOOL_SPEC: dict = {
                 )},
                 "percent": {"type": "number", "description": "Pour gauge : le remplissage, de 0 à 100."},
                 "personne": {"type": "string", "description": (
-                    "Pour carte UNIQUEMENT : le pseudo de la personne dont tu "
-                    "montres la carte. Un nom que tu ne connais pas te sera "
-                    "refusé AVEC la liste de celles qui existent — n'invente "
-                    "jamais de carte, et ne promets pas d'en montrer une que "
-                    "l'outil vient de refuser."
+                    "Pour carte : le pseudo de la personne dont tu montres la "
+                    "carte. FACULTATIF — sans lui, une carte est tirée au "
+                    "hasard, comme pour un meme, et l'outil te dit laquelle "
+                    "est partie. Un nom que tu ne connais pas te sera refusé "
+                    "AVEC la liste de celles qui existent, jamais remplacé par "
+                    "un tirage : n'invente jamais de carte, et ne promets pas "
+                    "d'en montrer une que l'outil vient de refuser."
                 )},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
                 "cells": {
