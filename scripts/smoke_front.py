@@ -654,6 +654,61 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(page.url.endswith("/galerie"), "l'ancre héritée #gallery redirige", page.url)
     page.close()
 
+    # Le gyroscope de la galerie. Sur un ordinateur il suffit de PASSER la
+    # souris sur une carte ; au téléphone il n'y a pas de survol, et
+    # l'équivalent est d'avoir la carte devant les yeux. Rien d'autre ne
+    # couvre ce chemin : les tests de la carte visent le survol, qui n'existe
+    # pas ici.
+    gyro = nav.new_page(viewport={"width": 390, "height": 844},
+                        is_mobile=True, has_touch=True)
+    erreurs_gyro = _brancher_erreurs(gyro)
+    gyro.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    gyro.wait_for_selector(".chero", timeout=_ATTENTE_PANNEAU_MS)
+    gyro.wait_for_timeout(2000)
+
+    rap.dire("téléphone" in gyro.locator(".tcgal-chapo").inner_text().lower()
+             or "penche" in gyro.locator(".tcgal-chapo").inner_text().lower(),
+             "gyroscope : la consigne parle de pencher, pas de survoler",
+             gyro.locator(".tcgal-chapo").inner_text()[-46:])
+
+    gyro.locator(".tcgal-case").nth(1).scroll_into_view_if_needed()
+    gyro.wait_for_timeout(1200)
+    ouvertes = gyro.evaluate(
+        "() => [...document.querySelectorAll('.chero')]"
+        ".filter(c => getComputedStyle(c).perspective !== 'none').length")
+    # 🚨 UNE seule, et c'est le point. La 3D d'une carte coûte neuf calques GPU
+    # au lieu d'un : toutes les ouvrir parce qu'elles sont à l'écran ferait
+    # ramer la page sur le matériel même qui a le gyroscope.
+    rap.dire(ouvertes == 1, f"gyroscope : {ouvertes} carte ouverte à la fois",
+             "attendu exactement 1")
+
+    def _pencher(gamma, beta):
+        gyro.evaluate("""([g, b]) => window.dispatchEvent(
+          new DeviceOrientationEvent('deviceorientation',
+            { gamma: g, beta: b, alpha: 0 }))""", [gamma, beta])
+        gyro.wait_for_timeout(450)
+        return gyro.evaluate("""() => {
+          const c = [...document.querySelectorAll('.chero')]
+            .find(x => getComputedStyle(x).perspective !== 'none');
+          if (!c) return null;
+          const m = new DOMMatrixReadOnly(
+            getComputedStyle(c.querySelector('.chero-carte')).transform);
+          return Math.asin(Math.max(-1, Math.min(1, m.m13))) * 180 / Math.PI;
+        }""")
+
+    # La PREMIÈRE mesure sert de neutre (cf. `lireInclinaison` dans `app.js`) :
+    # on penche donc deux fois, et c'est l'écart entre les deux qui compte.
+    _pencher(-14, 14)
+    a = _pencher(14, -14)
+    b_ = _pencher(-14, 14)
+    course = abs((a or 0) - (b_ or 0))
+    rap.dire(course >= 4.0,
+             f"gyroscope : la carte suit le capteur ({course:.1f}° d'écart)",
+             "attendu ≥ 4° — sans quoi le capteur est lu mais rien ne bouge")
+    rap.dire(not erreurs_gyro, "gyroscope : aucune erreur JS",
+             " · ".join(erreurs_gyro[:2]))
+    gyro.close()
+
     # Téléphone. Le débordement horizontal ne se voit sur AUCUNE capture de
     # bureau et ne lève aucune erreur JS : la page s'affiche, simplement un
     # bout part hors de l'écran. Un `grid-template-columns` posé en style EN

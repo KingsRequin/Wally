@@ -8,7 +8,7 @@
 // l'outil de Wally et le widget de l'overlay. Le compteur en DÉRIVE, il ne
 // s'écrit pas. Le moteur de règles vit côté serveur, en Python.
 
-import { h, pageFooter } from '../app.js';
+import { h, inclinaisonDisponible, pageFooter, surInclinaison } from '../app.js';
 import { cartes } from './tcg-donnees.js';
 import { carteHero, monterStylesCarte } from '../partage/tcg-carte.js';
 
@@ -23,10 +23,60 @@ let _demonter = null;
  * d'écran (une tablette large n'a pas de curseur non plus).
  */
 function invitation() {
-  const geste = window.matchMedia('(hover: none)').matches
-    ? 'Touche-les pour voir les couches se séparer.'
-    : 'Survole-les pour voir les couches se séparer.';
+  let geste = 'Survole-les pour voir les couches se séparer.';
+  if (inclinaisonDisponible()) {
+    geste = 'Penche ton téléphone pour voir les couches se séparer.';
+  } else if (window.matchMedia('(hover: none)').matches) {
+    geste = 'Touche-les pour voir les couches se séparer.';
+  }
   return `Les cartes finies, ajoutées au fur et à mesure. ${geste}`;
+}
+
+/** Fait suivre le gyroscope à la carte que le lecteur a devant les yeux.
+ *
+ * Sur un ordinateur il suffit de PASSER la souris sur une carte ; l'équivalent
+ * au téléphone n'est pas un appui, c'est d'avoir la carte devant soi. Celle
+ * qui traverse la bande centrale de l'écran s'ouvre donc, et suit
+ * l'inclinaison ; les autres restent à plat.
+ *
+ * 🚨 UNE seule carte ouverte à la fois, et c'est délibéré : la 3D d'une carte
+ * coûte neuf calques GPU au lieu d'un (cf. `set3d` dans le composant). Toutes
+ * les ouvrir parce qu'elles sont à l'écran ferait ramer la page sur le
+ * matériel même qui a le gyroscope.
+ *
+ * ⚠️ La bande centrale est déléguée à un `IntersectionObserver` plutôt que
+ * recalculée au défilement : mesurer la position de N cartes à chaque image
+ * coûte un reflow par image, sur mobile, pendant qu'on scrolle.
+ *
+ * ⚠️ Rien à faire ici pour l'autorisation iOS : `app.js` la demande au premier
+ * appui sur la page, une fois pour tout le site.
+ */
+function brancherGyroscope(rendues) {
+  let ouverte = null;
+
+  const oeil = new IntersectionObserver((entrees) => {
+    entrees.forEach((e) => {
+      if (!e.isIntersecting) return;
+      const carte = rendues.find((r) => r.noeud === e.target);
+      if (!carte || carte === ouverte) return;
+      if (ouverte) { ouverte.incliner(0, 0); ouverte.fermer(); }
+      ouverte = carte;
+      carte.ouvrir();
+    });
+    // `-45%` en haut ET en bas : il ne reste que le dixième central de
+    // l'écran. Deux cartes n'y tiennent pas ensemble, donc l'ouverture ne
+    // clignote pas entre deux voisines pendant le défilement.
+  }, { rootMargin: '-45% 0px -45% 0px' });
+  rendues.forEach((r) => oeil.observe(r.noeud));
+
+  // `x` et `y` arrivent dans [−1, 1] ; `incliner` attend [−0.5, 0.5]. Le
+  // facteur donne donc la course COMPLÈTE d'un curseur passant d'un bord à
+  // l'autre — pareil qu'à la souris, ce qui est ce qu'on veut.
+  const stop = surInclinaison((x, y) => {
+    if (ouverte) ouverte.incliner(x * 0.5, y * 0.5);
+  });
+
+  return () => { oeil.disconnect(); stop(); };
 }
 
 /** Le bandeau qui dit que les chiffres ne valent rien.
@@ -66,7 +116,13 @@ export function mount(el) {
   ));
   el.appendChild(pageFooter());
 
+  // Le gyroscope remplace le survol ET le tap : les cartes sont alors pilotées
+  // par la page, et le composant ne branche aucun écouteur (`interactif`).
+  // Laisser le tap ouvrir une carte que le centrage refermerait aussitôt
+  // n'aurait donné qu'un clignotement.
+  const auGyroscope = inclinaisonDisponible();
   const rendues = [];
+  let debrancherGyro = null;
   // La page peut être quittée pendant que la requête est en vol : sans ce
   // drapeau, on insérerait des cartes dans un `<main>` que le routeur a déjà
   // vidé, et elles resteraient abonnées à la boucle d'animation pour toujours.
@@ -76,13 +132,15 @@ export function mount(el) {
     if (!vivante) return;
     grille.textContent = '';
     liste.forEach((carte) => {
-      const { boite, detruire } = carteHero(carte);
-      rendues.push(detruire);
-      grille.appendChild(h('div', { class: 'tcgal-case' },
-        boite,
+      const rendu = carteHero(carte, { interactif: !auGyroscope });
+      const noeud = h('div', { class: 'tcgal-case' },
+        rendu.boite,
         h('div', { class: 'tcgal-legende', text: carte.legende }),
-      ));
+      );
+      rendues.push({ ...rendu, noeud });
+      grille.appendChild(noeud);
     });
+    if (auGyroscope) debrancherGyro = brancherGyroscope(rendues);
     const pluriel = liste.length > 1 ? 'CARTES TERMINÉES' : 'CARTE TERMINÉE';
     compte.textContent = `${liste.length} ${pluriel}`;
   };
@@ -113,7 +171,8 @@ export function mount(el) {
 
   _demonter = () => {
     vivante = false;
-    rendues.forEach((detruire) => detruire());
+    if (debrancherGyro) debrancherGyro();
+    rendues.forEach((r) => r.detruire());
     demonterStyles();
     lien.remove();
   };
