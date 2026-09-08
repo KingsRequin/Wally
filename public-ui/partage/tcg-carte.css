@@ -239,21 +239,22 @@
   mix-blend-mode: plus-lighter;
   background-image:
     repeating-linear-gradient(var(--chero-holo-a, 108deg),
-      rgba(255, 0, 128, .40) 0%,
-      rgba(255, 140, 0, .30) 5%,
-      rgba(255, 231, 74, .34) 10%,
-      rgba(64, 224, 208, .38) 16%,
-      rgba(123, 104, 238, .40) 22%,
-      rgba(255, 0, 128, .40) 28%),
+      rgba(255, 0, 128, .72) 0%,
+      rgba(255, 140, 0, .52) 4%,
+      rgba(255, 231, 74, .60) 9%,
+      rgba(0, 255, 200, .70) 15%,
+      rgba(80, 120, 255, .72) 21%,
+      rgba(255, 0, 128, .72) 27%),
     repeating-linear-gradient(var(--chero-holo-a, 108deg),
-      rgba(255, 255, 255, .07) 0 2px, transparent 2px 7px);
+      rgba(255, 255, 255, .13) 0 2px, transparent 2px 6px);
   background-position: var(--chero-holo-x, 50%) var(--chero-holo-y, 50%), 0 0;
   background-size: 260% 260%, auto;
   /* Le flou fond les bandes les unes dans les autres : sans lui on lit des
-   * rayures, pas un reflet. Posé une fois sur une couche qui ne se redessine
-   * pas — le mouvement se fait à la position du dégradé, jamais en
-   * refiltrant. */
-  filter: blur(9px);
+   * rayures, pas un reflet. 6 px et non 9 : plus flou, les crêtes se
+   * moyennaient et l'effet virait à un voile uniforme au lieu d'un reflet.
+   * Posé une fois sur une couche qui ne se redessine pas — le mouvement se
+   * fait à la position du dégradé, jamais en refiltrant. */
+  filter: blur(6px) saturate(1.5);
 }
 
 /* ── Les particules ──────────────────────────────────────────────────────

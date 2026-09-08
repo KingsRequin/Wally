@@ -102,9 +102,10 @@ class CarteTcg:
     particules: str = "braises"
     parallaxe: float = 1.0
     intensite: float = 1.0
-    # Un chatoiement irisé sur le fond, qui se déplace avec l'inclinaison —
-    # comme une carte à collectionner sous une lampe. Par carte et non global :
-    # c'est un marqueur, et tout le monde l'aurait plus rien ne le serait.
+    # Le reflet irisé qui court sur la carte quand elle se penche, comme une
+    # carte à collectionner sous une lampe. C'est le marqueur des DEUX raretés
+    # les plus hautes — arbitrage de l'owner du 2026-09-08. Par carte et non
+    # global : si tout le monde l'avait, il ne marquerait plus rien.
     holographique: bool = False
 
 
@@ -185,6 +186,7 @@ _poser(CarteTcg(
     particules="poussiere",
     parallaxe=1.1,
     intensite=0.8,
+    holographique=True,
 ))
 
 _poser(CarteTcg(

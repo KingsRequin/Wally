@@ -113,14 +113,15 @@ def test_le_repli_webp_accompagne_toujours_l_avif():
             assert avif == webp, f"{nom} : avif={avif} webp={webp}"
 
 
-def test_le_reflet_holographique_est_reserve_aux_cartes_qui_le_declarent():
+def test_le_reflet_holographique_marque_les_deux_plus_hautes_raretes():
     """Un marqueur que tout le monde porterait ne marquerait plus rien.
 
-    Le champ est écrit du CONSOMMATEUR vers l'UI : la couche n'existe dans le
-    DOM que si la carte le demande (cf. `chero-holo` dans le composant).
+    Azraël et rhae___, arbitrage de l'owner du 2026-09-08. Le champ est écrit
+    du CONSOMMATEUR vers l'UI : la couche n'existe dans le DOM que si la carte
+    le demande (cf. `chero-holo` dans le composant).
     """
-    holos = [c.cle for c in tcg_cartes.CARTES.values() if c.holographique]
-    assert holos == ["azrael"], holos
+    holos = sorted(c.cle for c in tcg_cartes.CARTES.values() if c.holographique)
+    assert holos == ["azrael", "rhae"], holos
 
 
 def test_le_defaut_est_sans_reflet():

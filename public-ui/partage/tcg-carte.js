@@ -174,15 +174,16 @@ const OEIL = (() => {
   };
 })();
 
-// L'intensité du reflet holographique, comparée à l'écran sur trois valeurs :
-// à 0,50 le fond orange d'Azraël virait au vert olive et l'illustration était
-// dénaturée ; à 0,22 le chatoiement se devinait à peine. 0,34 se voit et
-// laisse l'orange orange.
+// L'intensité du reflet holographique. Réglée à 0,34 le 2026-09-08 après
+// comparaison à l'écran, puis MONTÉE : sur un vrai écran l'owner le voyait à
+// peine. Un reflet holographique doit dénaturer les couleurs — c'est ce qu'il
+// fait sur une vraie carte sous une lampe ; le retenir pour « préserver
+// l'illustration » revenait à ne pas faire l'effet.
 //
 // ⚠️ Indépendant de `gainReflet`, qui règle l'éclat des quatre BORDS. Les
 // multiplier ensemble portait l'holo à 0,80 sur l'overlay — la carte y était
 // repeinte.
-const OPACITE_HOLO = 0.34;
+const OPACITE_HOLO = 0.62;
 
 const SOBRE = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TACTILE = () => window.matchMedia('(hover: none)').matches;
