@@ -309,10 +309,17 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
+  /* 🚨 AUCUNE transition sur `transform` ici. Elle y était, et c'était le
+   * même piège que sur le plateau : `incliner()` réécrit ce transform trente
+   * fois par seconde, la transition redémarre à chaque écriture et n'atteint
+   * jamais sa cible. Le `translateZ(56px)` restait donc à ZÉRO — et le liseré,
+   * lui à 30, passait DEVANT le héros. Vu à l'écran sur Lilith : les ailes
+   * derrière le cadre.
+   *
+   * Sous le curseur, le mode interactif la pose en JS le temps de l'entrée
+   * puis la retire, comme pour le plateau. */
   transition: opacity var(--chero-depli) ease calc(var(--chero-etape) * 2),
-              visibility var(--chero-depli) calc(var(--chero-etape) * 2),
-              transform var(--chero-depli) cubic-bezier(.2, .9, .2, 1)
-                calc(var(--chero-etape) * 2);
+              visibility var(--chero-depli) calc(var(--chero-etape) * 2);
   transform-origin: 50% 100%;
   /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
    * texte doit rester lisible sous lui. */
@@ -320,6 +327,18 @@
 }
 
 .chero-ap-clip,
+.chero-ap-libre {
+  position: absolute;
+  left: 50%;
+  bottom: var(--chero-ap-bas);
+  width: var(--chero-ap-largeur);
+}
+
+.chero-ap-clip {
+  transform: translateX(-50%);
+  transition: opacity .28s ease;
+}
+
 .chero-ap-libre {
   position: absolute;
   left: 50%;

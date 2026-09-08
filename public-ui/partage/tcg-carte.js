@@ -185,10 +185,13 @@ const OEIL = (() => {
 // repeinte.
 const OPACITE_HOLO = 0.62;
 
-// Le temps que met la carte à passer de plate à inclinée, à l'ouverture. Assez
-// long pour se lire comme un dépliage, assez court pour ne pas retarder la
-// rotation qui suit.
-const LISSAGE_ENTREE_MS = 500;
+/** Les millisecondes d'une durée CSS (« .85s », « 450ms »). */
+function enMs(valeur, defaut) {
+  const v = String(valeur || '').trim();
+  if (v.endsWith('ms')) return parseFloat(v) || defaut;
+  if (v.endsWith('s')) return (parseFloat(v) || 0) * 1000 || defaut;
+  return defaut;
+}
 
 const SOBRE = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TACTILE = () => window.matchMedia('(hover: none)').matches;
@@ -317,7 +320,35 @@ export function carteHero(carte, options = {}) {
   const c = { ...DEFAUTS, ...carte };
   // `interactif` faux : aucun écouteur de pointeur, la carte est pilotée par
   // du code. C'est le mode de l'overlay OBS.
-  const { interactif = true, gainReflet = 1 } = options;
+  // 🚨 `depli` et `etape` se posent sur `racine` et pas sur la boîte : la
+  // règle `.chero` de la feuille porte leurs valeurs par défaut, et une custom
+  // property déclarée sur l'élément lui-même ÉCRASE celle héritée du parent.
+  // Posées sur la boîte, elles n'avaient aucun effet — la transition restait à
+  // 0,45 s alors que l'overlay demandait 0,85.
+  const { interactif = true, gainReflet = 1, depli = null, etape = null } = options;
+  // 🚨 Le lissage du saut d'entrée doit durer AU MOINS le temps du dépliage,
+  // délai d'échelonnement compris. Il était fixé à 500 ms : la classe partait
+  // avant la fin de la transition, et le héros SAUTAIT à sa position finale —
+  // mesuré, il restait à Z 0 pendant 1,1 s puis bondissait à 56. Les valeurs
+  // par défaut de la feuille sont .45s et .05s ; l'overlay les rallonge.
+  const lissageMs = enMs(depli, 450) + enMs(etape, 50) * 2 + 60;
+  // 🚨 Le dépliage du héros est CALCULÉ, pas transitionné, et c'est la seule
+  // façon qui marche. `incliner()` réécrit son `transform` trente fois par
+  // seconde : une transition CSS redémarre à chaque écriture et n'atteint
+  // jamais sa cible. Deux contournements ont échoué avant celui-ci — la
+  // transition dans la règle de base laissait le `translateZ` à ZÉRO (et le
+  // liseré, lui à 30, passait DEVANT le héros : vu sur Lilith, les ailes
+  // derrière le cadre) ; la poser par une classe le temps de l'entrée faisait
+  // sauter le Z d'un coup au retrait de la classe.
+  //
+  // Un seul écrivain, une progression continue : c'est le principe de tout ce
+  // composant, et il n'y avait pas de raison d'y faire exception.
+  let ouvertA = 0;
+  // La dernière inclinaison demandée, pour pouvoir la RÉAPPLIQUER pendant le
+  // dépliage sans nouvel événement.
+  let dernierNx = 0;
+  let dernierNy = 0;
+  let arretDepliage = null;
 
   const l1 = h('div', { class: 'chero-l1' });
   const l2 = h('div', { class: 'chero-l2' });
@@ -430,7 +461,9 @@ export function carteHero(carte, options = {}) {
     + `;--chero-ap-largeur:${c.avantPlanLargeur}`
     + `;--chero-ap-bas:${c.avantPlanBas}`
     + `;--chero-3d-cote:${c.hero3dCote || c.heroCote}`
-    + `;--chero-3d-haut:${c.hero3dHaut || c.heroHaut}`;
+    + `;--chero-3d-haut:${c.hero3dHaut || c.heroHaut}`
+    + (depli ? `;--chero-depli:${depli}` : '')
+    + (etape ? `;--chero-etape:${etape}` : '');
 
   // Le fond est un `background-image`, il n'a pas de `<picture>`. Les deux
   // affectations SONT le repli : un navigateur qui ne comprend pas
@@ -502,8 +535,10 @@ export function carteHero(carte, options = {}) {
       requestAnimationFrame(() => {
         if (!etat.survol) return;
         zEls.forEach((el) => { el.style.transform = zTransform(el); });
-        libre.style.transform = `translateZ(56px) scale(${c.heroEchelle})`;
-        if (apLibre) apLibre.style.transform = 'translateZ(62px) scale(1.16)';
+        // Le premier pas seulement : la suite est écrite par `incliner()`,
+        // qui calcule l'avancement.
+        libre.style.transform = 'translateZ(0px) scale(1)';
+        if (apLibre) apLibre.style.transform = 'translateZ(0px) scale(1)';
         if (canvas) canvas.style.transform = 'translateZ(8px)';
       });
     } else {
@@ -540,7 +575,18 @@ export function carteHero(carte, options = {}) {
    * même nœud ne se cumulent pas, ils se REMPLACENT : une chorégraphie qui
    * écrirait le style en parallèle effacerait l'inclinaison, ou l'inverse.
    */
+  /** L'avancement du dépliage, de 0 à 1, adouci. */
+  const ouverture = () => {
+    if (!ouvertA) return 1;
+    const t = Math.min(1, (performance.now() - ouvertA) / lissageMs);
+    // La même allure que les transitions CSS des autres couches : parti vite,
+    // fini doucement. Le héros doit les accompagner, pas les devancer.
+    return 1 - (1 - t) ** 3;
+  };
+
   const incliner = (nx, ny) => {
+    dernierNx = nx;
+    dernierNy = ny;
     const max = 15 * c.intensite;
     const tiltX = nx * max * 2;
     const tiltY = ny * max * 2;
@@ -556,9 +602,12 @@ export function carteHero(carte, options = {}) {
     cadres.style.transform = `translate3d(${(tx * 2.4).toFixed(1)}px,${(ty * 2.4).toFixed(1)}px,0)`;
     // Héros et avant-plan sont écrits dans la MÊME image : sinon le héros
     // monte en Z avant les pieds et lui passe devant quelques frames.
-    libre.style.transform = `translateZ(56px) translate3d(${(tx * 1.6).toFixed(1)}px,${(ty * 1.6).toFixed(1)}px,0) scale(${c.heroEchelle})`;
+    // Le Z et l'échelle suivent l'avancement : la couche s'élève et grandit
+    // en même temps que les autres montent, au lieu d'y sauter.
+    const av = ouverture();
+    libre.style.transform = `translateZ(${(56 * av).toFixed(1)}px) translate3d(${(tx * 1.6).toFixed(1)}px,${(ty * 1.6).toFixed(1)}px,0) scale(${(1 + (c.heroEchelle - 1) * av).toFixed(4)})`;
     if (apLibre) {
-      apLibre.style.transform = `translateZ(62px) translate3d(${(tx * 2.8).toFixed(1)}px,${(ty * 2.8).toFixed(1)}px,0) scale(1.16)`;
+      apLibre.style.transform = `translateZ(${(62 * av).toFixed(1)}px) translate3d(${(tx * 2.8).toFixed(1)}px,${(ty * 2.8).toFixed(1)}px,0) scale(${(1 + 0.16 * av).toFixed(4)})`;
     }
     // Le bord tourné vers la lumière (en haut à gauche) s'allume, l'opposé
     // s'éteint : c'est ça qui fait « carte plastifiée » plutôt qu'un balayage.
@@ -633,12 +682,26 @@ export function carteHero(carte, options = {}) {
     // On pose donc la transition pour l'entrée, et on la RETIRE une fois
     // qu'elle a joué. Sous le curseur, `pointermove` la remplace de lui-même
     // à chaque mouvement, il n'y a rien à retirer.
-    plateau.style.transition = `transform ${LISSAGE_ENTREE_MS}ms cubic-bezier(.2,.8,.2,1)`;
-    if (!interactif) {
-      minuteurLissage = setTimeout(() => {
-        plateau.style.transition = 'none';
-      }, LISSAGE_ENTREE_MS);
-    }
+    plateau.style.transition = `transform ${lissageMs}ms cubic-bezier(.2,.8,.2,1)`;
+    ouvertA = performance.now();
+    // 🚨 Le dépliage tourne sur la boucle partagée le temps qu'il dure.
+    //
+    // Sans ça il ne progressait qu'à chaque `pointermove` : un survol SANS
+    // bouger la souris — pointer la carte et s'arrêter — figeait le héros à
+    // son premier pas, `translateZ(1px)`. Le liseré, lui à 30, passait alors
+    // devant. Sur l'overlay le défaut ne se voyait pas : la chorégraphie
+    // appelle `incliner()` trente fois par seconde de toute façon.
+    if (arretDepliage) arretDepliage();
+    arretDepliage = abonnerAnimation(() => {
+      incliner(dernierNx, dernierNy);
+      if (performance.now() - ouvertA >= lissageMs) {
+        arretDepliage();
+        arretDepliage = null;
+      }
+    });
+    minuteurLissage = setTimeout(() => {
+      plateau.style.transition = interactif ? 'transform .16s ease-out' : 'none';
+    }, lissageMs);
     cadres.style.visibility = 'visible';
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
@@ -660,6 +723,8 @@ export function carteHero(carte, options = {}) {
     if (!etat.survol) return;
     etat.survol = false;
     etat.vent = 0;
+    ouvertA = 0;
+    if (arretDepliage) { arretDepliage(); arretDepliage = null; }
     // Au retour au repos la transition sert dans les DEUX modes : là, il y a
     // bien un saut à lisser — de l'angle courant vers zéro, en une écriture.
     plateau.style.transition = 'transform .5s cubic-bezier(.03,.98,.52,.99)';
@@ -711,6 +776,7 @@ export function carteHero(carte, options = {}) {
   syncHalo();
 
   const detruire = () => {
+    if (arretDepliage) { arretDepliage(); arretDepliage = null; }
     clearTimeout(minuteurAplat);
     clearTimeout(minuteurLissage);
     if (dansBoucle && particulesCarte) BOUCLE.retirer(particulesCarte.pas);

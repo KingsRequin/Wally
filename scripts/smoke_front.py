@@ -429,6 +429,24 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(ouverte["cadres"] == "visible",
              "carte TCG : les cadres s'allument", ouverte["cadres"])
 
+    # 🚨 Le héros qui déborde doit être DEVANT le liseré. Il est à Z 56, le
+    # liseré à 30 — mais son `transform` est réécrit trente fois par seconde
+    # par `incliner()`, et une transition CSS posée dessus n'atteint jamais sa
+    # cible : le `translateZ` restait à ZÉRO, donc le liseré passait DEVANT.
+    # Vu à l'écran sur Lilith, ses ailes derrière le cadre. Ce test compare les
+    # deux profondeurs plutôt que de faire confiance à l'ordre du DOM, qui ne
+    # décide plus rien sous `preserve-3d`.
+    profs = page.evaluate("""() => {
+      const c = document.querySelector('.chero');
+      const z = (sel) => Math.round(new DOMMatrixReadOnly(
+        getComputedStyle(c.querySelector(sel)).transform).m43);
+      return { hero: z('.chero-libre'), lisere: z('.chero-bord') };
+    }""")
+    rap.dire(profs["hero"] > profs["lisere"],
+             f"carte TCG : le héros (Z {profs['hero']}) passe devant le liseré "
+             f"(Z {profs['lisere']})",
+             "le liseré recouvre le héros qui déborde")
+
     page.mouse.move(10, 10)
     page.wait_for_timeout(1300)
     fermee = page.evaluate("""() => {

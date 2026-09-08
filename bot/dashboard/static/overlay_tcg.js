@@ -134,13 +134,16 @@ export function carteOverlay(params) {
     // 340 px. Ici elle en fait 680, seule à l'écran : sans ce gain, l'éclat
     // qui suit la lumière ne se voit pas.
     gainReflet: 1.6,
+    // Le dépliage est le spectacle ici : personne ne pointe la carte, elle se
+    // présente. Sous le curseur on veut l'inverse — une réponse immédiate —
+    // d'où les valeurs par défaut, plus courtes, dans la feuille du composant.
+    depli: '.85s',
+    etape: '.09s',
   });
   boite.style.setProperty('--chero-k', String(ECHELLE));
   // Le dépliage est le spectacle ici : personne ne pointe la carte, elle se
   // présente. Sous le curseur on veut l'inverse — une réponse immédiate —
   // d'où les valeurs par défaut, plus courtes, dans la feuille du composant.
-  boite.style.setProperty('--chero-depli', '.85s');
-  boite.style.setProperty('--chero-etape', '.09s');
 
   const noeud = document.createElement('div');
   noeud.className = 'tcg-carte-scene';
