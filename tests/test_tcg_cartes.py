@@ -64,3 +64,50 @@ def test_une_illustration_absente_ne_casse_pas_le_boot(tmp_path, monkeypatch, ca
     monkeypatch.setattr(tcg_cartes, "DOSSIER_ASSETS", tmp_path)
     tcg_cartes.empreinte.cache_clear()
     assert tcg_cartes.empreinte("/assets/fantome") == ""
+
+
+def test_chaque_illustration_declaree_existe_dans_LES_DEUX_formats():
+    """🚨 Le seul geste qui ne suit PAS l'ajout d'une carte au registre.
+
+    Le tableau de `scripts/generer_illustrations_tcg.py` est écrit à la main :
+    il porte le cadrage de chaque couche, dont dérive la largeur à générer.
+    Une carte ajoutée ici sans y passer laisse ses `.avif` absents — l'URL part
+    alors NON VERSIONNÉE (`empreinte()` journalise et rend ""), le fichier
+    répond 404, et la carte s'affiche noire sur le site comme sur l'overlay.
+    Sans erreur JS, et sans que rien ne le dise.
+
+    C'est la règle écrite en tête du module : une carte n'entre au registre que
+    si son illustration EXISTE. Ce test la fait tenir.
+    """
+    from pathlib import Path
+
+    manquantes = []
+    for carte in tcg_cartes.CARTES.values():
+        for champ in ("hero", "fond", "avant_plan", "hero_3d"):
+            base = getattr(carte, champ)
+            if not base:
+                continue
+            for ext in (".avif", ".webp"):
+                fichier = tcg_cartes.DOSSIER_ASSETS / f"{Path(base).name}{ext}"
+                if not fichier.exists():
+                    manquantes.append(f"{carte.cle}.{champ} → {fichier}")
+    assert not manquantes, (
+        "illustrations déclarées mais absentes — lancer "
+        "`python3 scripts/generer_illustrations_tcg.py` après avoir ajouté "
+        "la carte à son tableau :\n  " + "\n  ".join(manquantes))
+
+
+def test_le_repli_webp_accompagne_toujours_l_avif():
+    """Safari ne lit l'AVIF que depuis 16.4 : un AVIF livré seul rend une carte
+    VIDE sur un téléphone plus vieux, pas une carte dégradée."""
+    from pathlib import Path
+
+    for carte in tcg_cartes.CARTES.values():
+        for champ in ("hero", "fond", "avant_plan", "hero_3d"):
+            base = getattr(carte, champ)
+            if not base:
+                continue
+            nom = Path(base).name
+            avif = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.avif").exists()
+            webp = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.webp").exists()
+            assert avif == webp, f"{nom} : avif={avif} webp={webp}"
