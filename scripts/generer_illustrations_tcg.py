@@ -20,11 +20,32 @@ dépôt, dans `/opt/design-tcg/`. Ce script en tire les AVIF et les WebP de
 
 2. **Chaque image sort en DEUX formats.** L'AVIF pèse deux fois et demie moins
    qu'un WebP de même qualité, mais Safari ne le lit que depuis 16.4 : sans le
-   repli, un téléphone plus vieux n'affiche RIEN. `tcg-carte-hero.js` sert la
+   repli, un téléphone plus vieux n'affiche RIEN. `partage/tcg-carte.js` sert la
    paire et ne télécharge que l'AVIF quand il est compris.
 
 Le tableau ci-dessous doit rester en phase avec les cadrages de
-`public-ui/pages/tcg-collection.js` : c'est LUI qui décide de la netteté.
+`bot/core/tcg_cartes.py` : c'est LUI qui décide de la netteté.
+
+🚨 **D'où viennent les cadrages : des PROPS DE L'ÉDITEUR, jamais du code du
+composant.** Dans un export Claude Design, chaque valeur existe DEUX fois :
+
+- dans l'attribut `data-props` du `<script data-dc-script>`, sous `default` —
+  c'est ce que l'owner a réglé au curseur, et c'est ce qui s'affiche ;
+- dans le `renderVals()` du composant, en repli (`p.krCote ?? '-8%'`) — c'est
+  ce que le code valait AVANT que l'owner y touche.
+
+Les deux coïncident tant que personne n'a bougé le curseur, ce qui rend
+l'erreur invisible : sur le zip du 2026-09-08, quatre cartes sur cinq étaient
+identiques des deux côtés et seul KingsRequin divergeait. Lire le repli lui
+donnait un cadrage à −8 % / 13 % / échelle 1,14 au lieu de −5 % / 10 % / 1,08,
+et les illustrations étaient générées à la mauvaise largeur avec.
+
+Pour les extraire sans se tromper :
+
+    import html, json, re, pathlib
+    s = pathlib.Path("Galerie Cartes.dc.html").read_text()
+    props = json.loads(html.unescape(re.search(r'data-props="([^"]+)"', s)[1]))
+    {k: v.get("default") for k, v in props.items()}
 """
 
 from __future__ import annotations
@@ -93,9 +114,10 @@ PLAN = [
     ("rhae-hero-3d.png", "tcg-rhae-hero-3d", 1.52, 1.12),
     ("rhae-fond.png", "tcg-rhae-fond", 1.44, 1.06),
     # KingsRequin — DEUX visuels comme rhae___ : le portrait au repos (cadré
-    # à −8 %, jamais agrandi) et le second au survol (−22 %, agrandi de 14 %).
-    ("requin-hero-2d.png", "tcg-requin-hero-2d", 1.16, 1.00),
-    ("requin-hero-3d.png", "tcg-requin-hero-3d", 1.44, 1.14),
+    # à −5 %, jamais agrandi) et le second au survol (même cadrage, agrandi
+    # de 8 %).
+    ("requin-hero-2d.png", "tcg-requin-hero-2d", 1.10, 1.00),
+    ("requin-hero-3d.png", "tcg-requin-hero-3d", 1.10, 1.08),
     ("requin-fond.png", "tcg-requin-fond", 1.44, 1.06),
     # Lilith — ailes déployées : l'illustration fait presque DEUX fois la
     # largeur de la carte (`heroCote: -40%`). Au repos les pointes d'ailes sont

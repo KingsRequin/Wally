@@ -239,12 +239,13 @@ _poser(CarteTcg(
     fond="/assets/tcg-requin-fond",
     # Deux visuels comme rhae___ : le portrait au repos, le second au survol.
     hero="/assets/tcg-requin-hero-2d",
-    hero_cote="-8%",
-    hero_haut="13%",
+    hero_cote="-5%",
+    hero_haut="10%",
     hero_3d="/assets/tcg-requin-hero-3d",
-    hero_3d_cote="-22%",
-    hero_3d_haut="2%",
-    hero_echelle=1.14,
+    hero_3d_cote="-5%",
+    # `-0%` dans l'éditeur, et c'est la même valeur CSS que `0%`.
+    hero_3d_haut="0%",
+    hero_echelle=1.08,
     alias=("kingsrequin", "requin", "kingrequin"),
     particules="poussiere",
     parallaxe=1.2,
