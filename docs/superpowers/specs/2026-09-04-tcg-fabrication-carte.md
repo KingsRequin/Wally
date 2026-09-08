@@ -32,6 +32,33 @@ par un humain qui connaît les gens.
 ⚠️ La **rareté modifie le budget** (`+0 / +1 / +2 / +3 / +5 / +8`). La changer après coup
 **refait toutes les stats de la carte**. À poser avant de figer, pas après.
 
+### La rareté se VOIT : le reflet holographique
+
+Arbitrage de l'owner, 2026-09-08. Le reflet irisé qui court sur la carte quand
+elle se penche n'est pas un ornement : c'est le marqueur visible de la rareté,
+en trois paliers.
+
+| Palier | Ce que la carte porte | État |
+|---|---|---|
+| Les deux plus hautes | le reflet sur **toute la surface** | ✅ livré — Azraël, rhae___ |
+| Le suivant | le reflet **sur les bords seulement** | ❌ pas écrit — cf. ci-dessous |
+| Les autres | rien | ✅ par défaut |
+
+Le palier « bords seulement » revient à **KingsRequin, Malef et Lilio**. Ces
+trois cartes **n'existent pas encore**, et la variante n'est donc **pas
+implémentée** : `holographique` est un booléen, pas un niveau.
+
+🚨 C'est délibéré. Un réglage s'écrit du CONSOMMATEUR vers l'UI : écrire
+aujourd'hui un troisième palier que personne ne porte donnerait un bouton
+branché sur rien, invérifiable, et qui aurait dérivé le jour où la première de
+ces cartes arriverait. Le projet a payé ça huit fois (cf. `CLAUDE.md`, §0bis).
+
+Quand la première des trois sera dessinée, `holographique: bool` devient un
+niveau (`aucun` / `bords` / `plein`) **et** la variante CSS s'écrit dans le
+même geste. La couche existe déjà (`.chero-holo` dans
+`public-ui/partage/tcg-carte.css`) ; il s'agira de la masquer au liseré plutôt
+que de la laisser courir sur toute la carte.
+
 ---
 
 ## 2. Les trois mesures — source exacte
