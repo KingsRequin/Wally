@@ -185,6 +185,11 @@ const OEIL = (() => {
 // repeinte.
 const OPACITE_HOLO = 0.62;
 
+// Le temps que met la carte à passer de plate à inclinée, à l'ouverture. Assez
+// long pour se lire comme un dépliage, assez court pour ne pas retarder la
+// rotation qui suit.
+const LISSAGE_ENTREE_MS = 500;
+
 const SOBRE = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TACTILE = () => window.matchMedia('(hover: none)').matches;
 
@@ -377,13 +382,13 @@ export function carteHero(carte, options = {}) {
     c.selectionnee ? h('div', { class: 'chero-selection' }) : null,
   );
 
-  const cout = h('div', { class: 'chero-cout', 'data-z': '70' },
+  const cout = h('div', { class: 'chero-cout', 'data-z': '70', 'data-net': '1' },
     h('span', { class: 'chero-cout-n', text: String(c.cout) }),
     h('span', { class: 'chero-cout-lbl', text: 'ULTIME' }),
   );
 
   const nom = h('span', { class: 'chero-nom', text: c.nom });
-  const bas = h('div', { class: 'chero-bas', 'data-z': '70' },
+  const bas = h('div', { class: 'chero-bas', 'data-z': '70', 'data-net': '1' },
     h('div', {}, nom),
     h('div', { class: 'chero-fiche' },
       h('div', { class: 'chero-fiche-top' },
@@ -444,6 +449,7 @@ export function carteHero(carte, options = {}) {
   const particulesCarte = canvas ? particules(canvas, etat, c.particules) : null;
   let dansBoucle = false;
   let minuteurAplat = 0;
+  let minuteurLissage = 0;
 
   const syncBoucle = () => {
     if (!particulesCarte) return;
@@ -464,6 +470,26 @@ export function carteHero(carte, options = {}) {
     halo.style.opacity = actif ? '' : '.7';
   };
 
+  /** Le `transform` d'une couche qui monte en Z.
+   *
+   * 🚨 Les couches qui portent du TEXTE compensent l'agrandissement de la
+   * perspective. À `translateZ(70px)` sous `perspective: 1100px`, un élément
+   * grossit de 6,8 % — et Chromium le rastérise à sa taille d'origine AVANT
+   * de l'étirer. Le texte des stats en sortait visiblement flou : vérifié en
+   * l'agrandissant trois fois, bords des lettres empâtés, là où
+   * `will-change: transform` ne changeait RIEN. Compenser rend le rendu aussi
+   * net qu'à plat.
+   *
+   * Les autres couches — fond, cadres, héros, liseré — gardent leur
+   * grossissement : c'est lui qui fait voir la profondeur, et elles n'ont pas
+   * de texte à abîmer.
+   */
+  const zTransform = (el) => {
+    const z = Number(el.dataset.z) || 0;
+    if (el.dataset.net !== '1') return `translateZ(${z}px)`;
+    return `translateZ(${z}px) scale(${((1100 - z) / 1100).toFixed(5)})`;
+  };
+
   const set3d = (actif) => {
     if (actif) {
       racine.style.zIndex = '10';
@@ -475,7 +501,7 @@ export function carteHero(carte, options = {}) {
       // perspective, ils n'ont pas d'état de départ et sautent sans transition.
       requestAnimationFrame(() => {
         if (!etat.survol) return;
-        zEls.forEach((el) => { el.style.transform = `translateZ(${el.dataset.z}px)`; });
+        zEls.forEach((el) => { el.style.transform = zTransform(el); });
         libre.style.transform = `translateZ(56px) scale(${c.heroEchelle})`;
         if (apLibre) apLibre.style.transform = 'translateZ(62px) scale(1.16)';
         if (canvas) canvas.style.transform = 'translateZ(8px)';
@@ -592,15 +618,27 @@ export function carteHero(carte, options = {}) {
     etat.survol = true;
     if (e) { px = e.clientX; py = e.clientY; }
     clearTimeout(minuteurAplat);
+    clearTimeout(minuteurLissage);
     set3d(true);
-    // 🚨 La transition lisse le SAUT du curseur qui arrive d'un coup sur la
-    // carte. Piloté par script, il n'y a pas de saut : la chorégraphie écrit
-    // une nouvelle cible toutes les 33 ms, et une transition de 160 ms
-    // n'atteint jamais celle-ci avant d'être remplacée — elle traîne à un
-    // cinquième du parcours. Mesuré sur l'overlay : ±0,3° d'inclinaison au
-    // lieu de ±5,6°, soit un mouvement invisible. C'est le lissage qui écrase
-    // l'amplitude, pas l'amplitude qui est trop faible.
-    plateau.style.transition = interactif ? 'transform .16s ease-out' : 'none';
+    // 🚨 Deux besoins opposés sur le même `transform`, et il a fallu les
+    // séparer :
+    //
+    // · le SAUT d'entrée (de plat à incliné, en une écriture) doit être lissé,
+    //   sinon la carte claque en 3D sans transition ;
+    // · le SUIVI continu ne doit PAS l'être — la chorégraphie écrit une
+    //   nouvelle cible toutes les 33 ms, et une transition de 160 ms n'atteint
+    //   jamais la sienne avant d'être remplacée. Elle traîne à un cinquième du
+    //   parcours : mesuré, ±0,3° d'inclinaison au lieu de ±5,8°.
+    //
+    // On pose donc la transition pour l'entrée, et on la RETIRE une fois
+    // qu'elle a joué. Sous le curseur, `pointermove` la remplace de lui-même
+    // à chaque mouvement, il n'y a rien à retirer.
+    plateau.style.transition = `transform ${LISSAGE_ENTREE_MS}ms cubic-bezier(.2,.8,.2,1)`;
+    if (!interactif) {
+      minuteurLissage = setTimeout(() => {
+        plateau.style.transition = 'none';
+      }, LISSAGE_ENTREE_MS);
+    }
     cadres.style.visibility = 'visible';
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
@@ -674,6 +712,7 @@ export function carteHero(carte, options = {}) {
 
   const detruire = () => {
     clearTimeout(minuteurAplat);
+    clearTimeout(minuteurLissage);
     if (dansBoucle && particulesCarte) BOUCLE.retirer(particulesCarte.pas);
     dansBoucle = false;
     OEIL.oublier(racine);

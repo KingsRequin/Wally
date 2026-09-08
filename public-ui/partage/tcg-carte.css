@@ -98,6 +98,15 @@
    * les charge de son côté. */
   --chero-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   --chero-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  /* La durée du DÉPLIAGE en 3D. 0,45 s sous le curseur : on veut que la carte
+   * réponde tout de suite au survol. L'overlay la rallonge — là, personne ne
+   * pointe la carte, elle se présente, et le dépliage est le spectacle.
+   *
+   * Les couches sont échelonnées (`--chero-etape`) : liseré, puis cadres,
+   * puis héros, puis la fiche. Mesuré avant : tout arrivait ENSEMBLE en
+   * 350 ms, ce qui se lit comme un saut et non comme un dépliage. */
+  --chero-depli: .45s;
+  --chero-etape: .05s;
   --chero-acc: #ffb02e;
   --chero-cote: -14%;
   --chero-haut: 4%;
@@ -175,7 +184,8 @@
   inset: 0;
   visibility: hidden;
   opacity: 0;
-  transition: opacity .5s ease, visibility .5s;
+  transition: opacity var(--chero-depli) ease var(--chero-etape),
+              visibility var(--chero-depli) var(--chero-etape);
 }
 
 .chero-cadres > div {
@@ -299,8 +309,10 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .3s ease .04s, visibility .3s .04s,
-              transform .4s cubic-bezier(.2, .9, .2, 1);
+  transition: opacity var(--chero-depli) ease calc(var(--chero-etape) * 2),
+              visibility var(--chero-depli) calc(var(--chero-etape) * 2),
+              transform var(--chero-depli) cubic-bezier(.2, .9, .2, 1)
+                calc(var(--chero-etape) * 2);
   transform-origin: 50% 100%;
   /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
    * texte doit rester lisible sous lui. */
@@ -347,7 +359,7 @@
   inset: 0;
   border-radius: 6px;
   pointer-events: none;
-  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1);
   border: 1.5px solid rgba(247, 236, 217, .85);
   box-shadow: inset 0 0 0 14px #12100c, inset 0 0 0 15.5px var(--chero-acc);
 }
@@ -410,7 +422,8 @@
   pointer-events: none;
   display: flex;
   align-items: stretch;
-  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
+              calc(var(--chero-etape) * 3);
 }
 
 .chero-cout-n {
@@ -441,7 +454,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
+              calc(var(--chero-etape) * 3);
 }
 
 .chero-nom {

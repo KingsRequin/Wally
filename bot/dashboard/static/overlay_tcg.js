@@ -24,12 +24,14 @@ const OUVERTURE_S = 0.8;
 // s'éteignaient, le héros rentrait dans son cadre et l'opacité tombait tous
 // ensemble — ça se lisait comme un défaut d'affichage, pas comme une sortie.
 //
-// 0,9 s et non 0,7 : mesuré, la carte n'est réellement À PLAT qu'après le
+// 1,2 s : le dépliage dure 0,85 s plus 0,27 s d'échelonnement, et le repli
+// doit pouvoir le rejouer à l'envers en entier. Avant cet allongement,
+// 0,9 s suffisait — mesuré, la carte n'est réellement À PLAT qu'après le
 // minuteur d'aplatissement du composant — 0,52 s après `fermer()`, le temps
 // que les Z reviennent à zéro (retirer la perspective avant se verrait). À
 // 0,7 s il ne restait que 180 ms de marge avant le fondu ; sous une machine
 // chargée, les deux se chevauchaient de nouveau.
-const REPLI_S = 0.9;
+const REPLI_S = 1.2;
 const SORTIE_S = 0.9;
 const FIXE_S = ENTREE_S + OUVERTURE_S + REPLI_S + SORTIE_S;
 
@@ -134,6 +136,11 @@ export function carteOverlay(params) {
     gainReflet: 1.6,
   });
   boite.style.setProperty('--chero-k', String(ECHELLE));
+  // Le dépliage est le spectacle ici : personne ne pointe la carte, elle se
+  // présente. Sous le curseur on veut l'inverse — une réponse immédiate —
+  // d'où les valeurs par défaut, plus courtes, dans la feuille du composant.
+  boite.style.setProperty('--chero-depli', '.85s');
+  boite.style.setProperty('--chero-etape', '.09s');
 
   const noeud = document.createElement('div');
   noeud.className = 'tcg-carte-scene';
