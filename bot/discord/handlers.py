@@ -3352,6 +3352,15 @@ async def _respond(
                 )
                 tools_called = []
 
+        # La MÊME mesure que celle journalisée juste en dessous, versée au
+        # dashboard. Elle n'y arrivait que par le chat WEB
+        # (`dashboard/routes/chat.py`), qui ne sert quasiment jamais : le site
+        # affichait donc « — » en permanence à la place du temps de réponse,
+        # sans que rien ne signale que le compteur n'avait jamais rien reçu.
+        if getattr(bot, "dashboard_state", None) is not None:
+            bot.dashboard_state.record_response_time(
+                (time.monotonic() - _llm_t0) * 1000.0)
+
         _emo = bot.emotion.get_state()
         _dom = max(_emo, key=_emo.get) if _emo else None
         _clog(

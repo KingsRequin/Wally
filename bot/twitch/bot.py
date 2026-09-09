@@ -20,6 +20,7 @@ EVENTSUB_RESTART_BACKOFF_MAX_S = 1800
 
 if TYPE_CHECKING:
     from bot.config import Config
+    from bot.dashboard.state import AppState
     from bot.core.apex.duel_runner import DuelRunner
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
@@ -119,8 +120,12 @@ class WallyTwitch(commands.Bot):
         # config l'active. Absent, la sonde s'arrête d'elle-même et l'achat
         # d'une récompense est remboursé (cf. `events/redemptions.py`).
         self.duel_runner: Optional["DuelRunner"] = None
-        # Dashboard integration — set to AppState by main.py after construction
-        self.dashboard_state = None  # type: ignore[assignment]
+        # Dashboard integration — set to AppState by main.py after construction.
+        # TYPÉ, et pas laissé à `None` derrière un `type: ignore` : sans le type,
+        # chaque `dashboard_state.x` était une erreur mypy de plus, et le
+        # compteur de latence oublié pendant des semaines (2026-09-09) est
+        # justement passé par là sans que rien ne le relève.
+        self.dashboard_state: Optional["AppState"] = None
         # Cached stream info — alimenté par StreamWatcher (bot.core.stream_watcher)
         # via son callback on_poll, câblé dans main.py. Source unique : le watcher
         # est le seul poller du statut home (Azrael), partagé avec la cognition.

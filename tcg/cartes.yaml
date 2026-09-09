@@ -65,6 +65,10 @@
   aura: 5
   hero: /assets/tcg-azrael-hero
   fond: /assets/tcg-azrael-fond
+  # « azra » est ce qu'on tape dans un chat, et rien ne le résolvait : cette
+  # carte était la SEULE sans alias. Le tréma, lui, n'en demande pas —
+  # `normaliser()` le retire avant de comparer.
+  alias: [azra]
   holographique: true
 
 - cle: claker

@@ -1503,6 +1503,12 @@ async def handle_message(bot: "WallyTwitch", payload) -> None:
         finally:
             await _desarmer_attente(_attente)
 
+        # Même geste que sur Discord : la mesure journalisée juste en dessous
+        # est aussi versée au dashboard, qui ne la recevait que du chat web.
+        if getattr(bot, "dashboard_state", None) is not None:
+            bot.dashboard_state.record_response_time(
+                (time.monotonic() - _llm_t0) * 1000.0)
+
         _emo = bot.emotion.get_state()
         _dom = max(_emo, key=_emo.get) if _emo else None
         _clog(

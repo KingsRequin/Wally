@@ -15,6 +15,7 @@ from bot.discord.sondage_service import SondageService
 
 if TYPE_CHECKING:
     from bot.config import Config, LLMConfig, LLMRoleConfig
+    from bot.dashboard.state import AppState
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.intelligence.memory.service import MemoryService
@@ -126,7 +127,7 @@ class WallyDiscord(commands.Bot):
         self.music: MusicService | None = None  # set by main.py after construction
         self._start_time: float | None = None
         # Dashboard integration — set to AppState by main.py after construction
-        self.dashboard_state: object | None = None
+        self.dashboard_state: "AppState | None" = None
         self.reaction_tracker = None  # set by main.py after construction
         # Posés par `main.py` après construction. Déclarés ICI pour que le type
         # existe : sans déclaration, mypy refuse l'accès (`[attr-defined]`) et
