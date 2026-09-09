@@ -192,15 +192,27 @@ def test_la_carte_publiee_sur_le_bus_porte_VRAIMENT_ses_valeurs():
     narrateur, publie = _narrateur_qui_publie()
     rendu = narrateur.show_widget("carte", "", carte="lilith")
 
+    from bot.core.tcg_cartes import CARTES
+
+    source = CARTES["lilith"]
     assert rendu is not None, "la carte a été refusée"
     assert publie["kind"] == "carte"
     assert publie["nom"] == "LILITH"
     # Les stats : c'est ce que l'owner a vu manquer à l'écran.
-    assert (publie["cout"], publie["atk"], publie["pv"], publie["aura"]) == (7, 6, 6, 5)
+    #
+    # 🚨 On compare au REGISTRE, pas à des constantes. Ce test exigeait
+    # « (7, 6, 6, 5) » — les chiffres de maquette de Lilith — et il est tombé
+    # le 2026-09-09 quand ils sont passés à zéro, alors que le comportement
+    # qu'il surveille n'avait pas bougé d'un pouce. Un test qui recopie la
+    # donnée surveille la donnée, pas le code : il tombe à chaque correction
+    # légitime et ne dit rien de la panne qu'il est censé attraper (des stats
+    # ABSENTES du bus).
+    for champ in ("cout", "atk", "pv", "aura", "accent"):
+        assert champ in publie, f"{champ} ne part pas sur le bus"
+        assert publie[champ] == getattr(source, champ), champ
     # Les illustrations : versionnées, et jamais « undefined ».
     assert publie["hero"].startswith("/assets/tcg-lilith-hero?v=")
     assert publie["fond"].startswith("/assets/tcg-lilith-fond?v=")
-    assert publie["accent"] == "#e0332b"
 
 
 def test_une_cle_inconnue_sur_le_bus_est_refusee_et_ne_publie_rien():

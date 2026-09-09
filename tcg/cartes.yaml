@@ -5,17 +5,29 @@
 # de rebuild, seulement un `docker compose restart wally` — il est lu au boot,
 # comme les prompts de cognition.
 #
-# 🚨 LES CHIFFRES SONT DES PLACEHOLDERS. Coût, Attaque, PV, Aura : ce sont les
-# valeurs de la maquette, écrites pour avoir quelque chose de lisible à
-# l'écran. Les vraies vivent dans la base Notion « 🃏 Cartes du Purgatoire »,
-# qui est la SEULE source, et y sont recopiées carte par carte au fur et à
-# mesure. La page `/tcg` le dit aux visiteurs, en toutes lettres.
+# 🚨 CE FICHIER NE PORTE QUE CE QUE NOTION PORTE. La base
+# « 🃏 Cartes du Purgatoire » est la SEULE source des chiffres, des ultimes et
+# des paliers de rareté. Relevé le 2026-09-09 : Azraël est la seule carte dont
+# Notion tienne des valeurs (coût d'ultime 10, 5/10/5, « F07 Rework », statut
+# « en cours ») ; les quatre autres sont « à écrire » et n'ont RIEN.
 #
-# 🚨 Corollaire : ne JAMAIS justifier une valeur d'ici par le barème (« budget
-# 12 + rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
+# 🚨 Corollaire : tout ce qui n'est pas décidé vaut 0 ou « INDÉFINI », et se
+# lit comme tel sur la carte. Jusqu'au 2026-09-09 le fichier portait des
+# chiffres de maquette (Claker 8/5/4/3, Lilith 7/6/6/5…) qui ne sortaient
+# d'aucune décision : à l'écran, rien ne les distinguait de vraies valeurs, et
+# la page `/tcg` était seule à prévenir. Un placeholder qui ressemble à une
+# donnée finit par être lu comme une donnée.
+#
+# 🚨 Ne JAMAIS justifier une valeur d'ici par le barème (« budget 12 +
+# rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
 # écrits le 2026-09-07 sur des chiffres qui ne sortaient d'aucun calcul — une
 # justification fausse coûte plus cher qu'une absence de justification, elle
 # envoie vérifier une règle qui n'a jamais été appliquée.
+#
+# 🚨 `accent` N'EXISTE PLUS comme champ : la couleur DÉRIVE du coût de
+# l'ultime (`accent_du_cout` dans `bot/core/tcg_cartes.py`). En écrire une ici
+# lève au chargement. Écrite à la main, elle disait l'humeur de l'illustration
+# et rien du jeu.
 #
 # ⚠️ L'ORDRE COMPTE : c'est celui de la collection à l'écran, et il dit dans
 # quel ordre les cartes ont été finies.
@@ -36,8 +48,9 @@
 - cle: azrael
   nom: AZRAËL
   legende: AZRAËL · ARCHANGE
-  classe: ARCHANGE · UNIQUE
+  classe: ARCHANGE
   ultime: REWORK
+  rarete: archange
   description: >-
     Rework : désigne un héros adverse. Pour le reste de la partie, son Ultime
     coûte +3 et tous ses nombres baissent de 2.
@@ -48,7 +61,6 @@
   atk: 5
   pv: 10
   aura: 5
-  accent: '#ffb02e'
   hero: /assets/tcg-azrael-hero
   fond: /assets/tcg-azrael-fond
   holographique: true
@@ -57,14 +69,14 @@
   nom: CLAKER
   legende: CLAKERNOJUTSU · ÂME
   classe: ÂME · NO JUTSU
-  ultime: NO JUTSU
-  description: Annule la prochaine tactique jouée par un adversaire.
-  ambiance: La technique, c'est de ne pas en avoir.
-  cout: 8
-  atk: 5
-  pv: 4
-  aura: 3
-  accent: '#7de3a4'
+  ultime: INDÉFINI
+  rarete: ame
+  description: INDÉFINI
+  ambiance: Il ne demande pas si tu suis. Il vérifie.
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
   hero: /assets/tcg-claker-hero
   fond: /assets/tcg-claker-fond
   alias: [claker, clakernojutsu, clacker, clackernojutsu]
@@ -83,16 +95,15 @@
 - cle: rhae
   nom: RHAE
   legende: RHAE___ · FÉLIN
-  classe: FÉLIN · UNIQUE
-  ultime: GRIFFE
-  description: >-
-    Inflige 3 au héros ciblé. Il ne peut plus bloquer jusqu'à la fin du tour.
-  ambiance: Il dort vingt heures par jour. Les quatre autres, tu les paies.
-  cout: 6
-  atk: 8
-  pv: 5
-  aura: 4
-  accent: '#ffb02e'
+  classe: FÉLIN
+  ultime: INDÉFINI
+  rarete: ange
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
   fond: /assets/tcg-rhae-fond
   # DEUX visuels (comme KingsRequin) : portrait assis, cadré serré, au repos ;
   # bond griffes en avant, bien plus large que la carte, au survol.
@@ -111,15 +122,15 @@
 - cle: lilith
   nom: LILITH
   legende: LILITH · DÉMON
-  classe: DÉMON · LÉGENDAIRE
-  ultime: MORSURE
-  description: Vole 2 PV au héros ciblé et les ajoute aux tiens.
-  ambiance: Elle demande toujours avant de prendre. Une fois.
-  cout: 7
-  atk: 6
-  pv: 6
-  aura: 5
-  accent: '#e0332b'
+  classe: DÉMON
+  ultime: INDÉFINI
+  rarete: indefinie
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
   # Ailes déployées : l'illustration fait presque deux fois la largeur de la
   # carte. Au repos les pointes sont rognées, au survol elles sortent.
   hero: /assets/tcg-lilith-hero
@@ -137,17 +148,15 @@
 - cle: kingsrequin
   nom: KINGSREQUIN
   legende: KINGSREQUIN · REQUIN
-  classe: REQUIN · LÉGENDAIRE
-  ultime: RAZ-DE-MARÉE
-  description: >-
-    Inflige 4 à tous les héros adverses. Les héros touchés ne peuvent pas
-    bloquer au tour suivant.
-  ambiance: Il sourit tout le temps. C'est ça, le problème.
-  cout: 8
-  atk: 9
-  pv: 7
-  aura: 4
-  accent: '#c9a227'
+  classe: REQUIN
+  ultime: INDÉFINI
+  rarete: indefinie
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
   fond: /assets/tcg-requin-fond
   # Deux visuels comme rhae___ : le portrait au repos, le second au survol.
   hero: /assets/tcg-requin-hero-2d

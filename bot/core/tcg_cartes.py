@@ -24,6 +24,7 @@ héros. Elle a été retirée — c'était un concept, redessiné depuis.
 
 from __future__ import annotations
 
+import colorsys
 import hashlib
 import unicodedata
 from dataclasses import MISSING, dataclass, fields
@@ -68,7 +69,6 @@ class CarteTcg:
     atk: int
     pv: int
     aura: int
-    accent: str
     hero: str
     fond: str
     # Les alias sont ÉCRITS À LA MAIN, et la correspondance est exacte : une
@@ -105,6 +105,32 @@ class CarteTcg:
     # Deux nappes de bulles qui montent derrière l'illustration. Aquatique et
     # rien d'autre : ailleurs ce sont des taches claires sans raison.
     bulles: bool = False
+    # Le palier de rareté, repris TEL QUEL de la base Notion « 🃏 Cartes du
+    # Purgatoire » (propriété « Rareté »), qui en est la source. Six paliers
+    # ordonnés, plus `indefinie` — et `indefinie` est la valeur HONNÊTE, pas un
+    # repli : deux cartes sur cinq n'ont pas de palier saisi dans Notion au
+    # 2026-09-09, et en inventer un ferait mentir la carte sur une donnée de
+    # jeu.
+    #
+    # ⚠️ Il ne pilote PAS l'holographie. `holographique` et `holo_zone`
+    # restent choisis carte par carte au moment du cadrage : KingsRequin porte
+    # le liseré irisé sans avoir de palier, et lier les deux aujourd'hui le
+    # lui retirerait. Le jour où les cinq paliers seront saisis, c'est ici
+    # qu'il faudra revenir.
+    rarete: str = "indefinie"
+
+    @property
+    def accent(self) -> str:
+        """La couleur d'accent, DÉRIVÉE du coût de l'ultime.
+
+        🚨 Elle ne s'écrit pas dans le YAML, elle se calcule — arbitrage de
+        l'owner du 2026-09-09. Écrite à la main, elle disait l'humeur de
+        l'illustration et rien du jeu : Claker en vert, Lilith en rouge,
+        Azraël en or, sans qu'aucune des trois ne renseigne le joueur. Dérivée
+        du coût, la couleur DIT quelque chose — et elle suivra toute seule le
+        jour où les vrais chiffres descendront de Notion.
+        """
+        return accent_du_cout(self.cout)
 
 
 # Là où vit la DONNÉE des cartes. Bind-monté (`./tcg:/app/tcg:ro`) et lu au
@@ -119,6 +145,44 @@ _OBLIGATOIRES = {f.name for f in fields(CarteTcg) if f.default is MISSING}
 # côté JS — elle rend simplement l'effet par défaut, en silence.
 _PARTICULES = {"braises", "poussiere", "aucune"}
 _HOLO_ZONES = {"surface", "bords"}
+# Les six paliers de la base Notion, dans l'ordre, plus l'absence de palier.
+# 🚨 L'ORDRE compte : c'est celui de la rareté croissante, et c'est lui que le
+# rendu lira le jour où il en dérivera quoi que ce soit. `indefinie` est
+# volontairement HORS de l'échelle et pas à son pied — une carte sans palier
+# saisi n'est pas une carte du palier le plus bas.
+RARETES = ("ame", "fidele", "ame_promise", "elu", "ange", "archange")
+_RARETES = {*RARETES, "indefinie"}
+
+# ── L'accent, dérivé du coût de l'ultime ──────────────────────────────────
+# Une rampe FROID → CHAUD sur la plage des coûts : 1 en bleu, 12 en rouge.
+# C'est le mécanisme qui est écrit ici, jamais les douze couleurs — ajouter un
+# palier de coût ne demande donc rien.
+#
+# 🚨 Un coût hors plage rend le NEUTRE, et zéro est hors plage : quatre cartes
+# sur cinq n'ont pas de coût saisi dans Notion au 2026-09-09. Elles portent
+# donc toutes le même gris, et c'est le but — une carte dont le coût n'est pas
+# décidé ne doit pas s'annoncer d'une couleur qui prétend le contraire.
+COUT_MIN = 1
+COUT_MAX = 12
+_TEINTE_FROIDE = 210.0
+_TEINTE_CHAUDE = 0.0
+# Sur le fond encre de la carte, l'accent sert de FOND au chiffre du coût
+# (texte `#12100c`) et de liseré. D'où une luminosité tenue haut et une
+# saturation forte : sous 0,5 de luminosité, le chiffre devient illisible.
+_ACCENT_LUM = 0.58
+_ACCENT_SAT = 0.72
+ACCENT_INDEFINI = "#8a8578"
+
+
+def accent_du_cout(cout: int) -> str:
+    """La couleur d'accent d'un coût d'ultime, ou le neutre hors plage."""
+    if not COUT_MIN <= cout <= COUT_MAX:
+        return ACCENT_INDEFINI
+    part = (cout - COUT_MIN) / (COUT_MAX - COUT_MIN)
+    teinte = _TEINTE_FROIDE + (_TEINTE_CHAUDE - _TEINTE_FROIDE) * part
+    rouge, vert, bleu = colorsys.hls_to_rgb(teinte / 360.0, _ACCENT_LUM, _ACCENT_SAT)
+    return "#{:02x}{:02x}{:02x}".format(
+        round(rouge * 255), round(vert * 255), round(bleu * 255))
 
 
 def _exiger(condition: bool, cle: str, probleme: str) -> None:
@@ -157,6 +221,8 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
                 f"particules={carte.particules!r} hors de {sorted(_PARTICULES)}")
         _exiger(carte.holo_zone in _HOLO_ZONES, cle,
                 f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
+        _exiger(carte.rarete in _RARETES, cle,
+                f"rarete={carte.rarete!r} hors de {sorted(_RARETES)}")
         # Les chemins d'illustration sont SANS extension : le front ajoute la
         # sienne (`x.avif` / `x.webp`). Une extension écrite ici donnerait
         # `/assets/x.webp.avif`, soit une carte noire.
@@ -317,4 +383,5 @@ def en_json(carte: CarteTcg) -> dict:
         "holographique": carte.holographique,
         "holoZone": carte.holo_zone,
         "bulles": carte.bulles,
+        "rarete": carte.rarete,
     }

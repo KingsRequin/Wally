@@ -145,7 +145,7 @@ def test_le_defaut_est_sans_reflet():
 
     nue = CarteTcg(cle="x", nom="X", legende="X", classe="X", ultime="X",
                    description="", ambiance="", cout=0, atk=0, pv=0, aura=0,
-                   accent="#fff", hero="/assets/x", fond="/assets/y")
+                   hero="/assets/x", fond="/assets/y")
     assert nue.holographique is False
 
 
@@ -168,7 +168,7 @@ def _carte_valide(**extra):
     base = {
         "cle": "essai", "nom": "ESSAI", "legende": "E · ESSAI", "classe": "ESSAI",
         "ultime": "ESSAI", "description": "d", "ambiance": "a",
-        "cout": 1, "atk": 1, "pv": 1, "aura": 1, "accent": "#ffffff",
+        "cout": 1, "atk": 1, "pv": 1, "aura": 1,
         "hero": "/assets/essai-hero", "fond": "/assets/essai-fond",
     }
     base.update(extra)
@@ -240,3 +240,82 @@ def test_l_ordre_du_fichier_est_celui_du_registre(tmp_path):
     cartes = tcg_cartes._lire(_fichier(tmp_path, [
         _carte_valide(cle="un"), _carte_valide(cle="deux"), _carte_valide(cle="trois")]))
     assert list(cartes) == ["un", "deux", "trois"]
+
+
+# ── La rareté et l'accent dérivé (2026-09-09) ─────────────────────────────
+
+def test_la_rarete_hors_vocabulaire_est_refusee(tmp_path):
+    """Six paliers plus `indefinie`, et rien d'autre.
+
+    Un palier mal orthographié ne doit pas être chargé en silence : c'est une
+    donnée de JEU, reprise de Notion, et une carte qui s'annonce d'un palier
+    qui n'existe pas ment au joueur.
+    """
+    import pytest
+    with pytest.raises(ValueError, match="rarete"):
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(rarete="legendaire")]))
+
+
+def test_la_rarete_par_defaut_est_indefinie(tmp_path):
+    """Une carte ajoutée sans palier ne doit pas en hériter d'un.
+
+    `indefinie` est la valeur HONNÊTE : deux cartes sur cinq n'ont pas de
+    palier saisi dans Notion, et le défaut ne doit pas prétendre le contraire.
+    """
+    cartes = tcg_cartes._lire(_fichier(tmp_path, [_carte_valide()]))
+    assert cartes["essai"].rarete == "indefinie"
+
+
+def test_l_accent_derive_du_cout_et_ne_s_ecrit_pas(tmp_path):
+    """🚨 `accent` n'est plus un champ : l'écrire lève.
+
+    C'est le seul garde-fou contre la rechute — le fichier en portait un par
+    carte jusqu'au 2026-09-09, et rien n'empêcherait de le remettre.
+    """
+    import pytest
+    with pytest.raises(ValueError, match="accent"):
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(accent="#ffffff")]))
+
+
+def test_l_accent_va_du_froid_au_chaud_et_le_neutre_dit_l_absence():
+    """La rampe est ordonnée, et hors plage rend le neutre.
+
+    On teste le MÉCANISME (l'ordre des teintes, le neutre hors plage), jamais
+    les codes hexadécimaux : figer « le coût 10 vaut #e1a947 » interdirait de
+    retoucher la rampe sans réécrire le test.
+    """
+    from bot.core.tcg_cartes import (ACCENT_INDEFINI, COUT_MAX, COUT_MIN,
+                                     accent_du_cout)
+
+    def rouge(hexa: str) -> int:
+        return int(hexa[1:3], 16)
+
+    # Du bleu vers le rouge : la composante rouge ne peut que monter.
+    rampe = [rouge(accent_du_cout(c)) for c in range(COUT_MIN, COUT_MAX + 1)]
+    assert rampe == sorted(rampe), rampe
+    assert rampe[0] < rampe[-1]
+    # Zéro n'est pas « le coût le plus bas », c'est « pas de coût ».
+    assert accent_du_cout(0) == ACCENT_INDEFINI
+    assert accent_du_cout(COUT_MAX + 1) == ACCENT_INDEFINI
+
+
+def test_les_cartes_livrees_ne_portent_que_ce_que_notion_porte():
+    """Relevé Notion du 2026-09-09 : seul Azraël a des chiffres.
+
+    Ce test tient l'arbitrage de l'owner — tout ce qui n'est pas décidé vaut 0
+    ou « INDÉFINI ». Il tombera le jour où Notion se remplira, et c'est
+    exactement à ce moment-là qu'il faut relire le fichier.
+    """
+    cartes = tcg_cartes.CARTES
+    assert cartes["azrael"].cout == 10
+    for cle in ("claker", "rhae", "lilith", "kingsrequin"):
+        carte = cartes[cle]
+        assert (carte.cout, carte.atk, carte.pv, carte.aura) == (0, 0, 0, 0), cle
+        assert carte.ultime == "INDÉFINI", cle
+        assert carte.accent == tcg_cartes.ACCENT_INDEFINI, cle
+
+
+def test_la_rarete_part_au_front():
+    """Un champ que le front ne reçoit pas n'existe pas pour lui."""
+    from bot.core.tcg_cartes import en_json
+    assert en_json(tcg_cartes.CARTES["azrael"])["rarete"] == "archange"
