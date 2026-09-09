@@ -805,7 +805,16 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         """(() => {
           const l = document.querySelector('.feed-body');
           [...l.children].forEach((c, i) => { c.dataset.temoin = i; });
-          const cibles = [...l.children].filter(c => c.classList.contains('clickable'));
+          // La cible doit être RÉELLEMENT repliée. Une pensée courte tient
+          // déjà tout entière dans son `-webkit-line-clamp` : la déplier ne
+          // change rien à sa hauteur, et le smoke criait alors au loup sur du
+          // CONTENU — vu le 2026-09-09, 43 px avant comme après, pour les
+          // 253 caractères de la dernière pensée du flux de prod.
+          const cibles = [...l.children].filter(c => {
+            if (!c.classList.contains('clickable')) return false;
+            const t = c.querySelector('.feed-text');
+            return t && t.scrollHeight > t.clientHeight;
+          });
           if (!cibles.length) return null;
           const cible = cibles[cibles.length - 1];
           // La HAUTEUR rendue, pas la longueur du texte : une pensée est
