@@ -800,15 +800,42 @@ export function carteHero(carte, options = {}) {
   let minuteurAplat = 0;
   let minuteurLissage = 0;
 
+  // 🚨 Les particules ne tournent que sur la carte OUVERTE. Elles suivaient
+  // la seule VISIBILITÉ, donc toute la grille peignait en permanence :
+  // mesuré sur `/tcg` le 2026-09-09, au repos, sans que personne ne survole —
+  // cinq canvas de 170 × 238, soit 202 300 pixels repeints à chaque image,
+  // ~12 Mpx/s. Une collection à vingt cartes en aurait fait 48.
+  //
+  // Le halo avait déjà cette règle, et son commentaire disait déjà pourquoi
+  // (« vingt dégradés animés au repos, c'est vingt calques de trop ») : les
+  // particules, elles, n'avaient jamais été alignées dessus.
+  //
+  // ⚠️ `etat.survol` couvre AUSSI l'overlay OBS et le téléphone : `ouvrir()`
+  // le pose, et c'est la carte centrée qui l'obtient au gyroscope. La carte
+  // qu'on regarde garde donc ses braises ; les quatre autres non.
   const syncBoucle = () => {
     if (!particulesCarte) return;
-    if (etat.visible && !dansBoucle) {
+    const actif = etat.survol && etat.visible;
+    if (actif && !dansBoucle) {
       BOUCLE.ajouter(particulesCarte.pas);
       dansBoucle = true;
-    } else if (!etat.visible && dansBoucle) {
+    } else if (!actif && dansBoucle) {
       BOUCLE.retirer(particulesCarte.pas);
       dansBoucle = false;
     }
+  };
+
+  // Les deux nappes de bulles montaient elles aussi en boucle infinie, en
+  // CSS, sur une carte que personne ne regarde. `paused` et non le retrait de
+  // l'animation : la reprise garde la phase, alors qu'un retrait ferait
+  // SAUTER les bulles au début de leur course à chaque survol.
+  const syncBulles = () => {
+    const etatAnim = etat.survol && etat.visible ? 'running' : 'paused';
+    [bullesLoin, bullesPres].forEach((nappe) => {
+      if (nappe && nappe.firstChild) {
+        nappe.firstChild.style.animationPlayState = etatAnim;
+      }
+    });
   };
 
   // Le halo ne pulse que sur la carte SURVOLÉE et visible : vingt dégradés
@@ -1057,6 +1084,7 @@ export function carteHero(carte, options = {}) {
     }
     syncBoucle();
     syncHalo();
+    syncBulles();
   };
 
   const sortir = () => {
@@ -1095,6 +1123,7 @@ export function carteHero(carte, options = {}) {
     minuteurAplat = setTimeout(aplatir, 520);
     syncBoucle();
     syncHalo();
+    syncBulles();
   };
 
   // Sur un écran tactile il n'y a pas de survol : c'est le tap qui ouvre et
@@ -1117,9 +1146,11 @@ export function carteHero(carte, options = {}) {
     etat.visible = visible;
     syncBoucle();
     syncHalo();
+    syncBulles();
   });
   syncBoucle();
   syncHalo();
+  syncBulles();
 
   const detruire = () => {
     if (arretDepliage) { arretDepliage(); arretDepliage = null; }
