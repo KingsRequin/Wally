@@ -440,15 +440,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       return {
         perspective: getComputedStyle(c).perspective,
         transform: getComputedStyle(c.querySelector('.chero-carte')).transform,
-        cadres: getComputedStyle(c.querySelector('.chero-cadres')).visibility,
+        cadres: +getComputedStyle(c.querySelector('.chero-cadres')).opacity,
       };
     }""")
     rap.dire(ouverte["perspective"] == "1100px",
              "carte TCG : la 3D est posée au survol", str(ouverte["perspective"]))
     rap.dire(ouverte["transform"].startswith("matrix3d"),
              "carte TCG : elle s'incline vraiment", ouverte["transform"][:60])
-    rap.dire(ouverte["cadres"] == "visible",
-             "carte TCG : les cadres s'allument", ouverte["cadres"])
+    rap.dire(ouverte["cadres"] > 0.5,
+             "carte TCG : les cadres s'allument", str(ouverte["cadres"]))
 
     # 🚨 Les trois couches de matière — vitrage, vernis, foil du titre —
     # n'étaient couvertes par RIEN. C'est exactement par là qu'un titre rendu
@@ -532,6 +532,25 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
                     boite["y"] + boite["height"] * 0.3)
     page.wait_for_timeout(1200)
     releve = page.evaluate("() => window.__ordre")
+
+    # 🚨 L'INVARIANT du sujet : à tout instant de la transition, un calque
+    # opaque porte l'illustration. Il est vérifié comme une PROPRIÉTÉ, pas en
+    # chassant la frame fautive dans un enregistrement — un glitch d'une image
+    # dure 16 ms, un screencast le rate une fois sur deux, et l'absence de
+    # capture ne prouve rien. Vécu le 2026-09-09 : cinq cartes déclarées
+    # « continues » par un détecteur qui, le défaut réinjecté, ne l'a pas vu.
+    #
+    # Le calque du repos ne doit donc JAMAIS descendre sous l'opacité pleine :
+    # c'est lui le filet pendant que celui du survol se compose.
+    creux = page.evaluate("""() => {
+      const c = document.querySelector('.chero');
+      const o = (s) => { const e = c.querySelector(s); return e ? +getComputedStyle(e).opacity : 1; };
+      return { clip: o('.chero-clip'), apClip: o('.chero-ap-clip') };
+    }""")
+    rap.dire(creux["clip"] >= 1 and creux["apClip"] >= 1,
+             "carte TCG : le calque de repos reste opaque, la carte a toujours un sujet",
+             f"repos={creux['clip']} avant-plan={creux['apClip']}")
+
     # Le liseré derrière le héros, le héros derrière la fiche — à CHAQUE image.
     croises = [f"t={t}ms bord={b} héros={h} fiche={f}"
                for t, b, h, f in releve if not (b <= h <= f)]
@@ -567,15 +586,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const c = document.querySelector('.chero');
       return {
         perspective: getComputedStyle(c).perspective,
-        cadres: getComputedStyle(c.querySelector('.chero-cadres')).visibility,
+        cadres: +getComputedStyle(c.querySelector('.chero-cadres')).opacity,
       };
     }""")
     # La 3D RETIRÉE au repos est la moitié qui compte : c'est elle qui garde
     # une grille de vingt cartes à un calque GPU au lieu de neuf par carte.
     rap.dire(fermee["perspective"] == "none",
              "carte TCG : et revient à plat en sortant", str(fermee["perspective"]))
-    rap.dire(fermee["cadres"] == "hidden",
-             "carte TCG : les cadres s'éteignent", fermee["cadres"])
+    rap.dire(fermee["cadres"] < 0.05,
+             "carte TCG : les cadres s'éteignent", str(fermee["cadres"]))
     rap.dire(not erreurs, "carte TCG : aucune erreur JS", " · ".join(erreurs[:2]))
 
     # Les filtres des clips. Tout se joue en JavaScript sur une liste déjà

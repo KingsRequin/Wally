@@ -1168,7 +1168,6 @@ export function carteHero(carte, options = {}) {
     minuteurLissage = setTimeout(() => {
       plateau.style.transition = interactif ? 'transform .16s ease-out' : 'none';
     }, lissageMs);
-    cadres.style.visibility = 'visible';
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
     if (holo) holo.style.opacity = String(OPACITE_HOLO);
@@ -1180,11 +1179,29 @@ export function carteHero(carte, options = {}) {
     if (!SOBRE()) nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (particulesCarte) particulesCarte.bouffee();
     if (c.debordement) {
+      // 🚨 Le calque du REPOS n'est JAMAIS masqué. Il reste sous celui du
+      // survol, qui est opaque et le recouvre.
+      //
+      // Le masquer laissait une image où la carte n'avait PLUS DE SUJET DU
+      // TOUT — le repos effacé, le survol pas encore composé. Enregistré au
+      // navigateur sur rhae le 2026-09-09 (`Page.startScreencast`) : une frame
+      // vide. Elle ne se voyait que sur elle, la seule carte dont les deux
+      // illustrations diffèrent — ailleurs le trou était bouché par une image
+      // identique.
+      //
+      // 🚨 Attendre ne marche pas. Deux images de délai, puis quatre, puis le
+      // retrait de `visibility` : le trou revenait, parce qu'on ne peut pas
+      // savoir QUAND une couche est composée. Ne rien effacer est la seule
+      // garantie qui ne dépende d'aucun timing — et c'est une garantie par
+      // CONSTRUCTION : à tout instant, au moins un calque opaque porte le
+      // sujet.
+      //
+      // ⚠️ Ça tient parce que le calque de survol monte et GRANDIT : il
+      // recouvre celui du repos. Une illustration de survol plus petite le
+      // laisserait dépasser derrière. `smoke_front.py` tient l'invariant.
       libre.style.visibility = 'visible';
       libre.style.opacity = '1';
-      clip.style.opacity = '0';
       if (apLibre) { apLibre.style.visibility = 'visible'; apLibre.style.opacity = '1'; }
-      if (apClip) apClip.style.opacity = '0';
     }
     syncBoucle();
     syncHalo();
@@ -1205,7 +1222,6 @@ export function carteHero(carte, options = {}) {
     l2.style.transform = '';
     l3.style.transform = 'translate(-50%,-50%)';
     cadres.style.opacity = '0';
-    cadres.style.visibility = 'hidden';
     cadres.style.transform = '';
     // Le `transform` est RETIRÉ et non remis à zéro : l'animation de montée
     // vit dans l'enfant, mais un `translate3d(0,0,0)` laissé sur le parent y
@@ -1217,11 +1233,10 @@ export function carteHero(carte, options = {}) {
     vernis.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
+    // Le repos n'a jamais été masqué : il n'y a que le survol à retirer.
     libre.style.opacity = '0';
     libre.style.visibility = 'hidden';
-    clip.style.opacity = '1';
     if (apLibre) { apLibre.style.opacity = '0'; apLibre.style.visibility = 'hidden'; }
-    if (apClip) apClip.style.opacity = '1';
     set3d(false);
     clearTimeout(minuteurAplat);
     minuteurAplat = setTimeout(aplatir, 520);

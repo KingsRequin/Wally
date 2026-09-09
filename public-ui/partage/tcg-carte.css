@@ -212,13 +212,24 @@
 /* Les quatre cadres sont dans UN conteneur : c'est lui qui s'affiche et se
  * déplace, pas les quatre. Quatre transitions d'opacité et quatre transforms
  * par carte ne se voyaient pas mieux. */
+/* 🚨 PLUS de `visibility` : l'opacité seule ouvre et ferme les cadres.
+ *
+ * Une couche qui passe de `visibility: hidden` à `visible` n'est pas à
+ * l'écran tant qu'elle n'a pas été rastérisée — c'est le mécanisme
+ * démontré le 2026-09-09 sur le calque de héros de rhae, où il laissait une
+ * image sans sujet. Les cadres sont dans le FOND de la carte et basculent à
+ * CHAQUE ouverture ; sur mobile, où les cartes s'ouvrent et se ferment toutes
+ * seules au défilement, ça fait une rastérisation du fond par carte survolée.
+ *
+ * `opacity: 0` suffit : un élément transparent n'est pas peint, et il ne
+ * capte rien puisque `.chero` entier est en `pointer-events` neutre pour ses
+ * décors. On échange une bascule de rendu contre rien. */
 .chero-cadres {
   position: absolute;
   inset: 0;
-  visibility: hidden;
   opacity: 0;
-  transition: opacity var(--chero-depli) ease var(--chero-etape),
-              visibility var(--chero-depli) var(--chero-etape);
+  pointer-events: none;
+  transition: opacity var(--chero-depli) ease var(--chero-etape);
 }
 
 .chero-cadres > div {
@@ -452,11 +463,22 @@
   left: var(--chero-cote);
   right: var(--chero-cote);
   top: var(--chero-haut);
-  /* Exactement la transition de `.chero-libre` : c'est la même bascule vue de
-   * l'autre côté. Elles avaient des durées différentes (0,28 s ici, 0,45 s
-   * avec 0,10 s de délai là-bas) — le repos s'effaçait donc avant que le
-   * survol n'arrive, puis les deux se chevauchaient longuement. */
-  transition: opacity var(--chero-fondu) ease var(--chero-plan-hero);
+  /* 🚨 AUCUNE transition : la bascule vers le calque de survol est INSTANTANÉE.
+   *
+   * Un fondu croisé entre deux calques ne conserve pas l'opacité — c'est de
+   * l'arithmétique, pas un réglage. À mi-fondu, les deux sont à 0,5 et le
+   * composé vaut 0,5 + 0,5 × 0,5 = 0,75 : le fond TRANSPARAÎT à travers le
+   * héros. Vu à l'image près le 2026-09-09 en enregistrant le rendu réel du
+   * navigateur (`Page.startScreencast`) — un héros fantôme, exactement ce que
+   * l'owner décrivait. J'ai d'abord cru à un défaut de synchronisation et
+   * passé trois corrections à accorder les durées : synchroniser un fondu
+   * croisé ne le répare pas, il le centre.
+   *
+   * La bascule est invisible parce qu'elle a lieu AVANT tout mouvement : les
+   * deux calques portent alors la même image, au même endroit, à la même
+   * échelle. Sur rhae, qui a deux illustrations distinctes, on voit un
+   * changement net — c'est assumé, un fantôme est pire. */
+  transition: none;
 }
 
 /* Le PORTEUR DE PROFONDEUR des calques de survol. Il ne fait qu'une chose :
@@ -487,7 +509,6 @@
   left: var(--chero-3d-cote);
   right: var(--chero-3d-cote);
   top: var(--chero-3d-haut);
-  visibility: hidden;
   opacity: 0;
   pointer-events: none;
   /* 🚨 AUCUNE transition sur `transform` ici. Elle y était, et c'était le
@@ -499,8 +520,7 @@
    *
    * Sous le curseur, le mode interactif la pose en JS le temps de l'entrée
    * puis la retire, comme pour le plateau. */
-  transition: opacity var(--chero-fondu) ease var(--chero-plan-hero),
-              visibility var(--chero-fondu) var(--chero-plan-hero);
+  transition: none;
   transform-origin: 50% 100%;
   /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
    * texte doit rester lisible sous lui. */
@@ -521,7 +541,7 @@
 
 .chero-ap-clip {
   transform: translateX(-50%);
-  transition: opacity var(--chero-fondu) ease var(--chero-plan-avant);
+  transition: none;
 }
 
 .chero-ap-libre {
@@ -529,11 +549,11 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  /* Le `transform` garde sa durée propre : c'est le MOUVEMENT de la couche,
-   * pas sa bascule. */
-  transition: opacity var(--chero-fondu) ease var(--chero-plan-avant),
-              visibility var(--chero-fondu) var(--chero-plan-avant),
-              transform .4s cubic-bezier(.2, .9, .2, 1);
+  /* Ni fondu, ni transition sur le `transform` : la profondeur vit sur le
+   * porteur `.chero-plan`, et ce qui reste ici — parallaxe et échelle — est
+   * réécrit à chaque image par `incliner()`. Une transition redémarrerait à
+   * chaque écriture sans jamais atteindre sa cible. */
+  transition: none;
   transform-origin: 50% 50%;
 }
 
