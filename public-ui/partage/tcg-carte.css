@@ -334,9 +334,14 @@
  * que reprendre sa teinte. Le vitrage, lui, apporte ses propres couleurs
  * pures en `plus-lighter` : il n'a rien à emprunter au fond.
  *
- * 🚨 Elle s'arrête AVANT la fiche de texte (`bottom: 34%`) : des bandes
- * irisées sur une description grise la rendraient illisible, et l'illisible
- * n'est pas décoratif.
+ * 🚨 Elle couvre le fond ENTIER. Elle s'arrêtait à `bottom: 34%`, au-dessus
+ * de la fiche de texte — un vestige de l'époque où elle passait PAR-DESSUS
+ * tout, où des bandes irisées sur une description l'auraient rendue
+ * illisible. Depuis qu'elle vit dans le fond, la fiche est devant elle et
+ * opaque : il n'y a plus rien à protéger, et la coupure se voyait. Signalée
+ * par l'owner le 2026-09-09 — au PARALLAXE, le fond glisse sous la limite et
+ * la ligne d'arrêt se déplace, ce qui la rend visible alors qu'elle ne l'est
+ * pas sur une carte immobile.
  *
  * 🚨 AUCUNE animation en boucle. Les recettes du web animent le
  * `background-position` en `@keyframes` — sur une grille de vingt cartes,
@@ -346,7 +351,7 @@
  * `opacity: 0` et ne coûte rien. */
 .chero-holo {
   position: absolute;
-  inset: 0 0 34% 0;
+  inset: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity .45s ease;
