@@ -514,7 +514,19 @@
   left: var(--chero-3d-cote);
   right: var(--chero-3d-cote);
   top: var(--chero-3d-haut);
-  opacity: 0;
+  /* 🚨 0,006 et non 0 : le calque doit être RASTÉRISÉ avant qu'on en ait
+   * besoin. À zéro, le navigateur ne le peint pas — et son premier rendu
+   * coûte trois images. Sur rhae, la seule carte dont l'illustration de
+   * survol DIFFÈRE de celle du repos, ces trois images montraient une carte
+   * sans chat du tout : filmé au navigateur le 2026-09-09.
+   *
+   * Six millièmes sont invisibles à l'œil (sous le seuil de discrimination
+   * d'un écran 8 bits, qui ne peut même pas représenter 0,6 % d'un aplat)
+   * mais suffisent à ce que la couche existe pour le compositeur. C'est le
+   * seul moyen d'échanger les deux calques dans la MÊME image sans trou ni
+   * superposition — les trois autres stratégies sont listées dans le module,
+   * chacune écartée par ce qu'elle montrait à l'écran. */
+  opacity: .006;
   pointer-events: none;
   /* 🚨 AUCUNE transition sur `transform` ici. Elle y était, et c'était le
    * même piège que sur le plateau : `incliner()` réécrit ce transform trente

@@ -882,8 +882,6 @@ export function carteHero(carte, options = {}) {
   let dansBoucle = false;
   let minuteurAplat = 0;
   let minuteurLissage = 0;
-  // Quand le calque de repos s'efface, une fois celui du survol peint.
-  let minuteurRepos = 0;
 
   // 🚨 Les particules ne tournent que sur la carte OUVERTE. Elles suivaient
   // la seule VISIBILITÉ, donc toute la grille peignait en permanence :
@@ -1181,33 +1179,31 @@ export function carteHero(carte, options = {}) {
     if (!SOBRE()) nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (particulesCarte) particulesCarte.bouffee();
     if (c.debordement) {
-      // 🚨 Le calque du REPOS s'efface PENDANT la fenêtre d'immobilité, et
-      // c'est la seule façon de tenir les deux bouts.
+      // 🚨 L'échange est INSTANTANÉ : le repos s'efface dans la même image que
+      // l'apparition du survol. Trois autres stratégies ont été essayées et
+      // filmées au navigateur le 2026-09-09, chacune écartée par ce qu'elle
+      // montrait :
       //
-      // L'effacer dans la même image laisse un TROU : un calque qui devient
-      // visible n'est pas à l'écran tant qu'il n'a pas été rastérisé. Vu sur
-      // rhae — la seule carte dont les deux illustrations diffèrent, donc la
-      // seule où le trou n'est pas bouché par une image identique.
+      // · un FONDU croisé : deux calques à 0,5 ne redonnent pas une image
+      //   opaque (0,5 + 0,5 × 0,5 = 0,75), le fond transparaissait à travers
+      //   le héros — un fantôme ;
+      // · ne PAS effacer le repos : le survol monte et grandit, il ne le
+      //   recouvre plus — deux héros à l'écran ;
+      // · l'effacer plus tard, dans une fenêtre où « rien n'a bougé » : vrai
+      //   des quatre cartes dont le survol reprend la même illustration, FAUX
+      //   de rhae, la seule à en avoir deux. Son chat assis restait sous le
+      //   chat bondissant, et l'inverser n'y change rien — le bondissant
+      //   déborde, aucun des deux ne peut cacher l'autre.
       //
-      // Ne PAS l'effacer laisse une SUPERPOSITION : le calque de survol monte
-      // et se décale, il ne recouvre donc plus celui du repos. Deux héros à
-      // l'écran, décalés — signalé par l'owner en photo le 2026-09-09, sur
-      // une carte ouverte. J'avais écrit l'inverse dans ce même commentaire,
-      // sans l'avoir vérifié sur une carte INCLINÉE.
-      //
-      // La fenêtre `BASCULE_PLANS_MS` résout les deux : rien ne bouge avant
-      // elle, donc les deux calques COÏNCIDENT — les effacer là-dedans est
-      // invisible. On s'y prend à 80 % du chemin : cinq images pour peindre
-      // le survol, et 24 ms de marge avant le moindre déplacement.
+      // ⚠️ Le prix assumé : sur rhae, une image peut manquer le temps que le
+      // calque de survol soit rastérisé. UNE image de 16 ms, contre 96 ms de
+      // superposition franche — et seulement sur la carte à deux
+      // illustrations. C'est un arbitrage, pas un oubli.
       libre.style.visibility = 'visible';
       libre.style.opacity = '1';
       if (apLibre) { apLibre.style.visibility = 'visible'; apLibre.style.opacity = '1'; }
-      clearTimeout(minuteurRepos);
-      minuteurRepos = setTimeout(() => {
-        if (!etat.survol) return;
-        clip.style.opacity = '0';
-        if (apClip) apClip.style.opacity = '0';
-      }, BASCULE_PLANS_MS * 0.8);
+      clip.style.opacity = '0';
+      if (apClip) apClip.style.opacity = '0';
     }
     syncBoucle();
     syncHalo();
@@ -1239,9 +1235,6 @@ export function carteHero(carte, options = {}) {
     vernis.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
-    // Le repos revient d'un coup : il n'a jamais quitté le document, il est
-    // déjà rastérisé. C'est l'aller qui demande de l'attente, pas le retour.
-    clearTimeout(minuteurRepos);
     clip.style.opacity = '1';
     if (apClip) apClip.style.opacity = '1';
     libre.style.opacity = '0';
