@@ -924,6 +924,14 @@ export function carteHero(carte, options = {}) {
       holo.style.setProperty('--chero-holo-x', `${(50 + nx * 160).toFixed(1)}%`);
       holo.style.setProperty('--chero-holo-y', `${(50 + ny * 160).toFixed(1)}%`);
     }
+    // Le métal du titre glisse et son horizon tourne : sans ça, la rampe est
+    // un dégradé gris peint dans les lettres. C'est le MÊME geste que pour le
+    // chatoiement, et il est écrit dans la même image.
+    if (nomFoil) {
+      nom.style.setProperty('--chero-foil-a', `${(178 + nx * 26).toFixed(1)}deg`);
+      nom.style.setProperty('--chero-foil-x', `${(50 + nx * 140).toFixed(1)}%`);
+      nom.style.setProperty('--chero-foil-y', `${(50 + ny * 130).toFixed(1)}%`);
+    }
     // La tache de lumière suit le pointeur, et DÉBORDE volontairement de la
     // carte (l'amplitude vaut 120 % pour ±0,5 d'inclinaison) : une tache qui
     // reste dans le cadre se lit comme un disque peint dessus, pas comme un

@@ -712,27 +712,69 @@
  * dans l'illustration. `color: transparent` n'efface pas l'ombre, elle se
  * dessine sur le glyphe et non sur sa couleur. */
 .chero-nom--foil {
-  /* 🚨 DEUX couches, et l'aplat du dessous n'est pas décoratif : c'est lui
-   * qui rend le titre lisible. Le vitrage est cuit noir aux joints, pour être
-   * multiplié par une lumière et lu en `color-dodge` ; posé seul dans du
-   * texte, il donne des lettres sombres sur une illustration sombre. Premier
-   * jet capturé le 2026-09-09 : « AZRAËL » et « RHAE » avaient disparu.
+  /* ALUMINIUM BROSSÉ, et non le vitrage posé tel quel. Trois couches, chacune
+   * avec un rôle :
    *
-   * L'aplat porte donc la lisibilité, et `overlay` module par-dessus sans
-   * écraser : il garde le contraste de la base là où le vitrage est moyen,
-   * et n'irise que sur ses crêtes. Banc de quatre traitements capturés côte à
-   * côte le 2026-09-09 — `screen` sur un aplat sombre rendait un titre plus
-   * TERNE que ceux des cartes ordinaires, soit l'inverse de ce qu'un foil
-   * doit dire ; `soft-light` sur un aplat clair effaçait l'irisation. */
-  background-image: var(--chero-voronoi, none), linear-gradient(#e6d9bd, #e6d9bd);
-  background-blend-mode: overlay, normal;
-  background-size: 96px, auto;
+   *   1. le VITRAGE, en `color-dodge` — le foil. C'est lui qui met de la
+   *      couleur dans le métal, et la même tuile que le fond : aucune image
+   *      ni calcul de plus.
+   *   2. les STRIATIONS verticales — le brossé. Deux pixels de période :
+   *      au-delà on lit des rayures, en deçà elles disparaissent au filtrage.
+   *   3. la RAMPE — le métal. Sept arrêts, et c'est la RUPTURE brusque au
+   *      milieu (`#6f757c` à 52 %) qui fait le chrome : un dégradé doux rend
+   *      du gris, pas du métal. C'est la ligne d'horizon que reflète une
+   *      surface bombée.
+   *
+   * 🚨 Premier jet, capturé le 2026-09-09 : le vitrage seul sur un aplat
+   * crème rendait un titre BEIGE et terne, plus éteint que ceux des cartes
+   * ordinaires — soit l'inverse de ce qu'un foil doit dire. Le vitrage est
+   * cuit sombre aux joints, pour être multiplié par une lumière et lu en
+   * `color-dodge` ailleurs : il ne peut pas porter seul la clarté d'un titre.
+   *
+   * 🚨 Le repli de la `var()` est `none`, et il est SANS DANGER ici : la
+   * rampe est en dessous et porte à elle seule des lettres lisibles. Le temps
+   * de la cuisson (`requestIdleCallback`), le titre est simplement du chrome
+   * sans irisation.
+   *
+   * 🚨 L'ombre passe par `drop-shadow`, et le `text-shadow` hérité est COUPÉ.
+   * Ce n'est pas un détail de goût, c'est l'ordre de peinture : sous
+   * `background-clip: text`, les glyphes visibles sont le FOND de l'élément,
+   * peint AVANT les ombres de texte. Un `text-shadow` opaque décalé de 4 px
+   * se dessine donc PAR-DESSUS les lettres — sur une graisse comme Archivo
+   * Black il en recouvre l'essentiel, et le titre se lit noir avec un liseré
+   * métallique. Signalé par l'owner le 2026-09-09 ; mes propres captures
+   * étaient trop petites pour que je le voie.
+   *
+   * `drop-shadow` prend l'alpha du rendu FINI et se dessine derrière lui :
+   * même ombre dure (0 de flou), au bon étage.
+   *
+   * 🚨 Le métal GLISSE à l'inclinaison, comme le chatoiement : c'est ce qui
+   * fait la différence entre du métal et un dégradé gris. `incliner()` écrit
+   * les trois variables dans la MÊME image que le reste — pas de boucle
+   * propre, pas de second réveil par frame. */
+  text-shadow: none;
+  filter: drop-shadow(4px 4px 0 #12100c);
+  background-image:
+    var(--chero-voronoi, none),
+    repeating-linear-gradient(90deg,
+      rgba(255, 255, 255, .16) 0 1px, rgba(0, 0, 0, .12) 1px 2px),
+    linear-gradient(var(--chero-foil-a, 178deg),
+      #fdfdfd 0%, #cfd2d6 22%, #ffffff 40%,
+      #6f757c 52%, #b9bec4 58%, #ffffff 76%, #d7dade 100%);
+  background-blend-mode: color-dodge, overlay, normal;
+  /* 🚨 La rampe fait 260 % de la hauteur du titre, et c'est ce qui lui donne
+   * de la MARGE POUR GLISSER. À 100 %, `background-position` n'a nulle part
+   * où aller : les sept arrêts restent cloués, et le titre est un métal
+   * peint. Les striations, elles, ne bougent pas — une brosse est dans la
+   * matière, elle ne se déplace pas avec la lumière. */
+  background-size: 96px, auto, 100% 260%;
+  background-position:
+    var(--chero-foil-x, 50%) var(--chero-foil-y, 50%),
+    0 0,
+    0 var(--chero-foil-y, 50%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* ⚠️ AUCUN `filter` ici. Il s'appliquerait aussi au `text-shadow`, qui
-   * virerait du noir au gris — et c'est cette ombre qui décolle le titre de
-   * l'illustration. */
 }
 
 .chero-fiche {
