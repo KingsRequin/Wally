@@ -13,7 +13,8 @@ def test_la_route_rend_les_cartes_de_la_plus_haute_a_la_plus_basse(overlay_clien
     assert r.status_code == 200
     cartes = r.json()["cartes"]
     assert [c["nom"] for c in cartes] == [
-        "AZRAËL", "RHAE", "KINGSREQUIN", "CLAKER", "LILITH"]
+        "AZRAËL", "RHAE", "WALLY", "KINGSREQUIN", "CLAKER", "LILITH",
+        "MÉLIODAS"]
 
 
 def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):

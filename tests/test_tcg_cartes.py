@@ -10,7 +10,8 @@ from bot.core import tcg_cartes
 
 def test_les_cartes_terminees_sont_la():
     assert set(tcg_cartes.CARTES) == {
-        "azrael", "claker", "rhae", "lilith", "kingsrequin"}
+        "azrael", "claker", "rhae", "lilith", "kingsrequin", "wally",
+        "meliodas"}
 
 
 def test_toute_carte_declare_ses_illustrations_sans_extension():
@@ -311,7 +312,8 @@ def test_les_cartes_livrees_ne_portent_que_ce_que_notion_porte():
     """
     cartes = tcg_cartes.CARTES
     assert cartes["azrael"].cout == 10
-    for cle in ("claker", "rhae", "lilith", "kingsrequin"):
+    for cle in ("claker", "rhae", "lilith", "kingsrequin", "wally",
+                "meliodas"):
         carte = cartes[cle]
         assert (carte.cout, carte.atk, carte.pv, carte.aura) == (0, 0, 0, 0), cle
         assert carte.ultime == "INDÉFINI", cle
@@ -332,7 +334,8 @@ def test_le_prestige_suit_l_holo_et_non_le_palier():
     Claker (`ame`), et c'est justement la régression qu'on ne verrait pas.
     """
     ordre = [c.cle for c in tcg_cartes.par_prestige()]
-    assert ordre == ["azrael", "rhae", "kingsrequin", "claker", "lilith"], ordre
+    assert ordre == ["azrael", "rhae", "wally", "kingsrequin", "claker",
+                     "lilith", "meliodas"], ordre
     assert tcg_cartes.CARTES["kingsrequin"].rarete == "indefinie"
     assert tcg_cartes.CARTES["claker"].rarete == "ame"
 
@@ -343,5 +346,5 @@ def test_a_rang_egal_l_ordre_du_fichier_departage():
     l'écrive — et un tri instable les ferait permuter d'un boot à l'autre."""
     ordre = [c.cle for c in tcg_cartes.par_prestige()]
     fichier = list(tcg_cartes.CARTES)
-    surface = [c for c in ordre if c in ("azrael", "rhae")]
-    assert surface == [c for c in fichier if c in ("azrael", "rhae")]
+    surface = [c for c in ordre if c in ("azrael", "rhae", "wally")]
+    assert surface == [c for c in fichier if c in ("azrael", "rhae", "wally")]

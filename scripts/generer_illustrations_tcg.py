@@ -124,6 +124,18 @@ PLAN = [
     # rognées, au survol elles sortent du cadre.
     ("lilith-hero.png", "tcg-lilith-hero", 1.80, 1.08),
     ("lilith-fond.png", "tcg-lilith-fond", 1.44, 1.06),
+    # Wally — DEUX visuels : au repos une silhouette cadrée très serré (24 %,
+    # soit à peine la moitié de la carte), au survol un plan bien plus large
+    # (6 %), lui agrandi de 14 %.
+    ("wally-hero-2d.png", "tcg-wally-hero-2d", 0.52, 1.00),
+    ("wally-hero-3d.png", "tcg-wally-hero-3d", 0.88, 1.14),
+    ("wally-fond.png", "tcg-wally-fond", 1.44, 1.06),
+    # Méliodas — UNE seule illustration pour les deux états, avec deux
+    # cadrages : 8 % au repos, −6 % au survol. La largeur se prend donc sur le
+    # plus large des deux (le survol, agrandi de 12 %) — la servir au cadrage
+    # du repos donnerait un flou dès que la carte s'ouvre.
+    ("meliodas-hero.png", "tcg-meliodas-hero", 1.12, 1.12),
+    ("meliodas-fond.png", "tcg-meliodas-fond", 1.44, 1.06),
 ]
 
 QUALITE_WEBP = 88

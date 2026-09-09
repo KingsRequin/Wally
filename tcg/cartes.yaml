@@ -178,3 +178,55 @@
   # blanc. Il court donc dans le liseré.
   holo_zone: bords
   bulles: true
+
+- cle: wally
+  nom: WALLY
+  legende: WALLY · ARCHANGE
+  classe: ARCHANGE
+  ultime: INDÉFINI
+  rarete: indefinie
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
+  fond: /assets/tcg-wally-fond
+  # Deux visuels : au repos une silhouette cadrée très serré — 24 % de chaque
+  # côté, soit à peine la moitié de la carte — et au survol un plan bien plus
+  # large, qui l'agrandit encore de 14 %.
+  hero: /assets/tcg-wally-hero-2d
+  hero_cote: 24%
+  hero_haut: 2%
+  hero_3d: /assets/tcg-wally-hero-3d
+  hero_3d_cote: 6%
+  hero_3d_haut: -2%
+  hero_echelle: 1.14
+  parallaxe: 1.2
+  intensite: 0.9
+  holographique: true
+
+- cle: meliodas
+  nom: MÉLIODAS
+  legende: MÉLIODAS · INDÉFINIE
+  classe: INDÉFINIE
+  ultime: INDÉFINI
+  rarete: indefinie
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
+  fond: /assets/tcg-meliodas-fond
+  # UNE seule illustration pour les deux états, avec deux cadrages : elle se
+  # recentre et s'élargit quand la carte s'ouvre. `hero_3d` reste donc absent
+  # — le rendu reprend `hero` de lui-même — et seuls les décalages changent.
+  hero: /assets/tcg-meliodas-hero
+  hero_cote: 8%
+  hero_haut: 3%
+  hero_3d_cote: -6%
+  hero_3d_haut: 0%
+  particules: poussiere
+  intensite: 0.8
+  bulles: true
