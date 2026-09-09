@@ -588,6 +588,57 @@
   padding: 0 8px;
 }
 
+/* ── Le cartouche de rareté ──────────────────────────────────────────────
+ * Sous le bandeau de coût, en haut à gauche : le palier de la carte, repris
+ * de la base Notion. C'est le SEUL endroit où la rareté est écrite — elle
+ * traînait avant dans la seconde moitié de `classe`, en texte libre, où elle
+ * disait « LÉGENDAIRE » sur deux cartes traitées différemment.
+ *
+ * Encre sur crème, à l'inverse du bandeau de coût juste au-dessus : les deux
+ * blocs se touchent, et deux cartouches de même valeur tonale se liraient
+ * comme un seul objet à deux lignes. */
+.chero-rarete {
+  position: absolute;
+  left: 18px; top: 62px;
+  pointer-events: none;
+  font: 700 8px/1 var(--chero-mono);
+  letter-spacing: .16em;
+  color: #12100c;
+  background: #f7ecd9;
+  border: 1.5px solid #12100c;
+  padding: 5px 8px 4px;
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
+              calc(var(--chero-etape) * 3);
+}
+
+/* Une carte sans palier saisi le DIT, elle ne se tait pas — mais elle ne
+ * l'annonce pas non plus comme une valeur : fond creusé, texte en retrait.
+ * `[data-rarete]` sur la racine et pas une classe sur le cartouche : c'est la
+ * carte qui a un palier, pas son étiquette. */
+.chero[data-rarete="indefinie"] .chero-rarete {
+  color: rgba(247, 236, 217, .62);
+  background: #12100c;
+  border-color: rgba(247, 236, 217, .3);
+}
+
+/* ── Le traitement des paliers hauts ─────────────────────────────────────
+ * 🚨 Les paliers visés sont ÉNUMÉRÉS (`ange`, `archange`), jamais désignés
+ * par un seuil : deux paliers existent en base au 2026-09-09, et un seuil
+ * ordonné ferait entrer `elu` et `ame_promise` dans le traitement le jour où
+ * quelqu'un les saisira, sans que personne ne l'ait décidé.
+ *
+ * Un SECOND filet, à l'intérieur du liseré. Le liseré porte déjà l'accent,
+ * donc l'identité de la carte — il ne peut pas dire aussi la rareté sans que
+ * les deux se marchent dessus. Un filet de plus, lui, se compte : on voit du
+ * premier coup d'œil qu'il y en a deux. */
+.chero[data-rarete="ange"] .chero-bord,
+.chero[data-rarete="archange"] .chero-bord {
+  box-shadow: inset 0 0 0 11px #12100c,
+              inset 0 0 0 12.5px rgba(247, 236, 217, .55),
+              inset 0 0 0 14px #12100c,
+              inset 0 0 0 15.5px var(--chero-acc);
+}
+
 /* ── La fiche : nom, texte, stats ────────────────────────────────────────*/
 .chero-bas {
   position: absolute;
@@ -608,6 +659,43 @@
   letter-spacing: -.02em;
   color: #f7ecd9;
   text-shadow: 4px 4px 0 #12100c;
+}
+
+/* Le nom GRAVÉ dans le même vitrage que le fond, sur les paliers hauts. Il
+ * réutilise la tuile déjà cuite pour l'holo : aucune image de plus, aucun
+ * calcul de plus.
+ *
+ * 🚨 Le repli de la `var()` est un APLAT crème, pas `none`. Avec
+ * `color: transparent`, une tuile pas encore cuite — elle l'est en
+ * `requestIdleCallback` — rendrait le nom de la carte INVISIBLE le temps de
+ * la cuisson. Le repli le laisse dans sa couleur d'origine.
+ *
+ * 🚨 Le `text-shadow` reste, et c'est lui qui tient la lisibilité : le
+ * vitrage est sombre aux joints, et sans l'ombre portée le titre se perdrait
+ * dans l'illustration. `color: transparent` n'efface pas l'ombre, elle se
+ * dessine sur le glyphe et non sur sa couleur. */
+.chero-nom--foil {
+  /* 🚨 DEUX couches, et l'aplat du dessous n'est pas décoratif : c'est lui
+   * qui rend le titre lisible. Le vitrage est cuit noir aux joints, pour être
+   * multiplié par une lumière et lu en `color-dodge` ; posé seul dans du
+   * texte, il donne des lettres sombres sur une illustration sombre. Premier
+   * jet capturé le 2026-09-09 : « AZRAËL » et « RHAE » avaient disparu.
+   *
+   * L'aplat porte donc la lisibilité, et `overlay` module par-dessus sans
+   * écraser : il garde le contraste de la base là où le vitrage est moyen,
+   * et n'irise que sur ses crêtes. Banc de quatre traitements capturés côte à
+   * côte le 2026-09-09 — `screen` sur un aplat sombre rendait un titre plus
+   * TERNE que ceux des cartes ordinaires, soit l'inverse de ce qu'un foil
+   * doit dire ; `soft-light` sur un aplat clair effaçait l'irisation. */
+  background-image: var(--chero-voronoi, none), linear-gradient(#e6d9bd, #e6d9bd);
+  background-blend-mode: overlay, normal;
+  background-size: 96px, auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* ⚠️ AUCUN `filter` ici. Il s'appliquerait aussi au `text-shadow`, qui
+   * virerait du noir au gris — et c'est cette ombre qui décolle le titre de
+   * l'illustration. */
 }
 
 .chero-fiche {
@@ -658,6 +746,24 @@
 .chero-stat-atk  { background: #c2410c; }
 .chero-stat-pv   { background: #166534; }
 .chero-stat-aura { background: #4c1d95; }
+
+/* 🚨 Une stat à zéro n'est pas une petite stat, c'est une stat qui n'est pas
+ * décidée. Peinte en rouge vif comme un vrai 9, elle prétend être une valeur
+ * de jeu — c'est ce que faisaient les cinq cartes jusqu'au 2026-09-09, avec
+ * des chiffres de maquette. Le neutre, lui, se lit comme « pas encore ».
+ *
+ * Après les trois règles de couleur et non avant : à spécificité égale, c'est
+ * la POSITION dans le fichier qui décide, et écrite au-dessus elle serait
+ * battue en silence. Même piège que `--tab-reserve` sur le site. */
+/* 🚨 Un neutre ENCRE, pas un neutre clair. Premier jet capturé le
+ * 2026-09-09 : `rgba(247, 236, 217, .1)` sur du texte crème — les trois
+ * pastilles ont purement DISPARU sur les quatre cartes indéfinies. Elles sont
+ * posées sur la fiche, qui est crème ; un neutre se choisit contre le fond
+ * qu'il touche, pas contre le fond de la carte. */
+.chero-stat--vide {
+  background: rgba(18, 16, 12, .1);
+  color: rgba(18, 16, 12, .45);
+}
 
 /* ── Mise à l'échelle ────────────────────────────────────────────────────
  * L'échelle est une VARIABLE lue par le conteneur, jamais un `scale()` posé

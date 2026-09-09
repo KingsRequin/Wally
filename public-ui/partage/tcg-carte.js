@@ -477,11 +477,40 @@ const DEFAUTS = {
   // Deux nappes de bulles qui montent derrière l'illustration. Réservé aux
   // cartes aquatiques : ailleurs, ce sont des taches claires sans raison.
   bulles: false,
+  // Le palier de rareté, tel que le sert `bot/core/tcg_cartes.py`. Le défaut
+  // est `indefinie` et pas le palier le plus bas : une carte dont le palier
+  // n'est pas décidé n'est pas une carte commune.
+  rarete: 'indefinie',
   intensite: 1, parallaxe: 1,
   reflet: true, pulsation: true, debordement: true, selectionnee: false,
 };
 
 const BORDS = ['haut', 'bas', 'gauche', 'droite'];
+
+// Les six paliers de la base Notion, plus l'absence de palier. Les CLÉS sont
+// celles du YAML (sans accent, lisibles dans un attribut) ; les libellés sont
+// ce qui s'écrit sur la carte.
+//
+// 🚨 « INDÉFINIE » s'affiche, il ne se cache pas. Deux cartes sur cinq n'ont
+// pas de palier saisi dans Notion au 2026-09-09 : masquer le cartouche les
+// ferait passer pour des cartes sans rareté, alors qu'elles en ont une qui
+// n'est pas encore écrite. Un blanc muet se lit comme une réponse.
+const RARETES = {
+  ame: 'ÂME',
+  fidele: 'FIDÈLE',
+  ame_promise: 'ÂME PROMISE',
+  elu: 'ÉLU',
+  ange: 'ANGE',
+  archange: 'ARCHANGE',
+  indefinie: 'INDÉFINIE',
+};
+
+// Les paliers qui reçoivent le traitement de faveur — liseré doublé, nom en
+// foil. Ils sont ÉNUMÉRÉS et pas calculés par un seuil sur l'ordre : deux
+// paliers existent en base aujourd'hui (`ange`, `archange`), et écrire un
+// seuil ordonné ferait entrer `elu` et `ame_promise` dans le traitement le
+// jour où quelqu'un les saisira, sans que personne ne l'ait décidé.
+const RARETES_HAUTES = new Set(['ange', 'archange']);
 
 /** Construit une carte de héros. Rend `{ boite, detruire }`.
  *
@@ -632,7 +661,19 @@ export function carteHero(carte, options = {}) {
     h('span', { class: 'chero-cout-lbl', text: 'ULTIME' }),
   );
 
-  const nom = h('span', { class: 'chero-nom', text: c.nom });
+  // Le cartouche de rareté, sous le coût. Il monte au MÊME Z que lui (70) et
+  // compense la perspective comme lui (`data-net`) : il porte du texte de
+  // 9 px, et 6,4 % d'agrandissement suffisent à l'empâter.
+  const cartouche = h('div', { class: 'chero-rarete', 'data-z': '70', 'data-net': '1' },
+    h('span', { text: RARETES[c.rarete] || RARETES.indefinie }));
+
+  // 🚨 Le nom en FOIL, et seulement sur les cartes qui portent déjà le
+  // vitrage EN SURFACE. Sur la variante `bords`, l'irisation est confinée au
+  // liseré par choix — un titre irisé la ferait déborder au milieu de la
+  // carte, ce que la variante existe justement pour éviter.
+  const nomFoil = c.holographique && !holoBords && RARETES_HAUTES.has(c.rarete);
+  const nom = h('span', {
+    class: `chero-nom${nomFoil ? ' chero-nom--foil' : ''}`, text: c.nom });
   const bas = h('div', { class: 'chero-bas', 'data-z': '70', 'data-net': '1' },
     h('div', {}, nom),
     h('div', { class: 'chero-fiche' },
@@ -642,10 +683,22 @@ export function carteHero(carte, options = {}) {
       ),
       h('p', { class: 'chero-desc', text: c.description }),
       h('p', { class: 'chero-ambiance', text: c.ambiance }),
+      // 🚨 Une stat à ZÉRO n'est pas une petite stat : c'est une stat qui
+      // n'est pas décidée (cf. l'en-tête de `tcg/cartes.yaml`). Elle passe
+      // donc au NEUTRE. Peinte en rouge vif comme un vrai 9, elle prétend
+      // être une valeur de jeu — c'est ce que faisaient les cinq cartes
+      // jusqu'au 2026-09-09.
+      //
+      // ⚠️ Les trois teintes ne suivent PAS `--chero-acc`, et c'est
+      // délibéré : rouge/vert/violet distinguent l'attaque, les PV et l'aura
+      // d'un coup d'œil. Les fondre dans l'accent de la carte ferait joli et
+      // coûterait le seul code de lecture des stats.
       h('div', { class: 'chero-stats' },
-        h('span', { class: 'chero-stat chero-stat-atk', text: `ATK ${c.atk}` }),
-        h('span', { class: 'chero-stat chero-stat-pv', text: `PV ${c.pv}` }),
-        h('span', { class: 'chero-stat chero-stat-aura', text: `AURA ${c.aura}` }),
+        ...[['atk', 'ATK', c.atk], ['pv', 'PV', c.pv], ['aura', 'AURA', c.aura]]
+          .map(([cle, libelle, valeur]) => h('span', {
+            class: `chero-stat chero-stat-${cle}${valeur ? '' : ' chero-stat--vide'}`,
+            text: `${libelle} ${valeur}`,
+          })),
       ),
     ),
   );
@@ -659,10 +712,14 @@ export function carteHero(carte, options = {}) {
     apLibre,
     bord,
     cout,
+    cartouche,
     bas,
   );
 
-  const racine = h('div', { class: 'chero' },
+  // Le palier part en ATTRIBUT et pas en classe : le CSS a besoin de le
+  // lire, et un attribut nommé dit ce qu'il porte là où `chero--ange` ne dit
+  // rien.
+  const racine = h('div', { class: 'chero', 'data-rarete': c.rarete },
     h('div', { class: 'chero-ombre' }), plateau);
   racine.style.cssText = `--chero-acc:${c.accent}`
     + `;--chero-cote:${c.heroCote}`
@@ -688,7 +745,7 @@ export function carteHero(carte, options = {}) {
 
   // ── Le comportement ─────────────────────────────────────────────────────
   const etat = { survol: false, visible: true, vent: 0 };
-  const zEls = [bord, cout, bas];
+  const zEls = [bord, cout, cartouche, bas];
   const particulesCarte = canvas ? particules(canvas, etat, c.particules) : null;
   let dansBoucle = false;
   let minuteurAplat = 0;
