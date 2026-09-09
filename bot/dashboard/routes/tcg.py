@@ -11,16 +11,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from bot.core.tcg_cartes import CARTES, en_json
+from bot.core.tcg_cartes import en_json, par_prestige
 
 public_router = APIRouter()
 
 
 @public_router.get("/tcg/cartes")
 async def cartes() -> dict:
-    """Les cartes terminées, dans l'ordre du registre.
+    """Les cartes, de la plus haute à la plus basse.
 
-    L'ordre compte : c'est celui de la collection à l'écran, et il dit dans
-    quel ordre les cartes ont été finies.
+    L'ordre compte : c'est celui de la collection à l'écran. Il n'est PLUS
+    celui du fichier depuis le 2026-09-09 — le fichier garde l'ordre de
+    finition, et `par_prestige()` le reclasse. Le tri est fait ici et pas dans
+    la page : le rang d'une carte appartient à la carte, et une page qui le
+    recalculerait finirait par en avoir sa propre idée.
     """
-    return {"cartes": [en_json(c) for c in CARTES.values()]}
+    return {"cartes": [en_json(c) for c in par_prestige()]}

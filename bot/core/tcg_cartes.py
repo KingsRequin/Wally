@@ -238,6 +238,32 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
 CARTES: dict[str, CarteTcg] = _lire(CHEMIN_CARTES)
 
 
+def par_prestige() -> list[CarteTcg]:
+    """Les cartes de la plus haute à la plus basse, pour la collection.
+
+    🚨 Le classement dérive de l'HOLOGRAPHIE, pas du champ `rarete`, et c'est
+    une décision de l'owner (2026-09-09) et non un raccourci. Trier par palier
+    donnerait Azraël, rhae, Claker, puis Lilith et KingsRequin — alors que
+    KingsRequin doit venir TROISIÈME. Son palier n'est pas saisi dans Notion,
+    et il ne le sera peut-être pas de sitôt ; son traitement visuel, lui, est
+    déjà tranché. C'est le liseré irisé qui dit son rang, pas une case vide.
+
+    Trois rangs, et pas six : ce sont exactement les trois traitements que le
+    rendu sait faire — le vitrage en surface, le vitrage au liseré, rien. Un
+    quatrième rang serait un classement que l'écran ne saurait pas montrer.
+
+    ⚠️ `sorted` est STABLE : à rang égal, l'ordre du fichier départage, et il
+    dit dans quel ordre les cartes ont été finies. C'est ce qui met Azraël
+    avant rhae et Claker avant Lilith, sans qu'aucune règle ne l'écrive.
+    """
+    def rang(carte: CarteTcg) -> int:
+        if not carte.holographique:
+            return 0
+        return 1 if carte.holo_zone == "bords" else 2
+
+    return sorted(CARTES.values(), key=rang, reverse=True)
+
+
 def normaliser(nom: str) -> str:
     """Un nom réduit à ce qui compte : minuscules, sans accent, sans marges.
 

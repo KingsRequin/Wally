@@ -29,8 +29,10 @@
 # lève au chargement. Écrite à la main, elle disait l'humeur de l'illustration
 # et rien du jeu.
 #
-# ⚠️ L'ORDRE COMPTE : c'est celui de la collection à l'écran, et il dit dans
-# quel ordre les cartes ont été finies.
+# ⚠️ L'ORDRE COMPTE, mais ce n'est PLUS celui de la collection à l'écran
+# depuis le 2026-09-09 : `par_prestige()` la reclasse de la plus haute à la
+# plus basse. Ici, l'ordre dit dans quel ordre les cartes ont été FINIES — et
+# c'est lui qui départage deux cartes de même rang, le tri étant stable.
 #
 # ⚠️ Une carte n'entre ici que si son ILLUSTRATION EXISTE. Ce n'est pas la
 # liste des cartes prévues, c'est la liste de celles qu'on peut montrer : le

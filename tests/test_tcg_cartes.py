@@ -235,8 +235,11 @@ def test_une_cle_en_double_refuse_le_fichier(tmp_path):
 
 
 def test_l_ordre_du_fichier_est_celui_du_registre(tmp_path):
-    """L'ordre dit dans quel ordre les cartes ont été finies : c'est celui de
-    la collection sur `/tcg`, pas un détail de sérialisation."""
+    """L'ordre du fichier dit dans quel ordre les cartes ont été finies.
+
+    ⚠️ Ce n'est PLUS celui de la collection à l'écran depuis le 2026-09-09 :
+    `par_prestige()` la reclasse. Il reste ce qui DÉPARTAGE deux cartes de
+    même rang, donc il compte toujours."""
     cartes = tcg_cartes._lire(_fichier(tmp_path, [
         _carte_valide(cle="un"), _carte_valide(cle="deux"), _carte_valide(cle="trois")]))
     assert list(cartes) == ["un", "deux", "trois"]
@@ -319,3 +322,26 @@ def test_la_rarete_part_au_front():
     """Un champ que le front ne reçoit pas n'existe pas pour lui."""
     from bot.core.tcg_cartes import en_json
     assert en_json(tcg_cartes.CARTES["azrael"])["rarete"] == "archange"
+
+
+def test_le_prestige_suit_l_holo_et_non_le_palier():
+    """🚨 Le classement dérive de l'HOLOGRAPHIE, pas de `rarete`.
+
+    KingsRequin doit venir troisième — son palier n'est pas saisi dans Notion,
+    mais son liseré irisé dit son rang. Trier par palier le renverrait derrière
+    Claker (`ame`), et c'est justement la régression qu'on ne verrait pas.
+    """
+    ordre = [c.cle for c in tcg_cartes.par_prestige()]
+    assert ordre == ["azrael", "rhae", "kingsrequin", "claker", "lilith"], ordre
+    assert tcg_cartes.CARTES["kingsrequin"].rarete == "indefinie"
+    assert tcg_cartes.CARTES["claker"].rarete == "ame"
+
+
+def test_a_rang_egal_l_ordre_du_fichier_departage():
+    """Le tri est STABLE : deux cartes de même traitement gardent l'ordre de
+    finition. C'est ce qui met Azraël avant rhae sans qu'aucune règle ne
+    l'écrive — et un tri instable les ferait permuter d'un boot à l'autre."""
+    ordre = [c.cle for c in tcg_cartes.par_prestige()]
+    fichier = list(tcg_cartes.CARTES)
+    surface = [c for c in ordre if c in ("azrael", "rhae")]
+    assert surface == [c for c in fichier if c in ("azrael", "rhae")]

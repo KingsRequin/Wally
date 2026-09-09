@@ -1,12 +1,19 @@
 """La route publique des cartes du TCG."""
 
 
-def test_la_route_rend_les_cartes_dans_l_ordre_du_registre(overlay_client):
+def test_la_route_rend_les_cartes_de_la_plus_haute_a_la_plus_basse(overlay_client):
+    """L'ordre de la route EST celui de la collection à l'écran.
+
+    🚨 Il ne suit pas le champ `rarete` : KingsRequin passe TROISIÈME alors
+    que son palier n'est pas saisi. C'est son liseré irisé qui dit son rang.
+    Trier par palier le renverrait en queue, derrière Claker — la régression
+    serait invisible en lecture de code.
+    """
     r = overlay_client.get("/api/public/tcg/cartes")
     assert r.status_code == 200
     cartes = r.json()["cartes"]
     assert [c["nom"] for c in cartes] == [
-        "AZRAËL", "CLAKER", "RHAE", "LILITH", "KINGSREQUIN"]
+        "AZRAËL", "RHAE", "KINGSREQUIN", "CLAKER", "LILITH"]
 
 
 def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):
