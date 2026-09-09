@@ -588,6 +588,43 @@
   padding: 0 8px;
 }
 
+/* ── Le vernis ───────────────────────────────────────────────────────────
+ * La tache de lumière qui glisse sur le plastique quand la carte bouge.
+ * Reprise de `.card__glare` chez `simeydotme/pokemon-cards-css`, qui en a
+ * DEUX du même genre là où nous n'avions que le chatoiement : la pellicule
+ * imprimée sous le plastique d'un côté, le reflet du plastique lui-même de
+ * l'autre. C'est la seconde qui manquait pour que la carte ait l'air d'un
+ * OBJET et pas d'une image.
+ *
+ * 🚨 Toutes les cartes l'ont, y compris les communes — une carte commune est
+ * vernie elle aussi. C'est justement ce qui en fait la seule couche qui ne
+ * dit rien de la rareté, donc la seule qui ne la brouille pas.
+ *
+ * 🚨 `overlay` et un dégradé qui va du BLANC au NOIR, pas du blanc au
+ * transparent : en `overlay`, le gris moyen est le neutre. Le blanc du centre
+ * éclaircit, le noir du pourtour assombrit, et c'est ce contraste qui donne
+ * le bombé du plastique. Un dégradé vers le transparent ne ferait qu'un halo
+ * clair posé dessus.
+ *
+ * 🚨 AUCUNE animation en boucle, comme le chatoiement : la couche ne bouge
+ * que quand `incliner()` écrit ses deux variables, et elle est à
+ * `opacity: 0` au repos. */
+.chero-vernis {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity .45s ease;
+  mix-blend-mode: overlay;
+  background-image: radial-gradient(
+    farthest-corner circle at var(--chero-vernis-x, 50%) var(--chero-vernis-y, 50%),
+    rgba(255, 255, 255, .85) 8%,
+    rgba(255, 255, 255, .55) 22%,
+    rgba(0, 0, 0, .5) 90%);
+}
+
 /* ── Le cartouche de rareté ──────────────────────────────────────────────
  * Sous le bandeau de coût, en haut à gauche : le palier de la carte, repris
  * de la base Notion. C'est le SEUL endroit où la rareté est écrite — elle

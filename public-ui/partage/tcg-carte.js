@@ -192,6 +192,11 @@ const OEIL = (() => {
 // sur les trois cartes, pas au calcul.
 const OPACITE_HOLO = 0.8;
 
+// L'intensité du VERNIS. Bien plus basse que le chatoiement : le vernis passe
+// sur la carte ENTIÈRE, texte compris, et son travail est de faire croire au
+// plastique — pas de se voir. Au-delà, il lave la fiche crème et les stats.
+const OPACITE_VERNIS = 0.34;
+
 // ── Le vitrage irisé ──────────────────────────────────────────────────────
 // Le chatoiement seul rend des BANDES : joli, mais lisse. Une vraie carte
 // holographique porte une GRAVURE — un pavage de cellules, et dans chacune des
@@ -667,6 +672,24 @@ export function carteHero(carte, options = {}) {
   const cartouche = h('div', { class: 'chero-rarete', 'data-z': '70', 'data-net': '1' },
     h('span', { text: RARETES[c.rarete] || RARETES.indefinie }));
 
+  // Le VERNIS : la tache de lumière qui glisse sur le plastique quand on
+  // bouge la carte. Toutes les cartes l'ont — une commune est vernie elle
+  // aussi — ce qui en fait la seule couche qui ne dit RIEN de la rareté, et
+  // c'est pour ça qu'elle ne la brouille pas.
+  //
+  // 🚨 Elle est distincte du chatoiement, et les deux ne font pas double
+  // emploi : le vitrage est la PELLICULE imprimée sous le plastique, le
+  // vernis est le reflet du plastique lui-même. `pokemon-cards-css` en a
+  // deux du même genre (`.card__shine` et `.card__glare`) ; on n'avait que
+  // la première, et c'est ce qui manquait pour que la carte ait l'air d'un
+  // objet et pas d'une image.
+  //
+  // Z 75 : au-dessus du coût, du cartouche et de la fiche (70). Un vernis
+  // passe sur la carte ENTIÈRE, texte compris — s'arrêter au bord de la
+  // fiche dessinerait la découpe d'un autocollant.
+  const vernis = h('div', { class: 'chero-vernis', 'data-z': '75', 'data-net': '1',
+                            'aria-hidden': 'true' });
+
   // 🚨 Le nom en FOIL, et seulement sur les cartes qui portent déjà le
   // vitrage EN SURFACE. Sur la variante `bords`, l'irisation est confinée au
   // liseré par choix — un titre irisé la ferait déborder au milieu de la
@@ -714,6 +737,7 @@ export function carteHero(carte, options = {}) {
     cout,
     cartouche,
     bas,
+    vernis,
   );
 
   // Le palier part en ATTRIBUT et pas en classe : le CSS a besoin de le
@@ -745,7 +769,7 @@ export function carteHero(carte, options = {}) {
 
   // ── Le comportement ─────────────────────────────────────────────────────
   const etat = { survol: false, visible: true, vent: 0 };
-  const zEls = [bord, cout, cartouche, bas];
+  const zEls = [bord, cout, cartouche, bas, vernis];
   const particulesCarte = canvas ? particules(canvas, etat, c.particules) : null;
   let dansBoucle = false;
   let minuteurAplat = 0;
@@ -900,6 +924,12 @@ export function carteHero(carte, options = {}) {
       holo.style.setProperty('--chero-holo-x', `${(50 + nx * 160).toFixed(1)}%`);
       holo.style.setProperty('--chero-holo-y', `${(50 + ny * 160).toFixed(1)}%`);
     }
+    // La tache de lumière suit le pointeur, et DÉBORDE volontairement de la
+    // carte (l'amplitude vaut 120 % pour ±0,5 d'inclinaison) : une tache qui
+    // reste dans le cadre se lit comme un disque peint dessus, pas comme un
+    // reflet qui entre et sort par le bord.
+    vernis.style.setProperty('--chero-vernis-x', `${(50 + nx * 120).toFixed(1)}%`);
+    vernis.style.setProperty('--chero-vernis-y', `${(50 + ny * 120).toFixed(1)}%`);
     if (bords.gauche) bords.gauche.style.opacity = eclat(lx);
     if (bords.droite) bords.droite.style.opacity = eclat(-lx);
     if (bords.haut) bords.haut.style.opacity = eclat(ly);
@@ -978,6 +1008,11 @@ export function carteHero(carte, options = {}) {
     cadres.style.opacity = '1';
     if (reflet) { reflet.style.visibility = 'visible'; reflet.style.opacity = '.9'; }
     if (holo) holo.style.opacity = String(OPACITE_HOLO);
+    // 🚨 Le vernis s'allume au survol comme le chatoiement, il ne vit pas en
+    // permanence. Au repos il n'a rien à refléter — rien ne bouge — et vingt
+    // cartes en grille lui coûteraient vingt calques mélangés pour une tache
+    // immobile.
+    vernis.style.opacity = String(OPACITE_VERNIS);
     if (!SOBRE()) nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (particulesCarte) particulesCarte.bouffee();
     if (c.debordement) {
@@ -1014,6 +1049,7 @@ export function carteHero(carte, options = {}) {
     if (bullesPres) bullesPres.style.transform = '';
     if (reflet) { reflet.style.opacity = '0'; reflet.style.visibility = 'hidden'; }
     if (holo) holo.style.opacity = '0';
+    vernis.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
     libre.style.opacity = '0';
