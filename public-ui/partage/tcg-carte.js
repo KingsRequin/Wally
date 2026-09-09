@@ -197,6 +197,15 @@ const OPACITE_HOLO = 0.8;
 // plastique — pas de se voir. Au-delà, il lave la fiche crème et les stats.
 const OPACITE_VERNIS = 0.34;
 
+// Le temps que les calques de survol prennent la place de ceux du repos.
+// Pendant ce laps, les couches ne bougent PAS d'un pixel : c'est ce qui rend
+// le fondu invisible, les deux images étant alors superposables.
+//
+// 🚨 Il doit couvrir le fondu ENTIER, délai du plan le plus tardif compris —
+// `--chero-fondu` (90 ms) plus l'échelon du héros (30 ms) dans le CSS. Le
+// raccourcir remet le fantôme.
+const BASCULE_PLANS_MS = 120;
+
 // ── Le vitrage irisé ──────────────────────────────────────────────────────
 // Le chatoiement seul rend des BANDES : joli, mais lisse. Une vraie carte
 // holographique porte une GRAVURE — un pavage de cellules, et dans chacune des
@@ -921,7 +930,21 @@ export function carteHero(carte, options = {}) {
   /** L'avancement du dépliage, de 0 à 1, adouci. */
   const ouverture = () => {
     if (!ouvertA) return 1;
-    const t = Math.min(1, (performance.now() - ouvertA) / lissageMs);
+    // 🚨 RIEN NE BOUGE tant que les plans n'ont pas fini de basculer. Les
+    // calques de survol prennent la place de ceux du repos par un fondu ; tant
+    // qu'il dure, les deux sont à l'écran, et il faut qu'ils COÏNCIDENT —
+    // sinon on voit deux héros l'un sur l'autre. C'est le défaut signalé par
+    // l'owner le 2026-09-09 (« comme si les deux étaient superposés »),
+    // reproduit en filmant l'ouverture image par image : à la deuxième, deux
+    // héros en fondu croisé, décalés.
+    //
+    // Le mouvement partait AVANT la fin du fondu — et pas d'un peu :
+    // `1 - (1 - t)³` a une dérivée de 3 à l'origine, le héros faisait 27 % de
+    // son parcours dans les 5 % premiers du temps. Retarder le fondu ne
+    // suffisait pas, il fallait retarder le MOUVEMENT.
+    const ecoule = performance.now() - ouvertA - BASCULE_PLANS_MS;
+    if (ecoule <= 0) return 0;
+    const t = Math.min(1, ecoule / Math.max(1, lissageMs - BASCULE_PLANS_MS));
     // La même allure que les transitions CSS des autres couches : parti vite,
     // fini doucement. Le héros doit les accompagner, pas les devancer.
     return 1 - (1 - t) ** 3;

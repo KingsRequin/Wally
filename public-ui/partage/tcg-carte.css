@@ -107,6 +107,22 @@
    * 350 ms, ce qui se lit comme un saut et non comme un dépliage. */
   --chero-depli: .45s;
   --chero-etape: .05s;
+  /* La bascule d'un PLAN : le calque de survol prend la place de celui du
+   * repos. Court, et surtout SYNCHRONE des deux côtés — les deux moitiés d'une
+   * paire partagent durée et délai, sinon il y a un trou (les deux à zéro) ou
+   * un fantôme (les deux à un). 90 ms : assez pour ne pas claquer, assez peu
+   * pour tenir dans les 120 ms où `ouverture()` immobilise les couches. */
+  --chero-fondu: .09s;
+  /* L'ÉCHELON DES PLANS, du plus proche au plus lointain. L'avant-plan bascule
+   * en premier (délai zéro), le héros ensuite.
+   *
+   * 🚨 L'ordre n'est pas décoratif. Le calque libre du héros monte à Z 56 et
+   * celui de l'avant-plan à Z 62 : si le héros bascule le premier, il se
+   * retrouve à 56 face à un avant-plan de REPOS resté à zéro, et il lui passe
+   * DEVANT. Vu sur Claker — le héros par-dessus les pieds pendant la
+   * transition, signalé par l'owner le 2026-09-09. */
+  --chero-plan-avant: 0s;
+  --chero-plan-hero: .03s;
   --chero-acc: #ffb02e;
   --chero-cote: -14%;
   --chero-haut: 4%;
@@ -419,7 +435,11 @@
   left: var(--chero-cote);
   right: var(--chero-cote);
   top: var(--chero-haut);
-  transition: opacity .28s ease;
+  /* Exactement la transition de `.chero-libre` : c'est la même bascule vue de
+   * l'autre côté. Elles avaient des durées différentes (0,28 s ici, 0,45 s
+   * avec 0,10 s de délai là-bas) — le repos s'effaçait donc avant que le
+   * survol n'arrive, puis les deux se chevauchaient longuement. */
+  transition: opacity var(--chero-fondu) ease var(--chero-plan-hero);
 }
 
 /* Le calque de survol a son PROPRE cadrage : son illustration peut être une
@@ -442,14 +462,18 @@
    *
    * Sous le curseur, le mode interactif la pose en JS le temps de l'entrée
    * puis la retire, comme pour le plateau. */
-  transition: opacity var(--chero-depli) ease calc(var(--chero-etape) * 2),
-              visibility var(--chero-depli) calc(var(--chero-etape) * 2);
+  transition: opacity var(--chero-fondu) ease var(--chero-plan-hero),
+              visibility var(--chero-fondu) var(--chero-plan-hero);
   transform-origin: 50% 100%;
   /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
    * texte doit rester lisible sous lui. */
   clip-path: inset(-60% -30% 0 -30%);
 }
 
+/* ⚠️ Ces trois règles étaient écrites DEUX FOIS à la suite, à l'identique —
+ * un greffon appliqué deux fois. Sans effet visible, mais deux endroits à
+ * corriger pour un seul changement, et c'est le genre de doublon qui fait
+ * qu'une moitié bouge et pas l'autre. */
 .chero-ap-clip,
 .chero-ap-libre {
   position: absolute;
@@ -460,19 +484,7 @@
 
 .chero-ap-clip {
   transform: translateX(-50%);
-  transition: opacity .28s ease;
-}
-
-.chero-ap-libre {
-  position: absolute;
-  left: 50%;
-  bottom: var(--chero-ap-bas);
-  width: var(--chero-ap-largeur);
-}
-
-.chero-ap-clip {
-  transform: translateX(-50%);
-  transition: opacity .28s ease;
+  transition: opacity var(--chero-fondu) ease var(--chero-plan-avant);
 }
 
 .chero-ap-libre {
@@ -480,7 +492,10 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .2s ease, visibility .2s,
+  /* Le `transform` garde sa durée propre : c'est le MOUVEMENT de la couche,
+   * pas sa bascule. */
+  transition: opacity var(--chero-fondu) ease var(--chero-plan-avant),
+              visibility var(--chero-fondu) var(--chero-plan-avant),
               transform .4s cubic-bezier(.2, .9, .2, 1);
   transform-origin: 50% 50%;
 }
