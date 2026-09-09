@@ -183,7 +183,172 @@ const OEIL = (() => {
 // ⚠️ Indépendant de `gainReflet`, qui règle l'éclat des quatre BORDS. Les
 // multiplier ensemble portait l'holo à 0,80 sur l'overlay — la carte y était
 // repeinte.
-const OPACITE_HOLO = 0.62;
+//
+// ⚠️ 0,62 → 0,80 le 2026-09-09, choisi sur un banc à trois valeurs capturé
+// côte à côte (0,45 · 0,80 · 1,0). La couche est passée SOUS le héros et dans
+// le fond : elle n'a plus à se retenir pour préserver le personnage, il est
+// devant. Et le fond d'Azraël est une explosion orange claire — en dessous de
+// 0,8, le vitrage s'y noie. C'est un réglage d'OEIL : il se juge à l'écran,
+// sur les trois cartes, pas au calcul.
+const OPACITE_HOLO = 0.8;
+
+// ── Le vitrage irisé ──────────────────────────────────────────────────────
+// Le chatoiement seul rend des BANDES : joli, mais lisse. Une vraie carte
+// holographique porte une GRAVURE — un pavage de cellules, et dans chacune des
+// anneaux concentriques qui parcourent l'arc-en-ciel en s'éloignant de
+// l'arête. C'est ce motif-là qui fait « carte holo » et pas « dégradé ».
+//
+// 🚨 La tuile est une IMAGE COULEUR, pas un masque. Un masque monochrome ne
+// peut que doser l'irisation déjà présente — essayé le 2026-09-09, capturé :
+// on obtenait des facettes plus ou moins vives, jamais un anneau rouge à côté
+// d'un anneau cyan. La teinte doit être DANS la texture.
+//
+// 🚨 Elle est CUITE UNE FOIS, rangée dans `--chero-voronoi` sur `<html>` et
+// partagée par TOUTES les cartes. La calculer par carte referait la même
+// boucle cinq fois pour une image identique ; la calculer par image serait un
+// pavage de Voronoï à 60 Hz. La couche ne porte au final qu'un fond statique
+// de plus, et le mouvement reste ce qu'il était : le dégradé qui GLISSE
+// dessous, et que la gravure multiplie.
+//
+// 🚨 Le fond des joints est NOIR et non gris. La couche est en
+// `plus-lighter` : le noir n'ajoute rien, un gris ajouterait un voile sur
+// toute la carte, y compris là où il n'y a aucun reflet à montrer.
+//
+// 🚨 La tuile est SANS COUTURE — les distances sont prises sur un TORE
+// (`dx > T/2 → T − dx`). Sans ça, la répétition dessine une grille de joints
+// rectilignes à chaque tuile : on lit un carrelage, pas un vitrage.
+//
+// 🚨 Le tirage est DÉTERMINISTE (générateur à graine fixe). Avec `Math.random`
+// la carte n'aurait pas deux fois la même gravure, et une capture d'écran ne
+// prouverait plus rien d'un rendu à l'autre.
+const VORONOI_TUILE = 256;
+// 🚨 La cellule à l'écran vaut `background-size / VORONOI_COTE`. La tuile est
+// posée à sa taille NATIVE (256 px) : les anneaux font deux à trois pixels, et
+// les réduire au filtrage les moyennerait en un aplat.
+// 12 × 12 germes dans une tuile POSÉE à 96 px : la cellule fait 8 px et le
+// vitrage se lit comme un grain, pas comme des plaques de couleur. C'est le
+// grain retenu par l'owner le 2026-09-09, après deux jets plus gros écartés à
+// l'écran — 32 px, puis 21 px. La MÊME valeur sur la surface et sur le
+// liseré : elle a été jugée sur le liseré de KingsRequin, et reprise telle
+// quelle sur Azraël et Rhae.
+//
+// 🚨 La tuile est cuite à 256 px et posée à 96, donc RÉDUITE d'un facteur
+// 0,37 — et c'est voulu. Les anneaux font deux à trois pixels dans la tuile ;
+// le filtrage du navigateur les fond en un dégradé continu au lieu de les
+// crêner. Cuire directement à 96 px donnerait le même grain pour quatre fois
+// moins cher, mais avec l'escalier que ce suréchantillonnage évite.
+const VORONOI_COTE = 12;
+// Combien de fois l'arc-en-ciel se répète du bord vers le cœur d'une cellule.
+// 2,5 et non 3,5 : dans une cellule de 21 px, trois anneaux et demi tombent
+// sous la largeur du pixel.
+const VORONOI_ANNEAUX = 2.5;
+
+let voronoiCuit = false;
+
+/** Cuit le vitrage et le range dans `--chero-voronoi` sur `<html>`.
+ *
+ * Appelée à la PREMIÈRE carte holographique, et une seule fois : une page sans
+ * carte holo ne paie rien. Différée hors du chemin de construction — la boucle
+ * fait 9,4 M d'itérations, chronométrées à 32 ms au navigateur le 2026-09-09,
+ * et la couche irisée est à `opacity: 0` tant que personne ne penche la
+ * carte. Tant que la tuile n'est pas là, la couche
+ * retombe sur son repli `none` : la carte garde son chatoiement sans gravure,
+ * jamais un trou.
+ */
+function cuireVoronoi() {
+  if (voronoiCuit) return;
+  voronoiCuit = true;
+  const differer = window.requestIdleCallback || ((f) => setTimeout(f, 0));
+  differer(() => {
+    const T = VORONOI_TUILE;
+    const cv = document.createElement('canvas');
+    cv.width = T;
+    cv.height = T;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    // LCG à graine fixe (Numerical Recipes) : même gravure à chaque
+    // chargement, sur chaque machine.
+    let graine = 0x9e3779b9;
+    const alea = () => {
+      graine = (graine * 1664525 + 1013904223) >>> 0;
+      return graine / 4294967296;
+    };
+    // Les germes sortent d'une grille SECOUÉE, pas d'un tirage libre : au
+    // hasard pur ils se groupent, et le pavage alterne des cellules énormes et
+    // des échardes — ça se lit comme du bruit, pas comme un vitrage.
+    const pas = T / VORONOI_COTE;
+    const gx = [];
+    const gy = [];
+    const decal = [];
+    const gain = [];
+    for (let j = 0; j < VORONOI_COTE; j++) {
+      for (let i = 0; i < VORONOI_COTE; i++) {
+        gx.push((i + 0.18 + alea() * 0.64) * pas);
+        gy.push((j + 0.18 + alea() * 0.64) * pas);
+        // Chaque cellule démarre son arc-en-ciel à une teinte différente,
+        // sinon toutes portent les mêmes anneaux et le pavage se lit comme un
+        // papier peint.
+        decal.push(alea());
+        // Et toutes ne brillent pas pareil : c'est cet écart qui donne
+        // l'impression d'éclats qui accrochent la lumière chacun leur tour.
+        gain.push(0.55 + alea() * 0.45);
+      }
+    }
+    const img = ctx.createImageData(T, T);
+    const d = img.data;
+    // La largeur du joint gravé, où la couleur s'éteint vers le noir.
+    const joint = pas * 0.22;
+    // Sur quelle distance l'arc-en-ciel se déroule du bord vers le cœur.
+    const rayon = pas * 0.9;
+    for (let y = 0; y < T; y++) {
+      for (let x = 0; x < T; x++) {
+        let f1 = Infinity;
+        let f2 = Infinity;
+        let cel = 0;
+        for (let k = 0; k < gx.length; k++) {
+          let dx = Math.abs(x - gx[k]);
+          if (dx > T / 2) dx = T - dx;
+          let dy = Math.abs(y - gy[k]);
+          if (dy > T / 2) dy = T - dy;
+          const dd = dx * dx + dy * dy;
+          if (dd < f1) { f2 = f1; f1 = dd; cel = k; }
+          else if (dd < f2) { f2 = dd; }
+        }
+        // F2 − F1 s'annule EXACTEMENT sur l'arête entre deux germes et croît
+        // vers le cœur : c'est à la fois la gravure et la coordonnée des
+        // anneaux, et elle sort sans construire le moindre polygone.
+        const e = Math.sqrt(f2) - Math.sqrt(f1);
+        const b = Math.min(1, e / joint);
+        // Le joint, lissé en `smoothstep` : sans lissage il crénelle.
+        const eclat = b * b * (3 - 2 * b) * gain[cel];
+        // La teinte tourne avec la distance à l'arête — d'où les anneaux.
+        let t = (e / rayon) * VORONOI_ANNEAUX + decal[cel];
+        t -= Math.floor(t);
+        // HSL(t, 100 %, 50 %) → RGB, écrit à plat : la roue en trois rampes
+        // triangulaires. Passer par `ctx.fillStyle` coûterait 65 536 analyses
+        // de chaîne de caractères.
+        const h = t * 6;
+        const o = (y * T + x) * 4;
+        d[o] = Math.round(Math.max(0, Math.min(1, Math.abs(h - 3) - 1)) * eclat * 255);
+        d[o + 1] = Math.round(Math.max(0, Math.min(1, 2 - Math.abs(h - 2))) * eclat * 255);
+        d[o + 2] = Math.round(Math.max(0, Math.min(1, 2 - Math.abs(h - 4))) * eclat * 255);
+        d[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    // 🚨 Un BLOB, pas un `toDataURL`. Le vitrage est une image en couleurs
+    // pures : elle compresse mal, et son data-URI pesait 232 ko — 232 ko de
+    // CHAÎNE posés dans une custom property, relus à chaque `getComputedStyle`
+    // et gonflés d'un tiers par le base64. L'URL d'objet en fait cinquante.
+    // Elle n'est jamais révoquée : elle vit aussi longtemps que le document,
+    // exactement comme la tuile qu'elle désigne.
+    cv.toBlob((blob) => {
+      if (!blob) return;
+      document.documentElement.style.setProperty(
+        '--chero-voronoi', `url("${URL.createObjectURL(blob)}")`);
+    }, 'image/png');
+  });
+}
 
 /** Les millisecondes d'une durée CSS (« .85s », « 450ms »). */
 function enMs(valeur, defaut) {
@@ -369,6 +534,7 @@ export function carteHero(carte, options = {}) {
   // être l'enfant. Posé dans un cadrage à plat comme l'autre, il se décalait
   // du liseré dès que la carte s'ouvre — le reflet flottait à côté du cadre.
   const holoBords = c.holographique && c.holoZone === 'bords';
+  if (c.holographique) cuireVoronoi();
   const holo = c.holographique
     ? h('div', { class: `chero-holo${holoBords ? ' chero-holo--bords' : ''}` })
     : null;
@@ -380,9 +546,20 @@ export function carteHero(carte, options = {}) {
     ? h('div', { class: 'chero-bulles chero-bulles--loin' }, h('div')) : null;
   const bullesPres = c.bulles && !SOBRE()
     ? h('div', { class: 'chero-bulles chero-bulles--pres' }, h('div')) : null;
+  // 🚨 Le chatoiement de surface vit DANS le fond, sous le héros. Décision de
+  // l'owner du 2026-09-09, à l'écran : le vitrage posé par-dessus l'illustration
+  // irisait le personnage lui-même, ce qui le dénature ; seul le FOND est
+  // holographique, le héros reste net devant.
+  //
+  // Il est le dernier enfant du fond, donc au-dessus de la trame, des cadres,
+  // de la vignette et du halo — mais l'illustration du héros est un frère de
+  // `.chero-fond` déclaré APRÈS lui, et le héros libre monte en plus à
+  // `translateZ(56px)` : il passe devant dans les deux régimes, à plat comme
+  // en 3D.
   const fond = h('div', { class: 'chero-fond' },
     l1, l2, l3, cadres, bullesLoin, bullesPres,
-    h('div', { class: 'chero-vignette' }), halo);
+    h('div', { class: 'chero-vignette' }), halo,
+    holoBords ? null : holo);
 
   const avecParticules = c.particules !== 'aucune' && !SOBRE();
   const canvas = avecParticules
@@ -480,10 +657,6 @@ export function carteHero(carte, options = {}) {
     libre,
     apClip ? h('div', { class: 'chero-cadrage' }, apClip) : null,
     apLibre,
-    // Par-dessus l'illustration et l'avant-plan, sous le liseré : le reflet
-    // court sur la SURFACE de la carte. Dans un cadrage, sinon les bandes
-    // dépassent du cadre avec le héros qui déborde.
-    holo && !holoBords ? h('div', { class: 'chero-cadrage' }, holo) : null,
     bord,
     cout,
     bas,

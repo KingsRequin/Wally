@@ -278,13 +278,17 @@
  * penche, comme une carte à collectionner sous une lampe. Réservé à celles
  * qui le déclarent (`holographique`).
  *
- * 🚨 Elle est posée PAR-DESSUS l'illustration, et c'est tout le sujet. Un
- * premier essai la mettait dans le fond, sous le personnage : mesuré au
- * navigateur sur les dix modes de fusion possibles, AUCUN ne produisait
- * d'irisation. Le fond d'Azraël est une explosion orange saturée — un dégradé
- * mélangé dessus rend de l'orange clair ou du jaune, jamais du bleu ni du
- * violet. Un reflet holographique a besoin de passer sur la surface, pas de
- * se cacher dessous.
+ * 🚨 Elle est DANS le fond, sous le héros — arbitrage de l'owner du
+ * 2026-09-09, à l'écran. Posée par-dessus l'illustration, elle irisait le
+ * personnage lui-même : sur une vraie carte, c'est le fond imprimé qui porte
+ * la pellicule, pas le sujet.
+ *
+ * Un essai bien plus ancien avait déjà mis la couche dans le fond et l'avait
+ * ressortie : les dix modes de fusion rendaient alors la même bouillie
+ * orangée sur l'explosion du fond d'Azraël. La cause n'était pas la place
+ * mais le CONTENU — un dégradé translucide mélangé à un fond saturé ne peut
+ * que reprendre sa teinte. Le vitrage, lui, apporte ses propres couleurs
+ * pures en `plus-lighter` : il n'a rien à emprunter au fond.
  *
  * 🚨 Elle s'arrête AVANT la fiche de texte (`bottom: 34%`) : des bandes
  * irisées sur une description grise la rendraient illisible, et l'illisible
@@ -302,27 +306,54 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity .45s ease;
-  /* `plus-lighter` additionne : c'est le seul du banc d'essai qui garde les
-   * teintes du dégradé au lieu de les ramener vers la couleur du dessous. */
-  mix-blend-mode: plus-lighter;
+  /* 🚨 `color-dodge`, et le filtre qui va avec, sont la recette de
+   * `simeydotme/pokemon-cards-css` — la référence du genre, lue le
+   * 2026-09-09 (`public/css/cards/base.css`, `.card__shine`). Elle tient en
+   * une idée : ÉCRASER la couche vers le noir (`brightness` bas, `contrast`
+   * haut) parce qu'en `color-dodge` le noir est NEUTRE. Ne survivent que les
+   * crêtes, qui éclaircissent. C'est ce qui fait qu'un foil se pose sur une
+   * illustration sans l'effacer.
+   *
+   * ⚠️ Le choix précédent — `plus-lighter` — venait d'un banc FAUSSÉ : il
+   * avait été mesuré quand la couche était enterrée sous le héros par la 3D,
+   * et les cinq modes essayés rendaient alors la même luminance. Un banc où
+   * toutes les options donnent le même chiffre ne compare rien. */
+  mix-blend-mode: color-dodge;
   background-image:
+    var(--chero-voronoi, none),
     repeating-linear-gradient(var(--chero-holo-a, 108deg),
-      rgba(255, 0, 128, .72) 0%,
-      rgba(255, 140, 0, .52) 4%,
-      rgba(255, 231, 74, .60) 9%,
-      rgba(0, 255, 200, .70) 15%,
-      rgba(80, 120, 255, .72) 21%,
-      rgba(255, 0, 128, .72) 27%),
-    repeating-linear-gradient(var(--chero-holo-a, 108deg),
-      rgba(255, 255, 255, .13) 0 2px, transparent 2px 6px);
-  background-position: var(--chero-holo-x, 50%) var(--chero-holo-y, 50%), 0 0;
-  background-size: 260% 260%, auto;
-  /* Le flou fond les bandes les unes dans les autres : sans lui on lit des
-   * rayures, pas un reflet. 6 px et non 9 : plus flou, les crêtes se
-   * moyennaient et l'effet virait à un voile uniforme au lieu d'un reflet.
-   * Posé une fois sur une couche qui ne se redessine pas — le mouvement se
-   * fait à la position du dégradé, jamais en refiltrant. */
-  filter: blur(6px) saturate(1.5);
+      #ffffff 0%, #9a9a9a 7%, #3a3a3a 14%, #9a9a9a 21%, #ffffff 27%);
+  background-position: 0 0, var(--chero-holo-x, 50%) var(--chero-holo-y, 50%);
+  background-size: 96px, 260% 260%;
+  /* 🚨 `multiply` sur la PREMIÈRE couche, et l'ordre compte : les fonds se
+   * composent du bas vers le haut, et le mode écrit sur une couche la mélange
+   * au résultat de celles d'en dessous. Le vitrage multiplie donc le dégradé
+   * qui glisse — c'est exactement le partage de rôles voulu : la gravure ne
+   * bouge JAMAIS (une gravure ne se déplace pas quand on penche la carte), et
+   * c'est la lumière qui la parcourt. Les anneaux s'allument et s'éteignent
+   * au fil de l'inclinaison sans qu'aucun pixel du motif ne se déplace.
+   *
+   * `none` en repli : tant que la tuile n'est pas cuite, la couche rend le
+   * chatoiement d'avant, sans gravure. Une `var()` sans repli rendrait toute
+   * la propriété invalide et effacerait le reflet entier. */
+  background-blend-mode: multiply, normal;
+  /* Le triplet de `.card__shine` chez `pokemon-cards-css`, RÉGLÉ pour notre
+   * couche. `contrast` est celui qui compte : il pousse les tons moyens vers
+   * le noir, donc vers le neutre du `color-dodge`, et ne laisse passer que
+   * les crêtes irisées.
+   *
+   * 🚨 1,4 et non les 2,75 de la référence, choisi sur un banc de quatre
+   * filtres capturés côte à côte le 2026-09-09. Leur couche est un dégradé
+   * continu qu'il faut casser pour en tirer des crêtes ; la nôtre est un
+   * vitrage DÉJÀ noir aux joints. Reprendre 2,75 l'écrasait une seconde fois
+   * et n'en laissait que quelques éclats. Une valeur se reprend avec ce qui
+   * la justifie, pas seule.
+   *
+   * 🚨 PLUS DE FLOU. Ses 6 px fondaient les bandes du dégradé les unes dans
+   * les autres, ce qui était sa raison d'être ; la lumière est désormais un
+   * dégradé de GRIS aux transitions déjà douces. Et ils moyennaient les
+   * anneaux du vitrage — larges de deux à trois pixels — en un aplat. */
+  filter: brightness(1.1) contrast(1.4) saturate(1);
 }
 
 /* La variante `bords` : le même dégradé, mais confiné dans l'ÉPAISSEUR du
@@ -346,7 +377,18 @@
   mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
   mask-clip: content-box, border-box;
   mask-composite: exclude;
-  filter: blur(4px) saturate(1.5);
+  /* La gravure passe par le FOND, comme sur la surface, et à la MÊME taille
+   * de tuile — c'est le grain retenu par l'owner le 2026-09-09, d'abord vu
+   * ici puis demandé sur les deux autres cartes. La ligne reste écrite : le
+   * bloc redéclare `background-size`, elle ne s'hérite pas d'une règle sœur. */
+  background-size: 96px, 260% 260%;
+  /* 🚨 Le liseré demande sa PROPRE dose. Le filtre de la surface, hérité tel
+   * quel, n'y laissait presque rien : le `color-dodge` a besoin d'un fond
+   * sombre pour éclaircir, et une bande de 15,5 px posée sur un cadre déjà
+   * doré n'en offre pas. Sur la surface, la retenue protège l'illustration ;
+   * ici il n'y a rien à protéger — c'est le seul endroit où la carte montre
+   * qu'elle est holographique. Banc de trois valeurs capturé le 2026-09-09. */
+  filter: brightness(2.2) contrast(1.1) saturate(1.2);
 }
 
 /* ── Les particules ──────────────────────────────────────────────────────
