@@ -450,6 +450,58 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(ouverte["cadres"] == "visible",
              "carte TCG : les cadres s'allument", ouverte["cadres"])
 
+    # 🚨 Les trois couches de matière — vitrage, vernis, foil du titre —
+    # n'étaient couvertes par RIEN. C'est exactement par là qu'un titre rendu
+    # NOIR est parti en prod le 2026-09-09 : le CSS était juste au sens du
+    # linter, la suite était verte, le front montait, et personne ne regardait
+    # ces trois-là. L'owner l'a vu à l'écran, pas un test.
+    #
+    # ⚠️ On mesure l'ÉTAT RENDU. Pour le foil en particulier, on vérifie que
+    # le fond CLIPPÉ dans le texte n'est pas vide : `color: transparent` sans
+    # fond, c'est un titre invisible, et c'est le mode de panne du procédé.
+    matiere = page.evaluate("""() => {
+      const carte = [...document.querySelectorAll('.chero')]
+        .find((c) => c.querySelector('.chero-nom--foil'));
+      if (!carte) return { erreur: 'aucune carte au titre en foil' };
+      const nom = carte.querySelector('.chero-nom--foil');
+      const sn = getComputedStyle(nom);
+      const vernis = carte.querySelector('.chero-vernis');
+      const holo = carte.querySelector('.chero-holo');
+      const cartouche = carte.querySelector('.chero-rarete');
+      return {
+        tuile: getComputedStyle(document.documentElement)
+          .getPropertyValue('--chero-voronoi').trim().slice(0, 5),
+        nomTransparent: sn.color === 'rgba(0, 0, 0, 0)',
+        nomFond: sn.backgroundImage !== 'none' && sn.backgroundImage.length > 20,
+        nomOmbre: sn.filter.includes('drop-shadow'),
+        // Le `text-shadow` DOIT être coupé : sous `background-clip: text` il
+        // se peint par-dessus les lettres et les recouvre.
+        nomSansTextShadow: sn.textShadow === 'none',
+        vernis: vernis ? +getComputedStyle(vernis).opacity : -1,
+        holo: holo ? +getComputedStyle(holo).opacity : -1,
+        cartouche: cartouche ? cartouche.textContent.trim() : '',
+      };
+    }""")
+    rap.dire(not matiere.get("erreur"), "carte TCG : une carte porte le titre en foil",
+             str(matiere.get("erreur") or "trouvée"))
+    if not matiere.get("erreur"):
+        rap.dire(matiere["tuile"].startswith("url("),
+                 "carte TCG : le vitrage de Voronoï est cuit", matiere["tuile"])
+        rap.dire(matiere["nomTransparent"] and matiere["nomFond"],
+                 "carte TCG : le titre en foil a un fond clippé, pas du vide",
+                 f"transparent={matiere['nomTransparent']} fond={matiere['nomFond']}")
+        rap.dire(matiere["nomOmbre"] and matiere["nomSansTextShadow"],
+                 "carte TCG : l'ombre du foil est DERRIÈRE les lettres",
+                 f"drop-shadow={matiere['nomOmbre']} text-shadow coupé="
+                 f"{matiere['nomSansTextShadow']}")
+        rap.dire(matiere["vernis"] > 0, "carte TCG : le vernis s'allume au survol",
+                 str(matiere["vernis"]))
+        rap.dire(matiere["holo"] > 0, "carte TCG : le chatoiement s'allume au survol",
+                 str(matiere["holo"]))
+        rap.dire(bool(matiere["cartouche"]),
+                 "carte TCG : le cartouche de rareté porte un libellé",
+                 matiere["cartouche"])
+
     # 🚨 Le héros qui déborde doit être DEVANT le liseré. Il est à Z 56, le
     # liseré à 30 — mais son `transform` est réécrit trente fois par seconde
     # par `incliner()`, et une transition CSS posée dessus n'atteint jamais sa

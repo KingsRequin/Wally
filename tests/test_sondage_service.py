@@ -7,6 +7,7 @@ une réaction.
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 import discord
@@ -24,6 +25,29 @@ class FauxMessage:
 
     async def edit(self, **kwargs) -> None:
         self.editions.append(kwargs)
+
+
+async def _attendre_redessin(salon, combien: int = 1, plafond_s: float = 5.0) -> None:
+    """Attend qu'au moins `combien` éditions soient parties.
+
+    🚨 Une CONDITION, jamais un délai. Ces tests dormaient 0,05 s en pariant
+    sur cinq fois le `DELAI_MAJ_S` raccourci de la fixture — une marge que la
+    machine perd dès qu'elle fait autre chose. Vécu le 2026-09-09 :
+    `test_deux_votes_rapproches_ne_font_qu_une_edition` a lâché pendant que
+    `smoke_front.py` tournait à côté, puis est repassé seul trois fois de
+    suite. Un test qui dépend de la charge n'échoue pas là où le défaut est,
+    et le suivant qui le voit rouge cherche un bug qui n'existe pas.
+
+    Le plafond est GÉNÉREUX (5 s) : il n'est pas là pour mesurer une durée,
+    seulement pour que l'échec soit un message et non un test suspendu.
+    """
+    fin = time.monotonic() + plafond_s
+    while len(salon.message.editions) < combien:
+        if time.monotonic() > fin:
+            raise AssertionError(
+                f"{combien} redessin(s) attendu(s), {len(salon.message.editions)} "
+                f"vu(s) après {plafond_s} s")
+        await asyncio.sleep(0.005)
 
 
 class FauxSalon:
@@ -174,7 +198,7 @@ async def test_neuf_options_tiennent_en_deux_rangs(service, salon):
 async def test_un_vote_redessine_le_message(service, salon):
     await _creer(service, salon)
     interaction = await _cliquer(service, salon, 0)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
     assert interaction.response.deferee, "le clic n'a pas été accusé"
     assert salon.message.editions, "le message n'a jamais été redessiné"
 
@@ -184,7 +208,11 @@ async def test_deux_votes_rapproches_ne_font_qu_une_edition(service, salon):
     await _creer(service, salon)
     for uid in (7, 8, 9):
         await _cliquer(service, salon, 0, user_id=uid)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
+    # Puis on laisse passer PLUSIEURS fenêtres de coalescence : sans ça, le
+    # test passerait aussi bien avec un service qui redessine trois fois, la
+    # première suffisant à satisfaire l'attente.
+    await asyncio.sleep(service.DELAI_MAJ_S * 6)
     assert len(salon.message.editions) == 1
 
 
@@ -195,7 +223,7 @@ async def test_changer_d_avis_remplace_le_vote(service, salon):
     sondage = await _creer(service, salon)
     await _cliquer(service, salon, 0)
     await _cliquer(service, salon, 1)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
     assert sondage.depouiller().tally == [0, 1]
 
 
@@ -203,13 +231,15 @@ async def test_recliquer_son_choix_retire_sa_voix(service, salon):
     sondage = await _creer(service, salon)
     await _cliquer(service, salon, 0)
     await _cliquer(service, salon, 0)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
     assert sondage.depouiller().total == 0
 
 
 async def test_un_clic_hors_sondage_le_dit_sans_rien_redessiner(service, salon):
     interaction = await _cliquer(service, salon, 0)   # aucun sondage créé
-    await asyncio.sleep(0.05)
+    # ⚠️ Ici on attend une ABSENCE, et une absence ne se guette pas : on
+    # laisse passer plusieurs fenêtres de coalescence, puis on constate.
+    await asyncio.sleep(service.DELAI_MAJ_S * 6)
     assert interaction.response.messages, "le clic est resté sans réponse"
     assert not salon.message.editions
 
@@ -240,7 +270,7 @@ async def test_un_sondage_clos_ne_prend_plus_de_vote(service, salon):
     await service.fermer(sondage)
     editions = len(salon.message.editions)
     interaction = await _cliquer(service, salon, 0)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
     assert sondage.depouiller().total == 0
     assert len(salon.message.editions) == editions
     assert interaction.response.messages, "le clic tardif est resté sans réponse"
@@ -278,7 +308,7 @@ async def test_la_reprise_relit_les_votes_ranges(service, salon):
     sondage = await _creer(service, salon, duree_s=600)
     await _cliquer(service, salon, 1, user_id=3)
     await _cliquer(service, salon, 1, user_id=4)
-    await asyncio.sleep(0.05)
+    await _attendre_redessin(salon)
 
     repris = SondageService(FauxBot(salon))
     repris.sondages.from_dict(service.sondages.to_dict())
@@ -322,6 +352,12 @@ async def test_un_message_supprime_libere_le_salon(service, salon, monkeypatch):
 
     monkeypatch.setattr(salon.message, "edit", _disparu)
     await _cliquer(service, salon, 0)
-    await asyncio.sleep(0.05)
+    # ⚠️ `edit` lève : aucune édition ne sera jamais enregistrée, et guetter
+    # `editions` attendrait pour rien. On attend l'EFFET du 404 — la
+    # libération du salon — qui est ce que le test vérifie.
+    fin = time.monotonic() + 5.0
+    while service.sondages.ouvert_dans(salon.id) is not None:
+        assert time.monotonic() < fin, "le salon n'a jamais été libéré"
+        await asyncio.sleep(0.005)
     assert service.sondages.ouvert_dans(salon.id) is None
     assert sondage.clos

@@ -839,6 +839,13 @@
  * pastilles ont purement DISPARU sur les quatre cartes indéfinies. Elles sont
  * posées sur la fiche, qui est crème ; un neutre se choisit contre le fond
  * qu'il touche, pas contre le fond de la carte. */
+/* La phrase qui remplace une règle pas encore écrite : même place, même
+ * taille, mais en retrait — elle n'est pas du texte de jeu. */
+.chero-desc--vide {
+  color: rgba(18, 16, 12, .5);
+  font-style: italic;
+}
+
 .chero-stat--vide {
   background: rgba(18, 16, 12, .1);
   color: rgba(18, 16, 12, .45);

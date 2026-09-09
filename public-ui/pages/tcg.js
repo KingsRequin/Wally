@@ -12,7 +12,7 @@
 
 import { h, inclinaisonDisponible, pageFooter, surInclinaison } from '../app.js';
 import { cartes } from './tcg-donnees.js';
-import { carteHero, monterStylesCarte } from '../partage/tcg-carte.js';
+import { INDEFINI, carteHero, monterStylesCarte } from '../partage/tcg-carte.js';
 
 const FEUILLE = '/pages/tcg.css';
 
@@ -31,7 +31,7 @@ function invitation() {
   } else if (window.matchMedia('(hover: none)').matches) {
     geste = 'Touche-les pour voir les couches se séparer.';
   }
-  return `Les cartes finies, ajoutées au fur et à mesure. ${geste}`;
+  return `Les cartes illustrées, ajoutées au fur et à mesure. ${geste}`;
 }
 
 /** Fait suivre le gyroscope à la carte que le lecteur a devant les yeux.
@@ -87,12 +87,32 @@ function brancherGyroscope(rendues) {
  * lecteur construit un deck sur des valeurs qui vont toutes bouger, et c'est
  * nous qui l'y avons invité.
  */
-function avis() {
+function avis(liste) {
+  const ecrites = liste.filter((c) => c.description !== INDEFINI).length;
+  const reste = liste.length - ecrites;
+  if (!reste) {
+    return h('p', { class: 'tcgal-avis' },
+      h('strong', { text: 'Les chiffres sont ceux du jeu.' }),
+      ' Chaque carte de la collection a ses règles et ses valeurs.');
+  }
+  // 🚨 Les nombres sont COMPTÉS, jamais écrits. Le texte précédent annonçait
+  // des chiffres « provisoires, là pour montrer la carte » — il décrivait un
+  // régime abandonné le 2026-09-09, où toutes les cartes portaient des
+  // valeurs de maquette. Il envoyait alors douter des seules valeurs justes
+  // de la page. Une phrase écrite à la main vieillit sans prévenir ; celle-ci
+  // suit la collection.
+  // ⚠️ Les deux formes sont écrites ENTIÈRES. Un fragment interpolé dans une
+  // phrase commune ne tient pas l'accord : le premier jet rendait « 4 d'entre
+  // elles attendent encore SES règles ».
+  const phrase = reste > 1
+    ? `${reste} d'entre elles attendent encore leurs règles et leurs chiffres,`
+      + ' et le disent en toutes lettres.'
+    : "L'une d'elles attend encore ses règles et ses chiffres, et le dit en"
+      + ' toutes lettres.';
   return h('p', { class: 'tcgal-avis' },
-    h('strong', { text: 'Les chiffres ne sont pas définitifs.' }),
-    ' Coût, ATK, PV et AURA sont provisoires : ils sont là pour montrer'
-    + ' la carte, pas pour être joués. Les vraies valeurs sont calculées'
-    + ' ailleurs et arrivent carte par carte.',
+    h('strong', { text: 'Toutes ne sont pas encore écrites.' }),
+    ` ${phrase} Rien n'est affiché « en attendant » : une valeur qui apparaît`
+    + ' ici est une valeur décidée.',
   );
 }
 
@@ -105,6 +125,11 @@ export function mount(el) {
 
   const compte = h('span', { class: 'tcgal-compte', text: '' });
   const grille = h('div', { class: 'tcgal-grille' });
+  // L'avis se REMPLIT une fois la liste connue : il compte les cartes écrites,
+  // et un texte posé avant la réponse ne pourrait qu'être écrit à la main —
+  // c'est exactement ce qui l'a laissé mentir pendant qu'on changeait le
+  // régime des chiffres sous lui.
+  const avisBoite = h('div', {});
   el.appendChild(h('section', { class: 'tcgal' },
     h('div', { class: 'tcgal-inner' },
       h('header', { class: 'tcgal-head' },
@@ -112,7 +137,7 @@ export function mount(el) {
         compte,
       ),
       h('p', { class: 'tcgal-chapo', text: invitation() }),
-      avis(),
+      avisBoite,
       grille,
     ),
   ));
@@ -132,6 +157,8 @@ export function mount(el) {
 
   const remplir = (liste) => {
     if (!vivante) return;
+    avisBoite.textContent = '';
+    avisBoite.appendChild(avis(liste));
     grille.textContent = '';
     liste.forEach((carte) => {
       const rendu = carteHero(carte, { interactif: !auGyroscope });
@@ -143,8 +170,14 @@ export function mount(el) {
       grille.appendChild(noeud);
     });
     if (auGyroscope) debrancherGyro = brancherGyroscope(rendues);
-    const pluriel = liste.length > 1 ? 'CARTES TERMINÉES' : 'CARTE TERMINÉE';
-    compte.textContent = `${liste.length} ${pluriel}`;
+    // « TERMINÉES » était faux et se contredisait à trois centimètres : la
+    // moitié des cartes affichent qu'elles ne sont pas écrites. Elles sont
+    // ILLUSTRÉES, ce qui est déjà le critère d'entrée dans le fichier.
+    const pluriel = liste.length > 1 ? 'CARTES ILLUSTRÉES' : 'CARTE ILLUSTRÉE';
+    const ecrites = liste.filter((c) => c.description !== INDEFINI).length;
+    compte.textContent = ecrites
+      ? `${liste.length} ${pluriel} · ${ecrites} ÉCRITE${ecrites > 1 ? 'S' : ''}`
+      : `${liste.length} ${pluriel}`;
   };
 
   // Un échec doit se DIRE. Une grille vide se lit « il n'y a pas de cartes »,

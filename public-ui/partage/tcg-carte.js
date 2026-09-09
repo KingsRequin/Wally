@@ -492,6 +492,17 @@ const DEFAUTS = {
 
 const BORDS = ['haut', 'bas', 'gauche', 'droite'];
 
+// La sentinelle que porte `tcg/cartes.yaml` partout où rien n'est décidé.
+//
+// 🚨 C'est une valeur PARTAGÉE avec le fichier de données, pas une constante
+// locale : la comparer ici est un couplage, et il est assumé faute de mieux —
+// exposer un booléen de plus dans l'API pour dire ce que la chaîne dit déjà
+// coûterait un champ à tenir en phase des deux côtés.
+// `tests/test_tcg_cartes.py` vérifie que la graphie d'ici est bien celle du
+// YAML : sans ça, un accent perdu ferait afficher « INDÉFINI » en toutes
+// lettres à la place de la phrase, sans une erreur.
+export const INDEFINI = 'INDÉFINI';
+
 // Les six paliers de la base Notion, plus l'absence de palier. Les CLÉS sont
 // celles du YAML (sans accent, lisibles dans un attribut) ; les libellés sont
 // ce qui s'écrit sur la carte.
@@ -700,12 +711,26 @@ export function carteHero(carte, options = {}) {
   const bas = h('div', { class: 'chero-bas', 'data-z': '70', 'data-net': '1' },
     h('div', {}, nom),
     h('div', { class: 'chero-fiche' },
+      // 🚨 Une carte pas encore écrite le dit UNE fois. Elle portait
+      // « INDÉFINI » trois fois — à l'ultime, à la règle, à l'ambiance — plus
+      // « INDÉFINIE » au cartouche et trois zéros : sur quatre cartes de la
+      // collection, la grille virait à la litanie. Répéter une absence ne la
+      // rend pas plus claire, elle la rend illisible.
       h('div', { class: 'chero-fiche-top' },
         h('span', { text: c.classe }),
-        h('span', { class: 'chero-ult', text: `ULT · ${c.ultime}` }),
+        c.ultime === INDEFINI
+          ? null
+          : h('span', { class: 'chero-ult', text: `ULT · ${c.ultime}` }),
       ),
-      h('p', { class: 'chero-desc', text: c.description }),
-      h('p', { class: 'chero-ambiance', text: c.ambiance }),
+      c.description === INDEFINI
+        ? h('p', { class: 'chero-desc chero-desc--vide',
+                   text: 'Règles et chiffres pas encore écrits.' })
+        : h('p', { class: 'chero-desc', text: c.description }),
+      // L'ambiance survit à part : Claker en a une alors que sa règle n'existe
+      // pas encore. Les deux ne s'écrivent pas au même moment.
+      c.ambiance === INDEFINI
+        ? null
+        : h('p', { class: 'chero-ambiance', text: c.ambiance }),
       // 🚨 Une stat à ZÉRO n'est pas une petite stat : c'est une stat qui
       // n'est pas décidée (cf. l'en-tête de `tcg/cartes.yaml`). Elle passe
       // donc au NEUTRE. Peinte en rouge vif comme un vrai 9, elle prétend
