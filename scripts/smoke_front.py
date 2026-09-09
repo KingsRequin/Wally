@@ -502,6 +502,44 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
                  "carte TCG : le cartouche de rareté porte un libellé",
                  matiere["cartouche"])
 
+    # 🚨 L'ordre des plans PENDANT la transition, pas seulement à l'arrivée.
+    # C'est le défaut qui est passé deux fois : les couches montent en Z sur
+    # des horloges différentes — le liseré, le coût et la fiche par des
+    # transitions CSS, le héros par une boucle JS — et il suffit que l'une
+    # démarre plus tôt pour que le héros double la fiche. Mesuré à t=205 ms
+    # sur Azraël : héros à Z 15,4, fiche à 10,5, donc le héros PAR-DESSUS les
+    # stats. À l'arrivée tout était pourtant correct (56 < 70), et c'est
+    # exactement pour ça qu'aucun test ne le voyait.
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(900)
+    boite = page.locator(".chero").first.bounding_box()
+    page.evaluate("""() => { window.__ordre = [];
+      const c = document.querySelector('.chero');
+      const zde = (s) => { const e = c.querySelector(s); if (!e) return null;
+        return +(new DOMMatrix(getComputedStyle(e).transform)).m43.toFixed(1); };
+      const lu = () => {
+        const [bord, libre, bas] = ['.chero-bord', '.chero-plan[data-z="56"]',
+                                    '.chero-bas'].map(zde);
+        if (libre !== null && bas !== null && bord !== null) {
+          window.__ordre.push([Math.round(performance.now() - window.__t0),
+                               bord, libre, bas]);
+        }
+        if (performance.now() - window.__t0 < 900) requestAnimationFrame(lu);
+      };
+      window.__t0 = performance.now(); lu();
+    }""")
+    page.mouse.move(boite["x"] + boite["width"] * 0.5,
+                    boite["y"] + boite["height"] * 0.3)
+    page.wait_for_timeout(1200)
+    releve = page.evaluate("() => window.__ordre")
+    # Le liseré derrière le héros, le héros derrière la fiche — à CHAQUE image.
+    croises = [f"t={t}ms bord={b} héros={h} fiche={f}"
+               for t, b, h, f in releve if not (b <= h <= f)]
+    rap.dire(len(releve) > 20 and not croises,
+             "carte TCG : l'ordre des plans tient pendant TOUTE la transition",
+             f"{len(releve)} image(s) relevée(s)"
+             + (f" · {len(croises)} croisement(s) : " + croises[0] if croises else ""))
+
     # 🚨 Le héros qui déborde doit être DEVANT le liseré. Il est à Z 56, le
     # liseré à 30 — mais son `transform` est réécrit trente fois par seconde
     # par `incliner()`, et une transition CSS posée dessus n'atteint jamais sa
@@ -513,7 +551,10 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const c = document.querySelector('.chero');
       const z = (sel) => Math.round(new DOMMatrixReadOnly(
         getComputedStyle(c.querySelector(sel)).transform).m43);
-      return { hero: z('.chero-libre'), lisere: z('.chero-bord') };
+      // Le Z du héros vit sur son PORTEUR depuis le 2026-09-09 (`.chero-plan`,
+      // animé par le CSS comme les autres couches) ; `.chero-libre` ne porte
+      // plus que le parallaxe et l'échelle.
+      return { hero: z('.chero-plan[data-z="56"]'), lisere: z('.chero-bord') };
     }""")
     rap.dire(profs["hero"] > profs["lisere"],
              f"carte TCG : le héros (Z {profs['hero']}) passe devant le liseré "

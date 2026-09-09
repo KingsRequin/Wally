@@ -113,6 +113,23 @@
    * un fantôme (les deux à un). 90 ms : assez pour ne pas claquer, assez peu
    * pour tenir dans les 120 ms où `ouverture()` immobilise les couches. */
   --chero-fondu: .09s;
+  /* Le départ COMMUN de toutes les profondeurs, une fois les plans basculés.
+   *
+   * 🚨 Toutes les couches qui montent en Z partagent ce délai ET la courbe
+   * `cubic-bezier(.2, .8, .2, 1)`. Ce n'est pas de l'uniformité pour
+   * l'uniformité : c'est la SEULE façon de garantir l'ordre des plans. Des Z
+   * proportionnels (liseré 30, héros 56, fiche 70) sur une horloge commune
+   * restent ordonnés à chaque instant — 30·f(t) < 56·f(t) < 70·f(t) — alors
+   * que des horloges décalées se croisent forcément.
+   *
+   * Mesuré le 2026-09-09 sur Azraël, à t=205 ms : le héros à Z 15,4 devant la
+   * fiche à 10,5, parce que la fiche attendait encore ses 150 ms de délai.
+   * L'owner le voyait — « le héros d'Azraël passe devant les stats ».
+   *
+   * ⚠️ L'échelonnement du dépliage (« liseré, puis cadres, puis héros, puis
+   * la fiche ») n'a PAS disparu : il vit sur les OPACITÉS, qui ne décident
+   * d'aucun recouvrement. Seule la profondeur est commune. */
+  --chero-plans: .12s;
   /* L'ÉCHELON DES PLANS, du plus proche au plus lointain. L'avant-plan bascule
    * en premier (délai zéro), le héros ensuite.
    *
@@ -442,6 +459,26 @@
   transition: opacity var(--chero-fondu) ease var(--chero-plan-hero);
 }
 
+/* Le PORTEUR DE PROFONDEUR des calques de survol. Il ne fait qu'une chose :
+ * monter en Z, sur la même transition que le liseré, le coût et la fiche.
+ *
+ * 🚨 C'est ce qui rend l'ordre des plans INFAILLIBLE plutôt que bien réglé.
+ * Le héros montait par une boucle JS et les autres par des transitions CSS ;
+ * deux horloges se croisent quoi qu'on fasse, et elles se sont croisées dans
+ * les deux sens (le liseré devant le héros, puis le héros devant les stats).
+ * Sur une horloge unique, des Z proportionnels le restent à chaque image.
+ *
+ * ⚠️ `inset: 0` : les calques qu'il porte se positionnent en `left/right/top`
+ * ou `left/bottom` par rapport au cadre de la carte. Un porteur qui ne le
+ * couvrirait pas exactement les déplacerait. */
+.chero-plan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
+              var(--chero-plans);
+}
+
 /* Le calque de survol a son PROPRE cadrage : son illustration peut être une
  * autre image, plus large ou placée différemment (cf. `hero3d` dans le
  * module). Le JS y recopie le cadrage du repos quand il n'y en a qu'une. */
@@ -517,7 +554,8 @@
   inset: 0;
   border-radius: 6px;
   pointer-events: none;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1);
+  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
+              var(--chero-plans);
   border: 1.5px solid rgba(247, 236, 217, .85);
   box-shadow: inset 0 0 0 14px #12100c, inset 0 0 0 15.5px var(--chero-acc);
 }
@@ -581,7 +619,7 @@
   display: flex;
   align-items: stretch;
   transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              calc(var(--chero-etape) * 3);
+              var(--chero-plans);
 }
 
 .chero-cout-n {
@@ -660,7 +698,7 @@
   border: 1.5px solid #12100c;
   padding: 5px 8px 4px;
   transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              calc(var(--chero-etape) * 3);
+              var(--chero-plans);
 }
 
 /* Une carte sans palier saisi le DIT, elle ne se tait pas — mais elle ne
@@ -701,7 +739,7 @@
   flex-direction: column;
   gap: 8px;
   transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              calc(var(--chero-etape) * 3);
+              var(--chero-plans);
 }
 
 .chero-nom {

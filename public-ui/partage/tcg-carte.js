@@ -204,7 +204,50 @@ const OPACITE_VERNIS = 0.34;
 // 🚨 Il doit couvrir le fondu ENTIER, délai du plan le plus tardif compris —
 // `--chero-fondu` (90 ms) plus l'échelon du héros (30 ms) dans le CSS. Le
 // raccourcir remet le fantôme.
+//
+// 🚨 Il vaut `--chero-plans` dans la feuille, et les deux doivent RESTER
+// égaux : c'est l'instant où toutes les profondeurs partent, celles que le
+// CSS anime comme celle que ce module écrit. Les désaccorder recroise les
+// plans.
 const BASCULE_PLANS_MS = 120;
+
+/** La courbe `cubic-bezier(.2, .8, .2, 1)` de la feuille, en JavaScript.
+ *
+ * 🚨 C'est une DUPLICATION assumée, et elle est nécessaire : le calque libre
+ * du héros ne peut pas utiliser de transition CSS — `incliner()` réécrit son
+ * `transform` trente fois par seconde, et une transition redémarrerait à
+ * chaque écriture sans jamais atteindre sa cible (le piège est documenté sur
+ * `.chero-libre`). Il faut donc calculer sa progression, et elle doit être
+ * EXACTEMENT celle des autres couches.
+ *
+ * Le module se contentait de `1 - (1 - t)³`, décrit comme « la même allure ».
+ * La même allure ne suffit pas : à 205 ms le héros était à Z 15,4 quand la
+ * fiche n'était qu'à 10,5, et lui passait devant. Deux couches dont l'ordre
+ * dépend du Z doivent suivre la même fonction, pas une fonction qui lui
+ * ressemble.
+ *
+ * Newton-Raphson sur x(u), puis y(u). Quatre passes suffisent : la courbe est
+ * monotone et bien conditionnée, et l'erreur résiduelle est très en dessous
+ * du pixel.
+ */
+function courbeDepli(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const X1 = 0.2;
+  const X2 = 0.2;
+  const Y1 = 0.8;
+  const Y2 = 1;
+  const bez = (a, b, u) => (((1 - 3 * b + 3 * a) * u + (3 * b - 6 * a)) * u + 3 * a) * u;
+  const pente = (a, b, u) => 3 * (1 - 3 * b + 3 * a) * u * u + 2 * (3 * b - 6 * a) * u + 3 * a;
+  let u = t;
+  for (let i = 0; i < 4; i++) {
+    const d = pente(X1, X2, u);
+    if (Math.abs(d) < 1e-6) break;
+    u -= (bez(X1, X2, u) - t) / d;
+    u = Math.min(1, Math.max(0, u));
+  }
+  return bez(Y1, Y2, u);
+}
 
 // ── Le vitrage irisé ──────────────────────────────────────────────────────
 // Le chatoiement seul rend des BANDES : joli, mais lisse. Une vraie carte
@@ -559,6 +602,16 @@ export function carteHero(carte, options = {}) {
   // mesuré, il restait à Z 0 pendant 1,1 s puis bondissait à 56. Les valeurs
   // par défaut de la feuille sont .45s et .05s ; l'overlay les rallonge.
   const lissageMs = enMs(depli, 450) + enMs(etape, 50) * 2 + 60;
+  // 🚨 La durée du DÉPLIAGE, celle qu'écrit la feuille dans
+  // `transition: transform var(--chero-depli) …`. Distincte de `lissageMs`,
+  // qui vaut le dépliage PLUS l'échelonnement PLUS une marge (610 ms contre
+  // 450) et sert au lissage du saut d'entrée du plateau.
+  //
+  // `ouverture()` prenait `lissageMs` : le héros montait donc sur une horloge
+  // 35 % plus lente que les couches CSS auxquelles il doit rester ordonné. Ça
+  // tenait — un héros en retard reste derrière — mais par coïncidence de
+  // réglages, et allonger `--chero-etape` aurait suffi à le recroiser.
+  const depliMs = enMs(depli, 450);
   // 🚨 Le dépliage du héros est CALCULÉ, pas transitionné, et c'est la seule
   // façon qui marche. `incliner()` réécrit son `transform` trente fois par
   // seconde : une transition CSS redémarre à chaque écriture et n'atteint
@@ -656,6 +709,23 @@ export function carteHero(carte, options = {}) {
   // `eager` ne coûte rien.
   const libre = h('div', { class: 'chero-libre', 'aria-hidden': 'true' },
     img(c.hero3d || c.hero, '', 'eager'));
+  // 🚨 La PROFONDEUR du héros quitte le JavaScript pour un porteur animé par
+  // le CSS, comme le liseré, le coût et la fiche.
+  //
+  // C'est la cause racine de trois bugs signalés d'affilée le 2026-09-09 : le
+  // Z du héros était calculé par une boucle JS pendant que celui des autres
+  // couches suivait des transitions CSS. Deux horloges ne s'accordent pas par
+  // réglage — j'ai essayé la même courbe, le même délai, le même timestamp de
+  // frame, et il restait des images où le liseré (Z 30) doublait le héros
+  // (Z 56), ou le héros la fiche (Z 70). Avec UNE horloge, les Z restent
+  // proportionnels à chaque instant : 30·f(t) < 56·f(t) < 70·f(t). Le
+  // croisement devient impossible, il n'est plus évité.
+  //
+  // ⚠️ `incliner()` continue d'écrire le parallaxe et l'échelle sur l'ENFANT.
+  // C'est voulu : ni l'un ni l'autre ne décide d'un recouvrement, et ils
+  // doivent suivre le pointeur image par image — c'est précisément ce qu'une
+  // transition CSS ne sait pas faire (elle redémarrerait à chaque écriture).
+  const libreZ = h('div', { class: 'chero-plan', 'data-z': '56' }, libre);
 
   // L'avant-plan (les pieds de Claker, par exemple) : la couche qui passe
   // DEVANT le héros. Elle n'existe que si la carte en déclare une.
@@ -665,6 +735,9 @@ export function carteHero(carte, options = {}) {
   const apLibre = c.avantPlan
     ? h('div', { class: 'chero-ap-libre', 'aria-hidden': 'true' },
         img(c.avantPlan, '', 'eager'))
+    : null;
+  const apLibreZ = apLibre
+    ? h('div', { class: 'chero-plan', 'data-z': '62' }, apLibre)
     : null;
 
   const bords = {};
@@ -764,9 +837,9 @@ export function carteHero(carte, options = {}) {
     fond,
     canvas,
     h('div', { class: 'chero-cadrage' }, clip),
-    libre,
+    libreZ,
     apClip ? h('div', { class: 'chero-cadrage' }, apClip) : null,
-    apLibre,
+    apLibreZ,
     bord,
     cout,
     cartouche,
@@ -803,7 +876,8 @@ export function carteHero(carte, options = {}) {
 
   // ── Le comportement ─────────────────────────────────────────────────────
   const etat = { survol: false, visible: true, vent: 0 };
-  const zEls = [bord, cout, cartouche, bas, vernis];
+  const zEls = [bord, cout, cartouche, bas, vernis, libreZ, apLibreZ]
+    .filter(Boolean);
   const particulesCarte = canvas ? particules(canvas, etat, c.particules) : null;
   let dansBoucle = false;
   let minuteurAplat = 0;
@@ -889,14 +963,14 @@ export function carteHero(carte, options = {}) {
         zEls.forEach((el) => { el.style.transform = zTransform(el); });
         // Le premier pas seulement : la suite est écrite par `incliner()`,
         // qui calcule l'avancement.
-        libre.style.transform = 'translateZ(0px) scale(1)';
-        if (apLibre) apLibre.style.transform = 'translateZ(0px) scale(1)';
+        libre.style.transform = 'scale(1)';
+        if (apLibre) apLibre.style.transform = 'scale(1)';
         if (canvas) canvas.style.transform = 'translateZ(8px)';
       });
     } else {
       zEls.forEach((el) => { el.style.transform = 'translateZ(0px)'; });
-      libre.style.transform = 'translateZ(0px) scale(1)';
-      if (apLibre) apLibre.style.transform = 'translateZ(0px) scale(1)';
+      libre.style.transform = 'scale(1)';
+      if (apLibre) apLibre.style.transform = 'scale(1)';
       if (canvas) canvas.style.transform = 'translateZ(0px)';
     }
   };
@@ -944,10 +1018,14 @@ export function carteHero(carte, options = {}) {
     // suffisait pas, il fallait retarder le MOUVEMENT.
     const ecoule = performance.now() - ouvertA - BASCULE_PLANS_MS;
     if (ecoule <= 0) return 0;
-    const t = Math.min(1, ecoule / Math.max(1, lissageMs - BASCULE_PLANS_MS));
-    // La même allure que les transitions CSS des autres couches : parti vite,
-    // fini doucement. Le héros doit les accompagner, pas les devancer.
-    return 1 - (1 - t) ** 3;
+    // 🚨 La durée est PLEINE, pas ce qu'il en reste après le retard. Le CSS
+    // écrit `transition: transform var(--chero-depli) … var(--chero-plans)` :
+    // une durée entière APRÈS un délai. L'amputer du délai donnait un héros
+    // qui finit avant les autres.
+    const t = Math.min(1, ecoule / depliMs);
+    // La courbe EXACTE des transitions CSS des autres couches, pas une qui lui
+    // ressemble : c'est ce qui garantit que le héros ne double personne.
+    return courbeDepli(t);
   };
 
   const incliner = (nx, ny) => {
@@ -976,9 +1054,9 @@ export function carteHero(carte, options = {}) {
     // Le Z et l'échelle suivent l'avancement : la couche s'élève et grandit
     // en même temps que les autres montent, au lieu d'y sauter.
     const av = ouverture();
-    libre.style.transform = `translateZ(${(56 * av).toFixed(1)}px) translate3d(${(tx * 1.6).toFixed(1)}px,${(ty * 1.6).toFixed(1)}px,0) scale(${(1 + (c.heroEchelle - 1) * av).toFixed(4)})`;
+    libre.style.transform = `translate3d(${(tx * 1.6).toFixed(1)}px,${(ty * 1.6).toFixed(1)}px,0) scale(${(1 + (c.heroEchelle - 1) * av).toFixed(4)})`;
     if (apLibre) {
-      apLibre.style.transform = `translateZ(${(62 * av).toFixed(1)}px) translate3d(${(tx * 2.8).toFixed(1)}px,${(ty * 2.8).toFixed(1)}px,0) scale(${(1 + 0.16 * av).toFixed(4)})`;
+      apLibre.style.transform = `translate3d(${(tx * 2.8).toFixed(1)}px,${(ty * 2.8).toFixed(1)}px,0) scale(${(1 + 0.16 * av).toFixed(4)})`;
     }
     // Le bord tourné vers la lumière (en haut à gauche) s'allume, l'opposé
     // s'éteint : c'est ça qui fait « carte plastifiée » plutôt qu'un balayage.
@@ -1079,7 +1157,10 @@ export function carteHero(carte, options = {}) {
     if (arretDepliage) arretDepliage();
     arretDepliage = abonnerAnimation(() => {
       incliner(dernierNx, dernierNy);
-      if (performance.now() - ouvertA >= lissageMs) {
+      // La boucle couvre le retard EN PLUS de la durée : sinon elle s'arrête
+      // à `lissageMs` alors que le héros n'a fait que les trois quarts de son
+      // parcours, et il se fige en chemin.
+      if (performance.now() - ouvertA >= depliMs + BASCULE_PLANS_MS) {
         arretDepliage();
         arretDepliage = null;
       }
