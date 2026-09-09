@@ -17,10 +17,9 @@ ailleurs. Une règle dupliquée est une porte de triche ouverte et un second jeu
 est dans Notion) sont en tête de `tcg/cartes.yaml`, avec les valeurs qu'ils
 concernent.
 
-⚠️ Ne pas confondre avec `public-ui/pages/tcg-demo.js`, qui porte les héros
-PLACEHOLDER de la maquette du plateau (`/demo/plateau-tcg`) : ceux-là sont là
-pour avoir quelque chose à l'écran, pas pour être exacts. C'est le SECOND
-catalogue du projet, et il reste à fusionner avec celui-ci.
+Il n'y a plus qu'UN catalogue depuis le 2026-09-09 : la maquette du plateau
+(`/demo/plateau-tcg`) portait le second, avec d'autres chiffres pour les mêmes
+héros. Elle a été retirée — c'était un concept, redessiné depuis.
 """
 
 from __future__ import annotations

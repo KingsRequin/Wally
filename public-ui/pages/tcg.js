@@ -2,7 +2,9 @@
 //
 // Port de la maquette Claude Design `Galerie Cartes.dc.html` : les cartes
 // TERMINÉES, ajoutées au fur et à mesure. Elle a remplacé l'annonce du TCG et
-// la maquette du plateau, qui vivent désormais sur `/demo/plateau-tcg`.
+// la maquette du plateau (`/demo/plateau-tcg`), retirée le 2026-09-09 : c'était
+// un concept, redessiné depuis, et il portait un SECOND catalogue de héros aux
+// chiffres divergents de ceux d'ici.
 //
 // Les cartes viennent de `GET /api/public/tcg/cartes` — la même source que
 // l'outil de Wally et le widget de l'overlay. Le compteur en DÉRIVE, il ne

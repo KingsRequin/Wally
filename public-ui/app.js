@@ -123,7 +123,6 @@ import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
 import * as pageClips from './pages/clips.js';
 import * as pageDemoCarteAzrael from './pages/demo-carte-azrael.js';
-import * as pageDemoPlateau from './pages/demo-plateau.js';
 import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
 
@@ -378,12 +377,7 @@ const ROUTES = {
   // Démos HORS NAVIGATION : des URL qu'on donne à la main. Volontairement
   // absentes de `.nav-links`, de `.tabbar` et de `HASH_LEGACY` — elles n'ont
   // rien à faire dans un menu.
-  //
-  // `/demo/plateau-tcg` porte ce qui occupait `/tcg` avant la collection :
-  // l'annonce du jeu et la maquette du plateau. Rien n'est perdu, rien n'est
-  // mort — la page est simplement sortie du menu.
   '/demo/carte-azrael': { page: pageDemoCarteAzrael, plein: false },
-  '/demo/plateau-tcg':  { page: pageDemoPlateau,     plein: false },
 };
 
 // Les ancres de l'ancien site arcade. Un lien partagé ou un marque-page ne doit
