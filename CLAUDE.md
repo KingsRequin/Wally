@@ -195,6 +195,7 @@ rebuild** :
 | `public-ui/` (site public) | Rechargement du navigateur suffit |
 | `bot/persona/` (SOUL, VOICE, prompts persona…) | `/reload-persona`, pas de restart |
 | `bot/intelligence/persona/prompts/` (prompts de cognition) | **Restart** requis (lus au boot) |
+| `tcg/cartes.yaml` (les cartes du TCG) | **Restart** requis (lu au boot) |
 | `config.yaml` | Hot-reload via `config.save()` / dashboard |
 
 ### Git
@@ -313,6 +314,10 @@ bot/
 
 public-ui/               # Site public « braise » (bind-mount) : app.js (coquille +
                          #   routeur) + pages/{accueil,chat,galerie,tcg}.js
+tcg/cartes.yaml          # La DONNÉE des cartes du TCG (bind-mount, lue au boot).
+                         #   `bot/core/tcg_cartes.py` n'en est que le lecteur, et il
+                         #   REFUSE le fichier (champ inconnu, vocabulaire, doublon)
+                         #   plutôt que de le charger à moitié.
 extension-musique/       # Extension Chrome installée chez Azraël (hors Web Store)
 scripts/                 # Outils d'audit, de rattrapage et cliquets qualité
 tests/                   # pytest — racine + dashboard/ discord/ intelligence/ scripts/

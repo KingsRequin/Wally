@@ -147,3 +147,96 @@ def test_le_defaut_est_sans_reflet():
                    description="", ambiance="", cout=0, atk=0, pv=0, aura=0,
                    accent="#fff", hero="/assets/x", fond="/assets/y")
     assert nue.holographique is False
+
+
+# ── Le fichier de cartes : ce qu'il refuse ────────────────────────────────
+#
+# La donnée a quitté le code le 2026-09-09 (`tcg/cartes.yaml`, bind-monté) :
+# une carte se corrige sans rebuild. Le prix de ce gain, c'est qu'une faute de
+# frappe ne fait plus planter l'import de Python — elle ne coûte plus rien à
+# écrire. Ces tests tiennent la contrepartie : le fichier est REFUSÉ, bruyamment,
+# plutôt que chargé à moitié.
+
+def _fichier(tmp_path, entrees):
+    import yaml
+    chemin = tmp_path / "cartes.yaml"
+    chemin.write_text(yaml.safe_dump(entrees, allow_unicode=True), encoding="utf-8")
+    return chemin
+
+
+def _carte_valide(**extra):
+    base = {
+        "cle": "essai", "nom": "ESSAI", "legende": "E · ESSAI", "classe": "ESSAI",
+        "ultime": "ESSAI", "description": "d", "ambiance": "a",
+        "cout": 1, "atk": 1, "pv": 1, "aura": 1, "accent": "#ffffff",
+        "hero": "/assets/essai-hero", "fond": "/assets/essai-fond",
+    }
+    base.update(extra)
+    return base
+
+
+def test_le_fichier_livre_se_lit():
+    """Le chemin déclaré doit exister : c'est lui que le Dockerfile copie et
+    que `docker-compose.yml` bind-monte. Une faute dans l'un des trois et le
+    bot ne démarre plus."""
+    assert tcg_cartes.CHEMIN_CARTES.exists(), tcg_cartes.CHEMIN_CARTES
+    assert tcg_cartes._lire(tcg_cartes.CHEMIN_CARTES)
+
+
+def test_un_champ_inconnu_refuse_le_fichier(tmp_path):
+    """🚨 Le défaut que ce fichier rend possible, et le seul qui compte.
+
+    `holographic: true` au lieu de `holographique` : en Python, l'erreur était
+    immédiate. Dans un YAML lu avec des `.get()`, le réglage serait ignoré en
+    SILENCE — l'owner tourne un bouton, rien ne bouge, rien ne le dit. C'est la
+    signature exacte des huit boutons morts du 2026-08-26.
+    """
+    import pytest
+    chemin = _fichier(tmp_path, [_carte_valide(holographic=True)])
+    with pytest.raises(ValueError, match="holographic"):
+        tcg_cartes._lire(chemin)
+
+
+def test_un_champ_obligatoire_manquant_refuse_le_fichier(tmp_path):
+    import pytest
+    entree = _carte_valide()
+    del entree["fond"]
+    with pytest.raises(ValueError, match="fond"):
+        tcg_cartes._lire(_fichier(tmp_path, [entree]))
+
+
+def test_une_valeur_hors_vocabulaire_refuse_le_fichier(tmp_path):
+    """`particules` et `holo_zone` sont des vocabulaires FERMÉS tenus par le
+    rendu. Une valeur inconnue ne lève rien côté JS : elle rend l'effet par
+    défaut, sans le dire."""
+    import pytest
+    with pytest.raises(ValueError, match="particules"):
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(particules="neige")]))
+    with pytest.raises(ValueError, match="holo_zone"):
+        tcg_cartes._lire(_fichier(
+            tmp_path, [_carte_valide(holographique=True, holo_zone="coin")]))
+
+
+def test_une_illustration_avec_extension_refuse_le_fichier(tmp_path):
+    """Le front ajoute `.avif` / `.webp` lui-même : une extension écrite ici
+    donnerait `/assets/x.webp.avif`, donc une carte noire."""
+    import pytest
+    with pytest.raises(ValueError, match="mal formée"):
+        tcg_cartes._lire(_fichier(
+            tmp_path, [_carte_valide(hero="/assets/essai-hero.webp")]))
+
+
+def test_une_cle_en_double_refuse_le_fichier(tmp_path):
+    """Sans ce refus, la seconde écraserait la première sans un mot — et
+    l'ordre du fichier, qui EST celui de la collection à l'écran, mentirait."""
+    import pytest
+    with pytest.raises(ValueError, match="double"):
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(), _carte_valide()]))
+
+
+def test_l_ordre_du_fichier_est_celui_du_registre(tmp_path):
+    """L'ordre dit dans quel ordre les cartes ont été finies : c'est celui de
+    la collection sur `/tcg`, pas un détail de sérialisation."""
+    cartes = tcg_cartes._lire(_fichier(tmp_path, [
+        _carte_valide(cle="un"), _carte_valide(cle="deux"), _carte_valide(cle="trois")]))
+    assert list(cartes) == ["un", "deux", "trois"]

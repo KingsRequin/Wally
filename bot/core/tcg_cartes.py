@@ -1,4 +1,7 @@
-"""Les cartes TERMINÉES du TCG du Purgatoire — la source unique.
+"""Les cartes TERMINÉES du TCG du Purgatoire — le LECTEUR de leur source.
+
+La donnée vit dans `tcg/cartes.yaml`, pas ici : ce module la lit au boot, la
+VALIDE et la sert. Corriger une carte ne demande donc pas de rebuild.
 
 Trois consommateurs lisent ce module, et aucun ne garde de copie :
 
@@ -8,40 +11,27 @@ Trois consommateurs lisent ce module, et aucun ne garde de copie :
 - le site public (`/tcg`, `/demo/carte-azrael`), via
   `GET /api/public/tcg/cartes`.
 
-🚨 **LES CHIFFRES SONT DES PLACEHOLDERS.** Coût, Attaque, PV, Aura, classe :
-ce sont les valeurs de la maquette, écrites pour avoir quelque chose de lisible
-à l'écran. Les vraies vivent dans la base Notion « 🃏 Cartes du Purgatoire »,
-qui est la SEULE source, et y sont recopiées carte par carte au fur et à
-mesure. La page `/tcg` le dit aux visiteurs, en toutes lettres.
+🚨 Rien ici n'est calculé et rien ne le sera : le moteur de règles vit
+ailleurs. Une règle dupliquée est une porte de triche ouverte et un second jeu
+à maintenir. Les avertissements sur les CHIFFRES (des placeholders, la vérité
+est dans Notion) sont en tête de `tcg/cartes.yaml`, avec les valeurs qu'ils
+concernent.
 
-🚨 Corollaire : ne JAMAIS justifier une valeur d'ici par le barème (« budget 12
-+ rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
-écrits le 2026-09-07 sur des chiffres qui ne sortaient d'aucun calcul — une
-justification fausse coûte plus cher qu'une absence de justification, elle
-envoie vérifier une règle qui n'a jamais été appliquée.
-
-🚨 Rien ici n'est calculé et rien ne le sera : le moteur de règles vit ailleurs.
-Une règle dupliquée est une porte de triche ouverte et un second jeu à
-maintenir.
-
-⚠️ Une carte n'entre au registre que si son ILLUSTRATION EXISTE. Ce n'est pas
-la liste des cartes prévues, c'est la liste de celles qu'on peut montrer : le
-site affiche exactement son contenu et son compteur en dérive. Une entrée sans
-image donnerait une carte noire annoncée comme terminée.
-
-⚠️ Ne pas confondre avec `public-ui/pages/tcg-demo.js`, qui porte les six héros
+⚠️ Ne pas confondre avec `public-ui/pages/tcg-demo.js`, qui porte les héros
 PLACEHOLDER de la maquette du plateau (`/demo/plateau-tcg`) : ceux-là sont là
-pour avoir quelque chose à l'écran, pas pour être exacts.
+pour avoir quelque chose à l'écran, pas pour être exacts. C'est le SECOND
+catalogue du projet, et il reste à fusionner avec celui-ci.
 """
 
 from __future__ import annotations
 
 import hashlib
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, fields
 from functools import lru_cache
 from pathlib import Path
 
+import yaml
 from loguru import logger
 
 from bot.core.tirage import SacSansRemise
@@ -118,144 +108,69 @@ class CarteTcg:
     bulles: bool = False
 
 
-CARTES: dict[str, CarteTcg] = {}
+# Là où vit la DONNÉE des cartes. Bind-monté (`./tcg:/app/tcg:ro`) et lu au
+# BOOT : corriger une carte ne demande pas de rebuild, seulement un
+# `docker compose restart wally` — même régime que les prompts de cognition.
+CHEMIN_CARTES = Path("tcg/cartes.yaml")
+
+_CHAMPS = {f.name for f in fields(CarteTcg)}
+_OBLIGATOIRES = {f.name for f in fields(CarteTcg) if f.default is MISSING}
+# Vocabulaires FERMÉS, tenus par le rendu : `particules()` et `.chero-holo`
+# dans `public-ui/partage/tcg-carte.js`. Une valeur hors liste ne lève rien
+# côté JS — elle rend simplement l'effet par défaut, en silence.
+_PARTICULES = {"braises", "poussiere", "aucune"}
+_HOLO_ZONES = {"surface", "bords"}
 
 
-def _poser(carte: CarteTcg) -> None:
-    CARTES[carte.cle] = carte
+def _exiger(condition: bool, cle: str, probleme: str) -> None:
+    """Refuse le fichier en NOMMANT la carte et le problème.
+
+    🚨 On lève, et le bot ne démarre pas. C'est délibéré : une carte ignorée
+    en silence, c'est une carte noire sur un stream ou un tirage qui saute,
+    découverts en direct. Le fichier est en git et la suite de tests le lit —
+    une faute n'arrive donc en prod que si elle a été écrite À LA MAIN sur
+    l'hôte, et dans ce cas le message de boot est exactement ce qu'on veut.
+    """
+    if not condition:
+        raise ValueError(f"{CHEMIN_CARTES} — carte {cle} : {probleme}")
 
 
-_poser(CarteTcg(
-    cle="azrael",
-    nom="AZRAËL",
-    legende="AZRAËL · ARCHANGE",
-    classe="ARCHANGE · UNIQUE",
-    ultime="REWORK",
-    description="Rework : désigne un héros adverse. Pour le reste de la "
-                "partie, son Ultime coûte +3 et tous ses nombres baissent de 2.",
-    ambiance="Il ne te dit jamais non. Il attend le prochain patch, et un "
-             "matin plus personne ne te craint.",
-    cout=10, atk=5, pv=10, aura=5,
-    accent="#ffb02e",
-    hero="/assets/tcg-azrael-hero",
-    fond="/assets/tcg-azrael-fond",
-    alias=(),
-    particules="braises",
-    holographique=True,
-))
+def _lire(chemin: Path) -> dict[str, CarteTcg]:
+    """Le fichier des cartes, validé, dans son ordre d'écriture.
 
-_poser(CarteTcg(
-    cle="claker",
-    nom="CLAKER",
-    legende="CLAKERNOJUTSU · ÂME",
-    classe="ÂME · NO JUTSU",
-    ultime="NO JUTSU",
-    description="Annule la prochaine tactique jouée par un adversaire.",
-    ambiance="La technique, c'est de ne pas en avoir.",
-    cout=8, atk=5, pv=4, aura=3,
-    accent="#7de3a4",
-    hero="/assets/tcg-claker-hero",
-    fond="/assets/tcg-claker-fond",
-    # Ses pieds passent DEVANT lui : c'est la couche d'avant-plan, et c'est
-    # elle qui donne la profondeur quand la carte s'ouvre.
-    avant_plan="/assets/tcg-claker-pieds",
-    avant_plan_largeur="100%",
-    avant_plan_bas="15%",
-    alias=("claker", "clakernojutsu", "clacker", "clackernojutsu"),
-    hero_cote="5%",
-    hero_haut="-8%",
-    hero_echelle=1.1,
-    particules="poussiere",
-    parallaxe=0.9,
-    intensite=0.6,
-))
-
-_poser(CarteTcg(
-    cle="rhae",
-    nom="RHAE",
-    legende="RHAE___ · FÉLIN",
-    classe="FÉLIN · UNIQUE",
-    ultime="GRIFFE",
-    description="Inflige 3 au héros ciblé. Il ne peut plus bloquer jusqu'à la "
-                "fin du tour.",
-    ambiance="Il dort vingt heures par jour. Les quatre autres, tu les paies.",
-    cout=6, atk=8, pv=5, aura=4,
-    accent="#ffb02e",
-    fond="/assets/tcg-rhae-fond",
-    # DEUX visuels (comme KingsRequin) : portrait assis, cadré serré, au
-    # repos ; bond griffes en avant, bien plus large que la carte, au survol.
-    hero="/assets/tcg-rhae-hero-2d",
-    hero_cote="8%",
-    hero_haut="-2%",
-    hero_3d="/assets/tcg-rhae-hero-3d",
-    hero_3d_cote="-26%",
-    hero_3d_haut="6%",
-    hero_echelle=1.12,
-    alias=("rhae", "rhae_", "rhae__", "rhae___"),
-    particules="poussiere",
-    parallaxe=1.1,
-    intensite=0.8,
-    holographique=True,
-))
-
-_poser(CarteTcg(
-    cle="lilith",
-    nom="LILITH",
-    legende="LILITH · DÉMON",
-    classe="DÉMON · LÉGENDAIRE",
-    ultime="MORSURE",
-    description="Vole 2 PV au héros ciblé et les ajoute aux tiens.",
-    ambiance="Elle demande toujours avant de prendre. Une fois.",
-    cout=7, atk=6, pv=6, aura=5,
-    accent="#e0332b",
-    # Ailes déployées : l'illustration fait presque deux fois la largeur de la
-    # carte. Au repos les pointes sont rognées, au survol elles sortent.
-    hero="/assets/tcg-lilith-hero",
-    fond="/assets/tcg-lilith-fond",
-    alias=("lilith",),
-    hero_cote="-40%",
-    # 5 % et non 4 % : plus bas, le bas de l'illustration (elle s'arrête aux
-    # mollets) sort de derrière la fiche quand le parallaxe déplace le calque
-    # libre, et les jambes ont l'air coupées net.
-    hero_haut="5%",
-    hero_echelle=1.08,
-    particules="poussiere",
-    parallaxe=1.0,
-    intensite=0.75,
-))
+    L'ordre est celui de la collection à l'écran : un `dict` le conserve.
+    """
+    entrees = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+    cartes: dict[str, CarteTcg] = {}
+    for rang, entree in enumerate(entrees or [], start=1):
+        cle = entree.get("cle", f"sans clé, en position {rang}")
+        # Un champ inconnu est une ERREUR et pas un réglage ignoré : c'est
+        # tout l'intérêt d'avoir sorti ces valeurs du code, où une faute de
+        # frappe ne compilait pas.
+        _exiger(not (set(entree) - _CHAMPS), cle,
+                f"champ inconnu {sorted(set(entree) - _CHAMPS)}")
+        _exiger(not (_OBLIGATOIRES - set(entree)), cle,
+                f"champ obligatoire manquant {sorted(_OBLIGATOIRES - set(entree))}")
+        _exiger(entree["cle"] not in cartes, cle, "clé en double")
+        alias = entree.get("alias") or []
+        carte = CarteTcg(**{**entree, "alias": tuple(alias)})
+        _exiger(carte.particules in _PARTICULES, cle,
+                f"particules={carte.particules!r} hors de {sorted(_PARTICULES)}")
+        _exiger(carte.holo_zone in _HOLO_ZONES, cle,
+                f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
+        # Les chemins d'illustration sont SANS extension : le front ajoute la
+        # sienne (`x.avif` / `x.webp`). Une extension écrite ici donnerait
+        # `/assets/x.webp.avif`, soit une carte noire.
+        for chemin_illu in (carte.hero, carte.fond, carte.avant_plan, carte.hero_3d):
+            if chemin_illu is not None:
+                _exiger(chemin_illu.startswith("/assets/")
+                        and not chemin_illu.endswith((".avif", ".webp", ".png")),
+                        cle, f"illustration mal formée : {chemin_illu!r}")
+        cartes[carte.cle] = carte
+    return cartes
 
 
-_poser(CarteTcg(
-    cle="kingsrequin",
-    nom="KINGSREQUIN",
-    legende="KINGSREQUIN · REQUIN",
-    classe="REQUIN · LÉGENDAIRE",
-    ultime="RAZ-DE-MARÉE",
-    description="Inflige 4 à tous les héros adverses. Les héros touchés ne "
-                "peuvent pas bloquer au tour suivant.",
-    ambiance="Il sourit tout le temps. C'est ça, le problème.",
-    cout=8, atk=9, pv=7, aura=4,
-    accent="#c9a227",
-    fond="/assets/tcg-requin-fond",
-    # Deux visuels comme rhae___ : le portrait au repos, le second au survol.
-    hero="/assets/tcg-requin-hero-2d",
-    hero_cote="-5%",
-    hero_haut="10%",
-    hero_3d="/assets/tcg-requin-hero-3d",
-    hero_3d_cote="-5%",
-    # `-0%` dans l'éditeur, et c'est la même valeur CSS que `0%`.
-    hero_3d_haut="0%",
-    hero_echelle=1.08,
-    alias=("kingsrequin", "requin", "kingrequin"),
-    particules="poussiere",
-    parallaxe=1.2,
-    intensite=0.8,
-    holographique=True,
-    # Son fond est un bleu saturé : un chatoiement de surface y rendrait un
-    # voile blanc. Il court donc dans le liseré.
-    holo_zone="bords",
-    bulles=True,
-))
+CARTES: dict[str, CarteTcg] = _lire(CHEMIN_CARTES)
 
 
 def normaliser(nom: str) -> str:

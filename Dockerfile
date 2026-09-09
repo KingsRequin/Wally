@@ -30,6 +30,10 @@ ENV BOT_BUILD_DATE=$BUILD_DATE
 
 COPY bot/ ./bot/
 COPY scripts/ ./scripts/
+# Les cartes du TCG. Aussi bind-montées (`./tcg:/app/tcg:ro`) pour pouvoir les
+# corriger sans rebuild — la copie tient l'image debout si le mount manque,
+# faute de quoi le bot ne démarrerait pas du tout.
+COPY tcg/ ./tcg/
 # L'extension musique : servie en .zip par le bot, pour installation chez Azraël.
 COPY extension-musique/ ./extension-musique/
 # Lu par `bot/dashboard/routes/roadmap.py` (`parents[3]` → /app). Absent de

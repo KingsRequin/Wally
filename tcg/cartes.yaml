@@ -1,0 +1,169 @@
+# Les cartes TERMINÉES du TCG du Purgatoire — la source unique.
+#
+# Ce fichier est LA donnée ; `bot/core/tcg_cartes.py` ne fait que la lire et la
+# valider. Il est bind-monté (`./tcg:/app/tcg:ro`) : le corriger ne demande PAS
+# de rebuild, seulement un `docker compose restart wally` — il est lu au boot,
+# comme les prompts de cognition.
+#
+# 🚨 LES CHIFFRES SONT DES PLACEHOLDERS. Coût, Attaque, PV, Aura : ce sont les
+# valeurs de la maquette, écrites pour avoir quelque chose de lisible à
+# l'écran. Les vraies vivent dans la base Notion « 🃏 Cartes du Purgatoire »,
+# qui est la SEULE source, et y sont recopiées carte par carte au fur et à
+# mesure. La page `/tcg` le dit aux visiteurs, en toutes lettres.
+#
+# 🚨 Corollaire : ne JAMAIS justifier une valeur d'ici par le barème (« budget
+# 12 + rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
+# écrits le 2026-09-07 sur des chiffres qui ne sortaient d'aucun calcul — une
+# justification fausse coûte plus cher qu'une absence de justification, elle
+# envoie vérifier une règle qui n'a jamais été appliquée.
+#
+# ⚠️ L'ORDRE COMPTE : c'est celui de la collection à l'écran, et il dit dans
+# quel ordre les cartes ont été finies.
+#
+# ⚠️ Une carte n'entre ici que si son ILLUSTRATION EXISTE. Ce n'est pas la
+# liste des cartes prévues, c'est la liste de celles qu'on peut montrer : le
+# site affiche exactement ce contenu et son compteur en dérive. Une entrée sans
+# image donnerait une carte noire annoncée comme terminée.
+#
+# ⚠️ Les champs d'illustration portent un chemin SANS extension : le front sert
+# l'AVIF avec repli WebP et ajoute l'extension lui-même. En écrire une ici
+# donnerait `/assets/x.webp.avif`.
+#
+# Les champs omis prennent le défaut de `CarteTcg` (`bot/core/tcg_cartes.py`).
+# Un champ inconnu est une ERREUR au chargement, et pas un réglage ignoré en
+# silence : c'est tout l'intérêt d'avoir sorti ces valeurs du code.
+
+- cle: azrael
+  nom: AZRAËL
+  legende: AZRAËL · ARCHANGE
+  classe: ARCHANGE · UNIQUE
+  ultime: REWORK
+  description: >-
+    Rework : désigne un héros adverse. Pour le reste de la partie, son Ultime
+    coûte +3 et tous ses nombres baissent de 2.
+  ambiance: >-
+    Il ne te dit jamais non. Il attend le prochain patch, et un matin plus
+    personne ne te craint.
+  cout: 10
+  atk: 5
+  pv: 10
+  aura: 5
+  accent: '#ffb02e'
+  hero: /assets/tcg-azrael-hero
+  fond: /assets/tcg-azrael-fond
+  holographique: true
+
+- cle: claker
+  nom: CLAKER
+  legende: CLAKERNOJUTSU · ÂME
+  classe: ÂME · NO JUTSU
+  ultime: NO JUTSU
+  description: Annule la prochaine tactique jouée par un adversaire.
+  ambiance: La technique, c'est de ne pas en avoir.
+  cout: 8
+  atk: 5
+  pv: 4
+  aura: 3
+  accent: '#7de3a4'
+  hero: /assets/tcg-claker-hero
+  fond: /assets/tcg-claker-fond
+  alias: [claker, clakernojutsu, clacker, clackernojutsu]
+  # Ses pieds passent DEVANT lui : c'est la couche d'avant-plan, et c'est elle
+  # qui donne la profondeur quand la carte s'ouvre.
+  avant_plan: /assets/tcg-claker-pieds
+  avant_plan_largeur: 100%
+  avant_plan_bas: 15%
+  hero_cote: 5%
+  hero_haut: -8%
+  hero_echelle: 1.1
+  particules: poussiere
+  parallaxe: 0.9
+  intensite: 0.6
+
+- cle: rhae
+  nom: RHAE
+  legende: RHAE___ · FÉLIN
+  classe: FÉLIN · UNIQUE
+  ultime: GRIFFE
+  description: >-
+    Inflige 3 au héros ciblé. Il ne peut plus bloquer jusqu'à la fin du tour.
+  ambiance: Il dort vingt heures par jour. Les quatre autres, tu les paies.
+  cout: 6
+  atk: 8
+  pv: 5
+  aura: 4
+  accent: '#ffb02e'
+  fond: /assets/tcg-rhae-fond
+  # DEUX visuels (comme KingsRequin) : portrait assis, cadré serré, au repos ;
+  # bond griffes en avant, bien plus large que la carte, au survol.
+  hero: /assets/tcg-rhae-hero-2d
+  hero_cote: 8%
+  hero_haut: -2%
+  hero_3d: /assets/tcg-rhae-hero-3d
+  hero_3d_cote: -26%
+  hero_3d_haut: 6%
+  alias: [rhae, rhae_, rhae__, rhae___]
+  particules: poussiere
+  parallaxe: 1.1
+  intensite: 0.8
+  holographique: true
+
+- cle: lilith
+  nom: LILITH
+  legende: LILITH · DÉMON
+  classe: DÉMON · LÉGENDAIRE
+  ultime: MORSURE
+  description: Vole 2 PV au héros ciblé et les ajoute aux tiens.
+  ambiance: Elle demande toujours avant de prendre. Une fois.
+  cout: 7
+  atk: 6
+  pv: 6
+  aura: 5
+  accent: '#e0332b'
+  # Ailes déployées : l'illustration fait presque deux fois la largeur de la
+  # carte. Au repos les pointes sont rognées, au survol elles sortent.
+  hero: /assets/tcg-lilith-hero
+  fond: /assets/tcg-lilith-fond
+  alias: [lilith]
+  hero_cote: -40%
+  # 5 % et non 4 % : plus bas, le bas de l'illustration (elle s'arrête aux
+  # mollets) sort de derrière la fiche quand le parallaxe déplace le calque
+  # libre, et les jambes ont l'air coupées net.
+  hero_haut: 5%
+  hero_echelle: 1.08
+  particules: poussiere
+  intensite: 0.75
+
+- cle: kingsrequin
+  nom: KINGSREQUIN
+  legende: KINGSREQUIN · REQUIN
+  classe: REQUIN · LÉGENDAIRE
+  ultime: RAZ-DE-MARÉE
+  description: >-
+    Inflige 4 à tous les héros adverses. Les héros touchés ne peuvent pas
+    bloquer au tour suivant.
+  ambiance: Il sourit tout le temps. C'est ça, le problème.
+  cout: 8
+  atk: 9
+  pv: 7
+  aura: 4
+  accent: '#c9a227'
+  fond: /assets/tcg-requin-fond
+  # Deux visuels comme rhae___ : le portrait au repos, le second au survol.
+  hero: /assets/tcg-requin-hero-2d
+  hero_cote: -5%
+  hero_haut: 10%
+  hero_3d: /assets/tcg-requin-hero-3d
+  # `-0%` dans l'éditeur, et c'est la même valeur CSS que `0%`.
+  hero_3d_haut: 0%
+  hero_3d_cote: -5%
+  hero_echelle: 1.08
+  alias: [kingsrequin, requin, kingrequin]
+  particules: poussiere
+  parallaxe: 1.2
+  intensite: 0.8
+  holographique: true
+  # Son fond est un bleu saturé : un chatoiement de surface y rendrait un voile
+  # blanc. Il court donc dans le liseré.
+  holo_zone: bords
+  bulles: true
