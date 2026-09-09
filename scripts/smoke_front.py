@@ -533,23 +533,56 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     page.wait_for_timeout(1200)
     releve = page.evaluate("() => window.__ordre")
 
-    # 🚨 L'INVARIANT du sujet : à tout instant de la transition, un calque
-    # opaque porte l'illustration. Il est vérifié comme une PROPRIÉTÉ, pas en
-    # chassant la frame fautive dans un enregistrement — un glitch d'une image
-    # dure 16 ms, un screencast le rate une fois sur deux, et l'absence de
-    # capture ne prouve rien. Vécu le 2026-09-09 : cinq cartes déclarées
-    # « continues » par un détecteur qui, le défaut réinjecté, ne l'a pas vu.
+    # 🚨 DEUX invariants, relevés image par image pendant toute la transition.
+    # Ils encadrent les deux défauts vus en photo par l'owner le 2026-09-09, et
+    # ils sont l'un le contraire de l'autre — c'est pour ça qu'aucun réglage
+    # seul ne suffisait :
     #
-    # Le calque du repos ne doit donc JAMAIS descendre sous l'opacité pleine :
-    # c'est lui le filet pendant que celui du survol se compose.
-    creux = page.evaluate("""() => {
+    #   · effacer le calque de repos TROP TÔT laisse une image sans SUJET
+    #     (le survol n'est pas encore rastérisé) ;
+    #   · ne pas l'effacer laisse DEUX HÉROS à l'écran dès que le survol
+    #     s'est déplacé — il ne le recouvre plus.
+    #
+    # La fenêtre d'immobilité les concilie : tant que rien n'a bougé, les deux
+    # calques coïncident et l'échange est invisible. L'invariant à tenir est
+    # donc « jamais deux calques visibles APRÈS que la carte a bougé », et
+    # « jamais zéro calque visible ».
+    #
+    # ⚠️ On échantillonne l'ÉTAT, pas des captures d'écran. Un enregistrement
+    # rate une image de 16 ms une fois sur deux, et l'absence de capture s'est
+    # déjà fait passer pour une preuve ce soir-là.
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(900)
+    boite = page.locator(".chero").first.bounding_box()
+    page.evaluate("""() => { window.__cal = [];
       const c = document.querySelector('.chero');
-      const o = (s) => { const e = c.querySelector(s); return e ? +getComputedStyle(e).opacity : 1; };
-      return { clip: o('.chero-clip'), apClip: o('.chero-ap-clip') };
+      const lu = () => {
+        const o = (s) => { const e = c.querySelector(s); return e ? +getComputedStyle(e).opacity : 0; };
+        const p = c.querySelector('.chero-plan[data-z="56"]');
+        const z = p ? new DOMMatrix(getComputedStyle(p).transform).m43 : 0;
+        window.__cal.push([+o('.chero-clip').toFixed(2), +o('.chero-libre').toFixed(2), +z.toFixed(1)]);
+        if (performance.now() - window.__t0 < 1100) requestAnimationFrame(lu);
+      };
+      window.__t0 = performance.now(); lu();
     }""")
-    rap.dire(creux["clip"] >= 1 and creux["apClip"] >= 1,
-             "carte TCG : le calque de repos reste opaque, la carte a toujours un sujet",
-             f"repos={creux['clip']} avant-plan={creux['apClip']}")
+    page.mouse.move(boite["x"] + boite["width"] * 0.5,
+                    boite["y"] + boite["height"] * 0.3)
+    page.wait_for_timeout(1400)
+    calques = page.evaluate("() => window.__cal")
+    doubles = [i for i, (r, s_, z) in enumerate(calques) if r > 0.02 and s_ > 0.02 and z > 0.5]
+    rap.dire(len(calques) > 20 and not doubles,
+             "carte TCG : jamais DEUX héros une fois la carte en mouvement",
+             f"{len(calques)} image(s)" + (f" · {len(doubles)} en double" if doubles else ""))
+    # ⚠️ L'invariant SYMÉTRIQUE — « jamais d'image sans sujet » — n'est PAS
+    # testable ici, et il vaut mieux le dire que poser un test décoratif.
+    # L'état CSS annonce le calque de survol opaque dès qu'on l'affiche, alors
+    # qu'il n'est pas encore rastérisé : c'est justement l'écart qui crée le
+    # trou. Essayé le 2026-09-09, défaut réinjecté — le test restait VERT.
+    # Un enregistrement d'écran ne le prouve pas davantage : il rate une image
+    # de 16 ms une fois sur deux.
+    # Ce défaut-là est écarté par CONSTRUCTION, pas par ce fichier : le calque
+    # de repos n'est effacé qu'après `BASCULE_PLANS_MS * 0.8`, soit six images
+    # pour peindre le survol, et toujours avant que quoi que ce soit ne bouge.
 
     # Le liseré derrière le héros, le héros derrière la fiche — à CHAQUE image.
     croises = [f"t={t}ms bord={b} héros={h} fiche={f}"
@@ -868,20 +901,35 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     gyro.wait_for_selector(".chero", timeout=_ATTENTE_PANNEAU_MS)
     gyro.wait_for_timeout(2000)
 
-    rap.dire("téléphone" in gyro.locator(".tcgal-chapo").inner_text().lower()
-             or "penche" in gyro.locator(".tcgal-chapo").inner_text().lower(),
-             "gyroscope : la consigne parle de pencher, pas de survoler",
-             gyro.locator(".tcgal-chapo").inner_text()[-46:])
+    chapo = gyro.locator(".tcgal-chapo").inner_text().lower()
+    # Les DEUX gestes doivent être dits : l'appui ouvre, l'inclinaison joue.
+    # Annoncer le seul « penche » décrirait un geste qui n'ouvre plus rien.
+    rap.dire("penche" in chapo and ("touche" in chapo or "appui" in chapo),
+             "gyroscope : la consigne dit d'ouvrir ET de pencher",
+             gyro.locator(".tcgal-chapo").inner_text()[-52:])
 
+    # 🚨 Le DÉFILEMENT n'ouvre plus rien. L'ouverture automatique de la carte
+    # centrée a été retirée le 2026-09-09 à la demande de l'owner : au
+    # défilement, la page passait son temps à ouvrir une carte et à refermer
+    # la précédente, ce qui se lisait comme un clignotement. C'est l'APPUI qui
+    # ouvre désormais, et un second appui qui referme.
+    compter = ("() => [...document.querySelectorAll('.chero')]"
+               ".filter(c => getComputedStyle(c).perspective !== 'none').length")
     gyro.locator(".tcgal-case").nth(1).scroll_into_view_if_needed()
     gyro.wait_for_timeout(1200)
-    ouvertes = gyro.evaluate(
-        "() => [...document.querySelectorAll('.chero')]"
-        ".filter(c => getComputedStyle(c).perspective !== 'none').length")
+    rap.dire(gyro.evaluate(compter) == 0,
+             "gyroscope : le défilement n'ouvre AUCUNE carte",
+             f"{gyro.evaluate(compter)} ouverte(s) — attendu 0")
+
+    boite_gyro = gyro.locator(".chero").nth(1).bounding_box()
+    gyro.touchscreen.tap(boite_gyro["x"] + boite_gyro["width"] * 0.5,
+                         boite_gyro["y"] + boite_gyro["height"] * 0.4)
+    gyro.wait_for_timeout(1000)
     # 🚨 UNE seule, et c'est le point. La 3D d'une carte coûte neuf calques GPU
-    # au lieu d'un : toutes les ouvrir parce qu'elles sont à l'écran ferait
-    # ramer la page sur le matériel même qui a le gyroscope.
-    rap.dire(ouvertes == 1, f"gyroscope : {ouvertes} carte ouverte à la fois",
+    # au lieu d'un : en ouvrir plusieurs ferait ramer la page sur le matériel
+    # même qui a le gyroscope.
+    ouvertes = gyro.evaluate(compter)
+    rap.dire(ouvertes == 1, f"gyroscope : l'appui ouvre {ouvertes} carte",
              "attendu exactement 1")
 
     def _pencher(gamma, beta):

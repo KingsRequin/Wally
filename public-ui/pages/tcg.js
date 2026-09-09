@@ -27,7 +27,11 @@ let _demonter = null;
 function invitation() {
   let geste = 'Survole-les pour voir les couches se séparer.';
   if (inclinaisonDisponible()) {
-    geste = 'Penche ton téléphone pour voir les couches se séparer.';
+    // Deux gestes, et il faut les DEUX : l'appui ouvre, l'inclinaison joue.
+    // Le texte n'annonçait que le second depuis que l'ouverture automatique
+    // au défilement a été retirée (2026-09-09) — il décrivait donc un geste
+    // qui ne suffit plus à rien montrer.
+    geste = 'Touche-en une pour l\'ouvrir, puis penche ton téléphone.';
   } else if (window.matchMedia('(hover: none)').matches) {
     geste = 'Touche-les pour voir les couches se séparer.';
   }
@@ -36,40 +40,48 @@ function invitation() {
 
 /** Fait suivre le gyroscope à la carte que le lecteur a devant les yeux.
  *
- * Sur un ordinateur il suffit de PASSER la souris sur une carte ; l'équivalent
- * au téléphone n'est pas un appui, c'est d'avoir la carte devant soi. Celle
- * qui traverse la bande centrale de l'écran s'ouvre donc, et suit
- * l'inclinaison ; les autres restent à plat.
+ * Sur un ordinateur il suffit de PASSER la souris sur une carte. Au
+ * téléphone, c'est l'APPUI qui ouvre — et un second appui qui referme.
+ *
+ * 🚨 L'ouverture AUTOMATIQUE au défilement a été retirée le 2026-09-09, à la
+ * demande de l'owner. La carte qui traversait la bande centrale de l'écran
+ * s'ouvrait seule, et celle qu'on venait de quitter se refermait : au
+ * défilement, la page passait son temps à ouvrir et fermer des cartes, ce qui
+ * se lisait comme un clignotement. Un `IntersectionObserver` à `-45%` évitait
+ * bien que DEUX cartes soient ouvertes ensemble, mais rien n'empêchait la
+ * succession — et une ouverture qu'on n'a pas demandée reste une ouverture.
  *
  * 🚨 UNE seule carte ouverte à la fois, et c'est délibéré : la 3D d'une carte
- * coûte neuf calques GPU au lieu d'un (cf. `set3d` dans le composant). Toutes
- * les ouvrir parce qu'elles sont à l'écran ferait ramer la page sur le
- * matériel même qui a le gyroscope.
+ * coûte neuf calques GPU au lieu d'un (cf. `set3d` dans le composant). Ouvrir
+ * la nouvelle ferme donc la précédente.
  *
- * ⚠️ La bande centrale est déléguée à un `IntersectionObserver` plutôt que
- * recalculée au défilement : mesurer la position de N cartes à chaque image
- * coûte un reflow par image, sur mobile, pendant qu'on scrolle.
+ * ⚠️ Le gyroscope garde son rôle : il incline la carte OUVERTE. C'est lui qui
+ * remplace le curseur, pas le doigt — on ne glisse pas sur une carte pour la
+ * pencher, on penche l'appareil.
  *
  * ⚠️ Rien à faire ici pour l'autorisation iOS : `app.js` la demande au premier
  * appui sur la page, une fois pour tout le site.
  */
-function brancherGyroscope(rendues) {
+function brancherAppuiEtGyroscope(rendues) {
   let ouverte = null;
 
-  const oeil = new IntersectionObserver((entrees) => {
-    entrees.forEach((e) => {
-      if (!e.isIntersecting) return;
-      const carte = rendues.find((r) => r.noeud === e.target);
-      if (!carte || carte === ouverte) return;
-      if (ouverte) { ouverte.incliner(0, 0); ouverte.fermer(); }
-      ouverte = carte;
-      carte.ouvrir();
-    });
-    // `-45%` en haut ET en bas : il ne reste que le dixième central de
-    // l'écran. Deux cartes n'y tiennent pas ensemble, donc l'ouverture ne
-    // clignote pas entre deux voisines pendant le défilement.
-  }, { rootMargin: '-45% 0px -45% 0px' });
-  rendues.forEach((r) => oeil.observe(r.noeud));
+  const basculer = (carte) => {
+    if (ouverte === carte) {
+      ouverte.incliner(0, 0);
+      ouverte.fermer();
+      ouverte = null;
+      return;
+    }
+    if (ouverte) { ouverte.incliner(0, 0); ouverte.fermer(); }
+    ouverte = carte;
+    carte.ouvrir();
+  };
+
+  const surAppui = rendues.map((carte) => {
+    const ecouteur = () => basculer(carte);
+    carte.noeud.addEventListener('click', ecouteur);
+    return () => carte.noeud.removeEventListener('click', ecouteur);
+  });
 
   // `x` et `y` arrivent dans [−1, 1] ; `incliner` attend [−0.5, 0.5]. Le
   // facteur donne donc la course COMPLÈTE d'un curseur passant d'un bord à
@@ -78,7 +90,7 @@ function brancherGyroscope(rendues) {
     if (ouverte) ouverte.incliner(x * 0.5, y * 0.5);
   });
 
-  return () => { oeil.disconnect(); stop(); };
+  return () => { surAppui.forEach((d) => d()); stop(); };
 }
 
 /** Le bandeau qui dit que les chiffres ne valent rien.
@@ -169,7 +181,7 @@ export function mount(el) {
       rendues.push({ ...rendu, noeud });
       grille.appendChild(noeud);
     });
-    if (auGyroscope) debrancherGyro = brancherGyroscope(rendues);
+    if (auGyroscope) debrancherGyro = brancherAppuiEtGyroscope(rendues);
     // « TERMINÉES » était faux et se contredisait à trois centimètres : la
     // moitié des cartes affichent qu'elles ne sont pas écrites. Elles sont
     // ILLUSTRÉES, ce qui est déjà le critère d'entrée dans le fichier.

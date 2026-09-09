@@ -882,6 +882,8 @@ export function carteHero(carte, options = {}) {
   let dansBoucle = false;
   let minuteurAplat = 0;
   let minuteurLissage = 0;
+  // Quand le calque de repos s'efface, une fois celui du survol peint.
+  let minuteurRepos = 0;
 
   // 🚨 Les particules ne tournent que sur la carte OUVERTE. Elles suivaient
   // la seule VISIBILITÉ, donc toute la grille peignait en permanence :
@@ -1179,29 +1181,33 @@ export function carteHero(carte, options = {}) {
     if (!SOBRE()) nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (particulesCarte) particulesCarte.bouffee();
     if (c.debordement) {
-      // 🚨 Le calque du REPOS n'est JAMAIS masqué. Il reste sous celui du
-      // survol, qui est opaque et le recouvre.
+      // 🚨 Le calque du REPOS s'efface PENDANT la fenêtre d'immobilité, et
+      // c'est la seule façon de tenir les deux bouts.
       //
-      // Le masquer laissait une image où la carte n'avait PLUS DE SUJET DU
-      // TOUT — le repos effacé, le survol pas encore composé. Enregistré au
-      // navigateur sur rhae le 2026-09-09 (`Page.startScreencast`) : une frame
-      // vide. Elle ne se voyait que sur elle, la seule carte dont les deux
-      // illustrations diffèrent — ailleurs le trou était bouché par une image
-      // identique.
+      // L'effacer dans la même image laisse un TROU : un calque qui devient
+      // visible n'est pas à l'écran tant qu'il n'a pas été rastérisé. Vu sur
+      // rhae — la seule carte dont les deux illustrations diffèrent, donc la
+      // seule où le trou n'est pas bouché par une image identique.
       //
-      // 🚨 Attendre ne marche pas. Deux images de délai, puis quatre, puis le
-      // retrait de `visibility` : le trou revenait, parce qu'on ne peut pas
-      // savoir QUAND une couche est composée. Ne rien effacer est la seule
-      // garantie qui ne dépende d'aucun timing — et c'est une garantie par
-      // CONSTRUCTION : à tout instant, au moins un calque opaque porte le
-      // sujet.
+      // Ne PAS l'effacer laisse une SUPERPOSITION : le calque de survol monte
+      // et se décale, il ne recouvre donc plus celui du repos. Deux héros à
+      // l'écran, décalés — signalé par l'owner en photo le 2026-09-09, sur
+      // une carte ouverte. J'avais écrit l'inverse dans ce même commentaire,
+      // sans l'avoir vérifié sur une carte INCLINÉE.
       //
-      // ⚠️ Ça tient parce que le calque de survol monte et GRANDIT : il
-      // recouvre celui du repos. Une illustration de survol plus petite le
-      // laisserait dépasser derrière. `smoke_front.py` tient l'invariant.
+      // La fenêtre `BASCULE_PLANS_MS` résout les deux : rien ne bouge avant
+      // elle, donc les deux calques COÏNCIDENT — les effacer là-dedans est
+      // invisible. On s'y prend à 80 % du chemin : cinq images pour peindre
+      // le survol, et 24 ms de marge avant le moindre déplacement.
       libre.style.visibility = 'visible';
       libre.style.opacity = '1';
       if (apLibre) { apLibre.style.visibility = 'visible'; apLibre.style.opacity = '1'; }
+      clearTimeout(minuteurRepos);
+      minuteurRepos = setTimeout(() => {
+        if (!etat.survol) return;
+        clip.style.opacity = '0';
+        if (apClip) apClip.style.opacity = '0';
+      }, BASCULE_PLANS_MS * 0.8);
     }
     syncBoucle();
     syncHalo();
@@ -1233,7 +1239,11 @@ export function carteHero(carte, options = {}) {
     vernis.style.opacity = '0';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
-    // Le repos n'a jamais été masqué : il n'y a que le survol à retirer.
+    // Le repos revient d'un coup : il n'a jamais quitté le document, il est
+    // déjà rastérisé. C'est l'aller qui demande de l'attente, pas le retour.
+    clearTimeout(minuteurRepos);
+    clip.style.opacity = '1';
+    if (apClip) apClip.style.opacity = '1';
     libre.style.opacity = '0';
     libre.style.visibility = 'hidden';
     if (apLibre) { apLibre.style.opacity = '0'; apLibre.style.visibility = 'hidden'; }
