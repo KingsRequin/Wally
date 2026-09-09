@@ -1135,28 +1135,41 @@
         const reserve = el("div", "tcg-preload");
         reserve.setAttribute("aria-hidden", "true");
         const cartes = d.cartes || [];
-        cartes.forEach((c) => {
-          ["hero", "fond", "avantPlan", "hero3d"].forEach((champ) => {
-            const base = c[champ];
-            if (!base) return;
-            const [chemin, requete] = String(base).split("?");
-            const suffixe = requete ? `?${requete}` : "";
-            const pic = document.createElement("picture");
-            const src = document.createElement("source");
-            src.type = "image/avif";
-            src.srcset = `${chemin}.avif${suffixe}`;
-            const img = new Image();
-            img.decoding = "async";
-            // 🚨 Priorité BASSE, et c'est le point : ce préchargement peut
-            // attendre, une carte demandée à l'écran non. Sans ça, le jeu
-            // entier occupait la file et la carte réellement affichée partait
-            // derrière — mesuré à 700 kbit/s le 2026-09-08, ses illustrations
-            // n'avaient pas commencé 14 s après l'ouverture de l'overlay.
-            img.fetchPriority = "low";
-            img.src = `${chemin}.webp${suffixe}`;
-            pic.append(src, img);
-            reserve.appendChild(pic);
-          });
+        // 🚨 L'ordre est par IMPORTANCE, pas par carte. Il bouclait carte par
+        // carte avec ses quatre illustrations — donc les calques de SURVOL
+        // des premières partaient avant les illustrations d'ENTRÉE des
+        // dernières. À 700 kbit/s (une machine qui encode un stream), la
+        // dernière carte du registre n'était pas prête et s'affichait
+        // incomplète : vu le 2026-09-09 sur Lilith, qui porte trois
+        // illustrations et venait de passer en queue avec le nouveau tri par
+        // prestige. Le volume total ne change pas ; ce qui change, c'est que
+        // TOUTE carte devient affichable avant que la moindre image de survol
+        // ne soit demandée.
+        //
+        // ⚠️ Le fond avant le héros : c'est lui qui couvre la carte entière,
+        // et une carte sans fond se voit de plus loin qu'une carte sans héros.
+        const files = ["fond", "hero", "hero3d", "avantPlan"]
+          .flatMap((champ) => cartes.map((c) => [c, champ]));
+        files.forEach(([c, champ]) => {
+          const base = c[champ];
+          if (!base) return;
+          const [chemin, requete] = String(base).split("?");
+          const suffixe = requete ? `?${requete}` : "";
+          const pic = document.createElement("picture");
+          const src = document.createElement("source");
+          src.type = "image/avif";
+          src.srcset = `${chemin}.avif${suffixe}`;
+          const img = new Image();
+          img.decoding = "async";
+          // 🚨 Priorité BASSE, et c'est le point : ce préchargement peut
+          // attendre, une carte demandée à l'écran non. Sans ça, le jeu
+          // entier occupait la file et la carte réellement affichée partait
+          // derrière — mesuré à 700 kbit/s le 2026-09-08, ses illustrations
+          // n'avaient pas commencé 14 s après l'ouverture de l'overlay.
+          img.fetchPriority = "low";
+          img.src = `${chemin}.webp${suffixe}`;
+          pic.append(src, img);
+          reserve.appendChild(pic);
         });
         document.body.appendChild(reserve);
         // Dit à voix haute quel format a été retenu : c'est la seule façon de

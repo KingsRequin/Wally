@@ -6914,3 +6914,23 @@ body.is-mobile .mobile-back-btn {
   .meme-fiche-media { max-height: 38vh; }
   .meme-barre #meme-recherche { width: 100%; flex: 1 0 100%; }
 }
+
+/* ── « Dans sa tête » : le prompt système, en brut ────────────────────────
+ * 🚨 Ce panneau affiche du texte que PERSONNE n'a mis en forme pour l'écran —
+ * cinquante mille caractères de prompt, avec ce qu'ils contiennent : emojis
+ * Discord (`<a:PING_PONG:1116477938204942366>`, 33 caractères d'un bloc),
+ * snowflakes, URL. Aucun de ces jetons ne porte de point de coupure, et à
+ * 390 px la ligne se tronque en silence — huit pixels mangés à droite,
+ * relevés par le smoke le 2026-09-09.
+ *
+ * `anywhere` et pas `break-word` : `break-word` ne casse un mot qu'après
+ * avoir tenté de le placer seul sur sa ligne, ce qui laisse déborder un jeton
+ * plus large que la colonne. C'est exactement le cas ici.
+ *
+ * ⚠️ Sur le CONTENU du panneau, jamais sur ses titres : couper un intitulé
+ * d'interface au milieu d'un mot se lit comme un bug. */
+#mc-tete li,
+#mc-tete p,
+#mc-tete pre {
+  overflow-wrap: anywhere;
+}
