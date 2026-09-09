@@ -307,9 +307,20 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
                      wait_until="domcontentloaded", timeout=40000)
         # Le préchargement de l'overlay est différé de 4 s puis prend le temps
         # du débit : on lui laisse de quoi finir, comme un OBS déjà allumé.
-        # 14 s suffisent depuis que les illustrations sont passées de 993 à
-        # 574 ko — quatre cartes tiennent dans les dix secondes de transfert.
-        p_froid.wait_for_timeout(14000)
+        #
+        # 🚨 Le préchargement démarre après 4 s ; au-delà, c'est la CONDITION
+        # qu'on attend (plus bas), pas une durée. Le budget était écrit en dur
+        # — 14 s, calibré sur 574 ko pour quatre cartes — et il a sauté le
+        # 2026-09-09 dès que la collection est passée à sept cartes et 960 ko :
+        # le smoke annonçait « la carte se déplie sans son héros » alors que
+        # les six illustrations de rhae et Claker répondaient toutes en 200.
+        # Un budget de temps en dur re-casse à CHAQUE carte ajoutée, et il
+        # accuse le rendu au lieu du réseau — le faux positif qui finit par
+        # faire ignorer un filet.
+        #
+        # ⚠️ Et pas `networkidle` non plus : l'overlay tient un flux SSE ouvert
+        # en permanence, l'état ne serait jamais atteint.
+        p_froid.wait_for_timeout(5000)
         p_froid.evaluate("""(cle) => (async () => {
           const d = await (await fetch('/api/public/tcg/cartes')).json();
           window.__overlayPreview.showWidget('carte',
@@ -330,19 +341,38 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
               return [imgs.filter(i => !i.complete || !i.naturalWidth).length,
                       imgs.length];
             }"""
+        # On boucle jusqu'à ce que les images soient LÀ, pas seulement jusqu'à
+        # ce que la scène soit visible : à 700 kbit/s, le fond arrive avant le
+        # héros, et sortir à la première mesure non nulle ne prouvait que
+        # l'apparition du calque. Une illustration réellement absente (404,
+        # chemin mal formé) rend `complete` vrai et `naturalWidth` nul : elle
+        # ne se charge donc JAMAIS, la boucle va au bout de sa borne et le
+        # test échoue — ce qui est exactement ce qu'on veut de lui.
         vu = None
-        for _ in range(60):
+        for _ in range(250):
             p_froid.wait_for_timeout(120)
-            vu = p_froid.evaluate(compte, False)
-            if vu is not None:
-                break
+            mesure = p_froid.evaluate(compte, False)
+            if mesure is not None:
+                vu = mesure
+                if mesure[0] == 0:
+                    break
         manque, total = vu if vu else (-1, 0)
         rap.dire(manque == 0,
                  f"carte {cle} : {total} illustration(s) à l'entrée, aucune manquante",
                  f"{manque} manquante(s) — la carte s'affiche incomplète")
         # ENTREE_S vaut 0,6 s dans la chorégraphie : à 2 s le dépliage a joué.
+        # Même patience ensuite qu'à l'entrée, et pour la même raison : les
+        # calques de survol ne sont demandés qu'ICI, donc leur transfert
+        # commence maintenant.
         p_froid.wait_for_timeout(2000)
-        vu = p_froid.evaluate(compte, True) or (-1, 0)
+        vu = (-1, 0)
+        for _ in range(250):
+            mesure = p_froid.evaluate(compte, True)
+            if mesure is not None:
+                vu = mesure
+                if mesure[0] == 0:
+                    break
+            p_froid.wait_for_timeout(120)
         rap.dire(vu[0] == 0,
                  f"carte {cle} : {vu[1]} illustration(s) une fois dépliée",
                  f"{vu[0]} manquante(s) — la carte se déplie sans son héros")
@@ -996,6 +1026,13 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         mob.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         mob.wait_for_timeout(900)
         barre = mob.evaluate("""() => {
+          // 🚨 On redescend ICI, dans la MÊME évaluation que la mesure. Le flux
+          // cognitif de l'accueil s'allonge tout seul en SSE : entre le
+          // défilement et la lecture, une pensée de plus repoussait le pied
+          // sous l'écran et le test annonçait « 123 px de chevauchement » sur
+          // une page saine (vu le 2026-09-09). `getBoundingClientRect` force
+          // le reflow, la mesure qui suit est donc bien celle d'après.
+          window.scrollTo(0, document.body.scrollHeight);
           const t = document.querySelector('.tabbar');
           const visible = t && getComputedStyle(t).display !== 'none';
           const r = visible ? t.getBoundingClientRect() : null;

@@ -102,6 +102,21 @@ class CarteTcg:
     # irisation de surface se lit comme un voile blanc — d'où la seconde
     # option, choisie carte par carte au moment du cadrage.
     holo_zone: str = "surface"
+    # La DOSE de vitrage, entre 0 et 1. Un seul curseur, qui monte ensemble le
+    # grain, le contraste et la saturation de la couche — les trois bornes
+    # vivent dans `.chero-holo` (`public-ui/partage/tcg-carte.css`) et nulle
+    # part ailleurs. Ce nombre ne dit que « à quelle hauteur ».
+    #
+    # Il existe parce que deux cartes livrées n'ont PAS le même besoin, et
+    # c'est un banc à l'écran qui l'a montré (2026-09-09) : le fond d'Azraël
+    # est une explosion orange claire où le vitrage se noie, celui de
+    # KingsRequin un bleu sombre dont le vitrage court dans le liseré. Une
+    # dose unique les force à un compromis.
+    #
+    # ⚠️ Le défaut est 1,0 — la dose pleine, celle choisie par l'owner sur le
+    # banc. Aucune carte n'écrit ce champ aujourd'hui, et c'est normal : il ne
+    # se pose que le jour où l'une doit diverger des autres.
+    holo_force: float = 1.0
     # Deux nappes de bulles qui montent derrière l'illustration. Aquatique et
     # rien d'autre : ailleurs ce sont des taches claires sans raison.
     bulles: bool = False
@@ -223,6 +238,11 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
                 f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
         _exiger(carte.rarete in _RARETES, cle,
                 f"rarete={carte.rarete!r} hors de {sorted(_RARETES)}")
+        # Hors bornes, le `calc()` de la feuille rendrait un filtre absurde —
+        # un `saturate` négatif est INVALIDE et fait tomber la propriété
+        # entière, donc le vitrage disparaît en silence. On refuse ici.
+        _exiger(0.0 <= carte.holo_force <= 1.0, cle,
+                f"holo_force={carte.holo_force!r} hors de [0, 1]")
         # Les chemins d'illustration sont SANS extension : le front ajoute la
         # sienne (`x.avif` / `x.webp`). Une extension écrite ici donnerait
         # `/assets/x.webp.avif`, soit une carte noire.
@@ -408,6 +428,7 @@ def en_json(carte: CarteTcg) -> dict:
         "intensite": carte.intensite,
         "holographique": carte.holographique,
         "holoZone": carte.holo_zone,
+        "holoForce": carte.holo_force,
         "bulles": carte.bulles,
         "rarete": carte.rarete,
     }

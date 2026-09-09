@@ -43,6 +43,13 @@
 # l'AVIF avec repli WebP et ajoute l'extension lui-même. En écrire une ici
 # donnerait `/assets/x.webp.avif`.
 #
+# ⚠️ `holo_force` (0 à 1) dose le vitrage CARTE PAR CARTE — grain, contraste et
+# saturation montent ensemble. Aucune carte ne l'écrit aujourd'hui, toutes
+# prennent la dose pleine (1,0) choisie sur un banc le 2026-09-09. Il est là
+# pour le jour où une carte devra diverger : le fond d'Azraël est une explosion
+# orange claire, celui de KingsRequin un bleu sombre dont le vitrage court dans
+# le liseré — ils n'auront pas éternellement le même besoin.
+#
 # Les champs omis prennent le défaut de `CarteTcg` (`bot/core/tcg_cartes.py`).
 # Un champ inconnu est une ERREUR au chargement, et pas un réglage ignoré en
 # silence : c'est tout l'intérêt d'avoir sorti ces valeurs du code.

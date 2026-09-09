@@ -270,6 +270,33 @@ def test_la_rarete_par_defaut_est_indefinie(tmp_path):
     assert cartes["essai"].rarete == "indefinie"
 
 
+def test_la_dose_de_vitrage_hors_bornes_est_refusee(tmp_path):
+    """Le facteur de vitrage vaut entre 0 et 1, et rien d'autre.
+
+    🚨 Hors bornes, le `calc()` de la feuille rend un filtre INVALIDE — un
+    `saturate` négatif fait tomber la propriété entière, et le vitrage
+    disparaît sans qu'aucune erreur ne soit levée nulle part. C'est exactement
+    la panne muette qu'on refuse ici, au chargement, en nommant la carte.
+    """
+    import pytest
+    for valeur in (-0.1, 1.5):
+        with pytest.raises(ValueError, match="holo_force"):
+            tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(holo_force=valeur)]))
+
+
+def test_la_dose_de_vitrage_part_au_front_avec_son_defaut():
+    """Un champ que le front ne reçoit pas n'existe pas pour lui.
+
+    Le défaut est 1,0 — la dose pleine, choisie par l'owner sur un banc de six
+    variantes le 2026-09-09. Aucune carte livrée ne l'écrit, et c'est voulu :
+    le champ ne se pose que le jour où une carte doit diverger des autres.
+    """
+    from bot.core.tcg_cartes import en_json
+    for carte in tcg_cartes.CARTES.values():
+        assert carte.holo_force == 1.0, carte.cle
+        assert en_json(carte)["holoForce"] == 1.0, carte.cle
+
+
 def test_l_accent_derive_du_cout_et_ne_s_ecrit_pas(tmp_path):
     """🚨 `accent` n'est plus un champ : l'écrire lève.
 

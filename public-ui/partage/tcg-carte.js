@@ -531,6 +531,14 @@ const DEFAUTS = {
   // pour les fonds déjà très colorés, où une irisation de surface se noie —
   // c'est le cas de KingsRequin, dont le fond est un bleu saturé.
   holoZone: 'surface',
+  // La DOSE de vitrage, par carte : un facteur 0–1 qui monte ensemble le
+  // grain, le contraste et la saturation de la couche. Les bornes vivent dans
+  // `.chero-holo` (feuille), jamais ici — ce nombre n'est qu'un curseur.
+  //
+  // Il existe parce que deux cartes livrées n'ont pas le même besoin : le fond
+  // d'Azraël est clair et saturé, celui de KingsRequin sombre, et son vitrage
+  // court dans le LISERÉ. Une dose unique les force à un compromis.
+  holoForce: 1,
   // Deux nappes de bulles qui montent derrière l'illustration. Réservé aux
   // cartes aquatiques : ailleurs, ce sont des taches claires sans raison.
   bulles: false,
@@ -860,6 +868,7 @@ export function carteHero(carte, options = {}) {
     + `;--chero-ap-bas:${c.avantPlanBas}`
     + `;--chero-3d-cote:${c.hero3dCote || c.heroCote}`
     + `;--chero-3d-haut:${c.hero3dHaut || c.heroHaut}`
+    + `;--chero-holo-force:${c.holoForce}`
     + (depli ? `;--chero-depli:${depli}` : '')
     + (etape ? `;--chero-etape:${etape}` : '');
 

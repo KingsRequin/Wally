@@ -373,7 +373,17 @@
     repeating-linear-gradient(var(--chero-holo-a, 108deg),
       #ffffff 0%, #9a9a9a 7%, #3a3a3a 14%, #9a9a9a 21%, #ffffff 27%);
   background-position: 0 0, var(--chero-holo-x, 50%) var(--chero-holo-y, 50%);
-  background-size: 96px, 260% 260%;
+  /* La tuile est POSÉE plus grosse que le grain de 96 px retenu le matin du
+   * 2026-09-09 : la cellule passe de 8 à 13 px. Arbitrage de l'owner le soir
+   * même, sur un banc de six variantes capturées côte à côte — le grain fin ne
+   * se lisait plus une fois la couche descendue SOUS le héros, où il ne lui
+   * reste que des bandes de fond pour s'exprimer.
+   *
+   * 🚨 `--chero-holo-force` est un facteur 0–1 servi PAR CARTE, et c'est le
+   * seul écrivain de la dose. Les bornes sont ici et nulle part ailleurs :
+   * à 0 la couche est brute, à 1 elle porte la dose pleine. Une carte qui
+   * diverge écrit son facteur dans `tcg/cartes.yaml`, jamais un filtre. */
+  background-size: calc(96px + 64px * var(--chero-holo-force, 1)), 260% 260%;
   /* 🚨 `multiply` sur la PREMIÈRE couche, et l'ordre compte : les fonds se
    * composent du bas vers le haut, et le mode écrit sur une couche la mélange
    * au résultat de celles d'en dessous. Le vitrage multiplie donc le dégradé
@@ -401,8 +411,22 @@
    * 🚨 PLUS DE FLOU. Ses 6 px fondaient les bandes du dégradé les unes dans
    * les autres, ce qui était sa raison d'être ; la lumière est désormais un
    * dégradé de GRIS aux transitions déjà douces. Et ils moyennaient les
-   * anneaux du vitrage — larges de deux à trois pixels — en un aplat. */
-  filter: brightness(1.1) contrast(1.4) saturate(1);
+   * anneaux du vitrage — larges de deux à trois pixels — en un aplat.
+   *
+   * 🚨 C'est `saturate` qui a débloqué l'effet, pas l'opacité. Mesuré le
+   * 2026-09-09 : monter `OPACITE_HOLO` de 0,80 à 1,00 ne changeait que
+   * 1,94/255 — 0,8 %, invisible. La couche est en `color-dodge` et le fond
+   * d'Azraël est une explosion orange déjà très claire : y AJOUTER de la
+   * lumière sature aussitôt et ne rend rien. Ce qui se voit sur un fond
+   * clair, c'est la TEINTE des crêtes — d'où `saturate(4)`, qui porte l'écart
+   * à 6,14/255 et fait apparaître le vert et le magenta dans le fond.
+   *
+   * Les trois paramètres montent ENSEMBLE avec `--chero-holo-force` : un seul
+   * curseur par carte, et pas trois qu'il faudrait accorder à la main. À 0,
+   * chacun vaut son neutre (1) et la couche est brute. */
+  filter: brightness(calc(1 + .25 * var(--chero-holo-force, 1)))
+          contrast(calc(1 + 1.2 * var(--chero-holo-force, 1)))
+          saturate(calc(1 + 3 * var(--chero-holo-force, 1)));
 }
 
 /* La variante `bords` : le même dégradé, mais confiné dans l'ÉPAISSEUR du
