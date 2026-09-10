@@ -12,16 +12,15 @@ plafonnée à 100 entrées, une fenêtre qui en contient davantage rendrait les
 100 plus VUS — un clip récent et peu vu passerait à la trappe. Le script le
 DIT plutôt que de rendre un résultat faux en silence.
 
-⚠️ **Redémarrer le bot après l'écriture.** Son instance de
-`PublicationDesClips` a chargé la mémoire au boot et la réécrit ENTIÈRE à
-chaque publication : sans restart, le premier clip du live suivant écraserait
-les ids rattrapés, et ils repartiraient en doublon.
+Les ids écrits ici ne sont PAS écrasés par le bot en marche : son `_ranger()`
+fusionne avec la base au lieu de l'écraser. Un restart ne reste utile que pour
+rattraper un clip TRÈS récent pendant un live — la veille décide sur sa mémoire
+en RAM, qui ne connaît pas encore le rattrapage.
 
 Usage :
     python3 scripts/rattraper_clips_discord.py                 # montre, n'envoie rien
     python3 scripts/rattraper_clips_discord.py --publier
     python3 scripts/rattraper_clips_discord.py --nombre 5 --jours 30 --publier
-    docker compose restart wally     # OBLIGATOIRE après --publier
 """
 from __future__ import annotations
 
@@ -162,8 +161,9 @@ async def _main() -> int:
     if envoyes:
         _ranger(deja + envoyes)
         print(f"\n{len(envoyes)} clip(s) publié(s) et rangé(s) en base.")
-        print("⚠️  `docker compose restart wally` MAINTENANT : sans ça, la mémoire "
-              "en RAM du bot écrasera ces ids à la première publication du live.")
+        print("   (le bot en marche fusionne, il n'écrasera pas ces ids. Un "
+              "`docker compose restart wally` ne s'impose que si l'un d'eux date "
+              "de moins de cinq minutes et qu'un live est en cours.)")
     return 0
 
 

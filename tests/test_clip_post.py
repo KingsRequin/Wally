@@ -5,6 +5,7 @@ fois ». L'overlay est éphémère, un salon Discord garde ce qu'on y met : la
 mémoire des ids publiés doit donc survivre au rebuild, et il y en a plusieurs
 par soirée de live.
 """
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -28,15 +29,22 @@ CLIP = {
 
 
 class _FausseBase:
-    """`bot_state` réduit à un dict — la seule part qui compte ici."""
+    """`bot_state` réduit à un dict — la seule part qui compte ici.
+
+    Le `sleep(0)` n'est pas décoratif : sans point de suspension, deux
+    `publier()` concurrents ne s'entrelaceraient JAMAIS et le test du verrou
+    passerait aussi bien sans verrou. Une base réelle cède la main.
+    """
 
     def __init__(self, etat=None):
         self.etat = dict(etat or {})
 
     async def get_state(self, key):
+        await asyncio.sleep(0)
         return self.etat.get(key)
 
     async def set_state(self, key, value):
+        await asyncio.sleep(0)
         self.etat[key] = value
 
 
@@ -174,7 +182,6 @@ async def test_la_veille_publie_apres_l_overlay(monkeypatch):
         discord_bot=discord_bot, twitch_bot=twitch_bot, publication=publication,
     )
     await veille.un_tour()
-    import asyncio
     await asyncio.gather(*list(veille._taches))
     assert ordre == ["overlay", "discord"]
 
@@ -195,7 +202,10 @@ async def test_le_live_coupe_pendant_l_attente_publie_quand_meme(monkeypatch):
     publication.publier.assert_awaited_once_with(CLIP)
 
 
-async def test_une_annonce_overlay_en_erreur_n_empeche_pas_la_publication(monkeypatch):
+async def test_une_annonce_overlay_en_erreur_est_DITE_et_n_arrete_pas_discord(monkeypatch):
+    """La tâche n'est attendue par personne : sans capture, l'exception part dans
+    le « Task exception was never retrieved » d'asyncio, que loguru ne
+    journalise pas. L'overlay reste noir et rien ne le dit."""
     from bot.twitch import clip_announce
 
     async def _boum(narrateur, api, clip):
@@ -206,6 +216,29 @@ async def test_une_annonce_overlay_en_erreur_n_empeche_pas_la_publication(monkey
     veille = clip_announce.VeilleDesClips(
         discord_bot=MagicMock(), twitch_bot=MagicMock(), publication=publication,
     )
-    with pytest.raises(RuntimeError):
+    dits: list[str] = []
+    jeton = clip_announce.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
         await veille._montrer_puis_publier(MagicMock(), CLIP)
+    finally:
+        clip_announce.logger.remove(jeton)
+    assert any("overlay mort" in d for d in dits)
     publication.publier.assert_awaited_once_with(CLIP)
+
+
+# ── deux écrivains sur la même clé ────────────────────────────────────────────
+
+async def test_un_id_ecrit_par_un_TIERS_survit_a_une_publication():
+    """`scripts/rattraper_clips_discord.py` écrit sur la MÊME clé. Écraser avec
+    la seule mémoire de ce process effacerait son travail au premier clip du
+    live, et les clips rattrapés repartiraient en doublon."""
+    db = _FausseBase()
+    pub, _ = _publication(db=db)
+    await pub.charger()
+    db.etat["clips_publies_discord"] = json.dumps(["rattrape-a", "rattrape-b"])
+
+    await pub.publier(CLIP)
+    ranges = json.loads(db.etat["clips_publies_discord"])
+    assert ranges == ["rattrape-a", "rattrape-b", CLIP["id"]]
+    # ...et ce process a APPRIS le rattrapage : il ne republiera pas ces deux-là
+    assert await pub.publier({**CLIP, "id": "rattrape-a"}) is False

@@ -152,6 +152,12 @@ class VeilleDesClips:
         """
         try:
             await announce_clip(narrateur, self._twitch.twitch_api, clip)
+        except Exception as exc:  # noqa: BLE001 — un écran muet ne coupe pas Discord
+            # La tâche n'est attendue par personne : sans ce bloc, l'exception
+            # part dans le « Task exception was never retrieved » d'asyncio, que
+            # loguru ne journalise pas — l'overlay reste noir et rien ne le dit.
+            logger.warning("Overlay: annonce du clip {s} en erreur ({e!r})",
+                           s=clip.get("id") or "?", e=exc)
         finally:
             if self._publication is not None:
                 await self._publication.publier(clip)

@@ -96,30 +96,52 @@ class PublicationDesClips:
     def _salon_configure(self) -> int | None:
         return self._config.discord.clips_channel_id
 
-    async def charger(self) -> None:
-        """Relit les ids déjà publiés. Ne lève jamais."""
+    async def _lire(self) -> list[str]:
+        """Les ids rangés en base. `[]` si la clé est absente ou illisible."""
         if self._db is None:
-            return
+            return []
         try:
             brut = await self._db.get_state(CLE_ETAT)
             ids = json.loads(brut) if brut else []
         except Exception as exc:  # noqa: BLE001 — une base muette ne doit pas bloquer le live
             logger.warning("Clips Discord : mémoire illisible ({e!r})", e=exc)
-            return
+            return []
         if not isinstance(ids, list):
             logger.warning("Clips Discord : mémoire de forme inattendue, ignorée")
-            return
-        self._publies.extend(str(i) for i in ids if i)
+            return []
+        return [str(i) for i in ids if i]
+
+    async def charger(self) -> None:
+        """Relit les ids déjà publiés. Ne lève jamais."""
+        self._publies.extend(await self._lire())
         logger.info("Clips Discord : {n} clip(s) déjà publié(s) en mémoire",
                     n=len(self._publies))
 
     async def _ranger(self) -> None:
+        """Range la mémoire en FUSIONNANT avec ce qui est déjà en base.
+
+        Écraser avec la seule `deque` de ce process serait un piège : le script
+        de rattrapage (`scripts/rattraper_clips_discord.py`) écrit sur la MÊME
+        clé, et le premier clip du live suivant effacerait son travail — les
+        clips rattrapés repartiraient en doublon. Deux écrivains sur une clé, ça
+        se fusionne ; sinon ça se répare avec un « ne pas oublier de
+        redémarrer », et on oublie.
+        """
         if self._db is None:
             return
+        fusion = await self._lire()
+        for cid in self._publies:
+            if cid not in fusion:
+                fusion.append(cid)
+        fusion = fusion[-MEMOIRE:]
         try:
-            await self._db.set_state(CLE_ETAT, json.dumps(list(self._publies)))
+            await self._db.set_state(CLE_ETAT, json.dumps(fusion))
         except Exception as exc:  # noqa: BLE001 — le clip est parti, l'oubli n'annule rien
             logger.warning("Clips Discord : mémoire non rangée ({e!r})", e=exc)
+            return
+        # Reprendre la fusion : c'est par là que ce process apprend ce qu'un
+        # rattrapage a publié dans son dos.
+        self._publies = deque(fusion, maxlen=MEMOIRE)
 
     async def _salon(self, salon_id: int):
         salon = self._discord.get_channel(salon_id)
