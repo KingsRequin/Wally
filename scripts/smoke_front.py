@@ -838,15 +838,34 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
           // La cible doit être RÉELLEMENT repliée. Une pensée courte tient
           // déjà tout entière dans son `-webkit-line-clamp` : la déplier ne
           // change rien à sa hauteur, et le smoke criait alors au loup sur du
-          // CONTENU — vu le 2026-09-09, 43 px avant comme après, pour les
-          // 253 caractères de la dernière pensée du flux de prod.
-          const cibles = [...l.children].filter(c => {
-            if (!c.classList.contains('clickable')) return false;
-            const t = c.querySelector('.feed-text');
-            return t && t.scrollHeight > t.clientHeight;
-          });
+          // CONTENU — vu le 2026-09-09, 43 px avant comme après.
+          //
+          // 🚨 La marge de 8 px n'est pas de la superstition : `scrollHeight`
+          // dépasse `clientHeight` d'un pixel sur une ligne qui tient
+          // pourtant entière, par arrondi sous-pixel. Un simple `>` retenait
+          // donc des pensées de DEUX lignes sous un `line-clamp: 3` — 43 px
+          // avant comme après le clic. Relevé le 2026-09-10 : le flux de prod
+          // en contient, et comme il défile en direct, le test tombait une
+          // fois sur deux selon la pensée qui passait en dernier.
+          //
+          // ⚠️ Et on prend la PLUS repliée, pas la dernière : le flux change
+          // sous le test, un choix positionnel le rend dépendant de ce qui
+          // vient d'arriver. Le plus grand écart, lui, garantit un dépliage
+          // mesurable quelle que soit la minute.
+          const cibles = [...l.children]
+            .filter(c => {
+              if (!c.classList.contains('clickable')) return false;
+              const t = c.querySelector('.feed-text');
+              return t && t.scrollHeight > t.clientHeight + 8;
+            })
+            .sort((a, b) => {
+              const ta = a.querySelector('.feed-text');
+              const tb = b.querySelector('.feed-text');
+              return (tb.scrollHeight - tb.clientHeight)
+                   - (ta.scrollHeight - ta.clientHeight);
+            });
           if (!cibles.length) return null;
-          const cible = cibles[cibles.length - 1];
+          const cible = cibles[0];
           // La HAUTEUR rendue, pas la longueur du texte : une pensée est
           // repliée par `-webkit-line-clamp`, donc son `textContent` est déjà
           // complet dans le DOM avant le clic. Mesurer les caractères ne
