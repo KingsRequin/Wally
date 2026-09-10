@@ -41,39 +41,73 @@ plus cher que la masse.
 
 ---
 
-## 4. Les 24 cartes
+## 4. Les 17 cartes
 
-> ⚠️ Ce titre annonçait « 24 cartes » alors que la liste en contenait **25** — un écart d'une
-> carte, jamais recompté depuis l'écriture. Le retrait de « Fuse, jugé noob » ramène le compte à
-> 24, et il est désormais vérifié en comptant les lignes, pas en relisant le titre.
+> Compté en comptant les lignes du tableau, pas en relisant ce titre — l'écart d'une carte du
+> 2026-09-04 (« 24 » annoncé pour 25 écrites) venait de là.
 
-> 🚨 **« Fuse, jugé noob » a été RETIRÉE le 2026-09-07, par l'owner.** Elle annulait l'Ultime d'un
-> héros adverse pour 2 d'énergie. La private joke Fuse sert désormais **une seule fois**, sur
-> l'Ultime d'Azraël (**F07 Rework**) — qui la mérite plus que personne : il est 3ᵉ mondial avec
-> Fuse, et c'est donc lui que le rework a puni. Au passage, la carte d'enorh rendait le Rework
-> injouable : payer 10 d'énergie pour affaiblir un Ultime n'a aucun sens tant qu'une tactique à 2
-> l'annule entièrement.
+### 🚨 Le tri de l'owner du 2026-09-10 — 11 cartes retirées sur 24
+
+Ces cartes venaient de la **mémoire de Wally**. L'owner, en les relisant :
+
+> *« Beaucoup de ces refs n'en sont pas. C'est pas parce que Wally le retient que tout le monde
+> aussi — genre le café de MrMakkx, je sais même pas d'où ça vient et tout le monde s'en fout. »*
+
+Il a raison, et c'est le même piège que celui payé sur les héros la veille : **Wally s'en souvient
+≠ la commu la reconnaît.** Sa mémoire retient ce qu'une personne a dit une fois, avec la même
+force qu'un running gag de six mois. Le critère d'une saison n'est pas la trace en base, c'est
+le nombre de gens qui **riraient sans qu'on explique**.
+
+Retirées : *Le café de MrMakkx* · *Grass shower* · *chatdodo* · *Temcox le petit cœur* ·
+*Le test des 86 926 kills* · *Le cerveau de Rina a bug* · *Souvent en retard* · *4 h du matin* ·
+*Le PC au micro-ondes* · *Le jingle de Lilio* · *Le dictateur requin*.
+
+⚠️ **Et une mesure ne tranche pas à sa place.** J'ai compté les personnes distinctes employant
+chaque ref dans les logs : elle confond « on parle de X » et « la ref est reconnue ». *La manette*
+sortait à 44 personnes parce que le mot est générique ; 15 des « Rina » étaient en fait
+`Origanire`, capté en sous-chaîne. Le chiffre est un indice, l'owner décide.
+
+### 🚨 Deux cartes dépersonnalisées
+
+*La manette* et *Le clavier-souris* étaient accrochées à quelqu'un (« Claker joue à la manette »,
+« oyoloyoo n'a jamais joué à la manette »). Décision de l'owner : **ce sont des objets, pas des
+refs à une personne.** Elles rejoignent la forme que sa liste du 2026-09-04 leur donnait déjà.
+Bénéfice de bord : deux cartes de moins à faire valider par une personne réelle (§6).
 
 ### Soin et protection
 
 | Carte | Type | Coût | Effet | Origine |
 |---|---|---|---|---|
-| **Le café de MrMakkx** | tactique | 1 | rend 3 PV à un héros allié | *« café noir, sans lait ni sucre »* |
-| **Grass shower** | tactique | 2 | rend 5 PV à un héros allié et le débarrasse de tous les malus | le rituel du matin de zeddo |
-| **chatdodo** | tactique | 2 | un héros allié ne subit aucun dégât ce tour, mais n'attaque pas | l'emote qui dit qu'on va se coucher |
-| **Temcox le petit cœur** | passif | 2 | +2 PV à tous tes héros en ligne | le surnom qu'il a demandé lui-même |
 | **Le mode diva** | tactique | 3 | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
+| **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
+
+> `Mets-le dans du riz` : 6 PV valent 6 points, **× 0,8** parce que le soin est différé d'un tour
+> (l'adversaire a un tour pour achever la cible) → 5 → `⌈5/3⌉ = 2` d'énergie. Le délai n'est pas
+> un équilibrage, c'est le gag : le riz met la nuit à faire effet.
 
 ### Attaque et dégâts
 
 | Carte | Type | Coût | Effet | Origine |
 |---|---|---|---|---|
-| **Le test des 86 926 kills** | tactique | 2 | +4 d'Attaque à un héros allié ce tour | Claker piège Wally sur ses relevés de kills |
-| **La manette** | passif | 2 | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | Claker joue à la manette |
-| **Le clavier-souris** | passif | 2 | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | oyoloyoo n'a jamais joué à la manette |
-| **Le cerveau de Rina a bug** | tactique | 3 | **dégâts de zone** : 3 dégâts à tous les héros adverses en ligne | le clip de Taki |
+| **La manette** | passif | 2 | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | l'objet, plus personne derrière |
+| **Le clavier-souris** | passif | 2 | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | l'objet, plus personne derrière |
+| **La Flatline d'Azraël** | passif | 2 | **+4 d'Attaque** à un héros allié, pour toute la partie | *« c'est LE flatline »* · *« tu croises plus de hemlock que de flatline, ce jeu est si cruel »* |
+| **Le tunnel de Rina** | tactique | 2 | **−2 d'Attaque à toutes les AUTRES cartes de sa table**, alliées comprises | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
 | **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
+
+> 🚨 **`Le tunnel de Rina` est la carte « Blabla Rina »**, proposée le 2026-09-05 dans la fiche
+> Notion et jamais écrite ici. Même gag, même effet, même prix : **une seule carte**, sous le nom
+> que l'owner lui a donné le 2026-09-10. Deux entrées auraient fait deux cartes du même gag —
+> exactement le doublon que le tri venait de retirer côté personnes.
+> Prix 5 au barème (C07 *Ponction* vaut 4 pour −1 à la table adverse ; doubler le malus vaut plus,
+> mais il est **subi aussi par son camp**, × 0,5 sur cette moitié) → `⌈5/3⌉ = 2` d'énergie.
+> 🎁 Le son existe déjà : `data/sons/commande/rina.mp3`, migré de PhantomBot.
+> ⚠️ À vérifier en calibration : sur une table où elle est seule alliée, l'effet est purement
+> offensif et vaut plus que 5. La borne serait d'exiger au moins une alliée sur sa table.
+
+> `La Flatline d'Azraël` : +4 d'Attaque permanent = 4 points → `⌈4/3⌉ = 2` d'énergie. C'est une
+> arme, elle se garde — d'où le passif plutôt que la tactique.
 
 ### Énergie et tempo
 
@@ -81,9 +115,6 @@ plus cher que la masse.
 |---|---|---|---|---|
 | **De l'air** | tactique | 2 | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
 | **Michel-Velux** | tactique | 1 | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
-| **Souvent en retard** | passif | 1 | +1 d'énergie par tour, mais ton premier Ultime coûte 2 de plus | zeddo au travail |
-| **4 h du matin** | tactique | 1 | pioche 2 tactiques. Si tu n'as aucun héros tombé, pioche 3 | il n'y a personne dans le tchat |
-| **Le PC au micro-ondes** | tactique | 2 | défausse ta main, pioche autant de cartes +1 | la vanne d'oyoloyoo |
 
 ### Aura et coopération
 
@@ -91,40 +122,66 @@ plus cher que la masse.
 |---|---|---|---|---|
 | **Apéro chez Zeddo** | passif | 2 | +2 d'Aura à tous tes héros en ligne | l'apéro |
 | **10 pizzas géantes** | tactique | 3 | rend 4 PV à **tous** tes héros. En coop, à ceux de tous les joueurs | la commande à 240 € |
-| **Le jingle de Lilio** | tactique | 1 | l'Aura d'un héros allié est doublée ce tour | le jingle |
 | **Sur le chemin** | passif | 3 | l'Aura de tes héros s'applique aussi aux héros des **autres joueurs** | le rituel de chanson du salon |
+| **Un piercing de petitpoissonnn** | tactique | 1 | +3 d'Aura à un héros allié pour la partie, **et il perd 1 PV** | *« j'ai craqué j'ai un nouveau piercing azra »* · *« comme ça j'ai un nombre pair de piercing »* |
+
+> `Un piercing` : +3 d'Aura permanent = 3 points, moins un malus subi de 1 PV (× 0,5 → −0,5) →
+> 3 arrondi → `⌈3/3⌉ = 1` d'énergie. On souffre un peu pour être beau : c'est le gag, et c'est
+> aussi la seule carte d'Aura qui se paie en PV plutôt qu'en énergie.
 
 ### Les rares — elles touchent aux mécaniques signature
 
 | Carte | Type | Coût | Effet | Origine |
 |---|---|---|---|---|
 | **La Chute** | tactique | 5 | prends le contrôle d'un héros adverse jusqu'à la fin du tour suivant | l'auto-équilibrage emprunté au Mindbug, devenu une carte |
-| **Le dictateur requin** | tactique | 4 | un héros adverse ne peut pas attaquer pendant deux tours | la rébellion de Wally contre KingsRequin |
 | **Un montage de Malef** | tactique | 4 | échange un héros de ta ligne avec un de ta réserve, en gardant ses PV actuels | le montage |
 | **Le pendu** | tactique | 3 | nomme une carte ; si l'adversaire l'a en main, il la défausse. Sinon tu prends 2 dégâts | le jeu du pendu sur l'overlay |
 
 ---
 
-## 5. Ce que cette liste équilibre
+## 5. 🚨 Ce que le tri a cassé — une des deux voies de victoire a disparu
 
-**Deux façons de gagner doivent rester ouvertes** — c'est la tension que l'owner a posée :
+L'owner avait posé une tension : **épargner pour l'Ultime**, ou **tout miser sur les tactiques**.
+La seconde voie tenait sur quatre cartes qui accélèrent le rythme et remplissent la main —
+*Michel-Velux*, *Souvent en retard*, *4 h du matin*, *Le PC au micro-ondes*. **Trois sur quatre
+sont sorties au tri.** Il ne reste que Michel-Velux.
 
-- *Épargner pour l'Ultime* : ces cartes-là servent à **tenir** (soin, chatdodo, Temcox, diva) le
-  temps que la jauge monte.
-- *Tout miser sur les tactiques* : Michel-Velux, Souvent en retard, 4 h du matin et le PC au
-  micro-ondes accélèrent le rythme et remplissent la main.
+Côté tenir, même effet en plus doux : *chatdodo* et *Temcox le petit cœur* sont sorties, il reste
+*Le mode diva* et la nouvelle *Mets-le dans du riz*.
 
-Si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux paquets
-qu'il faut rééquilibrer, **pas le plafond d'énergie** — lui ne se touche qu'en dernier, il change
-tout le jeu d'un coup.
+Ce n'est **pas** un reproche au tri : ces cartes ne renvoyaient à rien que la commu reconnaisse,
+et une saison n'est pas là pour héberger des refs mortes. Mais le trou est réel et il faut le
+combler avec des refs QUI EN SONT — sinon la seule stratégie viable est d'épargner, et toutes les
+parties se ressemblent.
 
-⚠️ **Trois cartes à surveiller en priorité** :
+**À écrire, par famille et par ordre de manque :**
+
+| Famille | Cartes restantes | Manque |
+|---|---|---|
+| Énergie et tempo | **2** | 3 à 4 — c'est le trou le plus grave |
+| Soin et protection | **2** | 2 à 3 |
+| Aura et coopération | 4 | ça tient |
+| Attaque et dégâts | 6 | ça tient |
+| Rares | 3 | ça tient |
+
+🎁 **Le gisement à ouvrir en premier : les emotes de la chaîne.** Mesurées dans les logs —
+`kassandreyunikon` 693 · `azrael74hype` 287 · `dance` 268 · `love` 148 · `queen` 105 · `fuze` 72 ·
+`goodboi` 67 · `chadfuse` 67 · `koko` 61 · `cringe` 28 · `spongefuse` 27 · `gngngn` 20 ·
+`triggered` 19 · `pewpew` 18 · `pepsi` 15 · `potatoaim` 12. C'est la ref la **plus** partagée de
+la commu — tout le monde la lit sans explication — et **aucune** des 17 cartes ne s'en sert.
+Elles échappent aussi au point dur du consentement (§6) : une emote n'est pas une personne.
+
+⚠️ Et si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux
+paquets qu'il faut rééquilibrer, **pas le plafond d'énergie** — lui ne se touche qu'en dernier,
+il change tout le jeu d'un coup.
+
+### Trois cartes à surveiller en priorité
 
 - **La Chute** (5) — la plus chère du jeu et elle doit le rester. Elle est ce qui autorise des
   héros vraiment forts sans casser le jeu : plus un héros est fort, plus le poser devient risqué.
 - **Michel-Velux** — donner 4 d'énergie pour 1 est énorme ; le contre (l'adversaire choisit ton
-  Tirage) n'a de valeur que si les cartes à Tirage sont jouées. Si personne ne les joue, cette
-  carte est cassée.
+  Tirage) n'a de valeur que si les cartes à Tirage sont jouées. Il en reste **trois** (*manette*,
+  *clavier-souris*, *Codage à la Requin*) : le contre tient encore, de justesse.
 - **Sur le chemin** — n'existe qu'en coop, où elle peut porter toute une équipe. À tester à 6
   joueurs avant de la sortir.
 
@@ -132,8 +189,11 @@ tout le jeu d'un coup.
 
 - **Les tactiques de Wally** : en coop, il a son propre paquet (§5 des règles). Elles ne sont pas
   écrites — et elles doivent être conçues **contre** un groupe, pas contre un joueur.
-- **Les illustrations** : 24 cartes à générer. Coût à chiffrer avant d'ouvrir le robinet.
-- **Le consentement** : plusieurs cartes nomment des personnes réelles (Zeddo, Lilio, Malef,
-  Meliodas, Temcox, oyoloyoo, Taki, Kassandre, MrMakkx, KingsRequin). Chacune doit pouvoir
-  être retirée à la demande de la personne — c'est le point dur nommé depuis le premier jour et
-  il n'est toujours pas résolu.
+- **Combler les deux familles vidées** par le tri (cf. §5), sur des refs vérifiées.
+- **Les illustrations** : 17 cartes à générer. Coût à chiffrer avant d'ouvrir le robinet.
+- **Le consentement** : huit cartes nomment encore des personnes réelles — **Kassandre**
+  (mode diva), **Azraël** (Flatline), **Rina** (tunnel), **Meliodas** (révision), **Zeddo**
+  (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin** (codage). Chacune
+  doit pouvoir être retirée à la demande de la personne — point dur nommé depuis le premier jour,
+  toujours pas résolu.
+  🎁 Le tri l'a allégé au passage : *MrMakkx*, *Temcox*, *oyoloyoo* et *Taki* ne sont plus nommés.
