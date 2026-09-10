@@ -41,10 +41,16 @@ plus cher que la masse.
 
 ---
 
-## 4. Les 17 cartes
+## 4. Les 25 cartes
 
 > Compté en comptant les lignes du tableau, pas en relisant ce titre — l'écart d'une carte du
 > 2026-09-04 (« 24 » annoncé pour 25 écrites) venait de là.
+
+> **2026-09-10, seconde passe** : 8 cartes ajoutées après extraction des refs dans la mémoire de
+> Wally, les memes rangés et les logs. Elles visent les **deux familles que le tri avait vidées**
+> (§5) — Énergie passe de 2 à 5, Soin de 2 à 4. Chacune porte son indice de partage : nombre de
+> personnes distinctes mesuré dans les logs, et/ou l'existence d'un **meme rangé**, qui est une
+> preuve d'un autre ordre — quelqu'un l'a fabriqué et gardé.
 
 ### 🚨 Le tri de l'owner du 2026-09-10 — 11 cartes retirées sur 24
 
@@ -78,6 +84,8 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 
 | Carte | Type | Coût | Effet | Origine |
 |---|---|---|---|---|
+| **Tenma à 10 HP** | passif | 2 | le premier de tes héros qui tomberait à **0 PV survit à 1 PV** et gagne **+5 d'Attaque** ce tour | 2 memes — *« TENMA A 10HP : moi qui pensais pouvoir gagner mon 1v1 »* · 17 pers. |
+| **Push par 3 teams** | tactique | 1 | **tu choisis** lequel de tes héros encaisse **toutes** les attaques adverses ce tour ; les autres ne subissent rien | le meme de la vache hébétée |
 | **Le mode diva** | tactique | 3 | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
 | **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
 
@@ -95,6 +103,8 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 | **Le tunnel de Rina** | tactique | 2 | **−2 d'Attaque à toutes les AUTRES cartes de sa table**, alliées comprises | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
 | **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
+| **Aim assist = aimbot** | tactique | 2 | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
+| **Raciste** | tactique | 2 | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
 
 > 🚨 **`Le tunnel de Rina` est la carte « Blabla Rina »**, proposée le 2026-09-05 dans la fiche
 > Notion et jamais écrite ici. Même gag, même effet, même prix : **une seule carte**, sous le nom
@@ -113,6 +123,9 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 
 | Carte | Type | Coût | Effet | Origine |
 |---|---|---|---|---|
+| **Les PP du samedi** | tactique | 2 | **+4 d'énergie**, mais l'adversaire en gagne **2** | le rituel du samedi — **42 pers.**, 149 occ. |
+| **Requin qui tente d'expliquer** | tactique | 2 | les tactiques de l'adversaire coûtent **+1 d'énergie** ce tour | le meme des formules confuses — 17 pers. |
+| **Raiky dans l'anneau** | tactique | 2 | un héros de ta **réserve** entre en ligne immédiatement, mais perd **2 PV** | le meme *Let me in* — hors zone, il veut rentrer |
 | **De l'air** | tactique | 2 | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
 | **Michel-Velux** | tactique | 1 | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
 
@@ -135,55 +148,76 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 |---|---|---|---|---|
 | **La Chute** | tactique | 5 | prends le contrôle d'un héros adverse jusqu'à la fin du tour suivant | l'auto-équilibrage emprunté au Mindbug, devenu une carte |
 | **Un montage de Malef** | tactique | 4 | échange un héros de ta ligne avec un de ta réserve, en gardant ses PV actuels | le montage |
-| **Le pendu** | tactique | 3 | nomme une carte ; si l'adversaire l'a en main, il la défausse. Sinon tu prends 2 dégâts | le jeu du pendu sur l'overlay |
+| **Le pendu** | tactique | 3 | nomme une carte ; si l'adversaire l'a en main, il la défausse. Sinon tu prends 2 dégâts | le jeu du pendu |
+| **Quoi → FEUR** | tactique | 2 | **annule la prochaine tactique jouée par l'adversaire** ce tour | le meme du bouton rouge : *« quand quelqu'un dit quoi et qu'il y a Requin »* |
 
 ---
 
-## 5. 🚨 Ce que le tri a cassé — une des deux voies de victoire a disparu
+## 5. Le tri avait cassé une voie de victoire — comblé le jour même
 
 L'owner avait posé une tension : **épargner pour l'Ultime**, ou **tout miser sur les tactiques**.
-La seconde voie tenait sur quatre cartes qui accélèrent le rythme et remplissent la main —
-*Michel-Velux*, *Souvent en retard*, *4 h du matin*, *Le PC au micro-ondes*. **Trois sur quatre
-sont sorties au tri.** Il ne reste que Michel-Velux.
+La seconde tenait sur quatre cartes ; le tri du 2026-09-10 en a sorti **trois** (*Souvent en
+retard*, *4 h du matin*, *Le PC au micro-ondes*), ne laissant que Michel-Velux. Côté tenir,
+*chatdodo* et *Temcox le petit cœur* étaient sorties aussi.
 
-Côté tenir, même effet en plus doux : *chatdodo* et *Temcox le petit cœur* sont sorties, il reste
-*Le mode diva* et la nouvelle *Mets-le dans du riz*.
+⚠️ **La leçon vaut au-delà de ce cas** : un tri éditorial peut casser un équilibre sans que
+personne le voie. La liste reste cohérente **carte par carte** — c'est la **distribution par
+famille** qui s'effondre. À recompter par famille après chaque tri, jamais seulement le total.
 
-Ce n'est **pas** un reproche au tri : ces cartes ne renvoyaient à rien que la commu reconnaisse,
-et une saison n'est pas là pour héberger des refs mortes. Mais le trou est réel et il faut le
-combler avec des refs QUI EN SONT — sinon la seule stratégie viable est d'épargner, et toutes les
-parties se ressemblent.
+Comblé dans la foulée par la seconde passe :
 
-**À écrire, par famille et par ordre de manque :**
-
-| Famille | Cartes restantes | Manque |
+| Famille | Après le tri | Aujourd'hui |
 |---|---|---|
-| Énergie et tempo | **2** | 3 à 4 — c'est le trou le plus grave |
-| Soin et protection | **2** | 2 à 3 |
-| Aura et coopération | 4 | ça tient |
-| Attaque et dégâts | 6 | ça tient |
-| Rares | 3 | ça tient |
+| Soin et protection | 2 | **4** |
+| Attaque et dégâts | 6 | **8** |
+| Énergie et tempo | **2** | **5** |
+| Aura et coopération | 4 | 4 |
+| Rares | 3 | **4** |
 
-🎁 **Le gisement à ouvrir en premier : les emotes de la chaîne.** Mesurées dans les logs —
-`kassandreyunikon` 693 · `azrael74hype` 287 · `dance` 268 · `love` 148 · `queen` 105 · `fuze` 72 ·
-`goodboi` 67 · `chadfuse` 67 · `koko` 61 · `cringe` 28 · `spongefuse` 27 · `gngngn` 20 ·
-`triggered` 19 · `pewpew` 18 · `pepsi` 15 · `potatoaim` 12. C'est la ref la **plus** partagée de
-la commu — tout le monde la lit sans explication — et **aucune** des 17 cartes ne s'en sert.
-Elles échappent aussi au point dur du consentement (§6) : une emote n'est pas une personne.
-
-⚠️ Et si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux
+⚠️ Si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux
 paquets qu'il faut rééquilibrer, **pas le plafond d'énergie** — lui ne se touche qu'en dernier,
 il change tout le jeu d'un coup.
+
+### D'où viennent les refs de la seconde passe
+
+Extraites de la mémoire de Wally, des **memes rangés** et des logs, puis **mesurées avant
+écriture**. Deux indices distincts, et ils ne disent pas la même chose :
+
+- **le partage au chat** — combien de personnes distinctes emploient la ref ;
+- **l'existence d'un meme rangé** — preuve d'un autre ordre : quelqu'un l'a fabriqué et gardé.
+  *Raiky dans l'anneau* et *Push par 3 teams* n'ont aucune trace au chat et sont pourtant des
+  refs solides, parce que le meme existe.
+
+🎁 **Le gisement le plus riche n'était ni les faits ni les topics, mais les 358 memes décrits.**
+Les faits rendent des THÈMES (Apex, ranked, wildcard, heirloom, manette) et non des gags ; les
+14 topics parlent surtout du TCG lui-même. Le meme, lui, est déjà un gag que quelqu'un a jugé
+digne d'être gardé — c'est un tri humain déjà fait.
+
+🎁 **Et le gisement encore ouvert : les emotes de la chaîne.** `kassandreyunikon` **693** ·
+`azrael74hype` 287 · `dance` 268 · `love` 148 · `queen` 105 · `fuze` 72 · `goodboi` 67 ·
+`chadfuse` 67 · `koko` 61 · `cringe` 28 · `spongefuse` 27 · `gngngn` 20 · `triggered` 19 ·
+`pewpew` 18 · `pepsi` 15 · `potatoaim` 12. Aucune des 25 cartes ne s'en sert. Elles échappent
+en prime au point dur du consentement (§6) : une emote n'est pas une personne.
+
+### 🚨 « Raciste » — le mot ne veut pas dire ça ici
+
+Dans cette commu, **être raciste, c'est jouer toujours les mêmes personnages ou la même arme**.
+*« Je me disais bien que tu jouais des perso raciste »* · *« en ranked je joue Spitfire/Prowler,
+j'suis un bon raciste aussi »* · *« une raciste dans son gameplay »* · *« Compétitive vs casual
+racisme »*. Une dizaine de personnes distinctes l'emploient dans ce sens, et jamais dans l'autre.
+
+La ref se traduit toute seule : **tu rejoues la même chose, tu le paies** — d'où le malus qui
+frappe les héros adverses d'une même faction. Nom arrêté par l'owner le 2026-09-10.
 
 ### Trois cartes à surveiller en priorité
 
 - **La Chute** (5) — la plus chère du jeu et elle doit le rester. Elle est ce qui autorise des
   héros vraiment forts sans casser le jeu : plus un héros est fort, plus le poser devient risqué.
 - **Michel-Velux** — donner 4 d'énergie pour 1 est énorme ; le contre (l'adversaire choisit ton
-  Tirage) n'a de valeur que si les cartes à Tirage sont jouées. Il en reste **trois** (*manette*,
-  *clavier-souris*, *Codage à la Requin*) : le contre tient encore, de justesse.
-- **Sur le chemin** — n'existe qu'en coop, où elle peut porter toute une équipe. À tester à 6
-  joueurs avant de la sortir.
+  Tirage) n'a de valeur que si les cartes à Tirage sont jouées. Il en reste trois.
+- **Quoi → FEUR** — annuler une tactique pour 2 d'énergie est la meilleure affaire de la liste
+  quand l'adversaire joue cher, et une carte morte quand il ne joue rien. C'est la première à
+  faire tourner en calibration : une annulation bon marché aplatit tout un paquet d'un coup.
 
 ## 6. Ce qui manque encore
 
