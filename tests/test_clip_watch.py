@@ -86,11 +86,13 @@ async def test_un_clip_sans_id_est_ignore(monkeypatch):
     assert [c["id"] for c in vus] == ["bon"]
 
 
-async def test_sans_narrateur_actif_on_n_interroge_meme_pas_twitch(monkeypatch):
-    """L'overlay est fermé : personne ne verrait le clip. Interroger l'API pour
-    rien coûterait un appel toutes les deux minutes, toute la journée."""
+async def test_sans_ecran_NI_salon_on_n_interroge_meme_pas_twitch(monkeypatch):
+    """L'overlay est fermé et aucun salon Discord n'est configuré : personne ne
+    verrait le clip. Interroger l'API pour rien coûterait un appel toutes les
+    vingt secondes, toute la journée."""
     _patcher_annonce(monkeypatch)
     v, twitch = _veille([{"id": "abc"}], actif=False)
+    assert v._publication is None
     await v.un_tour()
     twitch.twitch_api.get_recent_clips.assert_not_awaited()
 

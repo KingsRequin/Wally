@@ -10,6 +10,7 @@ from typing import Any
 
 from loguru import logger
 
+from bot.discord.clip_post import vignette_prete
 from bot.intelligence.overlay_narrator import OverlayNarrator
 
 # Attentes avant de renoncer à la vidéo, en SECONDES. Twitch documente un délai
@@ -99,7 +100,22 @@ async def announce_clip(
 
 
 class VeilleDesClips:
-    """Interroge Twitch et annonce les clips créés pendant le live.
+    """Interroge Twitch et publie les clips de la chaîne.
+
+    Deux régimes, une seule boucle :
+
+      · **live** — le clip passe à l'écran ET dans le salon Discord. C'est la
+        fraîcheur qui compte : il doit apparaître pendant qu'on en parle
+        encore ;
+      · **hors live** — le salon Discord seulement. Personne ne regarde
+        l'overlay, mais un clip découpé d'une VOD mérite d'être posté.
+
+    La cadence reste de vingt secondes dans les deux cas. Une cadence lente
+    hors live aurait semblé plus sobre ; elle aurait surtout fait rater le
+    début du live — on dort cinq minutes, le live démarre pendant ce
+    temps-là, et les premiers clips arrivent à l'écran avec cinq minutes de
+    retard. Un GET Helix vaut 1 point sur les 800 par minute de la chaîne :
+    ce que la sobriété aurait rapporté ne paie pas ce qu'elle aurait cassé.
 
     Extraite de `main()` le 2026-08-23 : c'était une closure de plus dans une
     fonction de mille lignes, donc du comportement qu'aucun test ne pouvait
@@ -138,14 +154,27 @@ class VeilleDesClips:
         # clip, une tâche détachée serait ramassée par le GC entre-temps.
         self._taches: set[asyncio.Task] = set()
 
+    async def _avec_vignette(self, clip: dict) -> dict:
+        """Le clip, son aperçu rafraîchi si Twitch l'a fini entre-temps.
+
+        `thumbnail_url` est figé à l'instant du poll, et la veille tombe sur des
+        clips que Twitch n'a pas encore transcodés. Un seul appel Helix, et
+        seulement dans le cas dégradé — `get_clips_par_id` rend `[]` sur erreur,
+        on garde alors le clip d'origine.
+        """
+        if vignette_prete(clip):
+            return clip
+        frais = await self._twitch.twitch_api.get_clips_par_id(
+            [str(clip.get("id") or "")]
+        )
+        return frais[0] if frais else clip
+
     async def _montrer_puis_publier(self, narrateur, clip: dict) -> None:
         """L'overlay, puis le salon Discord — le même clip, le même instant.
 
         La publication Discord passe APRÈS l'attente de `announce_clip`, et
-        c'est voulu : Twitch sert une vignette « en cours de traitement » tant
-        que le clip n'est pas transcodé, et Discord met en cache ce qu'il
-        proxyfie. Poster tout de suite laisserait une carte définitivement
-        vide dans le salon.
+        c'est voulu : c'est cette attente qui laisse à Twitch le temps de
+        fabriquer l'aperçu, et une carte sans image le reste pour toujours.
 
         Elle a lieu même si le live s'est coupé pendant l'attente : l'overlay
         n'a plus personne devant lui, le salon Discord si.
@@ -160,7 +189,7 @@ class VeilleDesClips:
                            s=clip.get("id") or "?", e=exc)
         finally:
             if self._publication is not None:
-                await self._publication.publier(clip)
+                await self._publication.publier(await self._avec_vignette(clip))
 
     async def veiller(self, *, periode: float | None = None) -> None:
         while True:
@@ -171,8 +200,9 @@ class VeilleDesClips:
         """Un passage. Ne lève jamais."""
         try:
             narrateur = getattr(self._discord, "overlay_narrator", None)
-            if narrateur is None or not narrateur.is_active():
-                return
+            en_direct = narrateur is not None and narrateur.is_active()
+            if not en_direct and self._publication is None:
+                return          # ni écran allumé, ni salon configuré
             depuis = datetime.now(timezone.utc) - timedelta(minutes=self.FENETRE_MIN)
             clips = await self._twitch.twitch_api.get_recent_clips(
                 depuis.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -182,15 +212,28 @@ class VeilleDesClips:
                 cid = str(clip.get("id") or "")
                 if not cid or cid in self._vus:
                     continue
+                if en_direct:
+                    # Le clip est REJOUÉ, pas seulement annoncé : muet, il
+                    # occupe l'écran le temps de la vidéo. L'annonce attend que
+                    # Twitch ait fini de le préparer, donc en tâche de fond —
+                    # sinon la veille resterait bloquée et les clips suivants
+                    # passeraient à la trappe.
+                    t = asyncio.create_task(
+                        self._montrer_puis_publier(narrateur, clip)
+                    )
+                else:
+                    frais = await self._avec_vignette(clip)
+                    if not vignette_prete(frais):
+                        # Hors live, rien ne presse : on le laisse HORS de
+                        # `_vus` pour qu'il repasse au tour suivant avec sa
+                        # vraie image, plutôt que de figer une carte sans rien
+                        # dans le salon. La fenêtre de cinq minutes lui laisse
+                        # une dizaine de chances.
+                        logger.info("Clips: aperçu de « {t} » pas encore prêt, "
+                                    "publication reportée", t=clip.get("title") or cid)
+                        continue
+                    t = asyncio.create_task(self._publication.publier(frais))
                 neufs.append(cid)
-                # Le clip est REJOUÉ, pas seulement annoncé : muet, il occupe
-                # l'écran le temps de la vidéo. L'annonce attend que Twitch ait
-                # fini de le préparer, donc en tâche de fond — sinon la veille
-                # resterait bloquée et les clips suivants passeraient à la
-                # trappe.
-                t = asyncio.create_task(
-                    self._montrer_puis_publier(narrateur, clip)
-                )
                 self._taches.add(t)
                 t.add_done_callback(self._taches.discard)
             self._vus.extend(neufs)

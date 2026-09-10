@@ -2,9 +2,11 @@
 """Les clips du live, republiés dans un salon Discord.
 
 La veille (`bot/twitch/clip_announce.py`) interroge Helix toutes les vingt
-secondes et joue les clips neufs sur l'overlay. Ce module se branche au MÊME
-instant : le clip part à l'écran et dans le salon Discord d'un seul geste, sans
-second appel à l'API ni seconde source de vérité sur « quels clips existent ».
+secondes. Pendant le live, ce module se branche au MÊME instant : le clip part
+à l'écran et dans le salon Discord d'un seul geste, sans second appel à l'API ni
+seconde source de vérité sur « quels clips existent ». Hors live, la veille
+continue de tourner pour ce module seul — un clip découpé d'une VOD mérite le
+salon, même quand l'overlay n'a personne devant lui.
 
 ⚠️ **Un clip publié deux fois est le défaut à éviter ici.** La mémoire de la
 veille (`_vus`) est une `deque` en RAM : elle meurt à chaque rebuild, et il y
@@ -50,6 +52,18 @@ MEMOIRE = 500
 MARQUEUR_VIGNETTE_ABSENTE = "404_processing"
 
 
+def vignette_prete(clip: dict) -> bool:
+    """L'aperçu du clip est-il fabriqué ?
+
+    `thumbnail_url` est figé à l'instant où Helix a rendu le clip. Tant que
+    Twitch n'a pas transcodé, il y met une image « en cours de traitement » —
+    postée telle quelle elle resterait DÉFINITIVEMENT dans le salon, Discord
+    mettant en cache ce qu'il proxyfie sans jamais repasser voir.
+    """
+    url = str(clip.get("thumbnail_url") or "").strip()
+    return bool(url) and MARQUEUR_VIGNETTE_ABSENTE not in url
+
+
 def _duree(clip: dict) -> str:
     try:
         secondes = int(float(clip.get("duration") or 0))
@@ -74,8 +88,7 @@ def carte_de_clip(clip: dict) -> discord.ui.LayoutView:
         entete += f" · {duree}"
     corps = [entete, url] if url else [entete]
 
-    vignette = str(clip.get("thumbnail_url") or "").strip()
-    medias = [vignette] if vignette and MARQUEUR_VIGNETTE_ABSENTE not in vignette else []
+    medias = [str(clip["thumbnail_url"]).strip()] if vignette_prete(clip) else []
 
     return fiche(f"🎬 {titre}", corps, accent=ACCENT_TWITCH, medias=medias)
 

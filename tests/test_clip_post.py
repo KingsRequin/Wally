@@ -242,3 +242,82 @@ async def test_un_id_ecrit_par_un_TIERS_survit_a_une_publication():
     assert ranges == ["rattrape-a", "rattrape-b", CLIP["id"]]
     # ...et ce process a APPRIS le rattrapage : il ne republiera pas ces deux-là
     assert await pub.publier({**CLIP, "id": "rattrape-a"}) is False
+
+
+# ── hors live : Discord seul ──────────────────────────────────────────────────
+
+def _veille_hors_live(clips, publication):
+    """Une veille dont l'overlay est ÉTEINT, mais dont le salon est configuré."""
+    from bot.twitch.clip_announce import VeilleDesClips
+
+    narrateur = MagicMock(is_active=MagicMock(return_value=False))
+    twitch_bot = MagicMock()
+    twitch_bot.twitch_api.get_recent_clips = AsyncMock(return_value=clips)
+    twitch_bot.twitch_api.get_clips_par_id = AsyncMock(return_value=[])
+    return VeilleDesClips(
+        discord_bot=MagicMock(overlay_narrator=narrateur),
+        twitch_bot=twitch_bot, publication=publication,
+    ), twitch_bot
+
+
+async def test_hors_live_le_clip_part_dans_discord_SANS_toucher_l_overlay(monkeypatch):
+    """Un clip découpé d'une VOD mérite le salon ; l'overlay, lui, n'a personne
+    devant lui."""
+    from bot.twitch import clip_announce
+
+    ecran: list[dict] = []
+    monkeypatch.setattr(clip_announce, "announce_clip",
+                        AsyncMock(side_effect=lambda n, a, c: ecran.append(c)))
+    publication = MagicMock(publier=AsyncMock())
+    veille, _ = _veille_hors_live([CLIP], publication)
+
+    await veille.un_tour()
+    await asyncio.gather(*list(veille._taches))
+    publication.publier.assert_awaited_once_with(CLIP)
+    assert ecran == []
+
+
+async def test_hors_live_un_apercu_pas_pret_est_REPORTE_pas_publie():
+    """Une carte sans image posée dans un salon y reste sans image : Discord met
+    en cache ce qu'il proxyfie et ne repasse jamais voir. Hors live rien ne
+    presse — le clip sort de `_vus` et repassera au tour suivant."""
+    en_cours = f"https://vod-secure.twitch.tv/_404/{MARQUEUR_VIGNETTE_ABSENTE}_320x180.png"
+    publication = MagicMock(publier=AsyncMock())
+    veille, _ = _veille_hors_live([{**CLIP, "thumbnail_url": en_cours}], publication)
+
+    await veille.un_tour()
+    await asyncio.gather(*list(veille._taches))
+    publication.publier.assert_not_awaited()
+    assert CLIP["id"] not in veille._vus     # il repassera
+
+
+async def test_un_apercu_pas_pret_est_RAFRAICHI_avant_d_abandonner():
+    """`thumbnail_url` est figé à l'instant du poll. Un seul appel Helix, et
+    seulement dans ce cas dégradé — c'est souvent tout ce qui manquait."""
+    en_cours = f"https://vod-secure.twitch.tv/_404/{MARQUEUR_VIGNETTE_ABSENTE}_320x180.png"
+    publication = MagicMock(publier=AsyncMock())
+    veille, twitch = _veille_hors_live(
+        [{**CLIP, "thumbnail_url": en_cours}], publication)
+    twitch.twitch_api.get_clips_par_id = AsyncMock(return_value=[CLIP])
+
+    await veille.un_tour()
+    await asyncio.gather(*list(veille._taches))
+    twitch.twitch_api.get_clips_par_id.assert_awaited_once_with([CLIP["id"]])
+    publication.publier.assert_awaited_once_with(CLIP)
+
+
+async def test_un_apercu_deja_pret_ne_coute_AUCUN_appel_de_plus():
+    publication = MagicMock(publier=AsyncMock())
+    veille, twitch = _veille_hors_live([CLIP], publication)
+    await veille.un_tour()
+    await asyncio.gather(*list(veille._taches))
+    twitch.twitch_api.get_clips_par_id.assert_not_awaited()
+
+
+async def test_hors_live_un_clip_deja_publie_ne_repasse_pas():
+    publication = MagicMock(publier=AsyncMock())
+    veille, _ = _veille_hors_live([CLIP], publication)
+    for _ in range(3):
+        await veille.un_tour()
+        await asyncio.gather(*list(veille._taches))
+    assert publication.publier.await_count == 1
