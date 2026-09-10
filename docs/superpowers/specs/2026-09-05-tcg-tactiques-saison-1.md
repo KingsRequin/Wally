@@ -41,7 +41,7 @@ plus cher que la masse.
 
 ---
 
-## 4. Les 25 cartes
+## 4. Les 29 cartes
 
 > Compté en comptant les lignes du tableau, pas en relisant ce titre — l'écart d'une carte du
 > 2026-09-04 (« 24 » annoncé pour 25 écrites) venait de là.
@@ -80,6 +80,43 @@ sortait à 44 personnes parce que le mot est générique ; 15 des « Rina » ét
 refs à une personne.** Elles rejoignent la forme que sa liste du 2026-09-04 leur donnait déjà.
 Bénéfice de bord : deux cartes de moins à faire valider par une personne réelle (§6).
 
+### 🆕 Les états — posés ici parce que trois cartes en ont besoin
+
+Le jeu n'avait aucun **état persistant** : chaque effet durait un tour et partait. Trois cartes
+du 2026-09-10 en demandent un. Ils sont définis **une fois, ici**, et pas dans chaque carte —
+sinon la quatrième carte réinventera son propre « il n'attaque pas », avec ses propres bornes.
+
+| État | Durée | Effet |
+|---|---|---|
+| **Oublie** | 2 tours | le héros **n'attaque pas si le Tirage du tour est ≤ 3** |
+| **Stun** | le tour où il est posé | le héros **n'attaque pas**, sans condition |
+| **Régénération** | tant que le passif est en jeu | **+2 PV** au début de chacun de tes tours |
+
+🚨 **`Oublie` lit le Tirage, et ce n'est pas un détail d'équilibrage.** L'owner l'avait demandé
+comme *« un pourcentage de chance d'oublier d'attaquer »* — c'est-à-dire un **jet caché**, résolu
+au moment de l'attaque. L'arbitrage du 2026-09-04 l'interdit : le hasard est *tiré et affiché
+avant la pose*. Un pourcentage caché est incommentable en direct (Wally ne peut plus raconter
+pourquoi une table bascule) et **indiscernable d'un bug de calcul de dégâts**. Accroché au
+Tirage, l'effet est le même — une fois sur deux — mais les deux joueurs le voient venir.
+
+⚠️ **`Stun` est déterministe et n'a donc pas besoin du Tirage.** Ne pas lui en ajouter un « pour
+faire pareil » : un effet certain qui coûte son prix est plus simple à calibrer qu'un effet
+conditionnel, et le jeu en a besoin d'au moins un.
+
+### 🚨 Le Tirage n'est défini dans AUCUNE règle
+
+`2026-09-05-tcg-regles-heros-tactiques.md` ne contient **pas une seule fois** le mot « Tirage ».
+Il n'existe que dans ce document (§2) et dans le catalogue des Réflexes — alors que **15 cartes
+en dépendent** et que l'arbitrage du 2026-09-09 fait dériver **tout le critique de l'Aura** de
+son seuil.
+
+Pire : le §7 des règles retire la roulette de début de partie en écrivant *« la tension vient
+maintenant de l'énergie, pas d'un tirage »*. La roulette et le Tirage du tour sont deux choses
+distinctes, mais cette phrase se lit comme si le dé était mort lui aussi.
+
+→ **À remonter dans les règles**, avec les états ci-dessus. Une mécanique centrale définie
+uniquement dans un catalogue de cartes est une mécanique qu'on retirera par erreur.
+
 ### Soin et protection
 
 | Carte | Type | Coût | Effet | Origine |
@@ -87,6 +124,7 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 | **Tenma à 10 HP** | passif | 2 | le premier de tes héros qui tomberait à **0 PV survit à 1 PV** et gagne **+5 d'Attaque** ce tour | 2 memes — *« TENMA A 10HP : moi qui pensais pouvoir gagner mon 1v1 »* · 17 pers. |
 | **Push par 3 teams** | tactique | 1 | **tu choisis** lequel de tes héros encaisse **toutes** les attaques adverses ce tour ; les autres ne subissent rien | le meme de la vache hébétée |
 | **Le mode diva** | tactique | 3 | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
+| **Lifeline** | passif | 3 | **Régénération** : +2 PV à un héros allié au début de chacun de tes tours | la médic d'Apex — la statue que Kassandre exige, et le perso que Raiky refuse de lâcher |
 | **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
 
 > `Mets-le dans du riz` : 6 PV valent 6 points, **× 0,8** parce que le soin est différé d'un tour
@@ -104,6 +142,9 @@ Bénéfice de bord : deux cartes de moins à faire valider par une personne rée
 | **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
 | **Aim assist = aimbot** | tactique | 2 | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
+| **Azraël met ta perk !** | tactique | 2 | pose l'état **Oublie** sur un héros adverse | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
+| **POV le chevreuil** | tactique | 2 | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
+| **Mozambique here!** | tactique | 2 | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
 | **Raciste** | tactique | 2 | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
 
 > 🚨 **`Le tunnel de Rina` est la carte « Blabla Rina »**, proposée le 2026-09-05 dans la fiche
@@ -168,11 +209,17 @@ Comblé dans la foulée par la seconde passe :
 
 | Famille | Après le tri | Aujourd'hui |
 |---|---|---|
-| Soin et protection | 2 | **4** |
-| Attaque et dégâts | 6 | **8** |
+| Soin et protection | 2 | **5** |
+| Attaque et dégâts | 6 | **11** |
 | Énergie et tempo | **2** | **5** |
 | Aura et coopération | 4 | 4 |
 | Rares | 3 | **4** |
+
+🚨 **Le déséquilibre s'est inversé, et c'est maintenant Attaque qui déborde** : 11 cartes sur 29,
+soit 38 % du paquet. Les deux passes du 2026-09-10 y ont versé 5 cartes de plus, parce que les
+memes de la commu parlent surtout d'Apex et qu'un meme d'Apex se traduit presque toujours en
+dégâts. C'est un biais de la SOURCE, pas un choix : à corriger en cherchant les prochaines refs
+ailleurs que dans les memes de jeu — Aura et coopération n'a rien reçu depuis le début.
 
 ⚠️ Si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux
 paquets qu'il faut rééquilibrer, **pas le plafond d'énergie** — lui ne se touche qu'en dernier,
