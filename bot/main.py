@@ -296,6 +296,7 @@ async def main() -> None:
     from bot.twitch.bot import WallyTwitch
     from bot.twitch.token_manager import TwitchTokenManager
     from bot.twitch.api import TwitchAPI
+    from bot.discord.clip_post import PublicationDesClips
     from bot.twitch.clip_announce import VeilleDesClips
     from bot.twitch.events import register_events
 
@@ -387,7 +388,18 @@ async def main() -> None:
         # Sortie de `main()` le 2026-08-23 avec ses deux arbitrages payés en
         # prod — mémoire BORNÉE des clips déjà vus, annonce en tâche de fond.
         # Voir `tests/test_clip_watch.py`.
-        veille_clips = VeilleDesClips(discord_bot=discord_bot, twitch_bot=twitch_bot)
+        # Le même clip part à l'overlay ET dans le salon Discord configuré, au
+        # même instant. La mémoire des doublons est en BASE et pas dans la
+        # `deque` de la veille : un rebuild en plein live la viderait, et un
+        # salon garde ce qu'on y poste.
+        publication_clips = PublicationDesClips(
+            discord_bot=discord_bot, db=db, config=config,
+        )
+        await publication_clips.charger()
+        veille_clips = VeilleDesClips(
+            discord_bot=discord_bot, twitch_bot=twitch_bot,
+            publication=publication_clips,
+        )
 
         # StreamFeed : flux PASSIF de ce qui se passe pendant le live (jeu, titre,
         # audience, raids/subs/bits, chat). Alimenté par le watcher et les events

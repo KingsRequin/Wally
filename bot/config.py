@@ -206,6 +206,10 @@ class DiscordConfig:
     # est le bon défaut : ranger automatiquement les images d'un salon qu'on n'a
     # pas désigné alimenterait l'overlay diffusé en direct.
     meme_channel_id: int | None = None
+    # Salon où Wally republie les clips Twitch repérés par la veille, au moment
+    # même où l'overlay les joue. None → republication désactivée : poster des
+    # clips dans un salon qu'on n'a pas désigné serait du bruit chez les autres.
+    clips_channel_id: int | None = None
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
 
 

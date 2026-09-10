@@ -128,13 +128,33 @@ class VeilleDesClips:
     #: sortent un par un.
     MEMOIRE = 200
 
-    def __init__(self, *, discord_bot: Any, twitch_bot: Any) -> None:
+    def __init__(self, *, discord_bot: Any, twitch_bot: Any,
+                 publication: Any = None) -> None:
         self._discord = discord_bot
         self._twitch = twitch_bot
+        self._publication = publication
         self._vus: deque[str] = deque(maxlen=self.MEMOIRE)
         # Référence forte : l'annonce attend que Twitch ait fini de préparer le
         # clip, une tâche détachée serait ramassée par le GC entre-temps.
         self._taches: set[asyncio.Task] = set()
+
+    async def _montrer_puis_publier(self, narrateur, clip: dict) -> None:
+        """L'overlay, puis le salon Discord — le même clip, le même instant.
+
+        La publication Discord passe APRÈS l'attente de `announce_clip`, et
+        c'est voulu : Twitch sert une vignette « en cours de traitement » tant
+        que le clip n'est pas transcodé, et Discord met en cache ce qu'il
+        proxyfie. Poster tout de suite laisserait une carte définitivement
+        vide dans le salon.
+
+        Elle a lieu même si le live s'est coupé pendant l'attente : l'overlay
+        n'a plus personne devant lui, le salon Discord si.
+        """
+        try:
+            await announce_clip(narrateur, self._twitch.twitch_api, clip)
+        finally:
+            if self._publication is not None:
+                await self._publication.publier(clip)
 
     async def veiller(self, *, periode: float | None = None) -> None:
         while True:
@@ -163,7 +183,7 @@ class VeilleDesClips:
                 # resterait bloquée et les clips suivants passeraient à la
                 # trappe.
                 t = asyncio.create_task(
-                    announce_clip(narrateur, self._twitch.twitch_api, clip)
+                    self._montrer_puis_publier(narrateur, clip)
                 )
                 self._taches.add(t)
                 t.add_done_callback(self._taches.discard)
