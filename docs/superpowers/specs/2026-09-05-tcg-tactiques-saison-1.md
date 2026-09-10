@@ -52,11 +52,16 @@ plus cher que la masse.
 
 ---
 
-## 4. Les 29 cartes
+## 4. Les 45 cartes
 
 > Compté en comptant les lignes du tableau, pas en relisant ce titre — l'écart d'une carte du
 > 2026-09-04 (« 24 » annoncé pour 25 écrites) venait de là.
 
+> **2026-09-10, pack de l'owner** : **16 cartes** de plus, écrites depuis sa liste, plus les deux
+> nouveaux états et le retour de l'Anonyme. Quinze viennent de l'univers d'Apex ; la seizième — le
+> steak haché — est la seule à sortir du chat. Chaque prix est refait au barème du §3, et chaque
+> origine est vérifiée dans les logs avant écriture : ce qui n'a pas de trace le dit.
+>
 > **2026-09-10, seconde passe** : 8 cartes ajoutées après extraction des refs dans la mémoire de
 > Wally, les memes rangés et les logs. Elles visent les **deux familles que le tri avait vidées**
 > (§5) — Énergie passe de 2 à 5, Soin de 2 à 4. Chacune porte son indice de partage : nombre de
@@ -102,6 +107,33 @@ sinon la quatrième carte réinventera son propre « il n'attaque pas », avec s
 | **Oublie** | 2 tours | le héros **n'attaque pas si le Tirage du tour est ≤ 3** |
 | **Stun** | le tour où il est posé | le héros **n'attaque pas**, sans condition |
 | **Régénération** | tant que le passif est en jeu | **+2 PV** au début de chacun de tes tours |
+| 🆕 **Tunnel** | 2 tours | le héros **ne peut attaquer QUE** celui qui lui a posé l'état |
+| 🆕 **Scroll** | le tour où il est posé | le héros **passe son tour** : ni attaque, ni Ultime |
+
+> ⚖️ **Tunnel et Scroll, posés par l'owner le 2026-09-10.** *« Tunnel : force le héros à attaquer
+> la personne qui inflige l'état. Scroll : fait passer un tour à l'adversaire. »*
+
+🎁 **Tunnel comble le trou nommé au §5** : c'est le premier effet du jeu qui **redirige** au lieu
+d'empêcher. Les trois états d'avant étaient tous des interdictions ; celui-ci force une cible, ce
+qui est jouable des deux côtés — l'attaquant décide où le coup part, le défenseur peut s'en servir
+pour protéger un héros faible. C'est un effet de *provocation*, la forme qui manquait à *Aura et
+coopération*.
+
+🚨 **Scroll est strictement plus fort que Stun, et c'est à surveiller.** Stun retire l'attaque ;
+Scroll retire l'attaque **et** l'Ultime. Sur un héros qui allait déclencher un Ultime à 10, Scroll
+vaut le double d'un Stun ; sur un héros ordinaire, exactement pareil. C'est donc un effet dont la
+valeur dépend de la cible — la même forme que « copier l'Attaque », bornée sur *Aim assist* pour
+cette raison. Ici la borne est structurelle : un Ultime ne se paie qu'une fois par partie ou deux,
+Scroll ne peut donc pas répéter son meilleur cas. À vérifier en calibration quand même.
+
+🚨 **`Tunnel` l'état et `Le tunnel de Rina` la carte portent le MÊME NOM et ne font pas la même
+chose.** La carte inflige −2 d'Attaque à toute la table ; l'état force une cible. Deux objets
+homonymes dans le même jeu, c'est une contestation garantie en partie et un piège de résolution
+de nom — `tcg_cartes.normaliser()` retire les accents et compare exactement, il rendra l'un pour
+l'autre.
+→ **Arbitrage demandé à l'owner** : soit la carte *Le tunnel de Rina* **pose l'état Tunnel** (ce
+qui colle mieux au gag — son anecdote t'accapare, tu ne peux plus parler à personne d'autre) et il
+n'y a plus qu'un seul objet ; soit l'état change de nom. Ne pas laisser les deux en l'état.
 
 🚨 **`Oublie` lit le Tirage, et ce n'est pas un détail d'équilibrage.** L'owner l'avait demandé
 comme *« un pourcentage de chance d'oublier d'attaquer »* — c'est-à-dire un **jet caché**, résolu
@@ -137,6 +169,52 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **Le mode diva** | tactique | 3 | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
 | **Lifeline** | passif | 3 | **Régénération** : +2 PV à un héros allié au début de chacun de tes tours | la médic d'Apex — la statue que Kassandre exige, et le perso que Raiky refuse de lâcher |
 | **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
+| 🆕 **Le totem** | passif | 3 | **une fois** : un de tes héros morts revient en ligne avec **la moitié de ses PV**, arrondie au supérieur | le totem de Revenant — 3 pers. au chat, mais la ref Apex se passe d'explication |
+| 🆕 **La statue de Mirage** | passif | 1 | pose **3 leurres** dans ta pioche ; quand tu as tiré les trois, ta prochaine carte de soin est **gratuite** | la statue — celle que Kassandre exige déjà pour son entrée royale |
+| 🆕 **Le leurre** | tactique | 2 | double un de tes héros en jeu ; **une seule des deux copies est vraie**. Attaquer la fausse la détruit et **coûte le tour** de l'attaquant | Mirage — 5 pers. |
+| 🆕 **Le Rhum** | passif | 2 | ton héros porteur perd **1 PV tous les 5 tours** et gagne **50 % d'esquive** | *« le rhum là »* · *« ya du rhum ? »* — 2 pers., la ref la plus mince du lot |
+| 🆕 **Le baril de soins** | passif | 2 | tant qu'il est en jeu, **tout baril posé soigne au lieu de blesser** — y compris ceux de l'adversaire | le baril d'Apex, l'autre usage |
+
+> `Le totem` **introduit la RÉANIMATION**, et c'est la première fois qu'un héros mort revient. Ce
+> n'est pas un effet de plus : ça change la condition de victoire, qui repose sur les héros qui
+> tombent. Prix 9 (un héros à mi-PV vaut plus qu'un gros soin), usage unique déjà compris dans le
+> chiffre → `⌈9/3⌉ = 3` d'énergie, **et** un des deux emplacements de passif. Les deux ensemble
+> sont ce qui l'empêche d'être automatique.
+> 🚨 **À calibrer en premier du lot** : si réanimer est rentable, plus personne ne joue autre chose
+> en passif.
+
+> `La statue de Mirage` : l'économie d'un soin (≈ 2 d'énergie = 6 points) sur une condition très
+> longue, **× 0,5** → 3 → `⌈3/3⌉ = 1` d'énergie.
+> 🚨 **Elle GONFLE le deck, et le deck fait 12.** Trois leurres injectés, c'est un paquet de 15 dont
+> 3 cartes ne font rien par elles-mêmes — soit un cinquième du deck dépensé pour un soin gratuit.
+> À la lettre de sa formulation, la carte est mauvaise pour son porteur ET casse la seule taille
+> de deck du jeu. Deux issues : les leurres **remplacent** 3 cartes au lieu de s'ajouter, ou ils
+> vivent hors du deck (posés en jeu, à collecter). À trancher avant d'écrire l'effet.
+
+> `Le leurre` : annule une attaque (≈ 4 points) **× 1,25** parce qu'il fait perdre son tour à
+> l'adversaire → 5 → `⌈5/3⌉ = 2` d'énergie.
+> ⚠️ Il repose sur de l'**information cachée en jeu**, la même famille que les cartes face cachée
+> (§7 des règles) : le moteur doit pouvoir dire lequel est vrai sans jamais le montrer, et
+> l'écrire au journal d'événements. Sinon un leurre deviné devient indiscernable d'un bug.
+
+> `Le Rhum` : +50 % d'esquive ≈ diviser par deux les dégâts reçus, tarifé à l'**espérance** depuis
+> la suppression du Tirage (§2) → 5 points, moins le malus subi de −1 PV/5 tours (× 0,5) → 4,5 →
+> `⌈4,5/3⌉ = 2` d'énergie.
+> 🚨 **L'owner l'a demandé avec un bonus « si 3 réunis » — c'est INJOUABLE et il faut le dire.**
+> Un deck fait 12 cartes et un joueur n'a que **2 emplacements de passif** : trois exemplaires du
+> même passif en jeu est mécaniquement impossible. Le bonus est écrit ici sans le « si 3 réunis » ;
+> si l'owner y tient, il faut soit passer le Rhum en objet non-passif, soit compter les
+> exemplaires **dans le deck** et non en jeu.
+> ⚠️ C'est aussi la ref la plus faible du lot : **2 personnes, 2 occurrences** en six mois de logs,
+> contre 42 pour *Les PP du samedi*. Le critère du §4 (« combien rient sans qu'on explique ») la
+> recale ; c'est l'owner qui décide, mais il décide en le sachant.
+
+> `Le baril de soins` est la **première carte du jeu qui modifie une autre carte** plutôt que des
+> héros, et c'est un vrai apport : elle ouvre une couche de contre-jeu que le paquet n'avait pas.
+> Prix : inverse un effet adverse, 4 **× 1,25** → 5 → `⌈5/3⌉ = 2` d'énergie.
+> ⚠️ **Elle est morte si personne ne joue de baril.** Même défaut que *Michel-Velux* et
+> *Quoi → FEUR* — une carte dont la valeur dépend entièrement du deck d'en face. À ce jour un seul
+> baril existe (*Caustique*), donc une chance sur deux qu'elle ne serve jamais.
 
 > `Mets-le dans du riz` : 6 PV valent 6 points, **× 0,8** parce que le soin est différé d'un tour
 > (l'adversaire a un tour pour achever la cible) → 5 → `⌈5/3⌉ = 2` d'énergie. Le délai n'est pas
@@ -157,6 +235,10 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **POV le chevreuil** | tactique | 2 | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
 | **Mozambique here!** | tactique | 2 | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
 | **Raciste** | tactique | 2 | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
+| 🆕 **Le camion de Raiky** | tactique | 2 | **4 dégâts** à un héros adverse | son pseudo entier : *Raiky le fusible de camion* — 6 pers., 26 occ. |
+| 🆕 **Le stim d'Octane** | tactique | 1 | un héros allié perd **2 PV** et gagne **+4 d'Attaque** ce tour | Octane — 18 pers., 36 occ. |
+| 🆕 **Le cluster** | tactique | 2 | **4 dégâts répartis au hasard** entre les héros adverses, jamais plus de 2 sur le même | la grenade à fragmentation — 6 pers. |
+| 🆕 **Le baril de Caustique** | tactique, **face cachée** | 2 | **1 dégât à TOUS les héros** — les tiens compris — au début de chacun des 3 prochains tours | Caustique — 14 pers., 22 occ. |
 
 > 🚨 **`Le tunnel de Rina` est la carte « Blabla Rina »**, proposée le 2026-09-05 dans la fiche
 > Notion et jamais écrite ici. Même gag, même effet, même prix : **une seule carte**, sous le nom
@@ -171,6 +253,31 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > `La Flatline d'Azraël` : +4 d'Attaque permanent = 4 points → `⌈4/3⌉ = 2` d'énergie. C'est une
 > arme, elle se garde — d'où le passif plutôt que la tactique.
 
+> `Le camion de Raiky` est la seule carte du paquet à ne faire **que** des dégâts, sans clause, et
+> c'est utile : un paquet sans carte simple n'a pas d'étalon. 4 dégâts **× 1,25** → 5 →
+> `⌈5/3⌉ = 2` d'énergie. C'est le prix de référence auquel comparer tout le reste.
+> ⚠️ **Nomme Raiky**, qui a déjà *Raiky dans l'anneau* : deuxième carte à son nom, et elle est
+> aussi retenue côté héros. Trois entrées pour une personne — point dur du consentement (§7).
+
+> `Le stim d'Octane` : +4 d'Attaque le tour (4 points) moins un malus **subi** de 2 PV (× 0,5 →
+> −1) → 3 → `⌈3/3⌉ = 1` d'énergie. Même forme que *Un piercing* : on se fait mal pour aller plus
+> vite, et c'est exactement ce que fait le personnage.
+
+> `Le cluster` : 4 dégâts répartis **× 1,25** → 5 → `⌈5/3⌉ = 2`. Il se tarifait au meilleur cas
+> avant la suppression du Tirage ; **il se tarife maintenant à son espérance** (§2), donc moins
+> cher — c'est le premier effet du paquet à profiter du nouvel arbitrage.
+> 🚨 **Le « jamais plus de 2 sur le même » n'est pas décoratif.** Sans borne, la répartition
+> aléatoire peut mettre les 4 sur une seule cible et la carte devient parfois deux fois meilleure
+> qu'un *camion de Raiky* pour le même prix. C'est le piège « aucun multiplicateur sans plafond »,
+> payé sur I01, B02 et *Aim assist*.
+
+> `Le baril de Caustique` : ~3 dégâts par camp sur 3 tours, mais **symétriques** — pas de × 1,25,
+> il frappe aussi les siens → 4 → `⌈4/3⌉ = 2` d'énergie.
+> 🆕 **C'est l'une des trois cartes qui font revenir l'Anonyme** (§7 des règles). Elle est celle
+> qui décide de la question ouverte là-bas : quand on l'attaque, elle se défausse en silence, ou
+> elle **explose** ? Le second est le gag — mais il rend l'attaquer stupide, donc personne ne le
+> fera, donc la face cachée redevient gratuite. Trancher ici avant d'écrire la carte.
+
 ### Énergie et tempo
 
 | Carte | Type | Coût | Effet | Origine |
@@ -180,6 +287,56 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **Raiky dans l'anneau** | tactique | 2 | un héros de ta **réserve** entre en ligne immédiatement, mais perd **2 PV** | le meme *Let me in* — hors zone, il veut rentrer |
 | **De l'air** | tactique | 2 | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
 | **Michel-Velux** | tactique | 1 | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
+| 🆕 **Rendez-vous au véto** | tactique | 3 | pose **Scroll** sur un héros adverse — il passe son tour — **et −2 d'Aura** | les vrais rendez-vous chez le véto d'Azraël pour l'œil de Spiro, qui annulent des streams — 4 pers. |
+| 🆕 **Le drone de Crypto** | tactique | 2 | **regarde la main de l'adversaire** jusqu'à la fin du tour | Crypto — **25 pers., 121 occ.**, la ref la mieux partagée du lot |
+| 🆕 **Le care package** | tactique | 2 | pioche **3 cartes**, garde-en **1**, remets les autres au-dessus de ta pioche | le ravitaillement d'Apex |
+| 🆕 **Le shop de Loba** | tactique | 2 | prends **une carte au hasard** dans la main de l'adversaire | Loba — 19 pers., 40 occ. |
+| 🆕 **Typical Octane** | tactique, **face cachée** | 2 | la prochaine fois que l'adversaire pioche, **c'est toi qui prends la carte** | le meme *typical octane* — le mec qui part avec ce qui n'est pas à lui |
+| 🆕 **Le scan de Crypto** | tactique | 3 | **désactive tous les passifs adverses** pendant 2 tours | le drone qui scanne — 14 pers. sur *scan* |
+
+> `Rendez-vous au véto` : Scroll sur un héros adverse vaut plus qu'un Stun (il retire aussi
+> l'Ultime, cf. les états ci-dessus) — 4 points **× 1,25** = 5, plus 2 d'Aura retirée × 1,25 = 2,5
+> → 7,5 → `⌈7,5/3⌉ = 3` d'énergie. **La plus chère du paquet Énergie**, et c'est voulu : priver
+> quelqu'un d'un tour entier est le geste le plus brutal du jeu.
+> 🎁 **Elle relie deux cartes de l'owner sans qu'on l'ait cherché** : les rendez-vous en question
+> sont ceux de **Spiro**, qui a sa propre carte au pack 3. La ref est vérifiée et datée dans les
+> logs — *« rendez vous veto en urgence demain matin »*, *« gros ulcère de la cornée »*,
+> *« rendez vous veto pour un contrôle pour l'œil de Spiro à 10h, si c'est rapide je lance vers
+> 10h30, sinon pas de matinale »*. Le stream saute : voilà pourquoi la carte fait passer un tour.
+> 🚨 **L'owner a écrit « passe un tour adverse », ce qui peut se lire « TOUT le tour de
+> l'adversaire ».** Écrit ici comme **un seul héros**, parce que sauter le tour entier d'un joueur
+> pour 3 d'énergie est la carte la plus forte du jeu de très loin, et rend *La Chute* (5, la rare
+> la plus chère) ridicule. Si l'owner voulait bien le tour complet, le prix n'est pas 3 : c'est
+> une rare à 5 minimum, et elle demande sa propre calibration.
+
+> `Le drone de Crypto` : de l'information pure, elle ne retire rien — 4 points, pas de × 1,25 →
+> `⌈4/3⌉ = 2` d'énergie.
+> 🚨 **En coop, cette carte vise Wally — et c'est le §9.3 en face.** Wally connaît sa main ; s'il
+> doit la montrer, c'est le moteur qui la rend, pas lui. Le jour où le drone est joué contre lui,
+> l'état public envoyé au juge et la main révélée aux joueurs sont **deux choses distinctes**, et
+> les confondre se lit comme de la triche dans un sens ou dans l'autre.
+
+> `Le care package` : +1 carte nette (2 points) plus la sélection sur trois (≈ 2 points de
+> qualité) → 4 → `⌈4/3⌉ = 2` d'énergie. Remettre les deux autres **au-dessus** de la pioche et non
+> dessous est ce qui la garde honnête : on sait ce qui arrive, l'adversaire aussi.
+
+> `Le shop de Loba` : +1 carte pour toi (2) et −1 pour lui (2) **× 1,25** → 5 → `⌈5/3⌉ = 2`.
+> ⚠️ **Au hasard, pas au choix.** L'owner a précisé *« main adverse face cachée »* et il a raison :
+> choisir dans une main révélée vaudrait le double, et enchaîné après un *drone de Crypto* ça
+> devient un combo à deux cartes qui prend la meilleure carte d'en face pour 4 d'énergie. À
+> surveiller en calibration — c'est le seul combo à deux cartes du paquet.
+
+> `Typical Octane` : +1 carte (2) et −1 pour l'adversaire (2) **× 1,25** → 5 → `⌈5/3⌉ = 2`. Même
+> prix que le shop de Loba pour un effet voisin, et c'est cohérent : l'un prend dans la main,
+> l'autre dans la pioche.
+> 🆕 Troisième carte qui fait revenir l'**Anonyme** (§7 des règles).
+
+> `Le scan de Crypto` : neutraliser jusqu'à 2 passifs pendant 2 tours ≈ 6 points **× 1,25** → 7,5
+> → `⌈7,5/3⌉ = 3` d'énergie.
+> ⚠️ **C'est un contre direct aux 12 passifs du paquet, dont 5 arrivés aujourd'hui.** Une carte
+> anti-passif dans un paquet qui vient de doubler ses passifs se calibre en même temps qu'eux,
+> jamais après : si elle est trop bonne, elle tue *Le totem*, *Lifeline*, *Le Rhum* et
+> *La Flatline* d'un seul coup.
 
 ### Aura et coopération
 
@@ -189,6 +346,24 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **10 pizzas géantes** | tactique | 3 | rend 4 PV à **tous** tes héros. En coop, à ceux de tous les joueurs | la commande à 240 € |
 | **Sur le chemin** | passif | 3 | l'Aura de tes héros s'applique aussi aux héros des **autres joueurs** | le rituel de chanson du salon |
 | **Un piercing de petitpoissonnn** | tactique | 1 | +3 d'Aura à un héros allié pour la partie, **et il perd 1 PV** | *« j'ai craqué j'ai un nouveau piercing azra »* · *« comme ça j'ai un nombre pair de piercing »* |
+| 🆕 **Le steak haché de Meliodas** | tactique | 2 | désigne un héros adverse : ce tour, il **ne reçoit ni Aura ni soin allié**. Il est seul dans son assiette | *« mon steak haché ressemblait un peu à un pissenlit à être seul dans mon assiette »* — 5 pers. sur une semaine |
+
+> `Le steak haché de Meliodas` : couper un héros de l'Aura et des soins de son camp ≈ 4 points
+> **× 1,25** → 5 → `⌈5/3⌉ = 2` d'énergie.
+> ✅ **La ref s'entretient toute seule, et c'est le meilleur signe qu'elle est solide** : la
+> victime elle-même la relance. *« eh oh je suis pas sourd hein, laissez-moi tranquille avec ce
+> foutu steak haché »* (meliodas987_, 01/09) · *« le plus rien dire en question: talk about
+> melio's steak haché for the past week »* (02/09) · *« le steack haché avait faim »* (Malef__) ·
+> *« c'est pour avoir un menu à base de steak haché »* (kassandreyunikon). **5 personnes, du 28/08
+> au 02/09.** Une ref qu'on continue de servir à quelqu'un qui demande qu'on arrête est
+> exactement le critère du §4 : tout le monde rit sans qu'on explique.
+> 🎁 **C'est la SEULE des 16 cartes du jour à tomber dans *Aura et coopération*** — la famille qui
+> n'avait rien reçu depuis le début (§5, §7). Elle y tombe naturellement parce que le gag EST un
+> gag d'isolement : le seul du lot qui ne parle pas d'Apex.
+> ⚠️ **Nomme Meliodas**, qui a déjà *Séance de révision avec Meliodas* et une carte-héros. Trois
+> entrées — point dur du consentement (§7).
+> ⚠️ Écrite « steak haché », pas « streak hacher » : la ligne Notion portait l'orthographe de la
+> saisie. Le nom d'une carte est ce que les joueurs liront.
 
 > `Un piercing` : +3 d'Aura permanent = 3 points, moins un malus subi de 1 PV (× 0,5 → −0,5) →
 > 3 arrondi → `⌈3/3⌉ = 1` d'énergie. On souffre un peu pour être beau : c'est le gag, et c'est
@@ -218,19 +393,26 @@ famille** qui s'effondre. À recompter par famille après chaque tri, jamais seu
 
 Comblé dans la foulée par la seconde passe :
 
-| Famille | Après le tri | Aujourd'hui |
-|---|---|---|
-| Soin et protection | 2 | **5** |
-| Attaque et dégâts | 6 | **11** |
-| Énergie et tempo | **2** | **5** |
-| Aura et coopération | 4 | 4 |
-| Rares | 3 | **4** |
+| Famille | Après le tri | Après les passes du matin | 🆕 Après le pack de l'owner |
+|---|---|---|---|
+| Soin et protection | 2 | 5 | **10** |
+| Attaque et dégâts | 6 | 11 | **15** |
+| Énergie et tempo | **2** | 5 | **11** |
+| Aura et coopération | 4 | 4 | **5** |
+| Rares | 3 | **4** | 4 |
 
-🚨 **Le déséquilibre s'est inversé, et c'est maintenant Attaque qui déborde** : 11 cartes sur 29,
-soit 38 % du paquet. Les deux passes du 2026-09-10 y ont versé 5 cartes de plus, parce que les
-memes de la commu parlent surtout d'Apex et qu'un meme d'Apex se traduit presque toujours en
-dégâts. C'est un biais de la SOURCE, pas un choix : à corriger en cherchant les prochaines refs
-ailleurs que dans les memes de jeu — Aura et coopération n'a rien reçu depuis le début.
+🎁 **Le pack de l'owner du 2026-09-10 (16 cartes) a corrigé le déséquilibre sans le viser.**
+Attaque passe de **38 % à 33 %** du paquet non pas parce qu'on lui a retiré des cartes, mais parce
+que les autres familles ont grossi plus vite. *Énergie et tempo* double, *Soin et protection*
+double.
+
+🚨 **Aura et coopération reste le trou, et il est maintenant le SEUL** : 5 cartes sur 45 (11 %).
+Une seule des 16 cartes du pack y tombe — *Le steak haché de Meliodas*, et précisément parce que
+c'est la seule ref du lot qui ne parle **pas** d'Apex. La cause est nommée depuis le début et elle
+se confirme à chaque passe : **la source impose sa forme au résultat**. Quinze refs Apex donnent
+quinze cartes de dégâts, d'énergie et de soin, parce que c'est ce qu'un jeu de tir sait produire.
+→ La piste reste la même, et elle n'a toujours pas été exploitée : les **emotes de la chaîne**
+(§ ci-dessous), qui ne parlent d'aucun jeu.
 
 ⚠️ Si les parties de test montrent que tout le monde choisit la même voie, ce sont ces deux
 paquets qu'il faut rééquilibrer, **pas le plafond d'énergie** — lui ne se touche qu'en dernier,
@@ -315,6 +497,35 @@ du joueur doit y passer, sans exception.
 ou perd. C'est la question qui décide de tout le reste — un enjeu faible rend la carte anecdotique
 malgré son coût de développement, un enjeu fort la rend décisive et donc contestable.
 
+### 🆕 La direction de son deck — « Wally doit être un vicieux », 2026-09-10
+
+> ⚖️ L'owner : *« Wally doit être un vicieux. Il peut avoir des perks qui prennent une carte à un
+> joueur et la lui font jouer au hasard, etc. »*
+
+C'est la première **ligne éditoriale** donnée à son paquet, et elle vaut plus qu'une carte de plus :
+elle dit de quelle FORME sont ses effets. Le §7 réclamait des cartes conçues *« contre un groupe,
+pas contre un joueur »* sans dire lesquelles. Voilà la réponse : Wally ne frappe pas plus fort, il
+**détourne** — il prend ce qui est à toi et s'en sert.
+
+🎁 **La forme est déjà écrite ailleurs dans le jeu, et c'est ce qui la rend crédible.** *La Chute*
+prend le contrôle d'un héros adverse, *Le shop de Loba* prend une carte en main, `F07 Rework`
+emprunte un Ultime. Le deck de Wally est la version systématique de ce que le paquet fait déjà par
+exception — pas une mécanique neuve à équilibrer de zéro.
+
+🚨 **« La lui fait jouer au hasard » est la partie à écrire avec précaution.** Une carte volée puis
+jouée au hasard est un effet dont la valeur ne dépend ni de Wally ni du joueur, mais du tirage :
+c'est incalibrable et illisible en partie. Deux issues, et la seconde est meilleure :
+- au hasard **parmi les cibles légales** seulement, jamais parmi les cartes ;
+- ou **Wally choisit**, et c'est ce qui le rend vicieux plutôt que chanceux. Un adversaire qui
+  retourne ta meilleure carte contre toi est une histoire ; un adversaire qui tire au sort est un
+  dé.
+
+⚠️ **Et ça heurte de front la vue censurée (§4 ci-dessus, §9.3 de la fiche).** Pour choisir *quelle*
+carte prendre dans ta main, Wally doit la voir. En coop il est l'adversaire : soit c'est le
+**moteur** qui applique l'effet sans que le modèle voie la main, soit c'est Wally qui commente ce
+qu'il vient de faire **après coup** — jamais le modèle qui décide en regardant. La seconde est la
+seule qui reste défendable si un joueur conteste.
+
 ---
 
 ## 7. Ce qui manque encore
@@ -323,19 +534,28 @@ malgré son coût de développement, un enjeu fort la rend décisive et donc con
   doivent être conçues **contre un groupe**, pas contre un joueur.
 - **Refaire les 6 cartes qui lisent encore le Tirage** (§2), une fois les pourcentages en stats
   posés. L'owner s'en charge ; les listes gardent les refs en attendant.
-- **Rééquilibrer les familles.** Attaque pèse **11 cartes sur 29** (38 %), *Aura et coopération*
-  4 — et cette dernière n'a rien reçu depuis le début. Ce n'est pas un choix : les memes de la
-  commu parlent d'Apex, et un meme d'Apex se traduit presque toujours en dégâts. **La source
-  impose sa forme au résultat** ; chercher toutes les refs au même endroit déséquilibre le paquet
-  sans qu'aucune décision ne l'ait voulu.
+- **Rééquilibrer *Aura et coopération*.** Elle pèse **5 cartes sur 45** (11 %) et reste le seul
+  trou après le pack du 2026-09-10 (§5). **La source impose sa forme au résultat** ; chercher
+  toutes les refs dans les memes d'Apex déséquilibre le paquet sans qu'aucune décision ne l'ait
+  voulu.
   🎁 Les refs retenues au pack 3 visent précisément ce trou : les trois chats, la carte des trois
-  réunis, « c'est mon kill / NOTRE kill ».
-- **Les illustrations** : 29 cartes à générer, plus les nouvelles. Coût à chiffrer avant
-  d'ouvrir le robinet.
-- **Le consentement** : dix cartes nomment des personnes réelles — **Kassandre** (mode diva),
-  **Azraël** (Flatline, « notre kill »), **Rina** (tunnel), **Meliodas** (révision), **Zeddo**
-  (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin** (codage),
-  **Raiky** (anneau), **Tenma**. Chacune doit pouvoir être retirée à la demande de la personne —
+  réunis, « c'est mon kill / NOTRE kill ». Et le gisement des **emotes** n'est toujours pas ouvert.
+- 🆕 **Trancher les quatre points durs du pack du 2026-09-10**, tous nommés à leur carte :
+  les **PV d'une carte face cachée** et ce qui arrive quand on la détruit · la **taille du deck**
+  face aux 3 leurres de *La statue de Mirage* · le **« si 3 réunis »** du *Rhum*, injouable avec
+  2 emplacements de passif · la portée de *Rendez-vous au véto* (un héros, ou le tour entier ?).
+- 🆕 **Le doublon de nom `Tunnel`** — l'état et *Le tunnel de Rina* portent le même mot et ne font
+  pas la même chose (§4). Arbitrage demandé, ne pas laisser les deux.
+- **Les illustrations** : **45** cartes à générer, plus les héros. Coût à chiffrer avant d'ouvrir
+  le robinet — il a grossi de 55 % en une journée.
+- **Le consentement** : **treize** cartes nomment des personnes réelles — **Kassandre** (mode
+  diva), **Azraël** (Flatline, « notre kill »), **Rina** (tunnel), **Meliodas** (révision, 🆕 steak
+  haché), **Zeddo** (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin**
+  (codage), **Raiky** (anneau, 🆕 camion), **Tenma**, 🆕 **Spiro** (véto, et sa propre carte).
+  🚨 Le pack du 2026-09-10 a **aggravé** le point dur au lieu de le laisser stable : Meliodas et
+  Raiky passent chacun à **trois** entrées (héros + deux cartes). Un retrait à leur demande ne
+  serait plus une carte à sortir, mais trois — et *Rendez-vous au véto* nomme un chat, ce qui pose
+  la question de savoir si le consentement d'Azraël couvre Spiro. Chacune doit pouvoir être retirée à la demande de la personne —
   point dur nommé depuis le premier jour, toujours pas résolu.
   🎁 Le tri l'a allégé au passage : *MrMakkx*, *Temcox* et *oyoloyoo* ne sont plus nommés. Et les
   refs qui ne nomment personne (les chats, les emotes, les objets) y échappent entièrement — un

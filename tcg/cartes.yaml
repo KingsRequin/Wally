@@ -7,9 +7,16 @@
 #
 # 🚨 CE FICHIER NE PORTE QUE CE QUE NOTION PORTE. La base
 # « 🃏 Cartes du Purgatoire » est la SEULE source des chiffres, des ultimes et
-# des paliers de rareté. Relevé le 2026-09-09 : Azraël est la seule carte dont
-# Notion tienne des valeurs (coût d'ultime 10, 5/10/5, « F07 Rework », statut
-# « en cours ») ; les quatre autres sont « à écrire » et n'ont RIEN.
+# des paliers de rareté. Relevé le 2026-09-10 : Azraël est la seule des sept
+# cartes d'ici dont Notion tienne des valeurs (coût d'ultime 10, 5/10/5,
+# « F07 Rework », statut « en cours ») ; les six autres sont « à écrire » ou
+# « en cours » et n'ont RIEN.
+#
+# 🚨 Le texte de l'Ultime d'Azraël a été RÉÉCRIT le 2026-09-10 : il emprunte
+# désormais l'Ultime d'un héros du plateau au lieu d'affaiblir une cible.
+# Seule la DESCRIPTION change — ses chiffres, eux, restent à reposer à la main
+# (l'owner a retiré la mémoire de la fabrication le 2026-09-10, seule
+# contrainte atk + pv + aura = 20).
 #
 # 🚨 Corollaire : tout ce qui n'est pas décidé vaut 0 ou « INDÉFINI », et se
 # lit comme tel sur la carte. Jusqu'au 2026-09-09 le fichier portait des
@@ -60,9 +67,13 @@
   classe: ARCHANGE
   ultime: REWORK
   rarete: archange
+  # 🚨 Réécrit le 2026-09-10 sur arbitrage de l'owner. L'ancien Rework
+  # affaiblissait une cible (« son Ultime coûte +3, tous ses nombres baissent
+  # de 2 ») ; celui-ci EMPRUNTE. La ref tient toujours — un rework change ce
+  # qu'un personnage sait faire — mais elle vise maintenant Azraël lui-même.
   description: >-
-    Rework : désigne un héros adverse. Pour le reste de la partie, son Ultime
-    coûte +3 et tous ses nombres baissent de 2.
+    Rework : à chaque activation, choisis un héros sur le plateau. Azraël
+    déclenche SON Ultime à sa place. Il peut en changer la fois suivante.
   ambiance: >-
     Il ne te dit jamais non. Il attend le prochain patch, et un matin plus
     personne ne te craint.

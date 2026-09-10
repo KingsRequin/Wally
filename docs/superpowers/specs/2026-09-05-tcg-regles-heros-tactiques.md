@@ -144,6 +144,32 @@ C'est **le premier chiffre à calibrer** en parties de test. S'il est trop haut,
 de tactiques ; trop bas, aucun Ultime ne sort. Signal à surveiller : la part des parties où au
 moins un Ultime part, et la part d'énergie perdue au plafond.
 
+### 🆕 Payer en AURA — la seconde monnaie, 2026-09-10
+
+> ⚖️ L'owner : *« Pour les cartes spéciales, on peut prendre de l'Aura plutôt que de l'énergie. »*
+
+Une carte **spéciale** — celles des paquets rares, et le deck de Wally — peut annoncer son coût
+en **Aura** au lieu d'énergie. On paie alors en retirant ce montant à l'Aura d'un de ses héros,
+pour le reste de la partie.
+
+🎁 **Ça règle un défaut que le §3 portait depuis le début.** L'énergie est la SEULE ressource, donc
+tous les choix passent par le même goulot : garder pour l'Ultime, ou dépenser. Une carte chère est
+mécaniquement une carte qu'on ne joue pas le tour d'un Ultime. Payer en Aura ouvre une seconde
+voie — jouer gros sans repousser son Ultime — au prix d'un héros durablement moins critique
+(l'Aura est le taux de critique, §2bis).
+
+🚨 **Le taux de conversion est le point dur, et il n'est pas posé.** Le barème du catalogue donne
+`1 énergie ≈ 3 points` et `1 point d'Aura = 1 point de budget` : à la lettre, **1 énergie = 3
+d'Aura**. Mais l'énergie revient à +3 par tour et l'Aura, elle, ne repousse pas. Payer en Aura est
+donc un coût PERMANENT là où l'énergie est un coût de trésorerie — le même chiffre n'achète pas la
+même chose.
+→ **À calibrer avant d'écrire la moindre carte qui s'en sert** : si le taux est trop doux, plus
+personne ne paie en énergie et le §3 s'effondre. Piste à mesurer : **1 énergie = 1 d'Aura**, qui
+paraît cher au premier regard et ne l'est probablement pas.
+
+⚠️ Une carte ne propose ce paiement que si elle l'écrit. Ce n'est pas un choix global offert sur
+toutes les cartes : ce serait exactement le multiplicateur sans plafond que le barème interdit.
+
 ---
 
 ## 4. Mode JOUEUR CONTRE JOUEUR
@@ -204,9 +230,10 @@ perdre :
 | F (Chute, Anonyme, Renoncement) | **Tactiques rares** — la Chute devient une carte, plus une règle générale |
 
 ⚠️ Une entrée de la famille F peut aussi porter un **Ultime** quand elle est marquée
-*👤 Ultime* dans le catalogue : c'est le cas de **F07 Rework** (l'Ultime d'Azraël), qui neutralise
-durablement l'Ultime d'un adversaire. La famille F reste le seul endroit où une entrée touche à
-une mécanique signature, qu'elle serve de tactique ou d'Ultime.
+*👤 Ultime* dans le catalogue : c'est le cas de **F07 Rework** (l'Ultime d'Azraël), qui emprunte
+l'Ultime d'un héros du plateau — réécrit le 2026-09-10, il ne neutralise plus rien. La famille F
+reste le seul endroit où une entrée touche à une mécanique signature, qu'elle serve de tactique
+ou d'Ultime.
 
 **Les affinités survivent** : sans zones, elles servent de ciblage aux tactiques. « Tous tes héros
 d'affinité *Apex* gagnent +2 d'Attaque ce tour » relie encore la mémoire de Wally au plateau.
@@ -224,8 +251,47 @@ une mécanique signature.
 | Les **trois zones** à sujets | l'owner a tranché le combat frontal dans les deux modes : plus lisible, plus proche du jeu qu'il décrit |
 | **Voix** et **Piquant** comme stats | remplacées par Attaque et PV. Le Piquant mesurait « à quel point tu énerves Wally » : un jugement, nul pour les deux tiers de la commu |
 | La **roulette** de début de partie | la tension vient maintenant de l'énergie, pas d'un tirage |
-| L'**Anonyme** et le **Renoncement** | liés aux zones ; récupérables en tactiques si le besoin revient |
+| ~~L'**Anonyme**~~ | ⚰️ **RÉCUPÉRÉ le 2026-09-10** — le besoin est revenu, cf. ci-dessous |
+| Le **Renoncement** | lié aux zones ; récupérable en tactique si le besoin revient |
 | Le **recalcul saisonnier** des héros | figés à vie (§1) |
+
+### 🆕 L'Anonyme revient, et il est ATTAQUABLE — 2026-09-10
+
+> ⚖️ L'owner : *« Les cartes face cachée pourront être attaquées pour être détruites. »*
+
+Ce tableau annonçait l'Anonyme « récupérable si le besoin revient ». Il est revenu le jour même :
+**trois cartes du 2026-09-10** se posent face cachée (*baril de Caustique*, *Typical Octane*, et
+le *leurre* qui en est une variante). La mécanique n'est donc plus optionnelle.
+
+Elle revient **modifiée**, et c'est l'apport de l'owner : une carte face cachée **occupe la table
+et peut être attaquée**. La détruire coûte une attaque, sans savoir ce qu'on détruit.
+
+| | Version d'origine (spec mère §3.7) | Version 2026-09-10 |
+|---|---|---|
+| Pose | 1 d'énergie fixe, n'importe quelle carte | **le coût de la carte**, seulement celles qui l'écrivent |
+| Ce qu'elle vaut | 2 de Voix (4 avec `F03 Masque`) | **rien** tant qu'elle est cachée : elle attend son déclencheur |
+| Révélation | à la fin de la manche | **à son déclencheur**, ou quand elle est détruite |
+| Attaquable | non — les zones la protégeaient | **oui**, c'est la nouveauté |
+
+🚨 **C'est ce qui rend le bluff jouable au lieu d'être gratuit.** Dans la version d'origine, poser
+face caché ne coûtait presque rien et ne risquait rien : la stratégie dominante était d'en poser
+autant que possible. Rendre la carte attaquable met un prix sur le bluff — l'adversaire peut
+dépenser une attaque pour lever le doute, et se tromper.
+
+⚠️ **Deux choses restent à trancher, et le moteur ne peut pas les deviner :**
+- **Combien de PV a une carte face cachée ?** Si c'est 1, toute attaque la tue et le bluff ne
+  survit pas un tour. Si c'est beaucoup, elle devient un mur gratuit. Une seule valeur pour
+  toutes, sinon les PV trahissent la carte.
+- **Que se passe-t-il quand elle est détruite ?** Elle est révélée puis défaussée, ou son effet
+  se déclenche en partant ? Le second est bien plus intéressant (*baril de Caustique* qui explose
+  quand on lui tire dessus), mais il fait de l'attaquer un mauvais coup — et donc plus personne
+  ne le fera. Trancher AVANT d'écrire les trois cartes.
+
+⚠️ `F03 Masque` du catalogue décrit encore l'ancienne version (« posable face cachée pour 0
+énergie, vaut 4 de Voix en Anonyme »). Il est à réécrire avec le reste des entrées à Tirage —
+l'owner s'en charge, la ligne garde la ref en attendant.
+
+---
 
 La mesure du Piquant (`emotional_memory.anger`) n'est pas perdue : elle **oriente le choix de
 l'Ultime**. Quelqu'un dont les échanges sont chargés reçoit un effet agressif du catalogue plutôt
@@ -239,5 +305,7 @@ qu'un effet de soutien. L'information décide d'un caractère au lieu d'être un
 2. **Le coût des Ultimes (6-10)** — s'ils partent tous au même tour, l'échelle de style ne sert à rien.
 3. **Les 40 PV par joueur en coop** — mesurer la durée d'un raid à 2, 4 et 6 joueurs.
 4. **Le budget de base (12)** — décide de la durée d'un JcJ.
+5. 🆕 **Le taux Aura ↔ énergie** (§3) — sans lui, aucune carte spéciale ne peut être écrite.
+6. 🆕 **Les PV d'une carte face cachée** (§7) — décide si le bluff existe ou non.
 
 Rien ne se fige avant **quinze parties**, conformément à ce que font les designers indé.

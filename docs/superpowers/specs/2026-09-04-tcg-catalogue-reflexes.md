@@ -175,23 +175,36 @@ Portée : **👤** habille une carte-personne · **🎴** peut être une carte-o
 | F04 | Démasquage | 3 | à la pose | révèle immédiatement une carte Anonyme adverse de sa table | 👤🎴 |
 | F05 | Retenue | 3 | si tu Renonces à sa table | elle revient en main **et** tu récupères son coût en énergie | 👤 |
 | F06 | Rachat | 6 | une fois | récupère une de tes cartes Chutée par l'adversaire ; elle revient en main | 🎴 |
-| F07 | Rework | 6 | Ultime, à la résolution | désigne un héros adverse en ligne : pour **le reste de la partie**, son Ultime coûte **+3 d'énergie** (jamais au-delà du plafond de 12) et **tous ses nombres baissent de 2** (plancher 1) | 👤 Ultime |
+| F07 | Rework | 6 | Ultime, à la résolution | désigne un héros **sur le plateau**, allié ou adverse : Azraël déclenche **l'Ultime de ce héros** à sa place. Le choix se refait **à chaque activation** | 👤 Ultime |
 
-**F07 en détail** — trois cas que le moteur doit trancher, sinon ce sont des contestations en
+> ⚖️ **Réécrit le 2026-09-10 sur arbitrage de l'owner.** *« Rework l'ult d'Azra : quand il
+> utilise son ult il peut utiliser celui d'un personnage au choix sur le plateau, ce qui fait
+> qu'à chaque activation il peut changer. »* L'ancien F07 **affaiblissait** une cible pour le
+> reste de la partie ; celui-ci **emprunte**. La ref survit au changement — un rework change ce
+> qu'un personnage sait faire — mais elle vise désormais Azraël lui-même, pas sa victime.
+
+**F07 en détail** — quatre cas que le moteur doit trancher, sinon ce sont des contestations en
 pleine partie :
 
-- **Le Rework ne bloque pas l'Ultime du tour même.** Les Ultimes se résolvent par coût croissant
-  (§4) ; un Rework à 10 passe donc après presque tout. C'est le contre-jeu, pas un défaut.
-- Il vise **l'Ultime, pas son usage** : chaque déclenchement suivant est affaibli.
-- Si l'Ultime visé **ne porte aucun nombre**, il ne subit que le surcoût de 3.
-- Un héros **déjà Reworké** ne peut pas l'être une seconde fois. Rien n'interdit de relancer le
-  Rework sur une **autre** cible, au prix de ré-épargner le coût entier.
+- **Azraël paie SON coût d'Ultime (10), jamais celui du héros copié.** Sinon l'entrée devient une
+  remise sur les Ultimes chers, et le plafond de 12 ne veut plus rien dire.
+- **Il emprunte l'effet, pas les nombres du porteur.** Un Ultime qui lit l'Attaque ou l'Aura lit
+  celles d'**Azraël**. Autrement l'entrée deviendrait proportionnelle à la carte visée — sans
+  plafond, donc cassée par construction (§1).
+- **Il peut copier l'Ultime d'un ALLIÉ**, et c'est voulu : en coop, c'est ce qui le rend
+  intéressant contre Wally, là où viser un adverse ne dit rien.
+- **Le choix se refait à chaque activation**, sans mémoire du précédent. Rien n'est marqué sur la
+  cible : contrairement à l'ancien F07, aucun état ne persiste, donc aucun état à afficher.
 
-🚨 **Son prix de 6 n'est pas choisi, il est forcé.** Plancher 5 pour ce qui neutralise une
-mécanique signature, × 1,25 parce que l'effet frappe l'adversaire → 6,25 → 6, le haut de
-l'échelle. Il n'existe donc **aucune version moins chère de cet effet**, et 6 points de puissance
-exigent un coût d'Ultime de 10 (§2 des règles héros). Une entrée « Rework light » à 3 serait hors
-barème par construction.
+🚨 **Son prix de 6 tient toujours, et pour la même raison.** Plancher 5 pour ce qui touche à une
+mécanique signature — ici l'Ultime lui-même — × 1,25 parce qu'il peut emprunter à l'adversaire →
+6,25 → 6, le haut de l'échelle. Un coût d'Ultime de 10 reste exigé (§2 des règles héros).
+
+🎁 **Et le plafond que le §1 réclame est déjà là, sans qu'on l'écrive.** « Copier un Ultime » est
+un effet proportionnel, exactement la forme interdite sans borne. Mais aucune entrée de ce
+catalogue ne dépasse **6** : ce que F07 peut emprunter est donc borné par le catalogue lui-même.
+La borne est **structurelle**, pas une valeur posée à la main — et elle tombe le jour où une
+entrée à 7 est ajoutée. C'est la seule chose à surveiller ici.
 
 ### G — Affinités et factions
 
