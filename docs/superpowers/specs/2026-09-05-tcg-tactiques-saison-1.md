@@ -23,15 +23,26 @@ C'est donc le seul endroit où la commu s'écrit vraiment.
 Un passif occupe une place limitée : c'est ce qui l'empêche d'être toujours meilleur qu'une
 tactique. Deux passifs maximum, on choisit.
 
-## 2. Le Tirage du tour — le hasard, et il reste visible
+## 2. ⚰️ Le Tirage du tour — SUPPRIMÉ le 2026-09-10
 
-Au début de chaque tour, un dé 1-6 est **lancé et affiché aux deux joueurs, avant qu'ils jouent**.
-Toutes les cartes à critique le lisent.
+> ⚖️ L'owner : *« Il y aurait du hasard en stats — esquive, boost d'attaque, chance de heal, etc.
+> Pas de dé. »*
 
-🚨 Rappel de l'arbitrage du 2026-09-04 : un hasard affiché avant l'action **n'est pas une
-espérance, c'est une option** — on ne joue la carte que sur le bon tirage. Ces cartes se
-tarifent donc **au meilleur cas**, jamais à la moyenne, sinon elles deviennent mécaniquement les
-meilleures du jeu.
+Il y avait un dé 1-6 lancé et **affiché aux deux joueurs** au début de chaque tour. Il n'existe
+plus : le hasard est désormais un **pourcentage porté par la carte**, résolu au moment de l'effet
+(cf. `2026-09-05-tcg-regles-heros-tactiques.md` §2bis).
+
+🚨 **Six cartes de cette liste lisent encore « si le Tirage ≥ N » et sont donc À REFAIRE** :
+*La manette* · *Le clavier-souris* · *Codage à la Requin* · *Michel-Velux* (dont le contre entier
+reposait sur le Tirage) · *Azraël met ta perk !* (état Oublie) · et l'état **Oublie** lui-même.
+Elles sont laissées telles quelles à dessein : l'owner refait les cartes, cette liste sert à
+garder les **refs**. Les remplacer à moitié maintenant ferait deux vocabulaires en circulation —
+le défaut retiré le 2026-09-09.
+
+🎁 **La tarification se simplifie, et à la baisse.** Ces effets se tarifaient **au meilleur cas**,
+parce qu'un hasard affiché avant la pose n'est pas une espérance mais une **option** — on
+n'engageait que sur le bon tirage. Un hasard **caché** ne se choisit pas : « +6 une fois sur
+trois » revaut **+2**.
 
 ## 3. Le prix
 

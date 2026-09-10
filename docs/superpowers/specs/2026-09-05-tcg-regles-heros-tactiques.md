@@ -43,25 +43,82 @@ Attaque + PV + Aura = budget
 
 - **Attaque** : dégâts infligés à chaque échange.
 - **PV** : ce qu'il encaisse. À 0, il **Chute** et quitte la ligne.
-- **Aura** : s'ajoute à l'Attaque des héros **alliés** en ligne. C'est la seule mécanique qui
-  mesure les liens réels entre les gens — aucun autre TCG ne peut la copier.
+- **Aura** : donne des **chances de critique** (§2bis). Elle ne s'ajoute PAS à l'Attaque.
 
-Répartition : la procédure de `2026-09-04-tcg-fabrication-carte.md` (z-score sur log des trois
-formes : messages par jour · jours actifs · part relationnelle). Planchers Attaque ≥ 1 et PV ≥ 1.
+> ⚖️ **Arbitrage du 2026-09-09.** L'Aura ajoutait l'Attaque des alliés en ligne. L'owner l'a
+> retiré : *« augmenter l'attaque je trouve ça trop cheaté, du coup on ne jouerait que les cartes
+> avec le plus gros aura et c'est tout. Une chance de critique peut être contrable. »* Un bonus
+> déterministe et cumulatif rend la stat qui le porte strictement supérieure aux autres.
 
-**Rareté et faction sont posées par l'owner**, carte par carte.
+**Répartition : écrite à la MAIN par l'owner.** Seule contrainte, la somme tient le budget.
+Planchers Attaque ≥ 1 et PV ≥ 1. **Rareté et faction sont posées par l'owner**, carte par carte —
+et la rareté AVANT les stats, puisqu'elle fixe le budget.
+
+> ⚖️ **Arbitrage du 2026-09-10.** La répartition sortait d'une formule tirée de la mémoire de
+> Wally. *« On va retirer les faits sur les gens, on ne les utilisera pas pour les héros. »*
+> Le budget est désormais la seule règle d'équilibre vérifiable, et il l'est au chargement du
+> fichier (`bot/core/tcg_cartes.py`).
 
 ### Le coût de l'Ultime sort du style, pas du mérite
 
 ```
-coût de l'Ultime = 5 + quintile( longueur médiane des messages )   →  6 à 10
-puissance de l'effet = prix du catalogue, aligné sur ce coût       →  2 à 6
+coût de l'Ultime : 6 à 10, posé par l'owner
+puissance de l'effet = prix du catalogue, aligné sur ce coût  →  2 à 6
 ```
 
-Tu écris des pavés : ton Ultime est cher, lent à charger, et il fait mal. Tu balances des
-punchlines de six mots : il part tôt et frappe moins. **C'est vrai, c'est drôle, et personne ne
-peut le lire comme une note** — c'est le principe de coût de la spec mère, déplacé sur l'Ultime
-maintenant que les héros ne se paient plus à la pose.
+⚠️ Le coût sortait du **quintile de la longueur médiane des messages** — tu écris des pavés, ton
+Ultime est cher et lent. C'était juste, drôle et illisible comme une note. **Il tombe avec la
+formule le 2026-09-10** : il se pose à la main, dans la même plage.
+
+Ce qui SURVIT de ce principe, et qui compte : le coût d'un Ultime dit un **style**, jamais un
+mérite. Un Ultime cher n'est pas la récompense de quelqu'un d'important.
+
+---
+
+## 2bis. Le hasard vit dans les STATS — il n'y a pas de dé
+
+> ⚖️ **Arbitrage de l'owner, 2026-09-10.** *« Il y aurait du hasard en stats — esquive, boost
+> d'attaque, chance de heal, etc. Pas de dé. »*
+
+Chaque carte peut porter des **pourcentages qui lui sont propres**, résolus au moment de l'effet :
+esquive, critique, soin, boost. Il n'y a **aucun tirage partagé**, aucun dé, aucune valeur
+annoncée en début de tour.
+
+L'**Aura** est la première de ces chances : elle donne le **taux de critique** du héros.
+
+### 🚨 Ce que ça remplace, et ce qu'il faut refaire
+
+Ceci **annule l'arbitrage du 2026-09-04** (« le hasard est tiré et AFFICHÉ avant la pose, un dé
+1-6 partagé par tour »). Le **Tirage du tour n'existe plus**. Conséquences, à traiter avant toute
+calibration :
+
+| Ce qui en dépendait | État |
+|---|---|
+| **15 cartes** lisant « si le Tirage ≥ N » (6 tactiques, 9 entrées du catalogue) | à refaire |
+| `I01 Critique` et `I02 Esquive` du catalogue | deviennent des **stats**, plus des Réflexes |
+| **Michel-Velux** (« l'adversaire choisit ton Tirage ») | son contre disparaît — carte à repenser |
+| L'état **Oublie** (Tirage ≤ 3) | devient un pourcentage porté par l'état |
+| L'Aura qui **abaisse un seuil de Tirage** | devient directement un **taux** |
+| La zone `TIRAGE` de la maquette du plateau | sans objet |
+
+🎁 **Et ça SIMPLIFIE la tarification, ce qui n'est pas évident.** Le catalogue tarifait les effets
+à hasard **au meilleur cas** — parce qu'un hasard affiché avant la pose n'est pas une espérance,
+c'est une **option** : le joueur n'engageait que sur le bon tirage. Un hasard **caché** ne se
+choisit pas. Ces effets se retarifent donc à leur **espérance** : « +6 une fois sur trois » vaut
+de nouveau **+2**, et non +6. Tout le §2 du catalogue est à réécrire dans ce sens — à la baisse.
+
+### ⚠️ Ce qu'on perd, et qu'il faut assumer
+
+- **Wally ne peut plus commenter avant le coup.** *« Avec ce tirage, à ta place j'aurais pas
+  engagé »* n'a plus de sens si personne ne connaît le tirage. Ses commentaires se replient sur
+  l'**après** (une gaffe se lit dans la chute d'évaluation du moteur, ce qui marche toujours).
+- **Un résultat improbable devient indiscernable d'un bug.** C'était l'argument central du
+  2026-09-04. Le contre-poison est le **journal d'événements** : chaque jet doit y être écrit
+  avec son taux et son résultat, sinon aucune contestation ne pourra jamais être tranchée.
+  Ce n'est plus une commodité de calibration, c'est ce qui rend le jeu défendable.
+- **La triche annoncée de Wally** (`TRICHE` : ses PV ne suivent aucune règle) reposait sur le
+  contraste avec un hasard visible. Elle reste jouable, mais il faut qu'elle soit **écrite sur sa
+  carte** — c'est déjà le cas — sinon elle se confond avec les jets cachés.
 
 ---
 
