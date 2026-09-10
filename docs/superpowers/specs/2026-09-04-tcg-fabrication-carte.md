@@ -61,90 +61,57 @@ que de la laisser courir sur toute la carte.
 
 ---
 
-## 2. Les trois mesures — source exacte
+## 2. Les stats — écrites à la MAIN, sur un budget borné
 
-Fenêtre : **toute l'histoire connue**. Pas de fenêtre glissante — les cartes se recalculent par
-saison (spec mère §4), c'est déjà la respiration du système.
-
-| Stat | Mesure brute | Source exacte |
-|---|---|---|
-| **Voix** | nombre de messages | `logs/conversations/{discord,twitch,voice}/**/*.jsonl`, lignes `type == "message_in"`, groupées par **`author_id`** |
-| **Aura** | nombre de faits de relation | `atomic_facts` où `status='active'` et `category='REL'` |
-| **Piquant** | charge de colère déclenchée | `emotional_memory` où `emotion='anger'` → somme des `affinity` |
-
-### 🚨 Grouper par `author_id`, JAMAIS par `author`
-
-Le journal porte les deux. `author` est le libellé d'affichage (`display_name (@username)`) et il
-**change quand la personne change de pseudo** : KingsRequin y apparaissait sous trois libellés
-(3025 + 781 + 11), zeddo sous trois aussi. Grouper par libellé donnait **473 messages à Jubeii au
-lieu de 0** — soit une Voix fausse pour tous ceux qui ont changé de nom, c'est-à-dire les plus
-anciens, c'est-à-dire ceux dont la carte compte le plus.
-
-`author_id` est présent sur **100 %** des `message_in` (0 manquant sur 104 072 lignes vérifiées).
-La plateforme se lit dans le chemin, et **`voice/` compte comme `discord`**.
-
-Les identifiants passent ensuite par la **résolution d'alias** (`user_links` acceptées) : une
-personne à deux comptes est une seule carte, avec la somme de ses mesures.
-
-### Pourquoi pas `category='EMOTION'` pour le Piquant
-
-C'était la source évidente, et elle ne discrimine rien : **médiane 0, maximum 4** sur toute la
-commu. ClakerNoJutsu avec ses 3 faits `EMOTION` tombait au **percentile 98** — un artefact pur,
-qui lui donnait un Piquant élevé sans qu'aucune mesure ne le soutienne. `emotional_memory.anger`
-couvre 40 personnes avec une médiane de 0,049 et un maximum de 0,749 : elle sépare vraiment.
-
-**Une mesure trop rare ne mesure pas peu, elle mesure faux.** Vérifier la distribution d'un signal
-avant de l'adosser à une stat, pas après.
-
----
-
-## 3. La répartition — la formule
+> ⚖️ **Arbitrage de l'owner, 2026-09-10.** *« On va retirer les faits sur les gens, on ne les
+> utilisera pas pour les héros. »* La mémoire de Wally ne fabrique plus les cartes.
 
 ```
-pool          = personnes ayant ≥ 5 faits actifs           (123 au 2026-09-04)
-médiane_i     = médiane de la mesure i sur le pool          (messages 31 · REL 2 · anger 0,050)
-rapport_i     = mesure_i / médiane_i                        sans dimension
-score_i       = rapport_i ** 0.5                            racine carrée
-poids_i       = score_i / Σ score
-stat_i        = budget × poids_i                            réparti au PLUS GRAND RESTE
+Attaque + PV + Aura = 12 + bonus de rareté
 ```
 
-Puis **plancher `Voix ≥ 1`** (on retire 1 à la plus haute des deux autres). `Aura` et `Piquant`
-peuvent valoir 0 — c'est une forme, pas un défaut.
+L'owner écrit les trois nombres. La **seule** contrainte est que leur somme tienne le budget —
+et elle n'est pas négociable : c'est tout ce qui reste pour que deux cartes faites à trois mois
+d'écart puissent s'affronter sans que l'une écrase l'autre par accident (décision fondatrice du
+2026-08-27, toujours en vigueur).
 
-⚠️ Le **plafond de 9 par stat** que décrivait cette ligne a été retiré le 2026-09-07 : cf.
-`2026-09-05-tcg-deux-modes-anatomie.md` §2, qui porte la formule en vigueur (z-score sur log,
-stats Attaque/PV/Aura).
+Bonus de rareté : `Âme +0` · `Fidèle +1` · `Âme Promise +2` · `Élu +3` · `Ange +5` · `Archange +8`.
 
-### Pourquoi la racine carrée, et pas le percentile ni le log
+⚠️ **Pas de plafond par stat.** Retiré par l'owner le 2026-09-07 : c'était un reste de l'époque
+où le budget valait 9. Une carte peut donc être `0 / 20 / 0`.
 
-Trois normalisations essayées sur les mêmes gens :
+### 🚨 Ce que cet arbitrage déplace, et qu'il faut regarder en face
 
-| Méthode | Résultat pour ClakerNoJutsu | Défaut |
-|---|---|---|
-| **Percentile** intra-commu | `3 / 3 / 3` | Il est dans le haut du panier sur les trois mesures, donc ses trois percentiles valent ~0,99, donc les poids sont égaux. **Le percentile mesure le rang, pas la forme** — et quelqu'un de fort partout se retrouve sans forme du tout. |
-| **Logarithme** du rapport | `4 / 4 / 1` | Compresse trop : 91× la médiane et 40× la médiane deviennent 4,5 et 3,7. Tout le monde finit en Voix 4-5. |
-| **Racine carrée** ✅ | `5 / 3 / 1` | Garde l'écart entre les ordres de grandeur sans laisser le plus gros signal tout rafler. |
+La spec mère du 2026-08-27 nommait le risque à l'envers : *« le seul endroit du jeu où un humain
+conçoit vraiment est le seul endroit où l'équilibre peut casser »*. Cet endroit est désormais
+**toutes les cartes**, pas seulement les objets. Deux conséquences :
 
-La racine carrée n'est pas un réglage esthétique : c'est le seul des trois qui produise des
-**profils distincts** sur des personnes réellement différentes (§7).
+1. **La calibration devient obligatoire, elle n'est plus un confort.** Une formule se relit ; une
+   opinion, non. Le moteur d'auto-jeu et son journal d'événements sont ce qui remplace la
+   reproductibilité perdue — c'est là que se verra une carte trop forte.
+2. **La répartition n'est plus justifiable.** Avant, on pouvait dire *« ta carte est comme ça
+   parce que tu parles beaucoup »*. Maintenant, c'est un choix de l'owner. Ça retire au passage
+   le risque nommé en tête de spec mère — la carte n'est plus un jugement mesuré sur ta place
+   dans la commu — mais ça met chaque chiffre sur le dos d'une personne.
 
----
+### ⚰️ Ce qui a été abandonné, pour ne pas le reproposer dans six mois
 
-## 4. Le coût
+Les §2 à §4 de ce document décrivaient une formule : trois mesures (messages par jour actif,
+part de faits relationnels, `emotional_memory.anger`), normalisées en **racine carrée** de leur
+z-score, réparties sur le budget ; plus un **coût** tiré du quintile de la longueur médiane des
+messages. Elle a été vérifiée sur huit personnes réelles et rendait six profils distincts.
 
-```
-coût = quintile( percentile(longueur médiane des messages de la personne) ) → 1..5
-```
+Elle n'est pas abandonnée parce qu'elle était fausse — mais parce que l'owner ne veut pas que la
+mémoire décide des cartes. **Les pièges qu'elle a payés restent vrais** et valent pour toute
+mesure future sur cette base :
 
-Longueur médiane en caractères, sur les mêmes lignes `message_in`, groupées par `author_id`.
-Pool de référence : les personnes ayant **≥ 20 messages** (98 au 2026-09-04 ; médianes observées
-de 14 à 100 caractères).
-
-Quintiles : `p < 20 % → 1` · `< 40 % → 2` · `< 60 % → 3` · `< 80 % → 4` · sinon `5`.
-
-Rappel de la spec mère : c'est un trait de **style**, jamais de mérite. Tu écris des pavés, ta
-carte est chère et lourde ; tu balances des punchlines, elle se pose au premier tour.
+- 🚨 **Grouper par `author_id`, jamais par `author`** : le libellé change avec le pseudo. Jubeii
+  comptait **0 message au lieu de 473**.
+- 🚨 **`category='EMOTION'` ne mesurait rien** : médiane 0, max 4 sur toute la commu. *Une mesure
+  trop rare ne mesure pas peu, elle mesure faux.*
+- 🚨 **Le percentile mesure le rang, pas la forme** : quelqu'un de fort partout ressortait `3/3/3`,
+  sans forme — l'inverse du but. Le log aplatissait tout le monde ; la racine carrée gardait les
+  écarts.
 
 ---
 
@@ -181,31 +148,49 @@ meilleure passive : son prestige coûte déjà 12 sur les 20 du deck.
 
 ---
 
-## 7. Vérification sur huit personnes réelles
+## 7. L'état RÉEL des sept cartes — mesuré le 2026-09-10
 
-Calculé le 2026-09-04, budget 9 (coût 3, rareté Âme) pour tout le monde afin que seules les
-formes se comparent :
+Relevé dans `tcg/cartes.yaml`, pas dans la maquette :
 
-| Personne | messages | REL | anger | Voix | Aura | Piquant | Ce que la forme dit |
-|---|---|---|---|---|---|---|---|
-| Kassandre | 3832 | 35 | 0,13 | **6** | 2 | 1 | la voix de la commu |
-| Azraël | 1158 | 8 | 0,09 | **6** | 2 | 1 | il parle, il ne réseaute pas |
-| KingsRequin | 3914 | 76 | 0,75 | **5** | 2 | **2** | le seul vrai Piquant — c'est lui qui taquine Wally |
-| ClakerNoJutsu | 2382 | 81 | 0,09 | **5** | 3 | 1 | bavard ET liant |
-| Taki_Gano | 941 | 27 | 0,06 | **5** | 3 | 1 | |
-| Jubeii | 473 | 22 | 0,01 | **5** | 4 | 0 | aucune pique, jamais |
-| zeddo | 876 | 50 | 0,09 | 4 | **4** | 1 | l'équilibré |
-| rhae___ | 50 | 6 | 0,00 | 4 | **5** | 0 | parle peu, relie tout le monde |
+| Carte | Rareté | atk/pv/aura | Somme | Budget | |
+|---|---|---|---|---|---|
+| AZRAËL | archange | `5/10/5` | 20 | 20 | ✅ |
+| CLAKER | ame | `0/0/0` | 0 | 12 | ⬜ à écrire |
+| RHAE | ange | `0/0/0` | 0 | 17 | ⬜ à écrire |
+| LILITH | indefinie | `0/0/0` | 0 | — | ⬜ rareté d'abord |
+| KINGSREQUIN | indefinie | `0/0/0` | 0 | — | ⬜ rareté d'abord |
+| WALLY | indefinie | `0/0/0` | 0 | — | ⬜ boss, budget à part |
+| MÉLIODAS | indefinie | `0/0/0` | 0 | — | ⬜ rareté d'abord |
 
-Huit personnes, six profils distincts. C'est le test qui compte : une formule qui rendrait le même
-5/3/1 à tout le monde ne mesurerait rien.
+**Une seule carte porte des chiffres**, et elle tient son budget. Les six autres sont à zéro :
+il n'y a donc rien à « recalculer », tout est à écrire. L'arbitrage du 2026-09-10 arrive au bon
+moment — aucun travail de formule n'est perdu.
+
+⚠️ **La rareté avant les stats.** Quatre cartes sur sept ont `rarete: indefinie`, et la rareté
+fixe le budget. Les poser dans l'autre ordre oblige à tout refaire (déjà noté au §1).
+
+### 🚨 La maquette porte des chiffres que le YAML n'a plus
+
+La fiche Notion affirme que les chiffres de la maquette (`claker 8 · 5/4/3`, `rhae 6 · 8/5/4`,
+`lilith 7 · 6/6/5`) sont **identiques** à `tcg/cartes.yaml`. Ils ne le sont plus : le YAML a été
+vidé le 2026-09-07 quand on a constaté qu'ils dataient du modèle Voix/Aura/Piquant.
+
+C'est **exactement la signature du défaut retiré le 2026-09-09** (`92f6132a`, les deux catalogues
+de héros) : une seconde définition qui survit ailleurs et que personne ne relit. `lilith 6/6/5`
+fait d'ailleurs 17, pour un budget de 12 — la maquette montre une carte hors budget.
+
+→ **Les chiffres de la maquette sont des placeholders**, au même titre que ses tactiques. À dire
+dans le brief de la maquette, sinon ils seront recopiés de bonne foi.
 
 ---
 
 ## 8. Ce qui reste à calibrer
 
-- **Les médianes du pool bougent** à chaque saison. Elles se recalculent, elles ne se figent pas.
-- **Le Piquant ne couvre que 40 personnes** sur 123 : les deux tiers des cartes auront `Piquant 0`
-  ou 1. À surveiller — si la stat est morte pour la majorité, il faudra une seconde source
-  (réactions déclenchées, interruptions) plutôt que de forcer le curseur.
-- **L'exposant 0,5** est un choix mesuré sur huit personnes, pas une loi. À revoir sur les 45.
+- **Le budget est désormais la SEULE vérification automatique possible.** Un test qui relit
+  `tcg/cartes.yaml` et refuse `atk + pv + aura ≠ 12 + rareté` est ce qui remplace la formule.
+  À écrire avec la prochaine carte, pas après.
+- **Le moteur d'auto-jeu et son journal d'événements** deviennent le seul juge de l'équilibre :
+  15 parties minimum avant de figer un prix, 10 000 en une nuit avec un moteur à graine.
+- **La passive du héros (§6) dépend encore de la stat dominante** — donc d'un choix de l'owner et
+  non plus d'une mesure. Elle reste valable telle quelle : les trois passives valent la même
+  chose, appliquée à trois endroits.

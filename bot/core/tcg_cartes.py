@@ -168,6 +168,19 @@ _HOLO_ZONES = {"surface", "bords"}
 RARETES = ("ame", "fidele", "ame_promise", "elu", "ange", "archange")
 _RARETES = {*RARETES, "indefinie"}
 
+# ── Le budget d'une carte-héros ───────────────────────────────────────────
+# `atk + pv + aura = BUDGET_BASE + bonus de rareté`.
+#
+# 🚨 C'est la SEULE règle d'équilibre encore vérifiable mécaniquement. Les
+# chiffres sortaient d'une formule tirée de la mémoire de Wally jusqu'au
+# 2026-09-10, où l'owner l'a retirée : ils s'écrivent désormais à la main.
+# Une formule se relit, une opinion non — si le budget n'est pas tenu ici,
+# plus rien ne rattrape une carte qui en écrase une autre, et ça ne se voit
+# qu'après vingt parties.
+BUDGET_BASE = 12
+BONUS_RARETE = {"ame": 0, "fidele": 1, "ame_promise": 2,
+                "elu": 3, "ange": 5, "archange": 8}
+
 # ── L'accent, dérivé du coût de l'ultime ──────────────────────────────────
 # Une rampe FROID → CHAUD sur la plage des coûts : 1 en bleu, 12 en rouge.
 # C'est le mécanisme qui est écrit ici, jamais les douze couleurs — ajouter un
@@ -238,6 +251,21 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
                 f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
         _exiger(carte.rarete in _RARETES, cle,
                 f"rarete={carte.rarete!r} hors de {sorted(_RARETES)}")
+        # Le budget, seule règle d'équilibre encore vérifiable (cf. BUDGET_BASE).
+        # Deux cartes y échappent, et pour la même raison — il n'y a rien à
+        # vérifier : celle dont la rareté n'est pas décidée (le budget n'existe
+        # pas encore) et celle dont les stats sont toutes à zéro (pas écrite).
+        # ⚠️ Wally, lui, est le BOSS : ses PV ne tiennent aucun budget de héros.
+        # Il porte `rarete: indefinie` et passe donc à travers aujourd'hui. Le
+        # jour où on lui posera un palier, c'est ICI qu'il faudra l'excepter.
+        somme = carte.atk + carte.pv + carte.aura
+        if carte.rarete != "indefinie" and somme:
+            budget = BUDGET_BASE + BONUS_RARETE[carte.rarete]
+            _exiger(somme == budget, cle,
+                    f"budget non tenu : atk+pv+aura = {carte.atk}+{carte.pv}"
+                    f"+{carte.aura} = {somme}, attendu {budget} "
+                    f"({BUDGET_BASE} + {BONUS_RARETE[carte.rarete]} pour "
+                    f"{carte.rarete})")
         # Hors bornes, le `calc()` de la feuille rendrait un filtre absurde —
         # un `saturate` négatif est INVALIDE et fait tomber la propriété
         # entière, donc le vitrage disparaît en silence. On refuse ici.

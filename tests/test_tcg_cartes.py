@@ -375,3 +375,45 @@ def test_a_rang_egal_l_ordre_du_fichier_departage():
     fichier = list(tcg_cartes.CARTES)
     surface = [c for c in ordre if c in ("azrael", "rhae", "wally")]
     assert surface == [c for c in fichier if c in ("azrael", "rhae", "wally")]
+
+
+# ── Le budget : la dernière règle d'équilibre vérifiable ──────────────────
+#
+# L'owner a retiré la mémoire de la fabrication des cartes le 2026-09-10 : les
+# stats s'écrivent désormais à la main. Une formule se relit, une opinion non —
+# `atk + pv + aura = 12 + bonus de rareté` est tout ce qui reste pour qu'une
+# carte n'en écrase pas une autre par accident. Ces trois tests le tiennent.
+
+def test_une_carte_hors_budget_refuse_le_fichier(tmp_path):
+    """5+4+3 = 12 pour une Âme, mais 13 ne passe pas. Sans ce refus, la carte
+    part en prod et le déséquilibre ne se voit qu'après vingt parties."""
+    import pytest
+    juste = _carte_valide(rarete="ame", atk=5, pv=4, aura=3)
+    assert tcg_cartes._lire(_fichier(tmp_path, [juste]))
+
+    with pytest.raises(ValueError, match="budget non tenu"):
+        tcg_cartes._lire(_fichier(
+            tmp_path, [_carte_valide(rarete="ame", atk=5, pv=5, aura=3)]))
+
+
+def test_le_bonus_de_rarete_ouvre_le_budget(tmp_path):
+    """Un Archange joue sur 20, pas sur 12 : c'est ce que son palier achète.
+    Le MÊME 5/10/5 serait donc refusé à une Âme."""
+    import pytest
+    assert tcg_cartes._lire(_fichier(
+        tmp_path, [_carte_valide(rarete="archange", atk=5, pv=10, aura=5)]))
+
+    with pytest.raises(ValueError, match="budget non tenu"):
+        tcg_cartes._lire(_fichier(
+            tmp_path, [_carte_valide(rarete="ame", atk=5, pv=10, aura=5)]))
+
+
+def test_une_carte_pas_encore_ecrite_passe(tmp_path):
+    """Six des sept cartes livrées sont à 0/0/0, et quatre n'ont pas de palier.
+    Le garde-fou ne doit mordre que sur une carte ÉCRITE : sinon il interdit
+    d'ajouter une ligne avant d'en avoir décidé les chiffres, et il finira
+    contourné."""
+    assert tcg_cartes._lire(_fichier(
+        tmp_path, [_carte_valide(rarete="ame", atk=0, pv=0, aura=0)]))
+    assert tcg_cartes._lire(_fichier(
+        tmp_path, [_carte_valide(rarete="indefinie", atk=9, pv=9, aura=9)]))
