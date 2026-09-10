@@ -277,15 +277,66 @@ frappe les héros adverses d'une même faction. Nom arrêté par l'owner le 2026
   quand l'adversaire joue cher, et une carte morte quand il ne joue rien. C'est la première à
   faire tourner en calibration : une annulation bon marché aplatit tout un paquet d'un coup.
 
-## 6. Ce qui manque encore
+## 6. 🆕 Le deck de Wally — sa première carte est écrite
 
-- **Les tactiques de Wally** : en coop, il a son propre paquet (§5 des règles). Elles ne sont pas
-  écrites — et elles doivent être conçues **contre** un groupe, pas contre un joueur.
-- **Combler les deux familles vidées** par le tri (cf. §5), sur des refs vérifiées.
-- **Les illustrations** : 17 cartes à générer. Coût à chiffrer avant d'ouvrir le robinet.
-- **Le consentement** : huit cartes nomment encore des personnes réelles — **Kassandre**
-  (mode diva), **Azraël** (Flatline), **Rina** (tunnel), **Meliodas** (révision), **Zeddo**
-  (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin** (codage). Chacune
-  doit pouvoir être retirée à la demande de la personne — point dur nommé depuis le premier jour,
-  toujours pas résolu.
-  🎁 Le tri l'a allégé au passage : *MrMakkx*, *Temcox*, *oyoloyoo* et *Taki* ne sont plus nommés.
+Le §5 des règles lui donne son propre paquet en coop ; il n'existait pas. L'owner en a posé la
+première carte le 2026-09-10 :
+
+> **« Viens en vocal »** — *« une carte spéciale, une carte du deck de Wally. Une fois jouée, ça
+> lance une boîte de dialogue : un des joueurs doit parler avec Wally et le convaincre d'un truc.
+> À voir encore quoi. »*
+
+C'est la **première carte du jeu qui appelle le LLM en pleine partie**. Elle est encore une
+intention, pas une règle — mais cinq points durs sont déjà identifiables, et **deux décident si
+elle est faisable du tout** :
+
+🚨 **1. Elle casse la reproductibilité, qui est la condition de toute la calibration.**
+L'arbitrage du 2026-09-09 a choisi un moteur **heuristique à graine** contre un LLM précisément
+parce qu'*« on ne peut pas équilibrer un jeu contre un adversaire non déterministe »* — 10 000
+parties en une nuit, rejouables à l'identique. Une conversation ne se rejoue pas.
+→ **Issue** : en calibration, la conversation est remplacée par un **verdict tiré à taux fixe**.
+Sans ça, cette seule carte rend le paquet entier incalibrable.
+
+🚨 **2. « Convaincre un LLM » est un vecteur d'attaque, pas une mécanique.** Le gagnant sera celui
+qui sait manipuler un modèle, pas celui qui joue bien — et le jeu devient un concours d'injection.
+🎁 La brique existe déjà dans le dépôt : `wrap_untrusted()` (`bot/core/untrusted.py`) borne le
+texte externe et rappelle au modèle que c'est de la **donnée**, jamais une instruction. Le message
+du joueur doit y passer, sans exception.
+
+3. **Le temps.** Une conversation bloque toute la table : borner en nombre de messages ou en
+   chrono, décidé avant d'écrire la règle.
+4. **Vue censurée.** En coop, Wally est l'adversaire et connaît sa main. Le juge reçoit l'**état
+   public**, jamais l'état complet — sinon il vend sa main ou commente ce que le joueur ne voit
+   pas, ce qui se lit comme de la triche (§9.3 de la fiche).
+5. **Cloisonnement.** Rien de cet échange ne repasse par `fact_extractor` ni par la consolidation
+   nocturne. Une vanne de partie ne doit pas devenir un fait mémorisé sur quelqu'un.
+
+⏸️ **Reste à définir par l'owner** : de quoi le joueur doit convaincre Wally, et ce qu'il gagne
+ou perd. C'est la question qui décide de tout le reste — un enjeu faible rend la carte anecdotique
+malgré son coût de développement, un enjeu fort la rend décisive et donc contestable.
+
+---
+
+## 7. Ce qui manque encore
+
+- **Le reste du deck de Wally** : « Viens en vocal » est sa première carte (§6). Les autres
+  doivent être conçues **contre un groupe**, pas contre un joueur.
+- **Refaire les 6 cartes qui lisent encore le Tirage** (§2), une fois les pourcentages en stats
+  posés. L'owner s'en charge ; les listes gardent les refs en attendant.
+- **Rééquilibrer les familles.** Attaque pèse **11 cartes sur 29** (38 %), *Aura et coopération*
+  4 — et cette dernière n'a rien reçu depuis le début. Ce n'est pas un choix : les memes de la
+  commu parlent d'Apex, et un meme d'Apex se traduit presque toujours en dégâts. **La source
+  impose sa forme au résultat** ; chercher toutes les refs au même endroit déséquilibre le paquet
+  sans qu'aucune décision ne l'ait voulu.
+  🎁 Les refs retenues au pack 3 visent précisément ce trou : les trois chats, la carte des trois
+  réunis, « c'est mon kill / NOTRE kill ».
+- **Les illustrations** : 29 cartes à générer, plus les nouvelles. Coût à chiffrer avant
+  d'ouvrir le robinet.
+- **Le consentement** : dix cartes nomment des personnes réelles — **Kassandre** (mode diva),
+  **Azraël** (Flatline, « notre kill »), **Rina** (tunnel), **Meliodas** (révision), **Zeddo**
+  (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin** (codage),
+  **Raiky** (anneau), **Tenma**. Chacune doit pouvoir être retirée à la demande de la personne —
+  point dur nommé depuis le premier jour, toujours pas résolu.
+  🎁 Le tri l'a allégé au passage : *MrMakkx*, *Temcox* et *oyoloyoo* ne sont plus nommés. Et les
+  refs qui ne nomment personne (les chats, les emotes, les objets) y échappent entièrement — un
+  critère de sélection à part entière, pas seulement une commodité.
