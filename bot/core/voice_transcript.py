@@ -26,6 +26,14 @@ fuiter, quel que soit le consommateur qu'on lui branchera plus tard (journal,
 cognition, overlay). L'inverse — filtrer au rendu — laissait passer les 30
 minutes de vocal PRÉCÉDANT le lancement du live, que personne n'avait
 entendues.
+
+## Ce qui survit au live
+
+Le tampon s'efface en fin de live. Chaque réplique retenue est AUSSI écrite au
+journal de conversation (`logs/conversations/voice/{salon}/`, événement
+`voice_line`), d'où `search_history` la ressort des jours plus tard. Écrit ici,
+après la garde, le journal hérite de la même frontière : il ne peut contenir
+que de la parole déjà diffusée aux viewers.
 """
 from __future__ import annotations
 
@@ -36,7 +44,13 @@ from typing import Optional
 
 from loguru import logger
 
+from bot.core.audit_log import journal
 from bot.core.stream_watcher import current_stream_status
+
+# Dossier du journal vocal, partagé avec les demandes vocales (`request.py`).
+JOURNAL_PLATFORM = "voice"
+# Événement du journal qui porte une réplique entendue (ou dite) en live.
+JOURNAL_EVENT = "voice_line"
 
 # Une conversation, pas un historique : de quoi savoir de quoi on parle.
 MAX_LINES = 14
@@ -99,9 +113,13 @@ class VoiceTranscriptFeed:
         *,
         max_lines: int = MAX_LINES,
         line_ttl: float = LINE_TTL,
+        conv_log=None,
     ) -> None:
         self._lines: deque[tuple[float, str, str]] = deque(maxlen=max_lines)
         self._line_ttl = line_ttl
+        # Journal de conversation (`ConversationLogger`) : None = rien ne
+        # survit au live, le tampon reste seul (tests, démarrage partiel).
+        self._conv_log = conv_log
         # Salon dont la parole est diffusée au live. None = rien n'est diffusé,
         # donc rien n'est retenu.
         self._broadcast_channel_id: int | None = None
@@ -199,11 +217,17 @@ class VoiceTranscriptFeed:
         """Vrai si ce salon est diffusé au live, ici et maintenant."""
         return self.broadcast_refusal(channel_id) is None
 
-    def record(self, channel_id: int | None, speaker: str, text: str) -> bool:
+    def record(self, channel_id: int | None, speaker: str, text: str, *,
+               channel_name: str = "", author: str = "") -> bool:
         """Retient une réplique entendue. Renvoie True si elle a été retenue.
 
         Refuse tout ce qui n'est pas diffusé au live : c'est ici, et nulle part
         ailleurs, que se joue la confidentialité du vocal.
+
+        Une réplique retenue part aussi au journal (cf. docstring du module),
+        rangée sous `channel_name` et signée `author` — le libellé du tampon
+        (`speaker`) vaut « Toi » pour les répliques de Wally, que le journal
+        doit signer de son nom pour qu'une recherche par auteur les retrouve.
         """
         text = " ".join((text or "").split())
         speaker = (speaker or "").strip()
@@ -216,10 +240,12 @@ class VoiceTranscriptFeed:
             return False
 
         self._lines.append((time.monotonic(), speaker, text[:200]))
-        # Le CONTENU reste en DEBUG, donc hors des journaux de prod : c'est la
-        # parole de vraies personnes, `app.log` est gardé 30 jours.
+        # Le CONTENU reste en DEBUG dans `app.log` : il a sa place au journal de
+        # conversation, fait pour être relu, pas dans les logs techniques.
         logger.debug("VoiceTranscript: [{s}] {t}", s=speaker, t=text[:200])
         self._last_refusal = None
+        journal(self._conv_log, JOURNAL_PLATFORM, channel_name or str(channel_id),
+                JOURNAL_EVENT, author=author or speaker, content=text)
         return True
 
     def _refus(self, raison: str) -> None:

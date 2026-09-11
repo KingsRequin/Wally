@@ -105,3 +105,67 @@ def test_un_deplacement_de_salon_oublie_ce_qui_a_ete_entendu(feed):
     feed.record(SALON, "Azraël", "on repart sur Storm Point")
     _ServicePourDeplacement().follow_move(types.SimpleNamespace(id=9999))
     assert feed.render() == ""
+
+
+# ── Ce qui survit au live : le journal ───────────────────────────────────────
+
+class _ConvLog:
+    """Juste l'API `log()` de `ConversationLogger`, qui enregistre ce qu'on lui remet."""
+
+    def __init__(self):
+        self.events: list[tuple[str, str, str, dict]] = []
+
+    def log(self, platform, channel, event_type, /, **fields):
+        self.events.append((platform, channel, event_type, fields))
+
+
+@pytest.fixture
+def journal_log() -> _ConvLog:
+    return _ConvLog()
+
+
+@pytest.fixture
+def feed_journalise(journal_log) -> VoiceTranscriptFeed:
+    f = VoiceTranscriptFeed(conv_log=journal_log)
+    f.activate()
+    f.open_broadcast(SALON)
+    return f
+
+
+def test_le_chemin_du_live_journalise_ce_qu_il_entend(feed_journalise, journal_log):
+    """En live, Wally est en ÉCOUTE : c'est `_observe_transcript`, pas
+    `_remember_line`, qui voit passer la parole. Le journal doit être nourri là."""
+    svc = types.SimpleNamespace(
+        _bot=types.SimpleNamespace(tally=None, overlay_narrator=None),
+        channel_id=SALON, channel_name="STREAM", _listen_tasks=set(),
+    )
+    VoiceService._observe_transcript(svc, "Azraël (@azrael)", "la clé est là  mais je peux pas")
+
+    assert journal_log.events == [(
+        vt.JOURNAL_PLATFORM, "STREAM", vt.JOURNAL_EVENT,
+        {"author": "Azraël (@azrael)", "content": "la clé est là mais je peux pas"},
+    )]
+
+
+def test_la_parole_hors_diffusion_n_entre_pas_au_journal(feed_journalise, journal_log):
+    assert not feed_journalise.record(9999, "Bob", "un truc entre nous", channel_name="privé")
+    assert journal_log.events == []
+
+
+def test_la_parole_hors_live_n_entre_pas_au_journal(feed_journalise, journal_log, monkeypatch):
+    monkeypatch.setattr(vt, "current_stream_status", lambda: {"live": False})
+    assert not feed_journalise.record(SALON, "Azraël", "le live est coupé", channel_name="STREAM")
+    assert journal_log.events == []
+
+
+def test_sa_propre_replique_est_signee_de_son_nom_au_journal(feed_journalise, journal_log):
+    """« Toi » sert au prompt ; au journal, une recherche par auteur doit le retrouver."""
+    svc = types.SimpleNamespace(
+        history=[], channel_id=SALON, channel_name="STREAM",
+        _bot=types.SimpleNamespace(config=types.SimpleNamespace(
+            bot=types.SimpleNamespace(name="Wally"))),
+    )
+    _remember_line(svc, role="assistant", speaker=_SELF_LABEL, text="vous allez vous faire fumer")
+
+    assert f"[{_SELF_LABEL}] vous allez vous faire fumer" in feed_journalise.render()
+    assert journal_log.events[0][3] == {"author": "Wally", "content": "vous allez vous faire fumer"}

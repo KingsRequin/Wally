@@ -418,7 +418,8 @@ async def main() -> None:
         # prompt de ses réponses ÉCRITES. La captation ne s'ouvre que pendant le
         # live et sur le salon d'où l'on streame (`PresenceDeStream` plus bas) —
         # hors de là, un vocal reste privé.
-        voice_transcript = VoiceTranscriptFeed()
+        # `conv_log` : ce qui est retenu du live survit au live (`search_history`).
+        voice_transcript = VoiceTranscriptFeed(conv_log=conv_log)
         voice_transcript.activate()
 
         def _voice_present() -> list[str]:

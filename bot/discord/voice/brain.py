@@ -424,8 +424,14 @@ def _remember_line(service, *, role: str, speaker: str, text: str) -> None:
     feed = active_voice_transcript()
     if feed is None:
         return
+    # Au journal, sa réplique est signée de son nom et non de « Toi ».
+    author = ""
+    if role == "assistant":
+        cfg_bot = getattr(getattr(getattr(service, "_bot", None), "config", None), "bot", None)
+        author = getattr(cfg_bot, "name", None) or "Wally"
     try:
-        feed.record(getattr(service, "channel_id", None), speaker, text)
+        feed.record(getattr(service, "channel_id", None), speaker, text,
+                    channel_name=getattr(service, "channel_name", "") or "", author=author)
     except Exception as e:  # noqa: BLE001 — un tampon de contexte ne casse pas le vocal
         logger.warning("VoiceTranscript: réplique non consignée: {e!r}", e=e)
 

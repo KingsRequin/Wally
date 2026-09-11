@@ -964,7 +964,8 @@ class VoiceService:
             # dire que c'était du vocal ni que la transcription se trompe.
             feed = active_voice_transcript()
             if feed is not None:
-                feed.record(self.channel_id, label, text)
+                feed.record(self.channel_id, label, text,
+                            channel_name=self.channel_name or "")
         except Exception as e:  # noqa: BLE001 — l'écoute ne casse jamais
             logger.debug("voice: parole non consignée dans le tampon: {e!r}", e=e)
 
