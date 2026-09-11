@@ -89,6 +89,26 @@ chaque ref dans les logs : elle confond « on parle de X » et « la ref est rec
 sortait à 44 personnes parce que le mot est générique ; 15 des « Rina » étaient en fait
 `Origanire`, capté en sous-chaîne. Le chiffre est un indice, l'owner décide.
 
+### ⚖️ On ne mesure plus les refs de l'owner — arbitrage du 2026-09-11
+
+> ⚖️ L'owner : *« Tout ce que je mets c'est pertinent, ne vérifie pas les occurrences. »*
+
+**Une ref proposée par l'owner est retenue, point.** Plus de comptage de personnes distinctes, plus
+de « 2 occurrences contre 42 », plus de recale au nom du partage. Les chiffres déjà relevés dans la
+colonne *Origine* restent — ils documentent ce qui a été mesuré — mais **ils ne sont plus un
+critère**, et les cartes suivantes n'en porteront pas.
+
+🎁 **Ce n'est pas un renoncement à la rigueur, c'est la conclusion de ce paragraphe-ci.** La mesure
+avait déjà été prise trois fois en défaut le 2026-09-10 : *La manette* à 44 personnes pour un mot
+générique, 15 « Rina » qui étaient `Origanire`, et *Raiky dans l'anneau* / *Push par 3 teams* à
+zéro trace au chat alors que ce sont de vraies refs. Un indice faux la moitié du temps n'est pas un
+indice. **Celui qui vit la commu sait ce qui fait rire ; le grep ne le sait pas.**
+
+⚠️ Ce qui RESTE à vérifier, et qui n'a rien à voir : qu'une ref ne fasse pas **doublon** avec une
+carte déjà écrite (c'est comme ça que *Blabla Rina* et *Le tunnel de Rina* ont été fusionnées), et
+que son effet tienne le **barème**. Le tri éditorial est à l'owner, la cohérence mécanique est à
+moi.
+
 ### 🚨 Deux cartes dépersonnalisées
 
 *La manette* et *Le clavier-souris* étaient accrochées à quelqu'un (« Claker joue à la manette »,
@@ -126,14 +146,54 @@ valeur dépend de la cible — la même forme que « copier l'Attaque », borné
 cette raison. Ici la borne est structurelle : un Ultime ne se paie qu'une fois par partie ou deux,
 Scroll ne peut donc pas répéter son meilleur cas. À vérifier en calibration quand même.
 
-🚨 **`Tunnel` l'état et `Le tunnel de Rina` la carte portent le MÊME NOM et ne font pas la même
-chose.** La carte inflige −2 d'Attaque à toute la table ; l'état force une cible. Deux objets
-homonymes dans le même jeu, c'est une contestation garantie en partie et un piège de résolution
-de nom — `tcg_cartes.normaliser()` retire les accents et compare exactement, il rendra l'un pour
-l'autre.
-→ **Arbitrage demandé à l'owner** : soit la carte *Le tunnel de Rina* **pose l'état Tunnel** (ce
-qui colle mieux au gag — son anecdote t'accapare, tu ne peux plus parler à personne d'autre) et il
-n'y a plus qu'un seul objet ; soit l'état change de nom. Ne pas laisser les deux en l'état.
+✅ **L'homonymie `Tunnel` est TRANCHÉE — 2026-09-11.** La carte *Le tunnel de Rina* et l'état
+portaient le même nom pour deux effets différents.
+
+> ⚖️ L'owner : *« Oui, c'est ça que je voulais. Les états ne sont pas des cartes. »*
+
+Donc **la carte POSE l'état**, et il n'y a plus qu'un seul objet nommé *Tunnel* dans le jeu. Son
+ancien effet (−2 d'Attaque à toute la table) est remplacé, cf. *Attaque et dégâts*.
+
+🎁 **Et le gag y gagne.** −2 d'Attaque était une traduction tiède ; l'état dit exactement ce que
+fait une anecdote de Rina — **tu ne peux plus parler à personne d'autre**. La règle générale se
+lisait mal à l'envers : un état n'est pas une carte, c'est ce qu'une carte inflige. Aucun autre
+état n'a de carte homonyme, celui-ci était le seul.
+
+### 🆕 Le REGROUPEMENT — posé ici parce que deux cartes en ont besoin
+
+> ⚖️ **Arbitrage de l'owner, 2026-09-11.** *« Une seule carte est comptée dans le deck, mais ça en
+> ajoute deux autres en plus au moment de jouer. Quand récupérées, elles prennent chacune un
+> emplacement dans les passifs ; elles se regroupent en une seule carte une fois les trois
+> récupérées. »*
+
+Deux cartes du pack fonctionnent par collection — *Le Rhum* et *La statue de Mirage*. Le
+Regroupement est défini **une fois, ici**, et pas dans chacune : sinon la troisième réinventera sa
+propre façon de compter.
+
+| Étape | Ce qui se passe |
+|---|---|
+| Dans le deck | elle compte pour **UNE** carte sur les 12 |
+| Jouée | elle verse ses **deux sœurs** dans ta pioche — elles ne coûtent rien à poser |
+| Chaque sœur récupérée | occupe **un emplacement de passif** |
+| À la troisième | les trois **se regroupent en une seule carte**, qui porte l'effet complet |
+
+🎁 **Ça règle d'un coup les deux défauts que j'avais nommés, et c'est mieux que ce que je
+proposais.** Je voyais deux problèmes séparés : *La statue de Mirage* gonflait le deck de 12 à 15,
+et le « si 3 réunis » du *Rhum* demandait 3 emplacements de passif quand il n'y en a que 2. La même
+règle les ferme tous les deux : **le deck reste à 12** (une seule carte comptée), et le
+regroupement libère les emplacements au lieu d'en réclamer un troisième.
+
+🎁 **Et les 2 emplacements tombent juste, ce n'est pas une coïncidence qu'il faut casser.** Première
+sœur → emplacement 1. Deuxième → emplacement 2. La troisième arrive : le regroupement se fait
+**à son arrivée**, les trois fondent en une carte, et il reste un emplacement libre. Le jeu n'a
+jamais besoin de 3 emplacements, donc **la règle des 2 passifs n'est pas à toucher**.
+⚠️ Corollaire à ne pas perdre : le regroupement est **immédiat**. S'il était différé d'un tour, il
+faudrait bien tenir 3 passifs à la fois, et la mécanique redeviendrait injouable.
+
+⚠️ **Tant que les trois ne sont pas réunies, le porteur n'a QUE le malus.** C'est voulu sur le
+Rhum — on boit avant d'en tirer quoi que ce soit — mais ça veut dire qu'une carte à regrouper est
+un **pari sur la durée de la partie**. Si les parties de test sont courtes, aucune des deux ne se
+complète jamais et les deux sont mortes. C'est leur premier point de calibration, avant leur prix.
 
 🚨 **`Oublie` lit le Tirage, et ce n'est pas un détail d'équilibrage.** L'owner l'avait demandé
 comme *« un pourcentage de chance d'oublier d'attaquer »* — c'est-à-dire un **jet caché**, résolu
@@ -170,9 +230,9 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **Lifeline** | passif | 3 | **Régénération** : +2 PV à un héros allié au début de chacun de tes tours | la médic d'Apex — la statue que Kassandre exige, et le perso que Raiky refuse de lâcher |
 | **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
 | 🆕 **Le totem** | passif | 3 | **une fois** : un de tes héros morts revient en ligne avec **la moitié de ses PV**, arrondie au supérieur | le totem de Revenant — 3 pers. au chat, mais la ref Apex se passe d'explication |
-| 🆕 **La statue de Mirage** | passif | 1 | pose **3 leurres** dans ta pioche ; quand tu as tiré les trois, ta prochaine carte de soin est **gratuite** | la statue — celle que Kassandre exige déjà pour son entrée royale |
+| 🆕 **La statue de Mirage** | passif, **à regrouper** | 1 | une fois les **trois** réunies et regroupées, **tes cartes de soin ne coûtent plus rien** | la statue — celle que Kassandre exige déjà pour son entrée royale |
 | 🆕 **Le leurre** | tactique | 2 | double un de tes héros en jeu ; **une seule des deux copies est vraie**. Attaquer la fausse la détruit et **coûte le tour** de l'attaquant | Mirage — 5 pers. |
-| 🆕 **Le Rhum** | passif | 2 | ton héros porteur perd **1 PV tous les 5 tours** et gagne **50 % d'esquive** | *« le rhum là »* · *« ya du rhum ? »* — 2 pers., la ref la plus mince du lot |
+| 🆕 **Le Rhum** | passif, **à regrouper** | 1 | chaque Rhum en jeu fait perdre **1 PV tous les 5 tours** à son porteur. Les **trois** regroupées donnent **50 % d'esquive** | *« le rhum là »* · *« ya du rhum ? »* |
 | 🆕 **Le baril de soins** | passif | 2 | tant qu'il est en jeu, **tout baril posé soigne au lieu de blesser** — y compris ceux de l'adversaire | le baril d'Apex, l'autre usage |
 
 > `Le totem` **introduit la RÉANIMATION**, et c'est la première fois qu'un héros mort revient. Ce
@@ -183,13 +243,14 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > 🚨 **À calibrer en premier du lot** : si réanimer est rentable, plus personne ne joue autre chose
 > en passif.
 
-> `La statue de Mirage` : l'économie d'un soin (≈ 2 d'énergie = 6 points) sur une condition très
-> longue, **× 0,5** → 3 → `⌈3/3⌉ = 1` d'énergie.
-> 🚨 **Elle GONFLE le deck, et le deck fait 12.** Trois leurres injectés, c'est un paquet de 15 dont
-> 3 cartes ne font rien par elles-mêmes — soit un cinquième du deck dépensé pour un soin gratuit.
-> À la lettre de sa formulation, la carte est mauvaise pour son porteur ET casse la seule taille
-> de deck du jeu. Deux issues : les leurres **remplacent** 3 cartes au lieu de s'ajouter, ou ils
-> vivent hors du deck (posés en jeu, à collecter). À trancher avant d'écrire l'effet.
+> `La statue de Mirage` : ✅ **à REGROUPER** (§ ci-dessus) — le défaut « elle gonfle le deck de 12
+> à 15 » est fermé par la règle générale, une seule carte est comptée.
+> Prix : le soin **gratuit pour le reste de la partie** (et non une seule fois — l'arbitrage du
+> 2026-09-11 porte sur la carte regroupée, qui est un passif permanent) ≈ 9 points, **× 0,5** pour
+> une condition très longue → 4,5 → `⌈4,5/3⌉ = 2`… **ramené à 1** parce que deux des trois
+> emplacements de passif sont immobilisés pendant toute la collecte. C'est le seul endroit du
+> barème où un coût d'OCCUPATION entre dans le prix, et c'est justifié : le Regroupement est la
+> seule mécanique qui fait payer en emplacements plutôt qu'en énergie.
 
 > `Le leurre` : annule une attaque (≈ 4 points) **× 1,25** parce qu'il fait perdre son tour à
 > l'adversaire → 5 → `⌈5/3⌉ = 2` d'énergie.
@@ -197,17 +258,16 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > (§7 des règles) : le moteur doit pouvoir dire lequel est vrai sans jamais le montrer, et
 > l'écrire au journal d'événements. Sinon un leurre deviné devient indiscernable d'un bug.
 
-> `Le Rhum` : +50 % d'esquive ≈ diviser par deux les dégâts reçus, tarifé à l'**espérance** depuis
-> la suppression du Tirage (§2) → 5 points, moins le malus subi de −1 PV/5 tours (× 0,5) → 4,5 →
-> `⌈4,5/3⌉ = 2` d'énergie.
-> 🚨 **L'owner l'a demandé avec un bonus « si 3 réunis » — c'est INJOUABLE et il faut le dire.**
-> Un deck fait 12 cartes et un joueur n'a que **2 emplacements de passif** : trois exemplaires du
-> même passif en jeu est mécaniquement impossible. Le bonus est écrit ici sans le « si 3 réunis » ;
-> si l'owner y tient, il faut soit passer le Rhum en objet non-passif, soit compter les
-> exemplaires **dans le deck** et non en jeu.
-> ⚠️ C'est aussi la ref la plus faible du lot : **2 personnes, 2 occurrences** en six mois de logs,
-> contre 42 pour *Les PP du samedi*. Le critère du §4 (« combien rient sans qu'on explique ») la
-> recale ; c'est l'owner qui décide, mais il décide en le sachant.
+> `Le Rhum` : ✅ **à REGROUPER** (§ ci-dessus) — le « si 3 réunis » que j'avais déclaré injouable
+> est exactement ce que la règle générale rend jouable. Je l'avais écrit sans lui ; il est rétabli.
+> Prix : +50 % d'esquive ≈ diviser par deux les dégâts reçus, tarifé à l'**espérance** depuis la
+> suppression du Tirage (§2) → 5 points, **× 0,5** parce qu'il n'arrive qu'au regroupement, moins
+> le malus subi de −1 PV/5 tours sur chaque porteur → 2 → `⌈2/3⌉ = 1` d'énergie. **Il passe de 2 à
+> 1** : le payoff est le même, mais il se mérite.
+> 🎁 **C'est la carte la plus fidèle du paquet, et c'est la mécanique qui l'a rendue telle.** Un
+> seul Rhum ne fait que du mal à son porteur ; il en faut trois pour que ça serve à quelque chose,
+> et ce qui sert c'est d'être difficile à toucher. On ne pouvait pas écrire ça avec un passif
+> ordinaire.
 
 > `Le baril de soins` est la **première carte du jeu qui modifie une autre carte** plutôt que des
 > héros, et c'est un vrai apport : elle ouvre une couche de contre-jeu que le paquet n'avait pas.
@@ -227,7 +287,7 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **La manette** | passif | 2 | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | l'objet, plus personne derrière |
 | **Le clavier-souris** | passif | 2 | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | l'objet, plus personne derrière |
 | **La Flatline d'Azraël** | passif | 2 | **+4 d'Attaque** à un héros allié, pour toute la partie | *« c'est LE flatline »* · *« tu croises plus de hemlock que de flatline, ce jeu est si cruel »* |
-| **Le tunnel de Rina** | tactique | 2 | **−2 d'Attaque à toutes les AUTRES cartes de sa table**, alliées comprises | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
+| **Le tunnel de Rina** | tactique | 2 | pose l'état **Tunnel** sur un héros adverse — il ne peut plus attaquer que le tien, 2 tours | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
 | **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
 | **Aim assist = aimbot** | tactique | 2 | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
@@ -244,11 +304,23 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > Notion et jamais écrite ici. Même gag, même effet, même prix : **une seule carte**, sous le nom
 > que l'owner lui a donné le 2026-09-10. Deux entrées auraient fait deux cartes du même gag —
 > exactement le doublon que le tri venait de retirer côté personnes.
-> Prix 5 au barème (C07 *Ponction* vaut 4 pour −1 à la table adverse ; doubler le malus vaut plus,
-> mais il est **subi aussi par son camp**, × 0,5 sur cette moitié) → `⌈5/3⌉ = 2` d'énergie.
+>
+> ✅ **Son effet est RÉÉCRIT le 2026-09-11** : elle pose l'état **Tunnel** au lieu d'infliger −2
+> d'Attaque à toute la table. C'est l'arbitrage d'homonymie du §4 — *« les états ne sont pas des
+> cartes »* — et le gag y gagne : on ne baisse pas l'attaque des gens, on les empêche de parler à
+> quelqu'un d'autre.
+> Prix : une **redirection forcée** sur 2 tours ≈ 4 points **× 1,25** (elle frappe l'adversaire) →
+> 5 → `⌈5/3⌉ = 2` d'énergie. **Même prix qu'avant**, par un autre chemin — l'ancien passait par
+> C07 *Ponction*, qui ne s'applique plus.
+> 🎁 **Et la réécriture ferme le défaut que l'ancienne version portait** : je l'avais laissée avec
+> un « à vérifier en calibration — sur une table où elle est seule alliée, l'effet est purement
+> offensif et vaut plus que 5 ». L'état n'a pas cette asymétrie : il ne touche qu'une cible, et ne
+> dépend ni de la table ni des alliés.
 > 🎁 Le son existe déjà : `data/sons/commande/rina.mp3`, migré de PhantomBot.
-> ⚠️ À vérifier en calibration : sur une table où elle est seule alliée, l'effet est purement
-> offensif et vaut plus que 5. La borne serait d'exiger au moins une alliée sur sa table.
+> ⚠️ Reste à surveiller, et c'est propre à l'état : **Tunnel peut PROTÉGER**. Poser Tunnel sur le
+> plus gros héros adverse avec un héros-mur à toi le détourne de tes cartes fragiles pendant deux
+> tours. C'est un usage défensif que le gag ne laissait pas prévoir, et il est peut-être meilleur
+> que l'offensif.
 
 > `La Flatline d'Azraël` : +4 d'Attaque permanent = 4 points → `⌈4/3⌉ = 2` d'énergie. C'est une
 > arme, elle se garde — d'où le passif plutôt que la tactique.
@@ -256,8 +328,9 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > `Le camion de Raiky` est la seule carte du paquet à ne faire **que** des dégâts, sans clause, et
 > c'est utile : un paquet sans carte simple n'a pas d'étalon. 4 dégâts **× 1,25** → 5 →
 > `⌈5/3⌉ = 2` d'énergie. C'est le prix de référence auquel comparer tout le reste.
-> ⚠️ **Nomme Raiky**, qui a déjà *Raiky dans l'anneau* : deuxième carte à son nom, et elle est
-> aussi retenue côté héros. Trois entrées pour une personne — point dur du consentement (§7).
+> Elle nomme Raiky, qui a déjà *Raiky dans l'anneau* et une carte-héros : trois entrées pour une
+> personne, et ce n'est plus une dette depuis l'arbitrage du 2026-09-11 (§7) — une carte est une
+> ref, pas un portrait.
 
 > `Le stim d'Octane` : +4 d'Attaque le tour (4 points) moins un malus **subi** de 2 PV (× 0,5 →
 > −1) → 3 → `⌈3/3⌉ = 1` d'énergie. Même forme que *Un piercing* : on se fait mal pour aller plus
@@ -360,8 +433,8 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > 🎁 **C'est la SEULE des 16 cartes du jour à tomber dans *Aura et coopération*** — la famille qui
 > n'avait rien reçu depuis le début (§5, §7). Elle y tombe naturellement parce que le gag EST un
 > gag d'isolement : le seul du lot qui ne parle pas d'Apex.
-> ⚠️ **Nomme Meliodas**, qui a déjà *Séance de révision avec Meliodas* et une carte-héros. Trois
-> entrées — point dur du consentement (§7).
+> Elle nomme Meliodas, qui a déjà *Séance de révision* et une carte-héros — trois entrées, sans
+> dette depuis l'arbitrage du 2026-09-11 (§7).
 > ⚠️ Écrite « steak haché », pas « streak hacher » : la ligne Notion portait l'orthographe de la
 > saisie. Le nom d'une carte est ce que les joueurs liront.
 
@@ -437,7 +510,7 @@ digne d'être gardé — c'est un tri humain déjà fait.
 `azrael74hype` 287 · `dance` 268 · `love` 148 · `queen` 105 · `fuze` 72 · `goodboi` 67 ·
 `chadfuse` 67 · `koko` 61 · `cringe` 28 · `spongefuse` 27 · `gngngn` 20 · `triggered` 19 ·
 `pewpew` 18 · `pepsi` 15 · `potatoaim` 12. Aucune des 25 cartes ne s'en sert. Elles échappent
-en prime au point dur du consentement (§6) : une emote n'est pas une personne.
+aussi au reproche d'être des portraits (§7) : une emote n'est pas une personne.
 
 ### 🚨 « Raciste » — le mot ne veut pas dire ça ici
 
@@ -540,23 +613,30 @@ seule qui reste défendable si un joueur conteste.
   voulu.
   🎁 Les refs retenues au pack 3 visent précisément ce trou : les trois chats, la carte des trois
   réunis, « c'est mon kill / NOTRE kill ». Et le gisement des **emotes** n'est toujours pas ouvert.
-- 🆕 **Trancher les quatre points durs du pack du 2026-09-10**, tous nommés à leur carte :
-  les **PV d'une carte face cachée** et ce qui arrive quand on la détruit · la **taille du deck**
-  face aux 3 leurres de *La statue de Mirage* · le **« si 3 réunis »** du *Rhum*, injouable avec
-  2 emplacements de passif · la portée de *Rendez-vous au véto* (un héros, ou le tour entier ?).
-- 🆕 **Le doublon de nom `Tunnel`** — l'état et *Le tunnel de Rina* portent le même mot et ne font
-  pas la même chose (§4). Arbitrage demandé, ne pas laisser les deux.
+- 🆕 **Les PV d'une carte face cachée**, et ce qui arrive quand on la détruit (§7 des règles) —
+  seul point dur du pack du 2026-09-10 encore ouvert côté mécanique.
+- 🆕 **La portée de *Rendez-vous au véto*** : un seul héros qui passe son tour, ou le tour entier de
+  l'adversaire ? Écrite comme un héros à 3 d'énergie ; le tour complet en ferait une **rare à 5**,
+  parce qu'elle dépasserait *La Chute*. ⏸️ En attente de l'owner.
+- ✅ **Soldés le 2026-09-11** : la taille du deck face à *La statue de Mirage* et le « si 3 réunis »
+  du *Rhum* — tous deux par la mécanique du **Regroupement** (§4) · le doublon de nom `Tunnel`, la
+  carte pose désormais l'état · le **consentement**, ci-dessous.
 - **Les illustrations** : **45** cartes à générer, plus les héros. Coût à chiffrer avant d'ouvrir
   le robinet — il a grossi de 55 % en une journée.
-- **Le consentement** : **treize** cartes nomment des personnes réelles — **Kassandre** (mode
-  diva), **Azraël** (Flatline, « notre kill »), **Rina** (tunnel), **Meliodas** (révision, 🆕 steak
-  haché), **Zeddo** (apéro), **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin**
-  (codage), **Raiky** (anneau, 🆕 camion), **Tenma**, 🆕 **Spiro** (véto, et sa propre carte).
-  🚨 Le pack du 2026-09-10 a **aggravé** le point dur au lieu de le laisser stable : Meliodas et
-  Raiky passent chacun à **trois** entrées (héros + deux cartes). Un retrait à leur demande ne
-  serait plus une carte à sortir, mais trois — et *Rendez-vous au véto* nomme un chat, ce qui pose
-  la question de savoir si le consentement d'Azraël couvre Spiro. Chacune doit pouvoir être retirée à la demande de la personne —
-  point dur nommé depuis le premier jour, toujours pas résolu.
-  🎁 Le tri l'a allégé au passage : *MrMakkx*, *Temcox* et *oyoloyoo* ne sont plus nommés. Et les
-  refs qui ne nomment personne (les chats, les emotes, les objets) y échappent entièrement — un
-  critère de sélection à part entière, pas seulement une commodité.
+- ✅ **Le consentement — TRANCHÉ le 2026-09-11, ce n'est plus un point dur.**
+
+  > ⚖️ L'owner : *« On s'en fout de la personne que ça couvre, c'est des refs qui font des cartes
+  > c'est tout. »*
+
+  Treize cartes nomment des personnes réelles — **Kassandre** (mode diva), **Azraël** (Flatline,
+  « notre kill »), **Rina** (tunnel), **Meliodas** (révision, steak haché), **Zeddo** (apéro),
+  **Malef** (montage), **petitpoissonnn** (piercing), **KingsRequin** (codage), **Raiky** (anneau,
+  camion), **Tenma**, **Spiro** (véto). Ce n'est plus une dette : **une carte est une ref, pas un
+  portrait.** Plus de décompte par personne, plus de « Meliodas passe à trois entrées », plus de
+  question sur qui peut consentir pour un chat.
+
+  ⚠️ **Ce que ça ne couvre PAS, et qui reste vrai.** Deux garde-fous sont ailleurs et tiennent
+  toujours : les cartes de **personnes** tirent leurs chiffres d'une formule sur la mémoire — ce
+  sont elles qui risquaient de devenir un classement social public, pas les cartes-refs — et la
+  règle du 2026-09-04 *« on ne joue jamais sur le stream »* (le public d'une carte, ce sont les
+  joueurs). L'arbitrage porte sur le **nommage dans une ref**, rien d'autre.

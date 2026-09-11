@@ -122,6 +122,10 @@ risque : elles sortent d'une formule. Les Réflexes, si.
 ### 3.1 Mise en place
 
 - **Deck de 12** : le héros (sa propre carte, obligatoire) + 11 cartes collectées.
+  ⚠️ **Les cartes « à regrouper » comptent pour UNE** et en versent deux autres en jeu (*Le Rhum*,
+  *La statue de Mirage*) : le 12 est une taille de DECK, pas un nombre de cartes vues dans une
+  partie. Mécanique définie au §4 de `2026-09-05-tcg-tactiques-saison-1.md`, arbitrée le
+  2026-09-11 — c'est elle qui empêche ces cartes de gonfler le deck à 15.
 - Le **héros ne se pose pas** : il se tient au bord du plateau, présent toute la partie, et donne
   une capacité passive. Ta carte, c'est toi — tu ne te joues pas, tu assistes. Ça règle au passage
   le « je joue Azraël contre Azraël ».
