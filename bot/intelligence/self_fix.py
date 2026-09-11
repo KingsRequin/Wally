@@ -451,18 +451,11 @@ class SelfFix:
         self, msg, dm, goal: str, norm: str, upgrade_id: int | None, timeout: float
     ) -> None:
         """Attend la réaction du créateur, puis conclut. Partagé avec la reprise."""
+        emoji: str | None = None
         try:
             emoji = await self._await_reaction(msg, timeout=timeout)
         except asyncio.TimeoutError:
-            # Plus d'auto-refus : la demande n'est ni refusée ni blacklistée. Elle
-            # est simplement mise de côté (re-proposable). Pas de message « j'abandonne ».
-            await self._set_status(upgrade_id, ABANDONED)
-            self._remember_in_dm(dm, f"[self-fix en attente, pas encore de réponse] {goal}")
-            await self._record_outcome(
-                goal, f"Pas encore de réponse de {creator_name()}, demande mise de côté, "
-                "ni refusée ni abandonnée définitivement ; à re-soulever plus tard."
-            )
-            return
+            emoji = None
         finally:
             # Le fil se referme dès que la réaction est arrivée — ou qu'elle
             # n'est pas venue. `mark_sent()` n'était levé que par un MESSAGE
@@ -473,7 +466,46 @@ class SelfFix:
             if self._gate is not None:
                 self._gate.clear()
 
+        if not await self._encore_en_attente(upgrade_id):
+            return
+        if emoji is None:
+            # Plus d'auto-refus : la demande n'est ni refusée ni blacklistée. Elle
+            # est simplement mise de côté (re-proposable). Pas de message « j'abandonne ».
+            await self._set_status(upgrade_id, ABANDONED)
+            self._remember_in_dm(dm, f"[self-fix en attente, pas encore de réponse] {goal}")
+            await self._record_outcome(
+                goal, f"Pas encore de réponse de {creator_name()}, demande mise de côté, "
+                "ni refusée ni abandonnée définitivement ; à re-soulever plus tard."
+            )
+            return
+
         await self._apres_decision(emoji, goal, norm, upgrade_id, dm)
+
+    async def _encore_en_attente(self, upgrade_id: int | None) -> bool:
+        """Vrai si la demande attend toujours sa décision EN BASE.
+
+        L'attente vit en mémoire (jusqu'à 72 h) ; la base, elle, peut avoir
+        tranché entre-temps — une livraison faite à la main
+        (`scripts/capacites_livrees.py --livrer`). Conclure sans relire
+        écrasait `delivered` par `abandoned` au timeout, et un ✅ tardif
+        relançait Claude Code sur une demande déjà livrée (la #26, 2026-09-11).
+
+        Registre absent ou illisible : on conclut comme avant, faute de mieux.
+        """
+        if self._registry is None or upgrade_id is None:
+            return True
+        try:
+            demande = await self._registry.get(upgrade_id)
+        except Exception as e:  # noqa: BLE001 — la relecture est un filet, pas le flux
+            logger.warning("self-fix: statut de la demande #{} illisible: {!r}", upgrade_id, e)
+            return True
+        if demande is None or demande.status == REQUESTED:
+            return True
+        logger.info(
+            "self-fix: demande #{id} déjà close en base ({s}), l'attente s'arrête sans conclure",
+            id=upgrade_id, s=demande.status,
+        )
+        return False
 
     async def _apres_decision(
         self, emoji: str, goal: str, norm: str, upgrade_id: int | None, dm

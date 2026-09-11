@@ -18,6 +18,7 @@ from bot.intelligence.self_fix import SelfFix
 from bot.intelligence.upgrade_registry import (
     ABANDONED,
     DECLINED,
+    DELIVERED,
     REQUESTED,
     UpgradeRegistry,
 )
@@ -200,6 +201,57 @@ async def test_sans_reaction_l_attente_est_reprise_et_non_abandonnee(tmp_path):
     assert (await registry.get(uid)).status == REQUESTED
     # Le temps qui reste, pas la fenêtre entière : la demande a déjà vieilli.
     assert 0 < attendu["timeout"] <= sf._approval_timeout
+
+
+# --- la base a tranché pendant l'attente ------------------------------------
+#
+# Une demande livrée à la main (`scripts/capacites_livrees.py --livrer`) garde
+# son attente en mémoire. La #26, le 2026-09-11 : sans relecture, le timeout
+# posait `abandoned` par-dessus `delivered`, et un ✅ tardif relançait Claude
+# Code sur une demande déjà livrée.
+
+async def _livree_pendant_l_attente(tmp_path, reaction):
+    registry = await make_registry(tmp_path)
+    uid = await registry.record_request("garder le vocal")
+    message = SimpleNamespace(id=555, reactions=[])
+    sf, dm = make_self_fix(registry, message)
+    sf._await_reaction = AsyncMock(**reaction)
+    sf._apres_decision = AsyncMock()
+    sf._record_outcome = AsyncMock()
+    sf._remember_in_dm = MagicMock()
+    return registry, uid, sf, message, dm
+
+
+async def test_un_timeout_n_ecrase_pas_une_livraison_faite_a_la_main(tmp_path):
+    registry, uid, sf, message, dm = await _livree_pendant_l_attente(
+        tmp_path, {"side_effect": asyncio.TimeoutError})
+    await registry.set_status(uid, DELIVERED)
+
+    await sf._attendre_et_conclure(message, dm, "garder le vocal", "garder le vocal", uid, 1.0)
+
+    assert (await registry.get(uid)).status == DELIVERED
+    sf._record_outcome.assert_not_awaited()
+
+
+async def test_un_feu_vert_tardif_ne_relance_pas_une_demande_livree(tmp_path):
+    registry, uid, sf, message, dm = await _livree_pendant_l_attente(
+        tmp_path, {"return_value": "✅"})
+    await registry.set_status(uid, DELIVERED)
+
+    await sf._attendre_et_conclure(message, dm, "garder le vocal", "garder le vocal", uid, 1.0)
+
+    sf._apres_decision.assert_not_awaited()
+    assert (await registry.get(uid)).status == DELIVERED
+
+
+async def test_une_demande_toujours_ouverte_est_mise_de_cote_au_timeout(tmp_path):
+    """Le cas normal ne bouge pas : sans décision en base, le timeout conclut."""
+    registry, uid, sf, message, dm = await _livree_pendant_l_attente(
+        tmp_path, {"side_effect": asyncio.TimeoutError})
+
+    await sf._attendre_et_conclure(message, dm, "garder le vocal", "garder le vocal", uid, 1.0)
+
+    assert (await registry.get(uid)).status == ABANDONED
 
 
 async def test_une_fenetre_ecoulee_ne_relance_aucune_attente(tmp_path):

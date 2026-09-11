@@ -73,6 +73,12 @@ async def _run(db_path: str, apply: bool, livrer: int | None, refaire: bool) -> 
                 logger.info("#{i} : {s} → {d}", i=livrer, s=demande.status, d=DELIVERED)
                 if apply:
                     await registre.set_status(livrer, DELIVERED)
+                    # L'attente du DM d'autorisation vit en MÉMOIRE du bot. Elle
+                    # ne conclura plus rien (`SelfFix._encore_en_attente`), mais
+                    # tant qu'elle court, `_pending` écarte toute nouvelle demande.
+                    logger.info(
+                        "Redémarre le bot (docker compose restart wally) : l'attente "
+                        "du DM de la #{i} tourne encore en mémoire", i=livrer)
             cibles = [demande]
         else:
             cibles = [u for u in await registre.recent(limit=None)
