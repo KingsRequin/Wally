@@ -20,13 +20,15 @@ from loguru import logger
 
 from bot.core.audit_log import conv_log_of, journal
 from bot.core.conversation_log import new_trace_id
-from bot.core.voice_transcript import voice_is_broadcast
+from bot.core.voice_transcript import JOURNAL_PLATFORM, voice_is_broadcast
 
 # Où atterrit le journal des demandes vocales, dans l'arborescence existante :
-# `logs/conversations/voice/{salon}/{date}.jsonl`. Les types d'événements sont
-# ceux du format maison (`message_in`, `tool_called`, `tool_result`,
-# `message_out`) : l'audit par trace fonctionne dessus sans rien y ajouter.
-VOICE_JOURNAL_PLATFORM = "voice"
+# `logs/conversations/voice/{salon}/{date}.jsonl` — le même dossier que les
+# répliques entendues (`voice_line`), d'où la constante partagée. Les types
+# d'événements sont ceux du format maison (`message_in`, `tool_called`,
+# `tool_result`, `message_out`) : l'audit par trace fonctionne dessus sans rien
+# y ajouter.
+VOICE_JOURNAL_PLATFORM = JOURNAL_PLATFORM
 
 # Distance maximale tolérée sur le NOM. La transcription écorche « wally » en
 # « wallis » ou « walli » ; au-delà de deux corrections, on entrerait dans les
@@ -406,6 +408,12 @@ async def handle_voice_request(
                        llm_ms=llm_ms, publish_ms=publish_ms)
             return
         logger.info("Vocal → chat : {who} « {t} »", who=login or speaker, t=reply[:60])
+        # Le panneau Vocal voit la phrase entendue (`_observe_transcript`) :
+        # sans la réponse, il montrerait une demande restée sans suite.
+        from bot.discord.voice.brain import _voice_publish
+        _voice_publish(bot, getattr(bot, "voice_service", None), "reply",
+                       speaker=config.bot.name, text=reply, gen_ms=llm_ms,
+                       target=login or speaker)
         jrnl.write(
             "message_out", kind="vocal", author=config.bot.name, content=reply,
             target=login or speaker, stt_ms=round(stt_ms), decide_ms=decide_ms,

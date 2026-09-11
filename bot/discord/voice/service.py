@@ -956,6 +956,12 @@ class VoiceService:
         # En INFO : sans ça, impossible de vérifier qu'il entend quoi que ce soit
         # pendant un live — tout le reste du chemin est en DEBUG.
         logger.info("voice (écoute, {ms:.0f} ms) : {l}", ms=stt_ms, l=line[:160])
+        # Le panneau Vocal du dashboard : sans cette ligne, il restait VIDE
+        # pendant tous les lives (0 événement du 2026-08-30 au 2026-09-11),
+        # seul `handle_transcript` — la conversation — publiait ce qu'il entend.
+        _voice_publish(self._bot, self, "heard", speaker=label,
+                       speaker_id=self._current_speaker_id or "", text=text,
+                       stt_ms=round(stt_ms))
         try:
             from bot.core.voice_transcript import active_voice_transcript
 

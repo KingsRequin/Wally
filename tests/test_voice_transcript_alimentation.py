@@ -138,6 +138,7 @@ def test_le_chemin_du_live_journalise_ce_qu_il_entend(feed_journalise, journal_l
     svc = types.SimpleNamespace(
         _bot=types.SimpleNamespace(tally=None, overlay_narrator=None),
         channel_id=SALON, channel_name="STREAM", _listen_tasks=set(),
+        _current_speaker_id="111",
     )
     VoiceService._observe_transcript(svc, "Azraël (@azrael)", "la clé est là  mais je peux pas")
 
@@ -145,6 +146,26 @@ def test_le_chemin_du_live_journalise_ce_qu_il_entend(feed_journalise, journal_l
         vt.JOURNAL_PLATFORM, "STREAM", vt.JOURNAL_EVENT,
         {"author": "Azraël (@azrael)", "content": "la clé est là mais je peux pas"},
     )]
+
+
+def test_le_chemin_du_live_publie_ce_qu_il_entend_au_panneau_vocal(feed):
+    """Le panneau Vocal du dashboard est resté vide douze jours : seul le chemin
+    de CONVERSATION publiait, et en live Wally n'est qu'en écoute."""
+    from bot.discord.voice.feed import VoiceFeed
+
+    panneau = VoiceFeed()
+    svc = types.SimpleNamespace(
+        _bot=types.SimpleNamespace(tally=None, overlay_narrator=None, voice_feed=panneau),
+        channel_id=SALON, channel_name="STREAM", _listen_tasks=set(),
+        _current_speaker_id="111",
+    )
+    VoiceService._observe_transcript(svc, "Azraël (@azrael)", "on repart", stt_ms=812.4)
+
+    assert panneau.snapshot() == [{
+        "type": "heard", "channel_id": str(SALON), "channel_name": "STREAM",
+        "speaker": "Azraël (@azrael)", "speaker_id": "111", "text": "on repart",
+        "stt_ms": 812,
+    }]
 
 
 def test_la_parole_hors_diffusion_n_entre_pas_au_journal(feed_journalise, journal_log):

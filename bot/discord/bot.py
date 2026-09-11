@@ -32,9 +32,9 @@ if TYPE_CHECKING:
     # `# type: ignore` avaient été posés pour faire taire le symptôme.
     from bot.core.apex.client import ApexAPI
     from bot.core.conversation_log import ConversationLogger
-    from bot.core.history_search import HistorySearch
+    from bot.core.history_search import HistorySearchService
     from bot.core.predictions import PredictionService
-    from bot.core.quotes import QuoteService
+    from bot.core.quotes import QuoteBook
     from bot.core.scrape import ScrapeService
     from bot.core.tally import TallyService
     from bot.core.update_checker import UpdateChecker
@@ -136,9 +136,9 @@ class WallyDiscord(commands.Bot):
         self.scrape: ScrapeService | None = None
         self.apex_api: ApexAPI | None = None
         self.conv_log: ConversationLogger | None = None
-        self.history_search: HistorySearch | None = None
+        self.history_search: HistorySearchService | None = None
         self.predictions: PredictionService | None = None
-        self.quotes: QuoteService | None = None
+        self.quotes: QuoteBook | None = None
         self.tally: TallyService | None = None
         self.update_checker: UpdateChecker | None = None
         self.action_service: ActionService | None = None
@@ -599,7 +599,9 @@ class WallyDiscord(commands.Bot):
                 from bot.discord.voice.event_store import VoiceEventStore
                 # Feed de debug vocal (live SSE + historique persistant), indépendant de la cognition.
                 _voice_db = getattr(self, "_v2_db_path", None) or _os_v.getenv("DB_PATH", "data/wally.db")
-                _voice_store = VoiceEventStore(_voice_db)
+                # 10 000 : un live en écoute publie ~8 000 phrases par jour. Au
+                # plafond par défaut (1 000), l'historique ne couvrait que 2-3 h.
+                _voice_store = VoiceEventStore(_voice_db, cap=10_000)
                 self.voice_feed = VoiceFeed(event_store=_voice_store)
                 _dash = getattr(self, "dashboard_state", None)
                 if _dash is not None:
