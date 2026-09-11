@@ -346,6 +346,9 @@ async def main() -> None:
         twitch_bot.tally = tally
         twitch_bot.predictions = predictions
         twitch_bot.quotes = quotes
+        # Le MÊME service : Twitch n'y lit que le vocal (`voice_only`, posé à
+        # l'exécution par `make_tool_executor`), jamais les salons Discord.
+        twitch_bot.history_search = discord_bot.history_search
         # Expose twitch_bot sur discord_bot avant setup_hook pour que CognitiveLoop
         # puisse rediriger ses SPEAKs vers Twitch quand le stream est live.
         discord_bot._twitch_bot = twitch_bot

@@ -10,9 +10,9 @@ le lui demande.
 Ce test ne réclame pas l'identité — certaines divergences sont justes, et deux
 d'entre elles protègent quelque chose :
 
-  · `search_history` fouille les JSONL de conversation DISCORD. L'offrir à un
-    chat Twitch public laisserait n'importe quel viewer exhumer ce qui s'est dit
-    sur le serveur Discord.
+  · `search_history` est offert partout, mais pas au même périmètre : au chat
+    Twitch, public, il ne fouille que le vocal des lives — sinon n'importe quel
+    viewer exhumerait ce qui s'est dit sur le serveur Discord.
   · `request_self_modification` engage une modification du code, réservée au
     créateur — identifié par son id Discord. Un pseudo Twitch ne prouve rien.
   · les outils vocaux pilotent un salon Discord.
@@ -31,7 +31,6 @@ from bot.twitch.handlers import build_chat_tools as outils_twitch
 
 # Écarts assumés, avec leur raison. Modifier cette table est un acte délibéré.
 _DISCORD_SEULEMENT = {
-    "search_history": "fouille les logs Discord — fuiterait vers un chat public",
     "request_self_modification": "réservé au créateur, identifié par son id Discord",
     "join_voice": "pilote un salon vocal Discord",
     # Le vote se fait en CLIQUANT une réaction sous un embed : le chat Twitch
@@ -146,11 +145,17 @@ async def test_les_ecarts_declares_existent_vraiment():
 
 @pytest.mark.asyncio
 async def test_le_chat_twitch_ne_peut_pas_fouiller_le_discord():
-    """L'écart le plus important de la table, vérifié pour lui-même."""
+    """L'écart le plus important, vérifié pour lui-même : le chat Twitch n'a que
+    la définition VOCALE (l'exécuteur force le périmètre, cf.
+    `test_history_search.py`), et rien du tout depuis une chaîne invitée."""
     bot = _bot_avec_tout()
 
-    assert "search_history" not in _noms(await outils_twitch(bot))
-    assert "search_history" in _noms(await outils_discord(bot, author_id="42"))
+    assert "search_history" in _noms(await outils_twitch(bot))
+    bot.history_search.get_tool_definitions.assert_called_with(voice_only=True)
+
+    bot.history_search.get_tool_definitions.reset_mock()
+    assert "search_history" not in _noms(await outils_twitch(bot, overlay=False))
+    bot.history_search.get_tool_definitions.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -204,6 +209,12 @@ async def test_ce_qui_s_affiche_depuis_le_chat_s_affiche_aussi_a_la_voix(outil):
         "poliment à « affiche-moi ça » sans rien afficher, et personne ne le "
         "saura avant que quelqu'un le lui demande en direct."
     )
+
+
+@pytest.mark.asyncio
+async def test_l_historique_se_cherche_aussi_a_la_voix():
+    """« Tu te souviens de ce qu'il a dit lundi en live ? » se demande à voix haute."""
+    assert "search_history" in _noms(await outils_vocal(_bot_avec_tout()))
 
 
 @pytest.mark.asyncio

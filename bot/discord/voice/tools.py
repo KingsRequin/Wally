@@ -187,6 +187,12 @@ async def build_voice_tools(bot) -> list[dict]:
     # voix haute qu'à l'écrit, et un outil absent du catalogue vocal manque
     # en silence (trois refus muets en direct le 2026-08-25).
     tools.append(COUT_TOOL)
+    # L'historique, écrit ET vocal : « tu te souviens de ce qu'il a dit lundi en
+    # live ? » se demande autant à voix haute. Le périmètre se décide à
+    # l'EXÉCUTION (cf. `_executer`) : en live, sa réponse part au stream.
+    history_search = getattr(bot, "history_search", None)
+    if history_search is not None and history_search.available:
+        tools.extend(history_search.get_tool_definitions())
     # Pas de `create_clip` ICI. Ce catalogue sert la CONVERSATION vocale, et
     # Azraël ne stream pas pendant qu'il discute en vocal : l'outil n'y
     # aboutirait jamais. Le chemin qui compte est l'autre — en live il est en
@@ -380,6 +386,19 @@ def make_voice_tool_executor(bot, service, current_speaker_id):
 
         if name == "mon_cout":
             return await run_cout_tool(bot, json.loads(arguments or "{}"))
+
+        if name == "search_history":
+            from bot.core.voice_transcript import voice_is_broadcast
+            history_search = getattr(bot, "history_search", None)
+            if history_search is None or not history_search.available:
+                return "L'historique des conversations n'est pas consultable."
+            a = json.loads(arguments or "{}")
+            return await history_search.search(
+                a.get("query", ""), author=a.get("author"), channel=a.get("channel"),
+                after=a.get("after"), before=a.get("before"), limit=a.get("limit"),
+                # Salon diffusé au live : ce qu'il répond part au stream, donc au
+                # même public que le chat Twitch — le vocal seul, comme là-bas.
+                voice_only=voice_is_broadcast(getattr(service, "channel_id", None)))
 
         if name == "save_persistent_note":
             return await run_save_note_tool(bot.db, json.loads(arguments or "{}"))

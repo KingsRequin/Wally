@@ -16,6 +16,7 @@ from bot.core.history_search import (
     DEFAULT_LIMIT,
     HISTORY_SEARCH_TOOL,
     MAX_LIMIT,
+    VOICE_HISTORY_SEARCH_TOOL,
     HistorySearchService,
     extract_terms,
     search_logs,
@@ -265,6 +266,163 @@ async def test_search_clamps_limit(logs, limit, expected):
 async def test_search_never_raises_on_broken_root(tmp_path):
     out = await HistorySearchService(tmp_path / "nope").search("bachelier")
     assert "Aucun message trouvé" in out
+
+
+# ── Le vocal du stream ───────────────────────────────────────────────────────
+
+_STREAM = "𝗦𝗧𝗥𝗘𝗔𝗠"   # le vrai nom de dossier : des lettres « stylées »
+
+
+def _write_voice(root, day: str, records: list[dict], channel: str = _STREAM) -> None:
+    path = root / "voice" / channel / f"{day}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        for rec in records:
+            rec.setdefault("ts", _ts(day, 21))
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+@pytest.fixture
+def vocal(logs):
+    """L'historique Discord + deux lives : l'ancien journal, puis `voice_line`."""
+    # Avant le 2026-09-11 : seules les phrases qui l'ont déclenché ou frôlé.
+    _write_voice(logs, "2026-09-07", [
+        {"type": "message_in", "author": "Azraël (@azrael)", "author_id": "111",
+         "content": "Wally, la clé du bachelier est là"},
+        {"type": "message_out", "author": "Wally", "content": "prends-la vite"},
+        {"type": "voice_near_miss", "speaker": "Rina (@rina)",
+         "content": "mon bachelier de Wal", "word": "Wal"},
+        {"type": "tool_called", "tool": "quote", "args": "bachelier"},
+    ])
+    # Depuis : tout en `voice_line`, et la même phrase aussi sous l'ancienne forme.
+    _write_voice(logs, "2026-09-14", [
+        {"type": "voice_line", "author": "Azraël (@azrael)",
+         "content": "le bachelier  des cheaters"},
+        {"type": "message_in", "author": "Azraël (@azrael)", "author_id": "111",
+         "content": "le bachelier des cheaters"},
+        {"type": "voice_line", "author": "Wally", "content": "un bachelier en carton"},
+    ])
+    return logs
+
+
+def test_voice_lines_are_found_and_tagged(vocal):
+    hits, _ = search_logs(vocal, ["cheaters"])
+    assert [h.vocal for h in hits] == [True]
+    assert hits[0].render().startswith("[14/09/2026 21h00] vocal 𝗦𝗧𝗥𝗘𝗔𝗠, Azraël (@azrael): ")
+
+
+def test_legacy_voice_journal_stays_searchable(vocal):
+    """Le passé d'avant `voice_line` : déclenchements, réponses, quasi-déclenchements."""
+    hits, _ = search_logs(vocal, ["bachelier"], before=date(2026, 9, 7), after=date(2026, 9, 7))
+    assert {h.content for h in hits} == {
+        "Wally, la clé du bachelier est là", "mon bachelier de Wal",
+    }
+
+
+def test_near_miss_is_signed_by_its_speaker(vocal):
+    hits, _ = search_logs(vocal, ["bachelier"], author="rina")
+    assert [h.author for h in hits] == ["Rina (@rina)"]
+
+
+def test_a_phrase_journaled_twice_is_returned_once(vocal):
+    _, total = search_logs(vocal, ["cheaters"])
+    assert total == 1
+
+
+def test_wally_voice_lines_are_his(vocal):
+    hits, _ = search_logs(vocal, ["carton"], author="wally")
+    assert len(hits) == 1 and hits[0].vocal
+
+
+def test_stylized_channel_names_match_plain_letters(vocal):
+    _, total = search_logs(vocal, ["bachelier"], channel="stream")
+    assert total == 4   # 2 du vieux journal + 2 `voice_line`
+
+
+def test_voice_only_never_reads_discord(vocal):
+    hits, total = search_logs(vocal, ["bachelier"], sources=("voice",))
+    assert total == 4 and all(h.vocal for h in hits)
+
+
+def test_voice_tool_keeps_the_same_name_and_parameters():
+    fn = VOICE_HISTORY_SEARCH_TOOL["function"]
+    assert fn["name"] == HISTORY_SEARCH_TOOL["function"]["name"]
+    assert fn["parameters"] == HISTORY_SEARCH_TOOL["function"]["parameters"]
+    assert "Discord" not in fn["description"]
+
+
+def test_voice_journal_alone_makes_the_service_available(tmp_path):
+    _write_voice(tmp_path, "2026-09-14", [{"type": "voice_line", "author": "A", "content": "x"}])
+    svc = HistorySearchService(tmp_path)
+    assert svc.available and svc.voice_available
+
+
+@pytest.mark.asyncio
+async def test_search_warns_that_voice_is_a_transcription(vocal):
+    out = await HistorySearchService(vocal).search("cheaters")
+    assert "transcriptions automatiques" in out
+    out = await HistorySearchService(vocal).search("mention")
+    assert "transcriptions automatiques" not in out
+
+
+@pytest.mark.asyncio
+async def test_voice_only_search_hides_discord(vocal):
+    out = await HistorySearchService(vocal).search("bachelier", voice_only=True)
+    assert "4 message(s) trouvé(s)" in out
+    assert "#Purgatoire" not in out
+
+
+# ── Le périmètre se décide chez l'APPELANT ───────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_twitch_executor_never_reaches_discord(vocal):
+    """Le chat est public : même si le modèle réclame un salon Discord, rien ne sort."""
+    from types import SimpleNamespace
+
+    from bot.twitch.handlers import make_tool_executor
+
+    bot = SimpleNamespace(history_search=HistorySearchService(vocal))
+    executor = make_tool_executor(bot, platform="twitch", user_id="1", author="viewer",
+                                  channel="azrael_ttv")
+    out = await executor("search_history", json.dumps({"query": "bachelier"}))
+    assert "vocal 𝗦𝗧𝗥𝗘𝗔𝗠" in out and "#Purgatoire" not in out
+    out = await executor("search_history",
+                         json.dumps({"query": "bachelier", "channel": "general"}))
+    assert "Aucun message trouvé" in out
+
+
+@pytest.mark.asyncio
+async def test_twitch_executor_refuses_from_a_guest_channel(vocal):
+    from types import SimpleNamespace
+
+    from bot.twitch.handlers import make_tool_executor
+
+    bot = SimpleNamespace(history_search=HistorySearchService(vocal))
+    executor = make_tool_executor(bot, platform="twitch", user_id="1", author="viewer",
+                                  channel="un_invite", overlay=False)
+    out = await executor("search_history", json.dumps({"query": "bachelier"}))
+    assert "pas consultable" in out
+
+
+@pytest.mark.asyncio
+async def test_voice_executor_narrows_to_voice_when_broadcast(vocal, monkeypatch):
+    """En conversation vocale, tout ; dans le salon diffusé, sa réponse part au
+    stream — le vocal seul, comme au chat Twitch."""
+    from types import SimpleNamespace
+
+    import bot.core.voice_transcript as vt
+    from bot.discord.voice.tools import make_voice_tool_executor
+
+    bot = SimpleNamespace(history_search=HistorySearchService(vocal))
+    service = SimpleNamespace(channel_id=4242)
+    executor = make_voice_tool_executor(bot, service, lambda: None)
+    args = json.dumps({"query": "bachelier"})
+
+    monkeypatch.setattr(vt, "voice_is_broadcast", lambda cid: False)
+    assert "#Purgatoire" in await executor("search_history", args)
+
+    monkeypatch.setattr(vt, "voice_is_broadcast", lambda cid: cid == 4242)
+    assert "#Purgatoire" not in await executor("search_history", args)
 
 
 # ── Câblage dans le pipeline Discord ─────────────────────────────────────────

@@ -24,7 +24,6 @@ _MAIN = Path(__file__).resolve().parents[1] / "bot" / "main.py"
 _DISCORD_SEULEMENT = {
     "journal": "le journal quotidien se rédige et se poste sur Discord",
     "vision": "seul Discord porte des pièces jointes à regarder",
-    "history_search": "fouille les JSONL Discord — fuiterait vers un chat public",
     "update_checker": "prévient le créateur en DM Discord",
     "dashboard_state": "l'état du dashboard, câblé au moment où il existe",
     "_twitch_bot": "la référence croisée elle-même",

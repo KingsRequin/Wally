@@ -596,6 +596,18 @@ qu'on lui branchera. Sauté sur le chemin vocal lui-même (`situation["platform"
 `follow_move()`. Ne pas confondre avec `bot/discord/voice/feed.py` (`VoiceFeed`, `bot.voice_feed`),
 qui est le flux SSE de debug.
 
+**Ce qui survit au live** : chaque réplique retenue par `record()` part aussi au journal
+(`logs/conversations/voice/{salon}/`, événement `voice_line`) — même garde, donc jamais de parole
+privée. `search_history` (`core/history_search.py`) le relit, le vieux journal compris (depuis le
+2026-08-14 : `message_in`/`message_out`/`voice_near_miss`, dédoublonnés). Périmètre posé par
+l'APPELANT, jamais par le modèle : Discord écrit = tout ; chat Twitch (maison seulement) = vocal
+seul (`voice_only`) ; conversation vocale = tout, sauf dans le salon diffusé où la réponse part au
+stream. ⚠️ En live, Wally est en ÉCOUTE (`listen_only`) : la parole passe par
+`_observe_transcript`, JAMAIS par `handle_transcript` ni `_remember_line`. Un branchement posé sur
+le seul chemin de conversation ne voit aucun live — c'est ce qui a vidé le panneau Vocal du
+dashboard 12 jours, et ce qui prive le vocal de live de `fact_extractor` (choix assumé : mesurer
+avant de transformer les fautes du STT en faits).
+
 ---
 
 ## Overlay OBS

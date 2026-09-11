@@ -495,6 +495,13 @@ async def build_chat_tools(bot: "WallyTwitch", *, overlay: bool = True) -> list[
     # offert même depuis une chaîne invitée, comme le planning et la musique.
     if _presence_service(bot) is not None:
         tools.append(_PRESENCE_TOOL)
+    # Ce qui s'est dit dans le VOCAL du stream, et rien d'autre : le chat est
+    # public, il ne doit pas pouvoir fouiller les salons Discord — l'exécuteur
+    # force `voice_only`, quelle que soit la définition offerte. Chaîne MAISON
+    # seulement : c'est le vocal des lives d'Azraël, pas celui de l'invité.
+    history_search = getattr(bot, "history_search", None)
+    if overlay and history_search is not None and history_search.voice_available:
+        tools.extend(history_search.get_tool_definitions(voice_only=True))
     # `overlay=False` depuis une chaîne INVITÉE : l'overlay appartient au stream
     # maison. Sans ce garde, le chat d'un invité pouvait faire afficher bulles,
     # clips et panneaux Apex chez Azraël.
@@ -802,6 +809,17 @@ def make_tool_executor(
         args = json.loads(arguments)
         if name == "quote":
             return await run_quote_tool(bot, args)
+        if name == "search_history":
+            # `voice_only` TOUJOURS : c'est l'appelant qui fixe le périmètre,
+            # jamais le modèle. Hors chaîne maison, l'outil n'est pas offert —
+            # le modèle l'invente parfois.
+            history_search = getattr(bot, "history_search", None)
+            if not overlay or history_search is None:
+                return "L'historique du vocal n'est pas consultable d'ici."
+            return await history_search.search(
+                args.get("query", ""), author=args.get("author"),
+                channel=args.get("channel"), after=args.get("after"),
+                before=args.get("before"), limit=args.get("limit"), voice_only=True)
         if name == "who_is_online":
             return run_presence_tool(bot, args)
         if name == "follow_date":
