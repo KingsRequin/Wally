@@ -257,6 +257,11 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > ⚠️ Il repose sur de l'**information cachée en jeu**, la même famille que les cartes face cachée
 > (§7 des règles) : le moteur doit pouvoir dire lequel est vrai sans jamais le montrer, et
 > l'écrire au journal d'événements. Sinon un leurre deviné devient indiscernable d'un bug.
+> ⚠️ **Mais ce n'est PAS une carte face cachée, et il ne suit donc pas sa règle de PV.** Une carte
+> cachée a autant de PV que son coût ; le leurre, lui, est une copie de héros et porte les PV du
+> héros copié — sinon on le reconnaîtrait au nombre de coups qu'il encaisse, ce qui tue le bluff.
+> Et il garde sa pénalité propre : frapper la fausse **coûte le tour**, là où détruire une carte
+> cachée ne coûte que l'attaque. C'est la seule exception du jeu, et elle est le prix de son coût 2.
 
 > `Le Rhum` : ✅ **à REGROUPER** (§ ci-dessus) — le « si 3 réunis » que j'avais déclaré injouable
 > est exactement ce que la règle générale rend jouable. Je l'avais écrit sans lui ; il est rétabli.
@@ -346,10 +351,13 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 > `Le baril de Caustique` : ~3 dégâts par camp sur 3 tours, mais **symétriques** — pas de × 1,25,
 > il frappe aussi les siens → 4 → `⌈4/3⌉ = 2` d'énergie.
-> 🆕 **C'est l'une des trois cartes qui font revenir l'Anonyme** (§7 des règles). Elle est celle
-> qui décide de la question ouverte là-bas : quand on l'attaque, elle se défausse en silence, ou
-> elle **explose** ? Le second est le gag — mais il rend l'attaquer stupide, donc personne ne le
-> fera, donc la face cachée redevient gratuite. Trancher ici avant d'écrire la carte.
+> 🆕 **C'est l'une des trois cartes qui font revenir l'Anonyme** (§7 des règles), et elle a servi à
+> trancher ses deux questions ouvertes le 2026-09-11 : une carte cachée a **autant de PV que son
+> coût** (donc 2 ici, non affichés), et la détruire la **défausse sans déclencher son effet**.
+> 🎁 **Son gag survit quand même, sans exception à écrire.** Son effet démarre au début du tour
+> suivant : elle est cachée pendant **exactement un** tour adverse. C'est la fenêtre pour la
+> désamorcer ; ratée, elle se révèle en explosant toute seule. Le baril finit toujours par partir,
+> on a juste eu une chance de couper le fil.
 
 ### Énergie et tempo
 
@@ -402,7 +410,10 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > `Typical Octane` : +1 carte (2) et −1 pour l'adversaire (2) **× 1,25** → 5 → `⌈5/3⌉ = 2`. Même
 > prix que le shop de Loba pour un effet voisin, et c'est cohérent : l'un prend dans la main,
 > l'autre dans la pioche.
-> 🆕 Troisième carte qui fait revenir l'**Anonyme** (§7 des règles).
+> 🆕 Troisième carte qui fait revenir l'**Anonyme** (§7 des règles) : 2 PV cachés (= son coût), et
+> détruite elle part sans déclencher. Contrairement au baril, elle n'a **aucune fenêtre garantie** —
+> elle attend que l'adversaire pioche, ce qui peut ne jamais venir avant qu'on la descende. C'est la
+> plus fragile des trois, et c'est cohérent : elle vole, elle se cache vraiment.
 
 > `Le scan de Crypto` : neutraliser jusqu'à 2 passifs pendant 2 tours ≈ 6 points **× 1,25** → 7,5
 > → `⌈7,5/3⌉ = 3` d'énergie.
@@ -613,14 +624,13 @@ seule qui reste défendable si un joueur conteste.
   voulu.
   🎁 Les refs retenues au pack 3 visent précisément ce trou : les trois chats, la carte des trois
   réunis, « c'est mon kill / NOTRE kill ». Et le gisement des **emotes** n'est toujours pas ouvert.
-- 🆕 **Les PV d'une carte face cachée**, et ce qui arrive quand on la détruit (§7 des règles) —
-  seul point dur du pack du 2026-09-10 encore ouvert côté mécanique.
 - 🆕 **La portée de *Rendez-vous au véto*** : un seul héros qui passe son tour, ou le tour entier de
   l'adversaire ? Écrite comme un héros à 3 d'énergie ; le tour complet en ferait une **rare à 5**,
-  parce qu'elle dépasserait *La Chute*. ⏸️ En attente de l'owner.
-- ✅ **Soldés le 2026-09-11** : la taille du deck face à *La statue de Mirage* et le « si 3 réunis »
-  du *Rhum* — tous deux par la mécanique du **Regroupement** (§4) · le doublon de nom `Tunnel`, la
-  carte pose désormais l'état · le **consentement**, ci-dessous.
+  parce qu'elle dépasserait *La Chute*. ⏸️ **Seul point du pack encore ouvert.**
+- ✅ **Soldés le 2026-09-11** : les **PV d'une carte face cachée** (= son coût, non affichés) et sa
+  mort (révélée, défaussée, effet nié) — §7 des règles · la taille du deck face à *La statue de
+  Mirage* et le « si 3 réunis » du *Rhum*, tous deux par le **Regroupement** (§4) · le doublon de
+  nom `Tunnel`, la carte pose désormais l'état · le **consentement**, ci-dessous.
 - **Les illustrations** : **45** cartes à générer, plus les héros. Coût à chiffrer avant d'ouvrir
   le robinet — il a grossi de 55 % en une journée.
 - ✅ **Le consentement — TRANCHÉ le 2026-09-11, ce n'est plus un point dur.**

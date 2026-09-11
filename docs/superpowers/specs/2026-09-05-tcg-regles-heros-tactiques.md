@@ -266,26 +266,61 @@ le *leurre* qui en est une variante). La mécanique n'est donc plus optionnelle.
 Elle revient **modifiée**, et c'est l'apport de l'owner : une carte face cachée **occupe la table
 et peut être attaquée**. La détruire coûte une attaque, sans savoir ce qu'on détruit.
 
-| | Version d'origine (spec mère §3.7) | Version 2026-09-10 |
+| | Version d'origine (spec mère §3.7) | Version 2026-09-11 |
 |---|---|---|
 | Pose | 1 d'énergie fixe, n'importe quelle carte | **le coût de la carte**, seulement celles qui l'écrivent |
 | Ce qu'elle vaut | 2 de Voix (4 avec `F03 Masque`) | **rien** tant qu'elle est cachée : elle attend son déclencheur |
 | Révélation | à la fin de la manche | **à son déclencheur**, ou quand elle est détruite |
 | Attaquable | non — les zones la protégeaient | **oui**, c'est la nouveauté |
+| PV | sans objet | **= son coût en énergie**, et ils ne sont **pas affichés** |
+| Détruite | sans objet | **révélée puis défaussée, son effet ne part pas** |
 
 🚨 **C'est ce qui rend le bluff jouable au lieu d'être gratuit.** Dans la version d'origine, poser
 face caché ne coûtait presque rien et ne risquait rien : la stratégie dominante était d'en poser
 autant que possible. Rendre la carte attaquable met un prix sur le bluff — l'adversaire peut
 dépenser une attaque pour lever le doute, et se tromper.
 
-⚠️ **Deux choses restent à trancher, et le moteur ne peut pas les deviner :**
-- **Combien de PV a une carte face cachée ?** Si c'est 1, toute attaque la tue et le bluff ne
-  survit pas un tour. Si c'est beaucoup, elle devient un mur gratuit. Une seule valeur pour
-  toutes, sinon les PV trahissent la carte.
-- **Que se passe-t-il quand elle est détruite ?** Elle est révélée puis défaussée, ou son effet
-  se déclenche en partant ? Le second est bien plus intéressant (*baril de Caustique* qui explose
-  quand on lui tire dessus), mais il fait de l'attaquer un mauvais coup — et donc plus personne
-  ne le fera. Trancher AVANT d'écrire les trois cartes.
+### ✅ Ses PV et sa mort, tranchés le 2026-09-11
+
+> ⚖️ L'owner : *« Donner à la carte face cachée le même nombre de PV que l'énergie qu'elle
+> coûte. »*
+
+**PV = coût en énergie.** 🎁 C'est une valeur **dérivée**, pas posée : rien à calibrer, et toute
+carte face cachée écrite plus tard en hérite sans qu'on y pense. C'est la règle de la maison
+appliquée au bon endroit.
+
+🚨 **Mais les PV ne sont PAS AFFICHÉS, et cette moitié n'est pas négociable.** Telle quelle, la
+formule trahit la carte : les PV *disent* le coût, et le coût est le plus gros indice sur ce qu'une
+carte cachée contient. Voir « 5 PV » revient à lire la moitié du dos. Cachés, la formule devient
+meilleure qu'un nombre fixe connu — on frappe **sans savoir si le coup suffit**, et on apprend le
+coût seulement quand la carte meurt. L'attaque devient un engagement au lieu d'un calcul.
+
+🎁 **Et l'échelle tombe juste sans retouche.** Les attaques du paquet sont à **3-5** (un héros
+commun frappe à ~4, `Le camion de Raiky` fait 4) :
+
+| Coût de la carte cachée | Ce qu'il faut pour la tuer |
+|---|---|
+| 1 à 3 | n'importe quelle attaque, un seul coup |
+| 4 à 5 | deux coups, ou un gros |
+
+Une carte chère est donc réellement plus dure à déloger, une carte à 1 est du bluff jetable. Si la
+calibration montre que tout meurt en un coup malgré tout, le levier est un **multiplicateur** sur
+la formule (× 2), jamais une valeur écrite à la main.
+
+**Détruite, elle est révélée puis défaussée — son effet NE PART PAS.**
+
+C'est dur pour le défenseur, et c'est payé : l'attaquant a frappé du carton au lieu d'un héros. Il
+a dépensé un tour de dégâts pour nier une carte qu'il ne connaissait pas. Les deux camps perdent
+quelque chose, personne n'est gratuit.
+
+🚨 **L'autre option se referme sur elle-même.** Si l'effet partait en mourant, attaquer une carte
+cachée serait toujours un mauvais coup ; donc plus personne ne le ferait ; donc le face caché
+redeviendrait gratuit — et on perdrait exactement ce que l'attaquabilité vient d'installer.
+
+🎁 **Le gag du baril de Caustique survit quand même, sans exception à écrire.** Son effet démarre au
+début du tour suivant : elle est donc cachée pendant **exactement un** tour adverse. C'est la
+fenêtre pour la désamorcer ; ratée, elle se révèle en explosant toute seule. Le baril finit
+toujours par partir, on a juste eu une chance de couper le fil.
 
 ⚠️ `F03 Masque` du catalogue décrit encore l'ancienne version (« posable face cachée pour 0
 énergie, vaut 4 de Voix en Anonyme »). Il est à réécrire avec le reste des entrées à Tirage —
@@ -306,6 +341,8 @@ qu'un effet de soutien. L'information décide d'un caractère au lieu d'être un
 3. **Les 40 PV par joueur en coop** — mesurer la durée d'un raid à 2, 4 et 6 joueurs.
 4. **Le budget de base (12)** — décide de la durée d'un JcJ.
 5. 🆕 **Le taux Aura ↔ énergie** (§3) — sans lui, aucune carte spéciale ne peut être écrite.
-6. 🆕 **Les PV d'une carte face cachée** (§7) — décide si le bluff existe ou non.
+6. 🆕 **Le multiplicateur des PV d'une carte face cachée** (§7) — la formule est posée (PV = coût) ;
+   il ne reste qu'à vérifier que l'échelle 1-5 contre des attaques de 3-5 laisse survivre les
+   cartes chères. Si non, × 2 sur la formule, jamais une valeur à la main.
 
 Rien ne se fige avant **quinze parties**, conformément à ce que font les designers indé.
