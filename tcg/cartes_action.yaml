@@ -381,13 +381,23 @@
   # Le MÊME pochoir que `tunnel_rina`, et c'est voulu (owner, 2026-09-12).
   visuel: /assets/cartes/carte-tunnel.png
   forme: image
+  regle: >-
+    Les cartes de l'adversaire lui coûtent ${energie} d'énergie de plus ce
+    tour.
+  stats:
+    energie: 1
 
 - cle: anneau_raiky
   nom: Raiky dans l'anneau
   court: ANNEAU
-  type: action
+  type: passif
   categorie: controle
   visuel: /assets/icones/death-zone.svg
+  regle: >-
+    Reste sur la table, FACE VISIBLE. À chaque tour, TOUS les héros perdent
+    ${degats} PV, les tiens comme ceux d'en face.
+  stats:
+    degats: 1
 
 - cle: montage_malef
   nom: Un montage de Malef
@@ -395,6 +405,9 @@
   type: action
   categorie: controle
   visuel: /assets/icones/vhs.svg
+  regle: >-
+    Annule tout ce qui s'est passé pendant le tour précédent : les dégâts, les
+    soins, les états. On refait la prise.
 
 - cle: leurre
   nom: Le leurre
@@ -413,6 +426,13 @@
   type: action
   categorie: controle
   visuel: /assets/icones/skull-mask.svg
+  regle: >-
+    Pose-la FACE VISIBLE et désigne un héros adverse : il ne peut plus rien
+    faire pendant ${tours} tours. Mais ${chance}, le ban tombe sur un des
+    TIENS à la place. Il n'avait rien fait.
+  stats:
+    tours: null
+    chance: une fois sur quatre
 
 # ── Aura et coopération ───────────────────────────────────────────────────
 - cle: apero_zeddo
@@ -421,6 +441,11 @@
   type: action
   categorie: aura
   visuel: /assets/icones/glass-celebration.svg
+  regle: >-
+    Tous tes héros gagnent beaucoup d'Aura ce tour, puis perdent ${pv} PV au
+    tour suivant. C'était une bonne soirée.
+  stats:
+    pv: null
 
 - cle: notre_kill
   nom: « C'est mon kill » / « NOTRE kill »
