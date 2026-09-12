@@ -58,7 +58,7 @@
   court: CLUSTER
   type: action
   categorie: attaque
-  visuel: /assets/apex/Frag_Grenade.svg
+  visuel: /assets/icones/laser-sparks.svg
 
 - cle: mozambique
   nom: Mozambique here!
@@ -66,6 +66,7 @@
   type: action
   categorie: attaque
   visuel: /assets/apex/Mozambique_Shotgun_Icon.svg
+  forme: image
 
 - cle: baril_caustique
   nom: Le baril de Caustique
@@ -73,6 +74,7 @@
   type: action
   categorie: attaque
   visuel: /assets/apex/Nox_Gas_Trap.svg
+  forme: image
   face_cachee: true
   regle: >-
     1 dégât à TOUS les héros — les tiens compris — au début de chacun des
@@ -91,6 +93,7 @@
   type: action
   categorie: attaque
   visuel: /assets/apex/Stim.svg
+  forme: image
   regle: Un héros allié perd 2 PV et gagne +4 d'Attaque ce tour.
 
 - cle: flatline_azrael
@@ -99,6 +102,7 @@
   type: passif
   categorie: attaque
   visuel: /assets/icones/machine-gun.svg
+  forme: image
 
 - cle: manette
   nom: La manette
@@ -135,6 +139,7 @@
   type: passif
   categorie: soin
   visuel: /assets/apex/Lifeline_Icon.svg
+  forme: image
   regle: >-
     RÉGÉNÉRATION — +2 PV à un héros allié au début de chacun de tes tours,
     tant que le passif est en jeu.
@@ -145,6 +150,7 @@
   type: passif
   categorie: soin
   visuel: /assets/apex/Death_Totem.svg
+  forme: image
   regle: >-
     Une fois, un de tes héros MORTS revient en ligne avec la moitié de ses PV,
     arrondie au supérieur.
@@ -155,6 +161,7 @@
   type: passif
   categorie: soin
   visuel: /assets/apex/Life_of_the_Party.svg
+  forme: image
   groupe: 3
   regle: >-
     PASSIF À REGROUPER — une fois les TROIS réunies et regroupées, tes cartes
@@ -187,6 +194,7 @@
   type: passif
   categorie: soin
   visuel: /assets/icones/keyboard.svg
+  forme: image
 
 - cle: push_3_teams
   nom: Push par 3 teams
@@ -194,6 +202,7 @@
   type: action
   categorie: soin
   visuel: /assets/icones/cow.svg
+  forme: image
 
 - cle: pizzas
   nom: 10 pizzas géantes
@@ -221,6 +230,7 @@
   type: action
   categorie: controle
   visuel: /assets/icones/tunnel.svg
+  forme: image
   regle: >-
     Pose l'état TUNNEL sur un héros adverse — il ne peut plus attaquer que le
     tien, 2 tours.
@@ -238,6 +248,7 @@
   type: action
   categorie: controle
   visuel: /assets/apex/Focus_of_Attention.svg
+  forme: image
   regle: Désactive TOUS les passifs adverses pendant 2 tours.
 
 - cle: feur
@@ -286,6 +297,7 @@
   categorie: controle
   # Le MÊME pochoir que `tunnel_rina`, et c'est voulu (owner, 2026-09-12).
   visuel: /assets/icones/tunnel.svg
+  forme: image
 
 - cle: anneau_raiky
   nom: Raiky dans l'anneau
@@ -307,6 +319,7 @@
   type: action
   categorie: controle
   visuel: /assets/apex/Psyche_Out.svg
+  forme: image
   regle: >-
     Double un de tes héros en jeu ; une seule des deux copies est vraie.
     Attaquer la fausse la détruit et COÛTE LE TOUR de l'attaquant.
@@ -339,6 +352,7 @@
   type: passif
   categorie: aura
   visuel: /assets/icones/cat.svg
+  forme: image
 
 - cle: spiro
   nom: Spiro
@@ -346,6 +360,7 @@
   type: passif
   categorie: aura
   visuel: /assets/icones/cat.svg
+  forme: image
 
 - cle: lili
   nom: Lili
@@ -353,6 +368,7 @@
   type: passif
   categorie: aura
   visuel: /assets/icones/cat.svg
+  forme: image
 
 - cle: les_trois_chats
   nom: Pika, Spiro et Lili
@@ -360,6 +376,7 @@
   type: passif
   categorie: aura
   visuel: /assets/icones/cat.svg
+  forme: image
   # L'ARC est le contraire du semis : le semis veut du désordre (dix pizzas
   # jetées), l'arc veut une figure. C'est ce qui dit « ensemble ».
   semis: 3
@@ -380,6 +397,7 @@
   type: action
   categorie: ressource
   visuel: /assets/apex/Care_Package.svg
+  forme: image
   regle: >-
     Pioche 3 cartes, garde-en 1, remets les autres AU-DESSUS de ta pioche.
 
@@ -396,6 +414,7 @@
   type: action
   categorie: ressource
   visuel: /assets/apex/Black_Market_Boutique.svg
+  forme: image
   regle: Prends UNE CARTE AU HASARD dans la main de l'adversaire.
 
 - cle: drone_crypto
@@ -404,6 +423,7 @@
   type: action
   categorie: ressource
   visuel: /assets/apex/Surveillance_Drone.svg
+  forme: image
   regle: Regarde la main de l'adversaire jusqu'à la fin du tour.
 
 - cle: typical_octane
@@ -412,6 +432,7 @@
   type: action
   categorie: ressource
   visuel: /assets/apex/Octane_Icon.svg
+  forme: image
   face_cachee: true
   regle: >-
     La prochaine fois que l'adversaire pioche, C'EST TOI QUI PRENDS LA CARTE.

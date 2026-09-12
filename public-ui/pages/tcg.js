@@ -171,8 +171,9 @@ function avisAction(liste) {
   const reste = liste.length - ecrites;
   const parties = [
     h('strong', { text: 'Aucun coût n\'est encore fixé.' }),
-    ' Il se calcule sur la puissance de la carte, donc il vient en dernier —'
-    + ' la pastille reste vide tant que l\'effet n\'est pas arrêté.',
+    ' Les pastilles affichent toutes 0, et ça veut dire « pas encore calibré » :'
+    + ' le coût se calcule sur la puissance de la carte, donc il vient en'
+    + ' dernier.',
   ];
   if (reste) {
     parties.push(reste > 1

@@ -134,7 +134,12 @@ function fenetre(carte, rang) {
   } else if (carte.texte) {
     enfants.push(h('div', { class: 'ca-motclef', text: carte.texte }));
   } else {
-    enfants.push(pochoir(url, 'ca-pochoir'));
+    // 🚨 Une IMAGE n'a pas la taille d'une ICÔNE. Le design rend un pictogramme
+    // dans un carré de 7,4em et un dessin sur 82 % de large × 7,4em de haut :
+    // les deux ne pèsent pas pareil, et tout mettre au carré rapetisse les
+    // dessins sans que rien ne le signale.
+    enfants.push(pochoir(url,
+      carte.forme === 'image' ? 'ca-pochoir ca-pochoir--image' : 'ca-pochoir'));
   }
   return h('div', { class: 'ca-fenetre' }, enfants);
 }
@@ -143,11 +148,16 @@ function fenetre(carte, rang) {
 
 /** Le degré de torsion, en degrés, au bord de la carte.
  *
- * 9° et pas 15° : ces cartes sont RANGÉES EN GRILLE, contrairement aux héros
- * qu'on regarde un par un. Au-delà, les voisines se chevauchent visuellement
- * et la grille se met à onduler quand le curseur la traverse.
+ * Monté de 9 à 18 à la demande de l'owner (2026-09-12) : à 9° le mouvement se
+ * devinait plus qu'il ne se voyait, surtout au gyroscope où la course du
+ * capteur est plus courte que celle d'un curseur.
+ *
+ * ⚠️ Ce qui borne la valeur, ce n'est pas le goût mais la GRILLE : les cartes
+ * sont rangées côte à côte, et une carte trop inclinée passe visuellement sous
+ * sa voisine. La gouttière de la grille (22 px) est ce qui décide — le smoke
+ * test vérifie qu'une carte penchée ne déborde pas de la page.
  */
-const TORSION = 9;
+const TORSION = 18;
 
 /** Un décalage de traînée dans [-22, 22], dérivé du nom de la carte. */
 function phaseDe(cle) {
@@ -186,15 +196,12 @@ export function carteAction(carte, options = {}) {
   },
     h('div', { class: 'ca-vignette' }),
     h('div', { class: 'ca-tete' },
-      // Un coût à 0 n'est pas gratuit, il n'est pas CALIBRÉ (arbitrage de
-      // l'owner du 2026-09-12). Afficher « 0 » en pastille d'or affirmerait
-      // une valeur que personne n'a décidée — et le site tient justement la
-      // ligne inverse : ce qui apparaît ici a été décidé.
-      h('span', {
-        class: carte.cout > 0 ? 'ca-cout' : 'ca-cout ca-cout--indefini',
-        text: carte.cout > 0 ? String(carte.cout) : '—',
-        title: carte.cout > 0 ? 'Coût en énergie' : 'Coût pas encore calibré',
-      }),
+      // 🚨 Le coût s'affiche TEL QUEL, zéro compris, parce que c'est ce que le
+      // design fait. J'avais mis un tiret et une pastille éteinte pour dire
+      // « non calibré » : c'était une invention, et l'owner a tranché — le
+      // recto est le sien, on n'y ajoute rien. Le fait que les coûts ne soient
+      // pas encore posés est dit par le bandeau de la page, pas par la carte.
+      h('span', { class: 'ca-cout', text: String(carte.cout) }),
       h('span', { class: 'ca-cat' },
         pochoir(carte.categorieIcone, 'ca-cat-icone'),
         h('span', { class: 'ca-cat-nom', text: carte.categorieLabel }),
@@ -206,8 +213,11 @@ export function carteAction(carte, options = {}) {
         h('div', { class: 'ca-court', text: carte.court }),
         h('div', { class: 'ca-nom', text: carte.nom }),
       ),
+      // Un seul style de règle, comme dans le design : son texte d'attente
+      // (« Règle pas encore écrite. ») s'y lit avec la même graisse et la même
+      // couleur que les autres.
       h('p', {
-        class: indefinie ? 'ca-regle ca-regle--indefini' : 'ca-regle',
+        class: 'ca-regle',
         text: indefinie ? 'Règle pas encore écrite.' : carte.regle,
       }),
       h('div', { class: 'ca-bandeaux' },

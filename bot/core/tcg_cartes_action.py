@@ -64,6 +64,14 @@ def url(visuel: str) -> str:
 # Deux dimensions, jamais mélangées — une carte de soin passive et une carte de
 # soin active partagent le vert et rien d'autre.
 TYPES = ("action", "passif")
+
+# 🚨 La FORME du pochoir dans la fenêtre d'illustration, telle que le design la
+# pose : une `icone` rend un CARRÉ de 7,4em, une `image` rend 82 % × 7,4em.
+# Ce n'est pas un détail de cadrage — un pictogramme et un dessin n'ont pas le
+# même poids visuel, et le design les traite comme deux choses différentes
+# (`icone:` contre `image:` dans son catalogue). Rendre tout en carré, comme je
+# l'avais fait, rapetisse les dessins sans que rien ne le signale.
+FORMES = ("icone", "image")
 CATEGORIES = ("attaque", "soin", "controle", "aura", "ressource")
 
 # 🚨 L'or (#e1a947) est RÉSERVÉ à la pastille de coût, sur le recto comme ici :
@@ -126,6 +134,7 @@ class CarteAction:
     # dernier recours, quand rien n'est décidé : elle retombe alors sur l'icône
     # de sa catégorie, ce qui reste honnête (aucune carte ne rend un trou).
     visuel: str | None = None
+    forme: str = "icone"
     # Un mot posé à la taille d'une illustration. « FEUR » n'a pas d'objet à
     # dessiner, il a une réplique.
     texte: str | None = None
@@ -170,6 +179,8 @@ def _lire(chemin: Path) -> dict[str, CarteAction]:
                 f"type={carte.type!r} hors de {sorted(TYPES)}")
         _exiger(carte.categorie in CATEGORIES, cle,
                 f"categorie={carte.categorie!r} hors de {sorted(CATEGORIES)}")
+        _exiger(carte.forme in FORMES, cle,
+                f"forme={carte.forme!r} hors de {sorted(FORMES)}")
         _exiger(carte.cout >= 0, cle, f"cout={carte.cout!r} négatif")
         _exiger(carte.groupe >= 0, cle, f"groupe={carte.groupe!r} négatif")
         _exiger(carte.semis >= 0, cle, f"semis={carte.semis!r} négatif")
@@ -239,6 +250,7 @@ def en_json(carte: CarteAction) -> dict:
         # `None` et non `""` : le front teste la présence, et une chaîne vide
         # est fausse en JavaScript sans pour autant dire « absent ».
         "visuel": url(carte.visuel) if carte.visuel else None,
+        "forme": carte.forme,
         "texte": carte.texte,
         "groupe": carte.groupe,
         "semis": carte.semis,

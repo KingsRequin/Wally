@@ -19,6 +19,7 @@ from bot.core import tcg_cartes_action as mod
 from bot.core.tcg_cartes_action import (
     CARTES_ACTION,
     CATEGORIES,
+    FORMES,
     COULEUR_CATEGORIE,
     ICONE_CATEGORIE,
     LIBELLE_CATEGORIE,
@@ -123,7 +124,7 @@ def test_en_json_n_invente_aucune_cle():
     attendues = {
         "cle", "nom", "court", "type", "categorie", "categorieLabel",
         "categorieCouleur", "categorieIcone", "cout", "regle", "visuel",
-        "texte", "groupe", "semis", "arc", "faceCachee",
+        "forme", "texte", "groupe", "semis", "arc", "faceCachee",
     }
     assert set(en_json(next(iter(CARTES_ACTION.values())))) == attendues
 
@@ -204,3 +205,29 @@ def test_un_arc_sans_semis_est_refuse(tmp_path):
     chemin = _ecrire(tmp_path, VALIDE + "      arc: true\n")
     with pytest.raises(ValueError, match="arc sans semis"):
         mod._lire(chemin)
+
+
+def test_la_forme_du_pochoir_est_dans_le_vocabulaire():
+    """`icone` rend un carré de 7,4em, `image` rend 82 % × 7,4em.
+
+    C'est la distinction que le design pose entre un pictogramme et un dessin
+    fourni. Tout rendre au carré rapetisse les dessins, sans rien signaler.
+    """
+    assert all(c.forme in FORMES for c in CARTES_ACTION.values())
+    formes = {c.forme for c in CARTES_ACTION.values()}
+    assert formes == set(FORMES), (
+        f"une des deux formes n'est plus employée : {formes} — soit le "
+        "catalogue a changé, soit une carte a perdu sa forme")
+
+
+def test_une_forme_hors_vocabulaire_est_refusee(tmp_path):
+    chemin = _ecrire(tmp_path, VALIDE + "      forme: vignette\n")
+    with pytest.raises(ValueError, match="forme="):
+        mod._lire(chemin)
+
+
+def test_en_json_sert_la_forme():
+    """Le front ne devine pas la forme d'après le dossier du fichier : elle est
+    posée dans la donnée et servie. Deviner d'après `/assets/apex/` marcherait
+    aujourd'hui et casserait au premier dessin rangé ailleurs."""
+    assert en_json(CARTES_ACTION["lifeline"])["forme"] == "image"
