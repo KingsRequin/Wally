@@ -57,8 +57,8 @@ Attaque + PV + Aura = budget
 > déterministe et cumulatif rend la stat qui le porte strictement supérieure aux autres.
 
 **Répartition : écrite à la MAIN par l'owner.** Seule contrainte, la somme tient le budget.
-Planchers Attaque ≥ 1 et PV ≥ 1. **Rareté et faction sont posées par l'owner**, carte par carte —
-et la rareté AVANT les stats, puisqu'elle fixe le budget.
+Planchers Attaque ≥ 1 et PV ≥ 1. **La rareté est posée par l'owner**, carte par carte — et AVANT
+les stats, puisqu'elle fixe le budget.
 
 > ⚖️ **Arbitrage du 2026-09-10.** La répartition sortait d'une formule tirée de la mémoire de
 > Wally. *« On va retirer les faits sur les gens, on ne les utilisera pas pour les héros. »*

@@ -349,7 +349,7 @@ complète jamais et les deux sont mortes. C'est leur premier point de calibratio
 | **Azraël met ta perk !** | ACTION | contrôle | — | à écrire (hasard pur) | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
 | **POV le chevreuil** | ACTION | contrôle | — | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
 | **Mozambique here!** | ACTION | attaque | — | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
-| **Raciste** | ACTION | contrôle | — | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
+| **Raciste** | ACTION | contrôle | — | à écrire (les factions n'existent pas) | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
 | 🆕 **Le camion de Raiky** | ACTION | attaque | — | **4 dégâts** à un héros adverse | son pseudo entier : *Raiky le fusible de camion* — 6 pers., 26 occ. |
 | 🆕 **Le stim d'Octane** | ACTION | attaque | — | un héros allié perd **2 PV** et gagne **+4 d'Attaque** ce tour | Octane — 18 pers., 36 occ. |
 | 🆕 **Le cluster** | ACTION | attaque | — | **4 dégâts répartis au hasard** entre les héros adverses, jamais plus de 2 sur le même | la grenade à fragmentation — 6 pers. |
@@ -578,8 +578,8 @@ Dans cette commu, **être raciste, c'est jouer toujours les mêmes personnages o
 j'suis un bon raciste aussi »* · *« une raciste dans son gameplay »* · *« Compétitive vs casual
 racisme »*. Une dizaine de personnes distinctes l'emploient dans ce sens, et jamais dans l'autre.
 
-La ref se traduit toute seule : **tu rejoues la même chose, tu le paies** — d'où le malus qui
-frappe les héros adverses d'une même faction. Nom arrêté par l'owner le 2026-09-10.
+La ref se traduit toute seule : **tu rejoues la même chose, tu le paies**. Nom arrêté par l'owner
+le 2026-09-10.
 
 ### Deux cartes à surveiller en priorité
 

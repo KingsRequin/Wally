@@ -19,7 +19,7 @@
 | **PV** | calcul | ce qu'elle encaisse avant de sortir |
 | **Aura** | calcul | ce qu'elle ajoute aux cartes **alliées** adjacentes |
 | **Réflexe** | Wally choisit dans le catalogue | l'effet spécial |
-| Rareté · Faction | **l'owner**, à la main | prestige et couleur |
+| Rareté | **l'owner**, à la main | prestige |
 | Affinité (1-2 sujets) | calcul | ce qui la fait briller sur certaines zones |
 
 `Attaque + PV + Aura = budget`, et le budget ne dépend que du coût et de la rareté

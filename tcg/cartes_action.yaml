@@ -281,7 +281,7 @@
     Figé dans les phares.
 
 - cle: tunnel_rina
-  nom: Le tunnel de Rina
+  nom: Encore une histoire de Rina...
   court: TUNNEL
   type: action
   categorie: controle
@@ -299,6 +299,9 @@
   type: action
   categorie: controle
   visuel: /assets/icones/rod-of-asclepius.svg
+  regle: >-
+    Un de tes héros quitte la ligne pour un tour — il ne peut ni agir ni être
+    touché — et revient complètement soigné.
 
 - cle: scan_seer
   nom: Le scan de Seer
@@ -320,7 +323,7 @@
   # n'a pas d'objet à dessiner, il a une réplique. Le mot prend donc la place
   # de l'illustration, pas celle du titre.
   texte: FEUR
-  regle: Annule la prochaine tactique jouée par l'adversaire ce tour.
+  regle: Annule la prochaine ACTION jouée par l'adversaire ce tour.
 
 - cle: steak_meliodas
   nom: Le steak haché de Meliodas
@@ -328,6 +331,9 @@
   type: action
   categorie: controle
   visuel: /assets/icones/steak.svg
+  regle: >-
+    Désigne un héros adverse : ce tour, il ne reçoit ni Aura ni soin de son
+    camp. Seul dans son assiette.
 
 - cle: raciste
   nom: Raciste
@@ -335,6 +341,10 @@
   type: action
   categorie: controle
   visuel: /assets/icones/wheat.svg
+  regle: >-
+    Un de tes héros se spécialise : il gagne beaucoup d'Attaque, mais ne peut
+    plus changer de cible — il tape le même héros adverse jusqu'à ce qu'il
+    tombe.
 
 - cle: perk
   nom: Azraël met ta perk !

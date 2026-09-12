@@ -16,13 +16,12 @@ précisément pour être codé, et pour que deux passes sur la même personne re
 
 ## 1. Ce qui ne se calcule pas : l'owner le pose
 
-Arbitré le 2026-09-04. Deux champs sortent du calcul et sont **saisis à la main**, carte par
+Arbitré le 2026-09-04. Un champ sort du calcul et est **saisi à la main**, carte par
 carte, dans la base Notion « 🃏 Cartes du Purgatoire » :
 
 | Champ | Pourquoi à la main |
 |---|---|
 | **Rareté** | Les grades Twitch (sub, VIP, modo) ne sont pas lisibles : `_STREAMER_SCOPES` ne porte ni `channel:read:vips` ni `moderation:read`, et les ajouter n'agit pas sur un token déjà émis. L'owner connaît sa commu mieux que ces scopes. |
-| **Faction** | Elle venait du rôle Discord `Ames Lumineuses` / `Ames Sombres` — or **les deux tiers des cartes sont des comptes Twitch**, qui n'ont aucun rôle. La mécanique du deck mono-faction serait morte pour la majorité. |
 
 Conséquence assumée : la rareté devient un **choix éditorial** de l'owner et non une lecture
 mécanique d'un grade. La spec mère l'avait nommé comme un risque (« la rareté est un jugement

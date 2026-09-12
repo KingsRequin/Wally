@@ -188,13 +188,13 @@ catalogue ne dépasse **6** : ce que F07 peut emprunter est donc borné par le c
 La borne est **structurelle**, pas une valeur posée à la main — et elle tombe le jour où une
 entrée à 7 est ajoutée. C'est la seule chose à surveiller ici.
 
-### G — Affinités et factions
+### G — Affinités
 
 | ID | Nom mécanique | Prix | Déclencheur | Effet | Portée |
 |---|---|---|---|---|---|
 | G01 | Touche-à-tout | 2 | permanent | compte comme portant l'affinité de la table où elle est posée | 👤 |
 | G02 | Spécialiste | 2 | au décompte | +4 Voix si une de ses affinités correspond au sujet de la table | 👤 |
-| G03 | Bannière | 2 | permanent | +1 Voix à tes cartes de même faction sur cette table | 👤🎴 |
+| G03 | Bannière | 2 | permanent | à écrire (les factions n'existent pas) | 👤🎴 |
 | G04 | Sujet imposé | 5 | à la pose sur une table non révélée | tu choisis son sujet parmi deux tirés | 🎴 |
 
 ### H — Réveil et Duo (les greffes commu)

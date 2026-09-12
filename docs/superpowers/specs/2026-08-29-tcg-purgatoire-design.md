@@ -41,14 +41,10 @@ Ames Lumineuses  117  |  Ames Sombres  85
 Twitch Subscriber T1 16 · T2 0 · T3 1 (Azraël)
 ```
 
-Deux conséquences :
+Une conséquence :
 
 **La hiérarchie est trop plate pour servir seule de rareté** — 276 Âmes contre 7 Anges. Les
 paliers intermédiaires viennent donc des grades Twitch et d'une sélection manuelle (§5).
-
-**Les factions sont natives.** `Ames Lumineuses` (117) contre `Ames Sombres` (85), presque
-équilibrées, **choisies par les gens eux-mêmes**. Ce n'est pas une hiérarchie : c'est la couleur
-du jeu. Un membre sans aucun des deux rôles est **Neutre**.
 
 ---
 
@@ -61,7 +57,6 @@ du jeu. Un membre sans aucun des deux rôles est **Neutre**.
 | Texte d'ambiance | libre | **Wally** |
 | Coût (1-5) | longueur de message médiane, en percentile de la commu | calcul |
 | Voix / Aura / Piquant | répartition d'un budget fixe | calcul |
-| Faction | rôle `Ames Lumineuses` / `Ames Sombres` / aucun | calcul |
 | Affinité (1-2 sujets) | `topics` | calcul |
 | Réflexe | **choisi dans un catalogue fermé** | Wally choisit, le code exécute |
 | Rareté | grade Discord/Twitch (§5) | calcul |
@@ -167,7 +162,7 @@ Fin du tour 5 : tu remportes une table si ton score y est **strictement supérie
 **Deux tables sur trois = victoire.** Égalité 1-1-1 → total des Voix ; encore égal → **Wally
 tranche**, et là seulement c'est légitime.
 
-### 3.4 Les trois greffes issues de la commu
+### 3.4 Les deux greffes issues de la commu
 
 Ce sont elles qui rendent le jeu incopiable : aucun autre TCG n'a de cartes qui sont des gens
 vivants, présents, dont le moteur connaît les liens réels.
@@ -176,7 +171,6 @@ vivants, présents, dont le moteur connaît les liens réels.
 |---|---|---|
 | **Réveil** | Une carte posée dont la personne a parlé (Twitch ou Discord) dans les **10 dernières minutes** est *Réveillée* : **+2 Voix** pour la partie. Wally l'annonce à voix haute. | **3 réveils maximum par joueur et par partie**, sinon la partie devient un appel à venir spammer. Évalué **au moment de la pose**, jamais rétroactivement. La fenêtre suit l'activité de la COMMU, jamais la surface de jeu : **10 min** quand un stream tourne ou qu'un salon est animé, **24 h** sinon, pour que la mécanique ne meure pas la nuit. |
 | **Duo** | Deux cartes **adjacentes sur la même table** dont les personnes ont un lien réel mesuré : l'Aura que chacune donne à l'autre est **doublée**. Aucun autre cumul — un Duo ne se propage pas à une troisième carte. Wally **raconte** le lien. | Table de liens **pré-calculée par saison**. Aucune requête en pleine partie. |
-| **Faction** | Deck mono-faction (héros exclu du calcul) : **+1 énergie au tour 1**. | Volontairement faible : la faction est un parfum, pas un mur. |
 
 ### 3.5 La roulette
 
@@ -346,7 +340,7 @@ représente **ce qu'il sait d'eux**, jamais leur visage.
 | Prix d'une lootbox en points de chaîne | l'owner (dépend de son économie de points) |
 | Le catalogue des 40-60 Réflexes | à écrire, avec leurs prix |
 | Calibration des formules et des taux | mesure sur données réelles, puis parties de test |
-| Capacité passive des héros | à concevoir (par palier ? par faction ?) |
+| Capacité passive des héros | à concevoir (par palier ?) |
 | Ajout des scopes Twitch + réautorisation | l'owner, depuis le dashboard |
 | Liste initiale des « Fidèles » | l'owner |
 
