@@ -231,3 +231,69 @@ def test_en_json_sert_la_forme():
     posée dans la donnée et servie. Deviner d'après `/assets/apex/` marcherait
     aujourd'hui et casserait au premier dessin rangé ailleurs."""
     assert en_json(CARTES_ACTION["lifeline"])["forme"] == "image"
+
+
+# ── Les stats, et le texte qui les appelle ────────────────────────────────
+#
+# Un nombre écrit DANS la prose d'une règle est un nombre que le moteur de
+# règles ne verra jamais : le jour où il existera, il appliquera sa propre
+# valeur pendant que la carte en annonce une autre, et rien ne le signalera.
+# D'où `stats:` — un seul endroit où la valeur vit, le texte l'appelant par
+# `${nom}`. Ces tests tiennent les trois façons dont ce contrat peut se briser.
+
+AVEC_STAT = VALIDE + """      regle: Fait ${degats} de dégâts.
+      stats:
+        degats: 3
+"""
+
+
+def test_une_stat_est_rendue_dans_la_regle():
+    chemin_regle = mod.rendre_regle(CARTES_ACTION["pizzas"])
+    assert "${" not in chemin_regle
+    assert "4" in chemin_regle
+
+
+def test_en_json_sert_la_regle_RENDUE_et_jamais_le_gabarit():
+    """Le front ne connaît pas la syntaxe `${…}`. S'il la recevait, elle
+    partirait EN CLAIR sur la carte — et un second rendu en JS finirait par ne
+    pas dire la même chose que celui du serveur."""
+    for carte in CARTES_ACTION.values():
+        assert "${" not in en_json(carte)["regle"], carte.cle
+
+
+def test_une_stat_non_calibree_sort_en_point_d_interrogation(tmp_path):
+    """`None` n'est PAS `0` — c'est le piège déjà payé sur `cout`. Un zéro se
+    lit comme une valeur que quelqu'un a décidée."""
+    chemin = _ecrire(tmp_path, AVEC_STAT.replace("degats: 3", "degats: null"))
+    carte = mod._lire(chemin)["essai"]
+    assert mod.rendre_regle(carte) == "Fait ? de dégâts."
+
+
+def test_une_stat_hors_vocabulaire_est_refusee(tmp_path):
+    chemin = _ecrire(tmp_path, AVEC_STAT.replace("${degats}", "${dommages}")
+                                        .replace("degats: 3", "dommages: 3"))
+    with pytest.raises(ValueError, match="vocabulaire"):
+        mod._lire(chemin)
+
+
+def test_une_regle_qui_appelle_une_stat_absente_est_refusee(tmp_path):
+    """Sans ce refus, `${degats}` part en clair sur la carte, en prod."""
+    chemin = _ecrire(tmp_path, VALIDE + "      regle: Fait ${degats} dégâts.\n")
+    with pytest.raises(ValueError, match="qu'aucune stat ne déclare"):
+        mod._lire(chemin)
+
+
+def test_une_stat_que_le_texte_n_appelle_pas_est_refusee(tmp_path):
+    """Un bouton branché sur rien : on règle la valeur, rien ne bouge, rien ne
+    le dit. Même défaut que les champs de config sans lecteur."""
+    chemin = _ecrire(tmp_path, AVEC_STAT + "        tours: 2\n")
+    with pytest.raises(ValueError, match="jamais appelée"):
+        mod._lire(chemin)
+
+
+def test_aucun_nom_du_vocabulaire_n_est_sans_employeur():
+    """Cliquet : `STATS` ne se garnit qu'au moment où une carte emploie le nom.
+    Un nom sans employeur est une case que personne ne remplira jamais, et qui
+    invite la carte suivante à inventer un synonyme à côté."""
+    employes = {nom for c in CARTES_ACTION.values() for nom in c.stats}
+    assert not set(mod.STATS) - employes

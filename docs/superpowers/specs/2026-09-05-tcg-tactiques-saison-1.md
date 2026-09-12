@@ -1,5 +1,11 @@
 # TCG du Purgatoire — les tactiques de la saison 1
 
+> ⚖️ **2026-09-12 — ce fichier ne fait PAS foi.** L'owner : *« arrête de te fier aux règles, elles
+> changeront une fois toutes les cartes terminées. Pour le moment, seules les cartes comptent, pas
+> de règles. »* La source des cartes est la base Notion **🃏 Cartes du Purgatoire**.
+> Le **Tirage du tour** (dé 1-6 partagé) est supprimé : le hasard du jeu est un **pourcentage pur**,
+> résolu au moment de l'effet.
+
 **Date** : 2026-09-04 · **Statut** : proposition, coûts à calibrer en parties de test
 **Règles** : `2026-09-05-tcg-regles-heros-tactiques.md` · **Barème** : `2026-09-04-tcg-catalogue-reflexes.md` §1
 
@@ -27,27 +33,6 @@ endroits — le renommage complet reste à faire, il touche deux specs et le nom
 
 Un passif occupe une place limitée : c'est ce qui l'empêche d'être toujours meilleur qu'une
 tactique. Deux passifs maximum, on choisit.
-
-## 2. ⚰️ Le Tirage du tour — SUPPRIMÉ le 2026-09-10
-
-> ⚖️ L'owner : *« Il y aurait du hasard en stats — esquive, boost d'attaque, chance de heal, etc.
-> Pas de dé. »*
-
-Il y avait un dé 1-6 lancé et **affiché aux deux joueurs** au début de chaque tour. Il n'existe
-plus : le hasard est désormais un **pourcentage porté par la carte**, résolu au moment de l'effet
-(cf. `2026-09-05-tcg-regles-heros-tactiques.md` §2bis).
-
-🚨 **Six cartes de cette liste lisent encore « si le Tirage ≥ N » et sont donc À REFAIRE** :
-*La manette* · *Le clavier-souris* · *Codage à la Requin* · *Michel-Velux* (dont le contre entier
-reposait sur le Tirage) · *Azraël met ta perk !* (état Oublie) · et l'état **Oublie** lui-même.
-Elles sont laissées telles quelles à dessein : l'owner refait les cartes, cette liste sert à
-garder les **refs**. Les remplacer à moitié maintenant ferait deux vocabulaires en circulation —
-le défaut retiré le 2026-09-09.
-
-🎁 **La tarification se simplifie, et à la baisse.** Ces effets se tarifaient **au meilleur cas**,
-parce qu'un hasard affiché avant la pose n'est pas une espérance mais une **option** — on
-n'engageait que sur le bon tirage. Un hasard **caché** ne se choisit pas : « +6 une fois sur
-trois » revaut **+2**.
 
 ## 3. Le prix
 
@@ -215,7 +200,6 @@ sinon la quatrième carte réinventera son propre « il n'attaque pas », avec s
 
 | État | Durée | Effet |
 |---|---|---|
-| **Oublie** | 2 tours | le héros **n'attaque pas si le Tirage du tour est ≤ 3** |
 | **Stun** | le tour où il est posé | le héros **n'attaque pas**, sans condition |
 | **Régénération** | tant que le passif est en jeu | **+2 PV** au début de chacun de tes tours |
 | 🆕 **Tunnel** | 2 tours | le héros **ne peut attaquer QUE** celui qui lui a posé l'état |
@@ -286,31 +270,6 @@ Rhum — on boit avant d'en tirer quoi que ce soit — mais ça veut dire qu'une
 un **pari sur la durée de la partie**. Si les parties de test sont courtes, aucune des deux ne se
 complète jamais et les deux sont mortes. C'est leur premier point de calibration, avant leur prix.
 
-🚨 **`Oublie` lit le Tirage, et ce n'est pas un détail d'équilibrage.** L'owner l'avait demandé
-comme *« un pourcentage de chance d'oublier d'attaquer »* — c'est-à-dire un **jet caché**, résolu
-au moment de l'attaque. L'arbitrage du 2026-09-04 l'interdit : le hasard est *tiré et affiché
-avant la pose*. Un pourcentage caché est incommentable en direct (Wally ne peut plus raconter
-pourquoi une table bascule) et **indiscernable d'un bug de calcul de dégâts**. Accroché au
-Tirage, l'effet est le même — une fois sur deux — mais les deux joueurs le voient venir.
-
-⚠️ **`Stun` est déterministe et n'a donc pas besoin du Tirage.** Ne pas lui en ajouter un « pour
-faire pareil » : un effet certain qui coûte son prix est plus simple à calibrer qu'un effet
-conditionnel, et le jeu en a besoin d'au moins un.
-
-### 🚨 Le Tirage n'est défini dans AUCUNE règle
-
-`2026-09-05-tcg-regles-heros-tactiques.md` ne contient **pas une seule fois** le mot « Tirage ».
-Il n'existe que dans ce document (§2) et dans le catalogue des Réflexes — alors que **15 cartes
-en dépendent** et que l'arbitrage du 2026-09-09 fait dériver **tout le critique de l'Aura** de
-son seuil.
-
-Pire : le §7 des règles retire la roulette de début de partie en écrivant *« la tension vient
-maintenant de l'énergie, pas d'un tirage »*. La roulette et le Tirage du tour sont deux choses
-distinctes, mais cette phrase se lit comme si le dé était mort lui aussi.
-
-→ **À remonter dans les règles**, avec les états ci-dessus. Une mécanique centrale définie
-uniquement dans un catalogue de cartes est une mécanique qu'on retirera par erreur.
-
 ### Soin et protection
 
 | Carte | Type | Catégorie | Coût | Effet | Origine |
@@ -356,9 +315,9 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 > `Le Rhum` : ✅ **à REGROUPER** (§ ci-dessus) — le « si 3 réunis » que j'avais déclaré injouable
 > est exactement ce que la règle générale rend jouable. Je l'avais écrit sans lui ; il est rétabli.
-> Prix : +50 % d'esquive ≈ diviser par deux les dégâts reçus, tarifé à l'**espérance** depuis la
-> suppression du Tirage (§2) → 5 points, **× 0,5** parce qu'il n'arrive qu'au regroupement, moins
-> le malus subi de −1 PV/5 tours sur chaque porteur → 2 → `⌈2/3⌉ = 1` d'énergie. **Il passe de 2 à
+> Prix : +50 % d'esquive ≈ diviser par deux les dégâts reçus, tarifé à l'**espérance** → 5 points,
+> **× 0,5** parce qu'il n'arrive qu'au regroupement, moins le malus subi de −1 PV/5 tours sur
+> chaque porteur → 2 → `⌈2/3⌉ = 1` d'énergie. **Il passe de 2 à
 > 1** : le payoff est le même, mais il se mérite.
 > 🎁 **C'est la carte la plus fidèle du paquet, et c'est la mécanique qui l'a rendue telle.** Un
 > seul Rhum ne fait que du mal à son porteur ; il en faut trois pour que ça serve à quelque chose,
@@ -380,14 +339,14 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 | Carte | Type | Catégorie | Coût | Effet | Origine |
 |---|---|---|---|---|---|
-| **La manette** | PASSIF | attaque | — | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | l'objet, plus personne derrière |
-| **Le clavier-souris** | PASSIF | soin | — | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | l'objet, plus personne derrière |
+| **La manette** | PASSIF | attaque | — | à écrire (hasard pur) | l'objet, plus personne derrière |
+| **Le clavier-souris** | PASSIF | soin | — | à écrire (hasard pur) | l'objet, plus personne derrière |
 | **La Flatline d'Azraël** | PASSIF | attaque | — | **+4 d'Attaque** à un héros allié, pour toute la partie | *« c'est LE flatline »* · *« tu croises plus de hemlock que de flatline, ce jeu est si cruel »* |
 | **Le tunnel de Rina** | ACTION | contrôle | — | pose l'état **Tunnel** sur un héros adverse — il ne peut plus attaquer que le tien, 2 tours | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
-| **Codage à la Requin** | ACTION | attaque | — | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
+| **Codage à la Requin** | ACTION | attaque | — | à écrire (hasard pur) | ça compile ou ça casse |
 | **Séance de révision avec Meliodas** | ACTION | contrôle | — | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
 | **Aim assist = aimbot** | ACTION | attaque | — | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
-| **Azraël met ta perk !** | ACTION | contrôle | — | pose l'état **Oublie** sur un héros adverse | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
+| **Azraël met ta perk !** | ACTION | contrôle | — | à écrire (hasard pur) | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
 | **POV le chevreuil** | ACTION | contrôle | — | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
 | **Mozambique here!** | ACTION | attaque | — | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
 | **Raciste** | ACTION | contrôle | — | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
@@ -432,13 +391,11 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 > −1) → 3 → `⌈3/3⌉ = 1` d'énergie. Même forme que *Un piercing* : on se fait mal pour aller plus
 > vite, et c'est exactement ce que fait le personnage.
 
-> `Le cluster` : 4 dégâts répartis **× 1,25** → 5 → `⌈5/3⌉ = 2`. Il se tarifait au meilleur cas
-> avant la suppression du Tirage ; **il se tarife maintenant à son espérance** (§2), donc moins
-> cher — c'est le premier effet du paquet à profiter du nouvel arbitrage.
+> `Le cluster` : 4 dégâts répartis **× 1,25** → 5 → `⌈5/3⌉ = 2`.
 > 🚨 **Le « jamais plus de 2 sur le même » n'est pas décoratif.** Sans borne, la répartition
 > aléatoire peut mettre les 4 sur une seule cible et la carte devient parfois deux fois meilleure
 > qu'un *camion de Raiky* pour le même prix. C'est le piège « aucun multiplicateur sans plafond »,
-> payé sur I01, B02 et *Aim assist*.
+> payé sur B02 et *Aim assist*.
 
 > `Le baril de Caustique` : ~3 dégâts par camp sur 3 tours, mais **symétriques** — pas de × 1,25,
 > il frappe aussi les siens → 4 → `⌈4/3⌉ = 2` d'énergie.
@@ -458,7 +415,7 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 | **Requin qui tente d'expliquer** | ACTION | contrôle | — | les tactiques de l'adversaire coûtent **+1 d'énergie** ce tour | le meme des formules confuses — 17 pers. |
 | **Raiky dans l'anneau** | ACTION | contrôle | — | un héros de ta **réserve** entre en ligne immédiatement, mais perd **2 PV** | le meme *Let me in* — hors zone, il veut rentrer |
 | **De l'air** | ACTION | ressource | — | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
-| **Michel-Velux** | *(sans visuel)* | — | — | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
+| **Michel-Velux** | *(sans visuel)* | — | — | à écrire (hasard pur) | le running gag du TTS |
 | 🆕 **Rendez-vous au véto** | ACTION | contrôle | — | pose **Scroll** sur un héros adverse — il passe son tour — **et −2 d'Aura** | les vrais rendez-vous chez le véto d'Azraël pour l'œil de Spiro, qui annulent des streams — 4 pers. |
 | 🆕 **Le drone de Crypto** | ACTION | ressource | — | **regarde la main de l'adversaire** jusqu'à la fin du tour | Crypto — **25 pers., 121 occ.**, la ref la mieux partagée du lot |
 | 🆕 **Le care package** | ACTION | ressource | — | pioche **3 cartes**, garde-en **1**, remets les autres au-dessus de ta pioche | le ravitaillement d'Apex |
@@ -624,12 +581,10 @@ racisme »*. Une dizaine de personnes distinctes l'emploient dans ce sens, et ja
 La ref se traduit toute seule : **tu rejoues la même chose, tu le paies** — d'où le malus qui
 frappe les héros adverses d'une même faction. Nom arrêté par l'owner le 2026-09-10.
 
-### Trois cartes à surveiller en priorité
+### Deux cartes à surveiller en priorité
 
 - **La Chute** (5) — la plus chère du jeu et elle doit le rester. Elle est ce qui autorise des
   héros vraiment forts sans casser le jeu : plus un héros est fort, plus le poser devient risqué.
-- **Michel-Velux** — donner 4 d'énergie pour 1 est énorme ; le contre (l'adversaire choisit ton
-  Tirage) n'a de valeur que si les cartes à Tirage sont jouées. Il en reste trois.
 - **Quoi → FEUR** — annuler une tactique pour 2 d'énergie est la meilleure affaire de la liste
   quand l'adversaire joue cher, et une carte morte quand il ne joue rien. C'est la première à
   faire tourner en calibration : une annulation bon marché aplatit tout un paquet d'un coup.
@@ -707,8 +662,8 @@ seule qui reste défendable si un joueur conteste.
 
 - **Le reste du deck de Wally** : « Viens en vocal » est sa première carte (§6). Les autres
   doivent être conçues **contre un groupe**, pas contre un joueur.
-- **Refaire les 6 cartes qui lisent encore le Tirage** (§2), une fois les pourcentages en stats
-  posés. L'owner s'en charge ; les listes gardent les refs en attendant.
+- **Refaire les 5 cartes dont l'effet est marqué « à écrire (hasard pur) »**, une fois les
+  pourcentages en stats posés. L'owner s'en charge ; les listes gardent les refs en attendant.
 - **Rééquilibrer *Aura et coopération*.** Elle pèse **5 cartes sur 45** (11 %) et reste le seul
   trou après le pack du 2026-09-10 (§5). **La source impose sa forme au résultat** ; chercher
   toutes les refs dans les memes d'Apex déséquilibre le paquet sans qu'aucune décision ne l'ait

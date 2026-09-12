@@ -52,6 +52,11 @@
   type: action
   categorie: attaque
   visuel: /assets/icones/flatbed-covered.svg
+  regle: >-
+    Reste sur le plateau, FACE VISIBLE, et se relance à chaque tour. Elle
+    blesse un héros adverse, puis un des tiens en ligne, tiré au hasard,
+    encaisse le contrecoup. Le risque et le contrecoup montent à chaque
+    utilisation et ne redescendent JAMAIS de la partie.
 
 - cle: cluster
   nom: Le cluster
@@ -59,14 +64,23 @@
   type: action
   categorie: attaque
   visuel: /assets/icones/laser-sparks.svg
+  regle: >-
+    Tu ne choisis AUCUNE cible. Elle frappe un héros adverse tiré au hasard,
+    puis rebondit sur un autre, tiré au hasard lui aussi, et ainsi de suite
+    en faisant moins de dégâts à chaque rebond. Elle s'arrête au premier
+    rebond raté.
 
 - cle: mozambique
   nom: Mozambique here!
   court: MOZAMBIQUE
-  type: action
+  type: passif
   categorie: attaque
   visuel: /assets/cartes/carte-mozambique.png
   forme: image
+  regle: >-
+    Reste sur le plateau, FACE VISIBLE, et peut donc être détruite. Tant
+    qu'elle y est, TOUT LE MONDE est en RAGE — tes héros comme ceux d'en
+    face : chacun a une chance d'infliger un coup critique.
 
 - cle: baril_caustique
   nom: Le baril de Caustique
@@ -77,8 +91,11 @@
   forme: image
   face_cachee: true
   regle: >-
-    1 dégât à TOUS les héros — les tiens compris — au début de chacun des
-    3 prochains tours.
+    ${degats} dégât à TOUS les héros — les tiens compris — au début de chacun
+    des ${tours} prochains tours.
+  stats:
+    degats: 1
+    tours: 3
 
 - cle: aim_assist
   nom: Aim assist = aimbot
@@ -94,7 +111,11 @@
   categorie: attaque
   visuel: /assets/cartes/carte-stim-octane.png
   forme: image
-  regle: Un héros allié perd 2 PV et gagne +4 d'Attaque ce tour.
+  regle: >-
+    Un héros allié perd ${pv} PV et gagne +${attaque} d'Attaque ce tour.
+  stats:
+    pv: 2
+    attaque: 4
 
 - cle: flatline_azrael
   nom: La Flatline d'Azraël
@@ -141,8 +162,10 @@
   visuel: /assets/cartes/carte-lifeline.svg
   forme: image
   regle: >-
-    RÉGÉNÉRATION — +2 PV à un héros allié au début de chacun de tes tours,
-    tant que le passif est en jeu.
+    RÉGÉNÉRATION — +${soin} PV à un héros allié au début de chacun de tes
+    tours, tant que le passif est en jeu.
+  stats:
+    soin: 2
 
 - cle: totem
   nom: Le totem
@@ -185,8 +208,13 @@
   visuel: /assets/icones/beer-bottle.svg
   groupe: 3
   regle: >-
-    PASSIF À REGROUPER — chaque Rhum en jeu fait perdre 1 PV tous les 5 tours
-    à son porteur. Les TROIS regroupées donnent 50 % d'esquive.
+    PASSIF À REGROUPER — chaque Rhum en jeu fait perdre ${pv} PV tous les
+    ${tours} tours à son porteur. Les TROIS regroupées donnent ${chance}
+    d'esquive.
+  stats:
+    pv: 1
+    tours: 5
+    chance: 50 %
 
 - cle: clavier_souris
   nom: Le clavier-souris
@@ -211,7 +239,9 @@
   categorie: soin
   visuel: /assets/icones/full-pizza.svg
   semis: 10
-  regle: Rend 4 PV à tous tes héros.
+  regle: Rend ${soin} PV à tous tes héros.
+  stats:
+    soin: 4
 
 # ── Contrôle et entrave ───────────────────────────────────────────────────
 - cle: chevreuil
@@ -233,7 +263,9 @@
   forme: image
   regle: >-
     Pose l'état TUNNEL sur un héros adverse — il ne peut plus attaquer que le
-    tien, 2 tours.
+    tien, ${tours} tours.
+  stats:
+    tours: 2
 
 - cle: veto
   nom: Rendez-vous au véto
@@ -249,7 +281,9 @@
   categorie: controle
   visuel: /assets/cartes/carte-scan-seer.svg
   forme: image
-  regle: Désactive TOUS les passifs adverses pendant 2 tours.
+  regle: Désactive TOUS les passifs adverses pendant ${tours} tours.
+  stats:
+    tours: 2
 
 - cle: feur
   nom: Quoi → FEUR
@@ -388,7 +422,11 @@
   type: action
   categorie: aura
   visuel: /assets/icones/heart-earrings.svg
-  regle: +3 d'Aura à un héros allié pour la partie, ET il perd 1 PV.
+  regle: >-
+    +${aura} d'Aura à un héros allié pour la partie, ET il perd ${pv} PV.
+  stats:
+    aura: 3
+    pv: 1
 
 # ── Ressource ─────────────────────────────────────────────────────────────
 - cle: care_package
@@ -399,7 +437,11 @@
   visuel: /assets/cartes/carte-care-package.svg
   forme: image
   regle: >-
-    Pioche 3 cartes, garde-en 1, remets les autres AU-DESSUS de ta pioche.
+    Pioche ${cartes} cartes, garde-en ${gardees}, remets les autres AU-DESSUS
+    de ta pioche.
+  stats:
+    cartes: 3
+    gardees: 1
 
 - cle: de_l_air
   nom: De l'air

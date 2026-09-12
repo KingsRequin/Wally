@@ -1,5 +1,11 @@
 # TCG du Purgatoire — les règles
 
+> ⚖️ **2026-09-12 — ce fichier ne fait PAS foi.** L'owner : *« arrête de te fier aux règles, elles
+> changeront une fois toutes les cartes terminées. Pour le moment, seules les cartes comptent, pas
+> de règles. »* La source des cartes est la base Notion **🃏 Cartes du Purgatoire**.
+> Le **Tirage du tour** (dé 1-6 partagé) est supprimé : le hasard du jeu est un **pourcentage pur**,
+> résolu au moment de l'effet.
+
 **Date** : 2026-09-04 · **Conception : l'owner** · **Statut** : règles arrêtées, valeurs à calibrer
 **Remplace** : la spec mère `2026-08-29` §2 et §3 (zones, Voix/Piquant, roulette, Anonyme)
 
@@ -86,39 +92,15 @@ annoncée en début de tour.
 
 L'**Aura** est la première de ces chances : elle donne le **taux de critique** du héros.
 
-### 🚨 Ce que ça remplace, et ce qu'il faut refaire
-
-Ceci **annule l'arbitrage du 2026-09-04** (« le hasard est tiré et AFFICHÉ avant la pose, un dé
-1-6 partagé par tour »). Le **Tirage du tour n'existe plus**. Conséquences, à traiter avant toute
-calibration :
-
-| Ce qui en dépendait | État |
-|---|---|
-| **15 cartes** lisant « si le Tirage ≥ N » (6 tactiques, 9 entrées du catalogue) | à refaire |
-| `I01 Critique` et `I02 Esquive` du catalogue | deviennent des **stats**, plus des Réflexes |
-| **Michel-Velux** (« l'adversaire choisit ton Tirage ») | son contre disparaît — carte à repenser |
-| L'état **Oublie** (Tirage ≤ 3) | devient un pourcentage porté par l'état |
-| L'Aura qui **abaisse un seuil de Tirage** | devient directement un **taux** |
-| La zone `TIRAGE` de la maquette du plateau | sans objet |
-
-🎁 **Et ça SIMPLIFIE la tarification, ce qui n'est pas évident.** Le catalogue tarifait les effets
-à hasard **au meilleur cas** — parce qu'un hasard affiché avant la pose n'est pas une espérance,
-c'est une **option** : le joueur n'engageait que sur le bon tirage. Un hasard **caché** ne se
-choisit pas. Ces effets se retarifent donc à leur **espérance** : « +6 une fois sur trois » vaut
-de nouveau **+2**, et non +6. Tout le §2 du catalogue est à réécrire dans ce sens — à la baisse.
-
 ### ⚠️ Ce qu'on perd, et qu'il faut assumer
 
-- **Wally ne peut plus commenter avant le coup.** *« Avec ce tirage, à ta place j'aurais pas
-  engagé »* n'a plus de sens si personne ne connaît le tirage. Ses commentaires se replient sur
-  l'**après** (une gaffe se lit dans la chute d'évaluation du moteur, ce qui marche toujours).
 - **Un résultat improbable devient indiscernable d'un bug.** C'était l'argument central du
   2026-09-04. Le contre-poison est le **journal d'événements** : chaque jet doit y être écrit
   avec son taux et son résultat, sinon aucune contestation ne pourra jamais être tranchée.
   Ce n'est plus une commodité de calibration, c'est ce qui rend le jeu défendable.
-- **La triche annoncée de Wally** (`TRICHE` : ses PV ne suivent aucune règle) reposait sur le
-  contraste avec un hasard visible. Elle reste jouable, mais il faut qu'elle soit **écrite sur sa
-  carte** — c'est déjà le cas — sinon elle se confond avec les jets cachés.
+- **La triche annoncée de Wally** (`TRICHE` : ses PV ne suivent aucune règle) reste jouable,
+  mais il faut qu'elle soit **écrite sur sa carte** — c'est déjà le cas — sinon elle se confond
+  avec les jets cachés.
 
 ---
 
@@ -220,12 +202,12 @@ totalisent le plus de PV restants.
 
 ## 6. Les tactiques — le contenu qui vit
 
-Le catalogue des 53 Réflexes (`2026-09-04-tcg-catalogue-reflexes.md`) se scinde en deux sans rien
+Le catalogue des 49 Réflexes (`2026-09-04-tcg-catalogue-reflexes.md`) se scinde en deux sans rien
 perdre :
 
 | Famille du catalogue | Devient |
 |---|---|
-| A (Attaque conditionnelle) · C (dégâts) · I (hasard visible) | **Ultimes** de héros |
+| A (Attaque conditionnelle) · C (dégâts) | **Ultimes** de héros |
 | B (Aura) · D (placement) · E (énergie) · G (affinités) · H (réveil) · J (soin, bouclier) | **Tactiques** jouables |
 | F (Chute, Anonyme, Renoncement) | **Tactiques rares** — la Chute devient une carte, plus une règle générale |
 
@@ -323,8 +305,8 @@ fenêtre pour la désamorcer ; ratée, elle se révèle en explosant toute seule
 toujours par partir, on a juste eu une chance de couper le fil.
 
 ⚠️ `F03 Masque` du catalogue décrit encore l'ancienne version (« posable face cachée pour 0
-énergie, vaut 4 de Voix en Anonyme »). Il est à réécrire avec le reste des entrées à Tirage —
-l'owner s'en charge, la ligne garde la ref en attendant.
+énergie, vaut 4 de Voix en Anonyme »). Il est à réécrire avec le reste des entrées reprises à
+zéro — l'owner s'en charge, la ligne garde la ref en attendant.
 
 ---
 

@@ -19,7 +19,8 @@ ailleurs. Une règle dupliquée est une porte de triche ouverte.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import MISSING, dataclass, fields
+import re
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -101,6 +102,33 @@ ICONE_CATEGORIE = {
     "ressource": "/assets/icones/test-tube-rack.svg",
 }
 
+# 🚨 Le vocabulaire FERMÉ des stats d'une carte. Une valeur chiffrée ne
+# s'écrit jamais dans la prose de `regle` : elle se déclare ici, sous un de ces
+# noms, et le texte l'appelle par `${nom}`. Deux raisons, et la seconde est la
+# vraie :
+#
+# · Équilibrer un jeu, c'est bouger des nombres. Les avoir tous au même endroit
+#   et jamais noyés dans une phrase est ce qui rend l'exercice faisable.
+# · Le jour où le moteur de règles existera, il lira **la même valeur que
+#   l'écran**. Un nombre recopié dans une phrase diverge de celui que le moteur
+#   applique, et rien ne le signale — la carte annonce 3 et le moteur en met 4.
+#
+# Le vocabulaire est FERMÉ pour la même raison que celui des prédicats de la
+# mémoire : laissé libre, il donnerait `degats`, `degat`, `dmg` et `dommages`
+# sur quatre cartes, et le moteur devrait deviner. **On n'y ajoute un nom que
+# le jour où une carte l'emploie** — un nom sans employeur est un bouton
+# branché sur rien.
+STATS = ("attaque", "aura", "cartes", "chance", "degats", "gardees", "pv",
+         "soin", "tours")
+
+# Ce qu'affiche une stat déclarée mais pas encore calibrée (`null` en YAML).
+# 🚨 `None` n'est PAS `0`, et c'est exactement le piège déjà payé sur `cout` :
+# un zéro se lit comme une valeur décidée par quelqu'un. Un `?` se lit comme ce
+# qu'il est — personne n'a encore tranché.
+STAT_NON_CALIBREE = "?"
+
+_APPEL_STAT = re.compile(r"\$\{([a-z_]+)\}")
+
 LIBELLE_CATEGORIE = {
     "attaque": "ATTAQUE",
     "soin": "SOIN",
@@ -130,6 +158,9 @@ class CarteAction:
     categorie: str
     cout: int = 0
     regle: str = INDEFINI
+    # Les valeurs chiffrées de la carte, appelées par `${nom}` depuis `regle`.
+    # Vocabulaire fermé (`STATS`) ; `None` = déclarée, pas encore calibrée.
+    stats: dict[str, int | str | None] = field(default_factory=dict)
     # Le pochoir. Absent quand la carte porte un `texte` à la place — ou, en
     # dernier recours, quand rien n'est décidé : elle retombe alors sur l'icône
     # de sa catégorie, ce qui reste honnête (aucune carte ne rend un trou).
@@ -150,7 +181,11 @@ class CarteAction:
 
 
 _CHAMPS = {f.name for f in fields(CarteAction)}
-_OBLIGATOIRES = {f.name for f in fields(CarteAction) if f.default is MISSING}
+# 🚨 `f.default is MISSING` ne suffit PAS : un champ à `default_factory` a lui
+# aussi `default is MISSING`, et `stats` serait compté comme obligatoire — les
+# 46 cartes refusées au boot, pour un champ qu'aucune ne porte.
+_OBLIGATOIRES = {f.name for f in fields(CarteAction)
+                 if f.default is MISSING and f.default_factory is MISSING}
 
 
 def _exiger(condition: bool, cle: str, probleme: str) -> None:
@@ -181,6 +216,25 @@ def _lire(chemin: Path) -> dict[str, CarteAction]:
                 f"categorie={carte.categorie!r} hors de {sorted(CATEGORIES)}")
         _exiger(carte.forme in FORMES, cle,
                 f"forme={carte.forme!r} hors de {sorted(FORMES)}")
+        inconnues = sorted(set(carte.stats) - set(STATS))
+        _exiger(not inconnues, cle,
+                f"stat hors du vocabulaire {inconnues} — les noms connus sont "
+                f"{sorted(STATS)}, on n'en ajoute un que quand une carte "
+                f"l'emploie")
+        for nom, valeur in carte.stats.items():
+            _exiger(valeur is None or isinstance(valeur, (int, str)), cle,
+                    f"stat {nom}={valeur!r} : un entier, une chaîne telle "
+                    f"qu'elle s'affiche, ou null si pas encore calibrée")
+        appels = set(_APPEL_STAT.findall(carte.regle))
+        # Sans ce refus, `${degats}` partirait EN CLAIR sur la carte, en prod.
+        _exiger(not (appels - set(carte.stats)), cle,
+                f"la règle appelle {sorted(appels - set(carte.stats))} "
+                f"qu'aucune stat ne déclare")
+        # Et l'inverse : une stat que le texte n'appelle pas est un bouton
+        # branché sur rien — on la règle, rien ne bouge, rien ne le dit.
+        _exiger(not (set(carte.stats) - appels), cle,
+                f"stat déclarée mais jamais appelée par la règle : "
+                f"{sorted(set(carte.stats) - appels)}")
         _exiger(carte.cout >= 0, cle, f"cout={carte.cout!r} négatif")
         _exiger(carte.groupe >= 0, cle, f"groupe={carte.groupe!r} négatif")
         _exiger(carte.semis >= 0, cle, f"semis={carte.semis!r} négatif")
@@ -221,6 +275,24 @@ def par_categorie() -> list[CarteAction]:
     return sorted(CARTES_ACTION.values(), key=lambda c: rang[c.categorie])
 
 
+def rendre_regle(carte: CarteAction) -> str:
+    """La règle telle qu'elle se LIT, ses `${stats}` remplacées par leur valeur.
+
+    Point de substitution UNIQUE : le front reçoit du texte déjà rendu et ne
+    connaît pas la syntaxe `${…}`. Un second rendu côté JS finirait par ne pas
+    dire la même chose que celui-ci — et c'est justement la divergence que les
+    stats servent à fermer.
+
+    Une stat à `None` sort en `?` et non en `0` : elle est déclarée, pas
+    calibrée, et les deux ne se lisent pas pareil.
+    """
+    def valeur(m: re.Match[str]) -> str:
+        brute = carte.stats[m.group(1)]
+        return STAT_NON_CALIBREE if brute is None else str(brute)
+
+    return _APPEL_STAT.sub(valeur, carte.regle)
+
+
 def en_json(carte: CarteAction) -> dict:
     """Une carte telle que le front la lit.
 
@@ -246,7 +318,8 @@ def en_json(carte: CarteAction) -> dict:
         "categorieCouleur": COULEUR_CATEGORIE[carte.categorie],
         "categorieIcone": url(ICONE_CATEGORIE[carte.categorie]),
         "cout": carte.cout,
-        "regle": carte.regle,
+        # RENDUE, pas brute : le front ne connaît pas la syntaxe `${…}`.
+        "regle": rendre_regle(carte),
         # `None` et non `""` : le front teste la présence, et une chaîne vide
         # est fausse en JavaScript sans pour autant dire « absent ».
         "visuel": url(carte.visuel) if carte.visuel else None,
