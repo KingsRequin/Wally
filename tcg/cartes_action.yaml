@@ -242,8 +242,7 @@
   court: CLAVIER-SOURIS
   type: passif
   categorie: soin
-  visuel: /assets/cartes/carte-clavier-souris.png
-  forme: image
+  visuel: /assets/icones/keyboard.svg
   regle: >-
     Tant qu'elle est en jeu, tes héros ont ${chance} de chance d'esquiver une
     attaque.
