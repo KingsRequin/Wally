@@ -100,9 +100,12 @@
 - cle: aim_assist
   nom: Aim assist = aimbot
   court: AIM ASSIST
-  type: action
+  type: passif
   categorie: attaque
   visuel: /assets/icones/human-target.svg
+  regle: >-
+    Tant qu'elle est en jeu, les héros adverses ne peuvent plus esquiver :
+    leurs chances d'esquive tombent à zéro.
 
 - cle: stim_octane
   nom: Le stim d'Octane
@@ -118,12 +121,13 @@
     attaque: 4
 
 - cle: flatline_azrael
-  nom: La Flatline d'Azraël
+  nom: vous avez vu mon skin de flatline ?
   court: FLATLINE
   type: passif
   categorie: attaque
   visuel: /assets/cartes/carte-flatline.png
   forme: image
+  regle: Ajoute de l'Aura à un héros au hasard.
 
 - cle: manette
   nom: La manette
@@ -131,6 +135,9 @@
   type: passif
   categorie: attaque
   visuel: /assets/icones/console-controller.svg
+  regle: >-
+    Tant qu'elle est en jeu, TES héros ont une chance d'infliger un coup
+    critique.
 
 - cle: tenma
   nom: Tenma
@@ -138,6 +145,9 @@
   type: passif
   categorie: attaque
   visuel: /assets/icones/speedometer.svg
+  regle: >-
+    Tant qu'il ne te reste qu'UN SEUL héros en ligne, sa chance d'esquive est
+    fortement accrue.
 
 - cle: codage_requin
   nom: Codage à la Requin
@@ -145,6 +155,12 @@
   type: action
   categorie: attaque
   visuel: /assets/icones/pc.svg
+  regle: >-
+    Reste sur le plateau et se relance à chaque tour, elle ne se défausse
+    jamais. Elle a ${chance} de blesser un héros adverse ; sinon c'est un des
+    TIENS, tiré au hasard, qui prend la MOITIÉ de ces dégâts.
+  stats:
+    chance: 50 %
 
 # ── Soin et survie ────────────────────────────────────────────────────────
 - cle: riz
