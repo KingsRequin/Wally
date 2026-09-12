@@ -393,6 +393,10 @@ PAGES_PUBLIQUES = [
     ("Galerie", "/galerie", ".gal-grid", True),
     ("Clips", "/clips", ".clip-grid", True),
     ("TCG", "/tcg", ".tcgal-grille", True),
+    # HORS de la barre d'onglets : on y arrive par le pied de page. Le dernier
+    # champ à `False` la retire donc du compte d'onglets — sans quoi ce test
+    # exigerait un onglet qui n'existe nulle part.
+    ("Crédits", "/credits", ".cred-auteurs", False),
     ("Démo carte Azraël", "/demo/carte-azrael", ".dca-scene .chero", False),
 ]
 
@@ -479,6 +483,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
              "carte TCG : elle s'incline vraiment", ouverte["transform"][:60])
     rap.dire(ouverte["cadres"] > 0.5,
              "carte TCG : les cadres s'allument", str(ouverte["cadres"]))
+
 
     # 🚨 Les trois couches de matière — vitrage, vernis, foil du titre —
     # n'étaient couvertes par RIEN. C'est exactement par là qu'un titre rendu
@@ -1179,6 +1184,69 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(trop_penche <= 0, "390 px · penché : pas de débordement horizontal",
              f"{trop_penche} px")
     mob.close()
+
+    # 🚨 L'onglet « Actions & passifs » n'est PAS la vue par défaut : la boucle
+    # au-dessus charge /tcg et ne voit jamais ses cinquante cartes. Un `throw`
+    # dans son montage laisserait la page parfaitement saine à l'arrivée, et
+    # cassée au premier clic — le mode de panne exact que ce script existe pour
+    # attraper.
+    #
+    # ⚠️ On mesure l'ÉTAT RENDU : des cartes VISIBLES (`container-type` a déjà
+    # rendu la scène à 0 px de large, avec les cinquante cartes dans le document
+    # et pas une erreur), une fenêtre d'illustration qui n'est pas écrasée, et
+    # une torsion qui répond au curseur.
+    # Sa PROPRE page : celle du parcours principal est fermée avant d'arriver
+    # ici, et la réutiliser fait tomber le script sur un `TargetClosedError`
+    # après tous ses contrôles — donc sur un échec qui ne dit rien du front.
+    page = nav.new_page(viewport={"width": 1440, "height": 1000})
+    erreurs = _brancher_erreurs(page)
+    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector("button[data-famille='action']", timeout=_ATTENTE_PANNEAU_MS)
+    page.click("button[data-famille='action']")
+    page.wait_for_selector(".tcgal-grille--action .ca", state="visible",
+                           timeout=_ATTENTE_PANNEAU_MS)
+    page.wait_for_timeout(900)
+    boite = page.locator(".tcgal-grille--action .ca").first.bounding_box()
+    page.mouse.move(boite["x"] + boite["width"] * 0.2,
+                    boite["y"] + boite["height"] * 0.2)
+    page.wait_for_timeout(400)
+    action = page.evaluate("""() => {
+      const cartes = [...document.querySelectorAll('.tcgal-grille--action .ca')];
+      const c = cartes[0];
+      const f = c.querySelector('.ca-fenetre').getBoundingClientRect();
+      const p = c.querySelector('.ca-pochoir');
+      return {
+        nombre: cartes.length,
+        largeur: Math.round(c.getBoundingClientRect().width),
+        fenetre: Math.round(f.height),
+        pochoir: p ? Math.round(p.getBoundingClientRect().width) : 0,
+        transform: getComputedStyle(c).transform,
+        vernis: +getComputedStyle(c.querySelector('.ca-vernis')).opacity,
+        deborde: Math.max(...cartes.map((x) => x.scrollHeight - x.clientHeight)),
+      };
+    }""")
+    rap.dire(action["nombre"] > 0, "cartes action : l'onglet monte",
+             f"{action['nombre']} carte(s)")
+    rap.dire(action["largeur"] > 80, "cartes action : elles ont une largeur",
+             f"{action['largeur']} px")
+    # Le mode de panne : la fenêtre est la SEULE à porter `flex: 1`, donc c'est
+    # elle qui encaisse tout débordement du contenu. Écrasée, la carte se
+    # remplit de texte et l'illustration disparaît — sans erreur.
+    rap.dire(action["fenetre"] > 40, "cartes action : l'illustration n'est pas écrasée",
+             f"fenêtre de {action['fenetre']} px de haut")
+    rap.dire(action["pochoir"] > 20, "cartes action : le pochoir est peint",
+             f"{action['pochoir']} px")
+    rap.dire(action["deborde"] <= 1, "cartes action : le pied ne déborde pas",
+             f"{action['deborde']} px")
+    rap.dire(action["transform"].startswith("matrix3d"),
+             "cartes action : elles se tordent au curseur", action["transform"][:60])
+    rap.dire(action["vernis"] > 0.5, "cartes action : le vernis s'allume",
+             str(action["vernis"]))
+    rap.dire(not erreurs, "cartes action : aucune erreur JS", " · ".join(erreurs[:2]))
+    if captures:
+        page.screenshot(path=str(captures / "public-tcg-action.png"), full_page=False)
+    page.close()
+
 
 
 def verifier_admin(nav, rap: Rapport, captures: pathlib.Path | None) -> None:

@@ -116,3 +116,65 @@
     justify-content: center;
   }
 }
+
+/* ── Les deux familles ────────────────────────────────────────────────────
+ * Héros et cartes action ne partagent pas un champ au-delà du nom ; elles ne
+ * partagent pas non plus une grille. Les héros sont larges et débordent au
+ * survol, les cartes action sont rangées serré comme une planche.
+ */
+
+.tcgal-onglets {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 20px;
+  flex-wrap: wrap;
+}
+
+.tcgal-onglet {
+  appearance: none;
+  cursor: pointer;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+
+.tcgal-onglet:hover { color: var(--text); border-color: var(--gold); }
+
+.tcgal-onglet.is-actif {
+  color: var(--bg, #07060a);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+/* Une grille RÉGULIÈRE et pas un `flex-wrap` : les cartes action ont toutes la
+ * même taille, et une dernière rangée étalée par `space-between` se lirait
+ * comme un défaut d'alignement. La largeur minimale suit la carte, pas une
+ * media query — c'est elle qui décide du nombre de colonnes, à toutes les
+ * largeurs d'un coup. */
+.tcgal-grille--action {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 30px 22px;
+  align-items: start;
+}
+
+/* La carte action porte son nom et sa règle À L'INTÉRIEUR : pas de légende
+ * sous elle, contrairement aux héros. */
+.tcgal-case--action { gap: 0; }
+
+@media (max-width: 620px) {
+  /* 🚨 `minmax(190px, 1fr)` déborderait sous 238 px de contenu (2 × 190 + 22
+   * de gouttière) : la grille garderait DEUX colonnes et sortirait de l'écran.
+   * `min(190px, 100%)` rend la main à une colonne unique quand la place
+   * manque — c'est le débordement horizontal que `smoke_front.py` refuse. */
+  .tcgal-grille--action {
+    grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+    gap: 20px 14px;
+  }
+}

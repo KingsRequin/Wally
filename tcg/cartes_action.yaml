@@ -1,0 +1,424 @@
+# Les cartes ACTION et PASSIF du TCG du Purgatoire — la source unique.
+#
+# Pendant de `tcg/cartes.yaml`, qui ne porte que les HÉROS. Même régime : ce
+# fichier est LA donnée, `bot/core/tcg_cartes_action.py` n'en est que le
+# lecteur, il est bind-monté (`./tcg:/app/tcg:ro`) et lu au BOOT — le corriger
+# demande un `docker compose restart wally`, pas un rebuild.
+#
+# 🚨 CE FICHIER SUIT LE DESIGN, qui suit Notion. Le recto des cartes est figé
+# dans le projet Claude Design « Conception plateau TCG Wally »
+# (`Cartes Tactique.dc.html`), et c'est de là que viennent le `type`, la
+# `categorie` et le `visuel`. Relevé du 2026-09-12 figé dans
+# `/opt/design-tcg/import-2026-09-12/catalogue-cartes-action-passif.tsv`.
+#
+# 🚨 `cout: 0` NE VEUT PAS DIRE GRATUIT, il veut dire NON CALIBRÉ.
+# Arbitrage de l'owner du 2026-09-12 : « on ne peut pas mettre de coût alors
+# que les cartes ne sont pas terminées, le coût est en rapport avec la
+# puissance de la carte, faut attendre que tout soit fini ». Les 46 cartes
+# sont donc à 0 aujourd'hui, et la page l'écrit en toutes lettres plutôt que
+# d'afficher un chiffre que personne n'a décidé.
+#
+# 🚨 `regle: INDÉFINI` se lit tel quel sur la carte. 28 des 46 règles ne sont
+# pas écrites ; aucune valeur de remplissage n'est servie « en attendant ».
+# Un placeholder qui ressemble à une donnée finit par être lu comme une donnée.
+#
+# ⚠️ Le `type` tient le CADRE de la carte, la `categorie` tient le BANDEAU du
+# haut. Deux dimensions, jamais mélangées : une carte de soin passive et une
+# carte de soin active partagent le vert et rien d'autre.
+#
+# ⚠️ L'or est RÉSERVÉ à la pastille de coût — aucune catégorie ne le porte.
+# L'Aura était or dans le premier jet, elle est passée en baie pour ça : deux
+# choses différentes de la même couleur au même endroit se lisent comme la
+# même chose.
+#
+# ⚠️ `visuel` porte l'extension, CONTRAIREMENT aux héros : ce sont des SVG
+# servis tels quels, il n'y a pas de paire AVIF + repli WebP à composer. Le
+# lecteur VÉRIFIE que le fichier existe sur le disque — une carte au pochoir
+# mort serait un cadre vide annoncé comme illustré.
+#
+# ⚠️ `groupe: 3` = carte À REGROUPER : elle compte pour UNE carte du deck mais
+# en donne trois à la table. Le rendu en tire trois exemplaires numérotés plus
+# la carte complète — cf. le §4 de
+# `docs/superpowers/specs/2026-09-05-tcg-tactiques-saison-1.md`.
+#
+# ⚠️ Deux cartes partagent volontairement le même pochoir — `Le tunnel de
+# Rina` et `Requin qui tente d'expliquer` (owner, 2026-09-12). Ce n'est pas un
+# oubli, ne pas le « corriger ».
+
+# ── Attaque ───────────────────────────────────────────────────────────────
+- cle: camion_raiky
+  nom: Le camion de Raiky
+  court: CAMION
+  type: action
+  categorie: attaque
+  visuel: /assets/icones/flatbed-covered.svg
+
+- cle: cluster
+  nom: Le cluster
+  court: CLUSTER
+  type: action
+  categorie: attaque
+  visuel: /assets/apex/Frag_Grenade.svg
+
+- cle: mozambique
+  nom: Mozambique here!
+  court: MOZAMBIQUE
+  type: action
+  categorie: attaque
+  visuel: /assets/apex/Mozambique_Shotgun_Icon.svg
+
+- cle: baril_caustique
+  nom: Le baril de Caustique
+  court: BARIL
+  type: action
+  categorie: attaque
+  visuel: /assets/apex/Nox_Gas_Trap.svg
+  face_cachee: true
+  regle: >-
+    1 dégât à TOUS les héros — les tiens compris — au début de chacun des
+    3 prochains tours.
+
+- cle: aim_assist
+  nom: Aim assist = aimbot
+  court: AIM ASSIST
+  type: action
+  categorie: attaque
+  visuel: /assets/icones/human-target.svg
+
+- cle: stim_octane
+  nom: Le stim d'Octane
+  court: STIM
+  type: action
+  categorie: attaque
+  visuel: /assets/apex/Stim.svg
+  regle: Un héros allié perd 2 PV et gagne +4 d'Attaque ce tour.
+
+- cle: flatline_azrael
+  nom: La Flatline d'Azraël
+  court: FLATLINE
+  type: passif
+  categorie: attaque
+  visuel: /assets/icones/machine-gun.svg
+
+- cle: manette
+  nom: La manette
+  court: MANETTE
+  type: passif
+  categorie: attaque
+  visuel: /assets/icones/console-controller.svg
+
+- cle: tenma
+  nom: Tenma
+  court: TENMA
+  type: passif
+  categorie: attaque
+  visuel: /assets/icones/speedometer.svg
+
+- cle: codage_requin
+  nom: Codage à la Requin
+  court: CODAGE
+  type: action
+  categorie: attaque
+  visuel: /assets/icones/pc.svg
+
+# ── Soin et survie ────────────────────────────────────────────────────────
+- cle: riz
+  nom: Mets-le dans du riz
+  court: RIZ
+  type: action
+  categorie: soin
+  visuel: /assets/icones/bowl-of-rice.svg
+
+- cle: lifeline
+  nom: Lifeline
+  court: LIFELINE
+  type: passif
+  categorie: soin
+  visuel: /assets/apex/Lifeline_Icon.svg
+  regle: >-
+    RÉGÉNÉRATION — +2 PV à un héros allié au début de chacun de tes tours,
+    tant que le passif est en jeu.
+
+- cle: totem
+  nom: Le totem
+  court: TOTEM
+  type: passif
+  categorie: soin
+  visuel: /assets/apex/Death_Totem.svg
+  regle: >-
+    Une fois, un de tes héros MORTS revient en ligne avec la moitié de ses PV,
+    arrondie au supérieur.
+
+- cle: statue_mirage
+  nom: La statue de Mirage
+  court: STATUE
+  type: passif
+  categorie: soin
+  visuel: /assets/apex/Life_of_the_Party.svg
+  groupe: 3
+  regle: >-
+    PASSIF À REGROUPER — une fois les TROIS réunies et regroupées, tes cartes
+    de soin ne coûtent plus rien.
+
+- cle: baril_soins
+  nom: Le baril de soins
+  court: BARIL DE SOINS
+  type: passif
+  categorie: soin
+  visuel: /assets/icones/gas-mask.svg
+  regle: >-
+    Tant qu'il est en jeu, TOUT baril posé soigne au lieu de blesser — y
+    compris ceux de l'adversaire.
+
+- cle: rhum
+  nom: Le Rhum
+  court: RHUM
+  type: passif
+  categorie: soin
+  visuel: /assets/icones/beer-bottle.svg
+  groupe: 3
+  regle: >-
+    PASSIF À REGROUPER — chaque Rhum en jeu fait perdre 1 PV tous les 5 tours
+    à son porteur. Les TROIS regroupées donnent 50 % d'esquive.
+
+- cle: clavier_souris
+  nom: Le clavier-souris
+  court: CLAVIER-SOURIS
+  type: passif
+  categorie: soin
+  visuel: /assets/icones/keyboard.svg
+
+- cle: push_3_teams
+  nom: Push par 3 teams
+  court: PUSH PAR 3
+  type: action
+  categorie: soin
+  visuel: /assets/icones/cow.svg
+
+- cle: pizzas
+  nom: 10 pizzas géantes
+  court: PIZZAS
+  type: action
+  categorie: soin
+  visuel: /assets/icones/full-pizza.svg
+  semis: 10
+  regle: Rend 4 PV à tous tes héros.
+
+# ── Contrôle et entrave ───────────────────────────────────────────────────
+- cle: chevreuil
+  nom: POV le chevreuil
+  court: CHEVREUIL
+  type: action
+  categorie: controle
+  visuel: /assets/icones/deer.svg
+  regle: >-
+    Pose STUN sur un héros adverse — il n'attaque pas ce tour, sans condition.
+    Figé dans les phares.
+
+- cle: tunnel_rina
+  nom: Le tunnel de Rina
+  court: TUNNEL
+  type: action
+  categorie: controle
+  visuel: /assets/icones/tunnel.svg
+  regle: >-
+    Pose l'état TUNNEL sur un héros adverse — il ne peut plus attaquer que le
+    tien, 2 tours.
+
+- cle: veto
+  nom: Rendez-vous au véto
+  court: VÉTO
+  type: action
+  categorie: controle
+  visuel: /assets/icones/rod-of-asclepius.svg
+
+- cle: scan_seer
+  nom: Le scan de Seer
+  court: SCAN
+  type: action
+  categorie: controle
+  visuel: /assets/apex/Focus_of_Attention.svg
+  regle: Désactive TOUS les passifs adverses pendant 2 tours.
+
+- cle: feur
+  nom: Quoi → FEUR
+  court: FEUR
+  type: action
+  categorie: controle
+  # Une carte dont la vanne EST un mot ne gagne rien à un pictogramme : « FEUR »
+  # n'a pas d'objet à dessiner, il a une réplique. Le mot prend donc la place
+  # de l'illustration, pas celle du titre.
+  texte: FEUR
+  regle: Annule la prochaine tactique jouée par l'adversaire ce tour.
+
+- cle: steak_meliodas
+  nom: Le steak haché de Meliodas
+  court: STEAK HACHÉ
+  type: action
+  categorie: controle
+  visuel: /assets/icones/steak.svg
+
+- cle: raciste
+  nom: Raciste
+  court: RACISTE
+  type: action
+  categorie: controle
+  visuel: /assets/icones/wheat.svg
+
+- cle: perk
+  nom: Azraël met ta perk !
+  court: PERK
+  type: action
+  categorie: controle
+  visuel: /assets/icones/dunce-cap.svg
+
+- cle: revision_meliodas
+  nom: Séance de révision avec Meliodas
+  court: RÉVISION
+  type: action
+  categorie: controle
+  visuel: /assets/icones/book-pile.svg
+
+- cle: explication_requin
+  nom: Requin qui tente d'expliquer
+  court: EXPLICATION
+  type: action
+  categorie: controle
+  # Le MÊME pochoir que `tunnel_rina`, et c'est voulu (owner, 2026-09-12).
+  visuel: /assets/icones/tunnel.svg
+
+- cle: anneau_raiky
+  nom: Raiky dans l'anneau
+  court: ANNEAU
+  type: action
+  categorie: controle
+  visuel: /assets/icones/death-zone.svg
+
+- cle: montage_malef
+  nom: Un montage de Malef
+  court: MONTAGE
+  type: action
+  categorie: controle
+  visuel: /assets/icones/vhs.svg
+
+- cle: leurre
+  nom: Le leurre
+  court: LEURRE
+  type: action
+  categorie: controle
+  visuel: /assets/apex/Psyche_Out.svg
+  regle: >-
+    Double un de tes héros en jeu ; une seule des deux copies est vraie.
+    Attaquer la fausse la détruit et COÛTE LE TOUR de l'attaquant.
+
+- cle: anti_cheat
+  nom: L'anti-cheat
+  court: ANTI-CHEAT
+  type: action
+  categorie: controle
+  visuel: /assets/icones/skull-mask.svg
+
+# ── Aura et coopération ───────────────────────────────────────────────────
+- cle: apero_zeddo
+  nom: Apéro chez Zeddo
+  court: APÉRO
+  type: action
+  categorie: aura
+  visuel: /assets/icones/glass-celebration.svg
+
+- cle: notre_kill
+  nom: « C'est mon kill » / « NOTRE kill »
+  court: NOTRE KILL
+  type: action
+  categorie: aura
+  visuel: /assets/icones/hammer-sickle.svg
+
+- cle: pika
+  nom: Pika
+  court: PIKA
+  type: passif
+  categorie: aura
+  visuel: /assets/icones/cat.svg
+
+- cle: spiro
+  nom: Spiro
+  court: SPIRO
+  type: passif
+  categorie: aura
+  visuel: /assets/icones/cat.svg
+
+- cle: lili
+  nom: Lili
+  court: LILI
+  type: passif
+  categorie: aura
+  visuel: /assets/icones/cat.svg
+
+- cle: les_trois_chats
+  nom: Pika, Spiro et Lili
+  court: LES TROIS CHATS
+  type: passif
+  categorie: aura
+  visuel: /assets/icones/cat.svg
+  # L'ARC est le contraire du semis : le semis veut du désordre (dix pizzas
+  # jetées), l'arc veut une figure. C'est ce qui dit « ensemble ».
+  semis: 3
+  arc: true
+
+- cle: piercing
+  nom: Un piercing de petitpoissonnn
+  court: PIERCING
+  type: action
+  categorie: aura
+  visuel: /assets/icones/heart-earrings.svg
+  regle: +3 d'Aura à un héros allié pour la partie, ET il perd 1 PV.
+
+# ── Ressource ─────────────────────────────────────────────────────────────
+- cle: care_package
+  nom: Le care package
+  court: CARE PACKAGE
+  type: action
+  categorie: ressource
+  visuel: /assets/apex/Care_Package.svg
+  regle: >-
+    Pioche 3 cartes, garde-en 1, remets les autres AU-DESSUS de ta pioche.
+
+- cle: de_l_air
+  nom: De l'air
+  court: DE L'AIR
+  type: action
+  categorie: ressource
+  visuel: /assets/icones/lungs.svg
+
+- cle: shop_loba
+  nom: Le shop de Loba
+  court: SHOP DE LOBA
+  type: action
+  categorie: ressource
+  visuel: /assets/apex/Black_Market_Boutique.svg
+  regle: Prends UNE CARTE AU HASARD dans la main de l'adversaire.
+
+- cle: drone_crypto
+  nom: Le drone de Crypto
+  court: DRONE
+  type: action
+  categorie: ressource
+  visuel: /assets/apex/Surveillance_Drone.svg
+  regle: Regarde la main de l'adversaire jusqu'à la fin du tour.
+
+- cle: typical_octane
+  nom: Typical Octane
+  court: TYPICAL OCTANE
+  type: action
+  categorie: ressource
+  visuel: /assets/apex/Octane_Icon.svg
+  face_cachee: true
+  regle: >-
+    La prochaine fois que l'adversaire pioche, C'EST TOI QUI PRENDS LA CARTE.
+
+- cle: pp_samedi
+  nom: Les PP du samedi
+  court: PP DU SAMEDI
+  type: action
+  categorie: ressource
+  visuel: /assets/icones/dozen.svg

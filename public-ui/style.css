@@ -1153,6 +1153,12 @@ body.vue-chat .vue { padding-bottom: 0; }
 .footer .brand video { width: 28px; height: 28px; object-fit: contain; }
 .footer .repo { font-family: var(--mono); font-size: 12.5px; color: var(--soft); }
 .footer .repo:hover { color: var(--ember-lit); }
+/* Les liens du pied sont désormais DEUX (crédits + dépôt). Groupés, sinon le
+ * `space-between` du pied les écarte aux deux bouts et le crédit se lit comme
+ * une seconde marque plutôt que comme un lien.
+ * ⚠️ Sous 620 px la ligne se replie : le `column-gap` seul laisserait les deux
+ * liens collés une fois empilés. */
+.footer-liens { display: flex; align-items: center; gap: 10px 22px; flex-wrap: wrap; }
 
 /* ──────────────────  compagnon (avatar flottant)  ────────────────── */
 

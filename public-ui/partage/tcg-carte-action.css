@@ -1,0 +1,431 @@
+/* public-ui/partage/tcg-carte-action.css — le recto des cartes ACTION / PASSIF
+ *
+ * Port du recto figé dans le projet Claude Design « Conception plateau TCG
+ * Wally » (`Carte Tactique.dc.html`). Les couleurs de CATÉGORIE ne sont pas
+ * ici : elles arrivent par `--cat`, servie par le serveur. Une table recopiée
+ * en CSS divergerait le jour où une teinte bouge, et personne ne le verrait.
+ *
+ * 🚨 Ce n'est NI le glassmorphism du dashboard, NI l'encre/papier de l'overlay.
+ * C'est une troisième surface : du carton imprimé sous plastique.
+ */
+
+.ca-scene {
+  /* La perspective vit sur le PARENT, pas sur la carte : posée sur l'élément
+   * qui tourne, chaque carte aurait son propre point de fuite au centre
+   * d'elle-même, et une grille de quarante cartes se lirait comme quarante
+   * photos et non comme des objets posés sur la même table. */
+  perspective: 1100px;
+  perspective-origin: 50% 40%;
+  /* 🚨 La scène est aussi le CONTENEUR de requête, et c'est ce qui rend le
+   * dessin juste. Tout le recto est coté en `em` — le design pose la carte à
+   * 17em de large, donc 1em vaut exactement un dix-septième de sa largeur.
+   * Calé sur le viewport (`clamp(11px, 2.6vw, 15px)`, premier jet), l'`em`
+   * valait 15px pour une carte de 190px : le contenu réclamait 255px de large,
+   * la fenêtre d'illustration — seule à porter `flex: 1` — se faisait écraser
+   * à quelques pixels de haut, et le pied débordait sous la carte. Rien ne
+   * levait, la carte était simplement fausse. */
+  container-type: inline-size;
+  /* 🚨 `width: 100%` est la CONTREPARTIE de `container-type`, pas un réglage de
+   * confort. Un conteneur de requête déclare que sa largeur ne dépend plus de
+   * son contenu ; posée dans une case `align-items: center`, la scène n'avait
+   * alors plus rien pour se dimensionner et rendait 0 px de large. Les 52
+   * cartes étaient dans le document, sans une erreur, et invisibles. */
+  width: 100%;
+}
+
+.ca {
+  --rx: 0deg;
+  --ry: 0deg;
+  /* Où passe la TRAÎNÉE du vernis, en pourcentage de la diagonale. Au repos
+   * elle est hors champ (-40 %), donc invisible. */
+  --bande: -40%;
+  /* Le halo d'ambiance, très faible, qui empêche la traînée d'avoir l'air
+   * collée sur du noir. */
+  --gx: 50%;
+  --gy: 0%;
+  --or: #e1a947;
+  --encre: #12100c;
+  --creme: #f7ecd9;
+  --gris: #a9a2b0;
+
+  position: relative;
+  width: 100%;
+  aspect-ratio: 17 / 23.8;
+  /* 100 / 17 : la carte fait 17em de large dans le design, donc 1em vaut un
+   * dix-septième de SA largeur — jamais de celle de l'écran. Une seule valeur
+   * commande toute l'échelle du dessin. */
+  font-size: 5.8824cqw;
+  background: var(--encre);
+  border-radius: .6em;
+  border: .18em solid var(--typeC);
+  box-shadow:
+    inset 0 0 0 .34em var(--encre),
+    inset 0 0 0 .42em var(--cat),
+    0 .6em 1.6em rgba(0, 0, 0, .55);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  /* Pas de `will-change: transform` en permanence : sur quarante cartes, ça
+   * réserve quarante calques GPU pour rien. Il est posé à la prise en main
+   * (`.ca--vif`) et retiré au relâchement. */
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1);
+}
+
+.ca--vif {
+  will-change: transform;
+  transition: transform .08s linear;
+}
+
+/* Le type tient le CADRE. Deux dimensions, jamais mélangées : une carte de
+ * soin passive et une carte de soin active partagent le vert et rien d'autre. */
+.ca[data-type="action"] { --typeC: #2f5f94; }
+.ca[data-type="passif"] { --typeC: var(--creme); }
+
+/* ── Le rendu plastique ───────────────────────────────────────────────────
+ * Trois couches, et pas une de plus. Chacune est STATIQUE sauf le vernis, qui
+ * ne bouge que par deux variables : le navigateur repeint un dégradé, il ne
+ * recalcule pas la mise en page.
+ */
+
+/* 1. La vignette du carton, sous le plastique. */
+.ca-vignette {
+  position: absolute;
+  inset: .42em;
+  background: radial-gradient(95% 68% at 50% 50%, transparent 28%, rgba(8, 6, 10, .55));
+  pointer-events: none;
+}
+
+/* 2. Le vernis : la TRAÎNÉE qui balaie la carte.
+ *
+ * 🚨 Une tache ronde et large ne rend PAS le plastique. Premier jet : un
+ * `radial-gradient` de 60 % × 45 % à 34 % de blanc, posé au curseur. À
+ * l'écran ça donnait un gros halo flou au milieu de chaque carte — et au
+ * téléphone, où le gyroscope allume toutes les cartes visibles en même temps,
+ * la grille entière avait l'air SALE. Une carte plastifiée ne renvoie pas un
+ * spot, elle renvoie une bande étroite et nette qui traverse en diagonale :
+ * c'est l'arête du reflet qui dit « surface », pas sa luminosité.
+ *
+ * Deux couches, dans cet ordre :
+ *   · la traînée — étroite, à flancs raides, position pilotée par `--bande` ;
+ *   · un halo d'ambiance très faible, pour que la traînée ne soit pas une
+ *     barre blanche collée sur du noir.
+ */
+.ca-vernis {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .35s ease;
+  background:
+    linear-gradient(102deg,
+      rgba(255, 255, 255, 0)    calc(var(--bande) - 19%),
+      rgba(255, 255, 255, .022) calc(var(--bande) - 10%),
+      rgba(255, 255, 255, .085) calc(var(--bande) - 3.2%),
+      rgba(255, 255, 255, .155) var(--bande),
+      rgba(255, 255, 255, .06)  calc(var(--bande) + 3.6%),
+      rgba(255, 255, 255, .014) calc(var(--bande) + 11%),
+      rgba(255, 255, 255, 0)    calc(var(--bande) + 21%)),
+    radial-gradient(115% 85% at var(--gx) var(--gy),
+      rgba(255, 255, 255, .05) 0%,
+      rgba(255, 255, 255, 0) 62%);
+  /* `screen` et non `overlay` : sur un fond presque noir, `overlay` ne fait
+   * quasiment rien — il module, il n'ajoute pas. Un plastique AJOUTE de la
+   * lumière. */
+  mix-blend-mode: screen;
+}
+
+.ca--vif .ca-vernis { opacity: 1; }
+
+/* 3. Le grain du vernis. Un plastique parfaitement lisse se lit comme du
+ * rendu 3D ; c'est la micro-rugosité qui dit « objet réel ». Le bruit est un
+ * SVG en data-URI — aucune requête, et il ne se redessine jamais.
+ * ⚠️ `baseFrequency` haut et `opacity` bas : à 0,1 le grain devient une
+ * texture visible et la carte a l'air sale. */
+.ca-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
+  background-size: 120px 120px;
+}
+
+/* Le biseau du bord : c'est lui qui donne l'épaisseur. Une carte sans arête
+ * éclairée est une image, pas un objet. */
+.ca-biseau {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: .6em;
+  /* `--ex` / `--ey` suivent la torsion : l'arête qui REMONTE vers la lumière
+   * s'allume, celle qui s'enfonce s'assombrit. Quatre arêtes éclairées en même
+   * temps, c'est un liseré ; une seule, c'est une épaisseur. */
+  box-shadow:
+    inset calc(var(--ex, 0) * .1em) calc(var(--ey, 0) * .1em + .05em)
+      .12em rgba(255, 255, 255, .26),
+    inset calc(var(--ex, 0) * -.1em) calc(var(--ey, 0) * -.1em - .05em)
+      .12em rgba(0, 0, 0, .55);
+  transition: box-shadow .35s ease;
+}
+
+.ca--vif .ca-biseau { transition: box-shadow .08s linear; }
+
+/* ── L'en-tête : coût + catégorie ─────────────────────────────────────── */
+
+.ca-tete {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: .3em;
+  margin: .95em .95em 0;
+}
+
+/* 🚨 L'or est RÉSERVÉ à la pastille de coût. Aucune catégorie ne le porte —
+ * deux choses différentes de la même couleur au même endroit se lisent comme
+ * la même chose. */
+.ca-cout {
+  font: 400 1.15em/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  color: var(--encre);
+  background: var(--or);
+  padding: .42em .5em .36em;
+  border: .08em solid var(--encre);
+  min-width: 1.9em;
+  text-align: center;
+}
+
+/* Un coût NON CALIBRÉ ne s'affiche pas comme un zéro : il se dit. La pastille
+ * perd son or — un chiffre décidé et une case vide ne peuvent pas se ressembler. */
+.ca-cout--indefini {
+  background: transparent;
+  color: rgba(247, 236, 217, .45);
+  border-color: rgba(247, 236, 217, .3);
+}
+
+.ca-cat {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: .42em;
+  padding: 0 .55em;
+  min-width: 0;
+  background: var(--cat);
+  border: .08em solid var(--encre);
+}
+
+.ca-cat-icone {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+  background: var(--creme);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.ca-cat-nom {
+  font: 700 .6em/1 'JetBrains Mono', monospace;
+  letter-spacing: .2em;
+  color: var(--creme);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── La fenêtre d'illustration ────────────────────────────────────────── */
+
+.ca-fenetre {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin: .75em .95em .6em;
+  border: 1px solid rgba(247, 236, 217, .16);
+  background: rgba(8, 6, 10, .4);
+  box-shadow: inset 0 0 1.6em rgba(8, 6, 10, .75);
+  overflow: hidden;
+}
+
+/* Le pochoir : le fichier est un dessin plein, le masque le teinte de la
+ * couleur de catégorie. Une image servie telle quelle serait la seule tache
+ * blanche de la planche. */
+.ca-pochoir {
+  width: 7.4em;
+  height: 7.4em;
+  background: var(--cat);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.ca-semis { position: absolute; inset: .5em; }
+
+.ca-semis .ca-pochoir {
+  position: absolute;
+  width: auto;
+  height: auto;
+  transform: translate(-50%, -50%) rotate(var(--r));
+}
+
+/* Une carte dont la vanne EST un mot ne gagne rien à un pictogramme : « FEUR »
+ * n'a pas d'objet à dessiner, il a une réplique. Le mot prend la place d'une
+ * icône, pas celle d'un titre — le titre de la carte reste dessous. */
+.ca-motclef {
+  font: 400 3.4em/.9 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: -.03em;
+  color: var(--cat);
+  text-align: center;
+  padding: 0 .1em;
+}
+
+/* Les cartes À REGROUPER montrent l'icône ENTIÈRE, barrée d'un trait et
+ * frappée de son numéro. C'est l'ABSENCE de barre qui dit « le jeu est réuni ».
+ * ⚠️ La découpe est en %, le trait est un angle absolu : les deux ne coïncident
+ * que si la boîte est CARRÉE. D'où `aspect-ratio` sur le pochoir barré. */
+.ca-pochoir--rang {
+  clip-path: polygon(0% 83.7%, 100% 16.3%, 100% 100%, 0% 100%);
+}
+
+.ca-barre {
+  position: absolute;
+  left: -8%;
+  top: 50%;
+  width: 116%;
+  height: 0;
+  transform: rotate(-34deg);
+  pointer-events: none;
+}
+
+.ca-barre::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: .075em;
+  background: var(--creme);
+}
+
+.ca-barre i {
+  position: absolute;
+  top: -.13em;
+  width: .34em;
+  height: .34em;
+  background: var(--or);
+  transform: rotate(45deg);
+}
+
+.ca-barre i:first-child { left: -.17em; }
+.ca-barre i:last-child { right: -.17em; }
+
+.ca-rang {
+  position: absolute;
+  left: .5em;
+  top: .3em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .28em;
+  pointer-events: none;
+}
+
+.ca-rang b {
+  font: 400 3.6em/1.18 'Archivo Black', 'Space Grotesk', sans-serif;
+  color: var(--creme);
+}
+
+.ca-rang span {
+  font: 700 .5em/1 'JetBrains Mono', monospace;
+  letter-spacing: .22em;
+  color: var(--gris);
+}
+
+/* ── Le pied : titres, règle, bandeaux ────────────────────────────────── */
+
+.ca-pied {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+  padding: 0 .95em .95em;
+}
+
+.ca-titres {
+  display: flex;
+  flex-direction: column;
+  gap: .12em;
+  height: 2.72em;
+  overflow: hidden;
+}
+
+.ca-court {
+  font: 400 1.24em/1.1 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: -.02em;
+  color: var(--creme);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ca-nom {
+  font: 500 .56em/1.3 'Space Grotesk', sans-serif;
+  color: var(--gris);
+}
+
+.ca-regle {
+  margin: 0;
+  min-height: 4.26em;
+  font: 500 .62em/1.42 'Space Grotesk', sans-serif;
+  color: var(--creme);
+  text-wrap: pretty;
+}
+
+/* Une règle non écrite le DIT, et ne ressemble pas à une règle. */
+.ca-regle--indefini {
+  color: rgba(247, 236, 217, .38);
+  font-style: italic;
+  letter-spacing: .12em;
+}
+
+.ca-bandeaux { display: flex; gap: .3em; }
+
+.ca-type {
+  flex: 1;
+  text-align: center;
+  font: 700 .62em/1 'JetBrains Mono', monospace;
+  letter-spacing: .22em;
+  color: var(--creme);
+  padding: .72em 0 .62em;
+}
+
+/* Le cadre garde l'aplat du type ; le bandeau du bas, lui, ne peut pas être un
+ * aplat crème pleine largeur — sur la planche entière les cartes passives
+ * avaient l'air SURLIGNÉES plutôt que classées. Il passe en filet : même
+ * information, même couleur, un dixième du poids visuel. */
+.ca[data-type="action"] .ca-type { background: #2f5f94; }
+.ca[data-type="passif"] .ca-type { border: .1em solid var(--creme); }
+
+.ca-cachee {
+  text-align: center;
+  font: 700 .62em/1 'JetBrains Mono', monospace;
+  letter-spacing: .22em;
+  color: var(--creme);
+  background: var(--encre);
+  border: .1em solid rgba(247, 236, 217, .5);
+  padding: .72em .8em .62em;
+}
+
+/* Le relief coûte une composition par image. Qui a demandé moins de mouvement
+ * n'a pas demandé moins d'information : la carte garde tout, elle ne bouge
+ * plus. */
+@media (prefers-reduced-motion: reduce) {
+  .ca { transition: none; transform: none !important; }
+  .ca-vernis { display: none; }
+}

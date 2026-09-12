@@ -1,0 +1,14 @@
+{
+  "_lisez_moi": "Les icônes de game-icons.net sont sous licence CC BY 3.0 : elles obligent à CRÉDITER LEUR AUTEUR, pas seulement le site. Ce fichier est la table qui le permet, et `tests/test_credits_icones.py` refuse qu'une icône y manque — sans lui, une icône ajoutée en vitesse resterait non créditée pour toujours, et rien ne le dirait.",
+  "_licence": "CC BY 3.0",
+  "_source": "https://game-icons.net",
+  "auteurs": {
+    "delapouite": ["swords-power", "remedy", "human-target", "speedometer", "beer-bottle", "full-pizza", "rod-of-asclepius", "steak", "dunce-cap", "book-pile", "glass-celebration", "hammer-sickle", "lungs", "heart-earrings", "keyboard", "cow", "tunnel"],
+    "lorc": ["grab", "beams-aura", "laser-sparks", "gas-mask", "wheat", "death-zone", "skull-mask", "dozen", "cat"],
+    "skoll": ["flatbed-covered", "console-controller", "pc", "machine-gun"],
+    "caro-asercion": ["test-tube-rack", "bowl-of-rice", "deer", "vhs"]
+  },
+  "_renommages": {
+    "tunnel": "delapouite/pipes"
+  }
+}

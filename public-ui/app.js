@@ -121,6 +121,7 @@ export function surInclinaison(fn) {
 
 import * as pageAccueil from './pages/accueil.js';
 import * as pageChat from './pages/chat.js';
+import * as pageCredits from './pages/credits.js';
 import * as pageClips from './pages/clips.js';
 import * as pageDemoCarteAzrael from './pages/demo-carte-azrael.js';
 import * as pageGalerie from './pages/galerie.js';
@@ -156,7 +157,19 @@ export function pageFooter() {
       h('video', { src: '/wally.webm', autoplay: true, loop: true, muted: true, playsInline: true, 'aria-hidden': 'true' }),
       h('span', {}, 'fait avec une petite flamme · © 2026 ', h('span', { 'data-nom-bot': '' }, NOM_BOT)),
     ),
-    h('a', { class: 'repo', href: 'https://github.com/KingsRequin/Wally', target: '_blank', rel: 'noopener', text: 'github.com/KingsRequin/Wally' }),
+    h('div', { class: 'footer-liens' },
+      // 🚨 Un `<a href>` interne DOIT passer par le routeur, sinon le clic
+      // recharge tout le site — le catch-all de `SPAStaticFiles` rendrait bien
+      // la page, mais après un aller-retour réseau complet et la perte de
+      // l'état partagé (auth, flux SSE).
+      h('a', {
+        class: 'repo',
+        href: '/credits',
+        text: 'crédits',
+        onclick: (e) => { e.preventDefault(); naviguer('/credits'); },
+      }),
+      h('a', { class: 'repo', href: 'https://github.com/KingsRequin/Wally', target: '_blank', rel: 'noopener', text: 'github.com/KingsRequin/Wally' }),
+    ),
   );
 }
 
@@ -374,6 +387,11 @@ const ROUTES = {
   '/galerie': { page: pageGalerie, plein: false },
   '/clips':   { page: pageClips,   plein: false },
   '/tcg':     { page: pageTcg,     plein: false },
+  // HORS de la barre d'onglets, mais PAS hors navigation : on y arrive par le
+  // pied de page. Une page de crédits dans la nav principale prendrait la
+  // place d'une page qu'on vient lire ; l'absente du menu reste atteignable,
+  // et c'est là qu'un lecteur va la chercher.
+  '/credits': { page: pageCredits, plein: false },
   // Démos HORS NAVIGATION : des URL qu'on donne à la main. Volontairement
   // absentes de `.nav-links`, de `.tabbar` et de `HASH_LEGACY` — elles n'ont
   // rien à faire dans un menu.

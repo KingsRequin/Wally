@@ -1,0 +1,131 @@
+/* public-ui/pages/credits.css — la page des crédits (`/credits`)
+ *
+ * Une page de texte, et elle doit se lire comme telle : pas de carte, pas de
+ * relief, pas de vernis. Ce qu'on vient y chercher est un nom.
+ */
+
+.cred {
+  min-height: 100dvh;
+  /* La barre est `fixed` et `.vue` commence à ZÉRO sous elle : sans ce
+   * padding, l'en-tête passe dessous. */
+  padding: calc(48px + var(--nav-h)) 40px 90px;
+  background: radial-gradient(120% 90% at 50% -10%,
+    #17101c 0%, #0a0810 48%, #07060a 100%);
+  color: var(--text);
+}
+
+.cred-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.cred-grille {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  margin-top: 40px;
+}
+
+.cred-bloc {
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-lift);
+}
+
+.cred-titre {
+  margin: 0 0 10px;
+  font: 600 15px/1.3 var(--sans);
+  color: var(--text);
+}
+
+.cred-quoi {
+  margin: 0 0 14px;
+  font: 400 13px/1.65 var(--sans);
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+.cred-liens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.cred-lien {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .1em;
+  color: var(--gold);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+  transition: border-color .18s ease;
+}
+
+.cred-lien:hover { border-bottom-color: var(--gold); }
+
+/* La liste des auteurs CC BY. Elle est longue et elle doit l'être : c'est
+ * exactement ce que la licence demande. */
+.cred-auteurs {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cred-auteur {
+  display: grid;
+  /* `auto auto 1fr` et pas trois colonnes fixes : le nom d'auteur et le
+   * compte tiennent leur contenu, la liste d'icônes prend ce qui reste et se
+   * replie toute seule. */
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.cred-auteur-nom {
+  font: 600 12px/1.4 var(--mono);
+  letter-spacing: .06em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.cred-auteur-nom:hover { color: var(--gold); }
+
+.cred-auteur-compte {
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: .1em;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.cred-auteur-liste {
+  font: 400 11px/1.6 var(--mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.cred-echec {
+  margin: 16px 0 0;
+  font: 400 12px/1.6 var(--sans);
+  color: var(--text-3);
+}
+
+.cred-echec code {
+  font: 500 11px/1 var(--mono);
+  color: var(--gold);
+}
+
+@media (max-width: 620px) {
+  .cred { padding: calc(32px + var(--nav-h)) 24px 64px; }
+  .cred-bloc { padding: 18px 16px; }
+
+  /* 🚨 Sous 620 px les trois colonnes ne tiennent pas : la liste d'icônes est
+   * la plus longue et pousserait la grille hors de l'écran, sans lever la
+   * moindre erreur JS. Elle passe sur sa propre ligne. */
+  .cred-auteur { grid-template-columns: auto auto; }
+  .cred-auteur-liste { grid-column: 1 / -1; }
+}
