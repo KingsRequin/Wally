@@ -169,6 +169,9 @@
   type: action
   categorie: soin
   visuel: /assets/icones/bowl-of-rice.svg
+  regle: >-
+    Soigne un de tes héros — mais seulement à la FIN du tour suivant. Si
+    l'adversaire l'achève d'ici là, le soin est perdu avec la carte.
 
 - cle: lifeline
   nom: Lifeline
@@ -217,7 +220,7 @@
     compris ceux de l'adversaire.
 
 - cle: rhum
-  nom: Le Rhum
+  nom: Un petit cadeau de Zeddo
   court: RHUM
   type: passif
   categorie: soin
@@ -239,14 +242,21 @@
   categorie: soin
   visuel: /assets/cartes/carte-clavier-souris.png
   forme: image
+  regle: >-
+    Tant qu'elle est en jeu, tes héros ont ${chance} de chance d'esquiver une
+    attaque.
+  stats:
+    chance: 20 %
 
 - cle: push_3_teams
-  nom: Push par 3 teams
-  court: PUSH PAR 3
+  nom: Pouvoir de l'amitié !
+  court: AMITIÉ
   type: action
   categorie: soin
   visuel: /assets/cartes/carte-push-3-teams.png
   forme: image
+  regle: >-
+    Augmente l'Attaque d'UN SEUL de tes héros, et l'Aura de TOUS.
 
 - cle: pizzas
   nom: 10 pizzas géantes
@@ -412,16 +422,16 @@
   visuel: /assets/cartes/carte-chat.png
   forme: image
 
-- cle: lili
-  nom: Lili
-  court: LILI
+- cle: lyly
+  nom: Lyly
+  court: LYLY
   type: passif
   categorie: aura
   visuel: /assets/cartes/carte-chat.png
   forme: image
 
 - cle: les_trois_chats
-  nom: Pika, Spiro et Lili
+  nom: Pika, Spiro et Lyly
   court: LES TROIS CHATS
   type: passif
   categorie: aura
