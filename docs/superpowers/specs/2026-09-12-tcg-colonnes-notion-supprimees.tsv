@@ -1,0 +1,37 @@
+# Sauvegarde des colonnes retirées de la base Notion « 🃏 Cartes du Purgatoire » le 2026-09-12.
+# Arbitrage de l'owner : « on dégage la rareté justement, le grade ne la remplace pas — il n'y a
+# pas de rareté, tous les héros sont là dès le début, il y a que de la puissance, d'où le grade. »
+# Colonnes supprimées : Rareté · Faction · Illustration · Prix (barème) · Réflexe / Ultime ·
+# Affinités · Budget · Contrôle · Coût Ultime · Coût de pose (fusionnés en « Coût »).
+# « Texte d ambiance » n'est PAS perdu : renommé en « Sous-titre », ses 2 valeurs suivent.
+# Seules les lignes qui portaient au moins une valeur figurent ici — 29 sur 72.
+Carte	Type	Prix (barème)	Réflexe / Ultime	Affinités	Rareté	Texte d ambiance	PV	Attaque	Aura	Coût Ultime
+Aim assist = aimbot	objet	5						
+Amitié	moment	3						
+Apéro chez Zeddo	objet	3	B01 Rassemblement					
+Azraël	unique	6	F07 Rework	Apex, stream	Archange	Il ne te dit jamais non. Il attend le prochain patch, et un matin plus personne ne te craint.	10	5	5	10
+Azraël met ta perk !	moment	6						
+ClakerNoJutsu	personne			Apex · les chiffres	Âme	Il ne demande pas si tu suis. Il vérifie.				
+Codage à la Requin	objet	4						
+De l'air	moment	4	E01 Diète					
+Flatline	objet	4						
+La manette	objet	6						
+Le clavier-souris	objet	5						
+Le meme de la commu	moment	2	B06 Propagation					
+Le tunnel de Rina	moment	5	état Tunnel					
+Les PP du samedi	moment	5						
+Lifeline	objet	9						
+Mets-le dans du riz	moment	5						
+Mozambique here!	objet	5						
+POV le chevreuil	moment	6						
+Quoi → FEUR	moment	6						
+Raciste	moment	4						
+Raiky dans l'anneau	moment	5						
+Requin qui tente d'expliquer	moment	5						
+rhae___	unique				Ange					
+Soin	moment	2	J01 Soin					
+Séance de révision avec Meliodas	moment	2	C04 Séance de révision					
+Tenma	objet	5						
+Un montage de Malef	moment	5	D01 Remontage					
+Un piercing de petitpoissonnn	objet	3						
+Wally	unique				Archange					

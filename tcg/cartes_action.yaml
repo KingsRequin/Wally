@@ -352,6 +352,9 @@
   type: action
   categorie: controle
   visuel: /assets/icones/dunce-cap.svg
+  regle: >-
+    Un héros adverse a une chance d'oublier d'attaquer, à chacun de ses tours,
+    pendant quelques tours.
 
 - cle: revision_meliodas
   nom: Séance de révision avec Meliodas
