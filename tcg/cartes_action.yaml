@@ -453,6 +453,9 @@
   type: action
   categorie: aura
   visuel: /assets/icones/hammer-sickle.svg
+  regle: >-
+    Copie un passif adverse tiré au hasard : son effet s'applique aussi à toi.
+    Les passifs de l'adversaire sont cachés, tu ne sais pas lequel tu prends.
 
 - cle: pika
   nom: Pika
@@ -461,22 +464,33 @@
   categorie: aura
   visuel: /assets/cartes/carte-chat.png
   forme: image
+  regle: >-
+    Tant qu'elle est en jeu, tu vois les passifs de l'adversaire, qui sont
+    normalement cachés.
 
 - cle: spiro
   nom: Spiro
   court: SPIRO
-  type: passif
+  type: action
   categorie: aura
   visuel: /assets/cartes/carte-chat.png
   forme: image
+  regle: >-
+    Lance-la sur un héros adverse : il a une chance de rater sa prochaine
+    attaque.
 
 - cle: lyly
   nom: Lyly
   court: LYLY
-  type: passif
+  type: action
   categorie: aura
   visuel: /assets/cartes/carte-chat.png
   forme: image
+  regle: >-
+    Lance-la sur un héros adverse : pendant ${tours} tours, il attaque une
+    cible tirée au hasard, y compris ses propres alliés.
+  stats:
+    tours: null
 
 - cle: les_trois_chats
   nom: Pika, Spiro et Lyly
@@ -489,6 +503,9 @@
   # jetées), l'arc veut une figure. C'est ce qui dit « ensemble ».
   semis: 3
   arc: true
+  regle: >-
+    Tant qu'elle est en jeu, chaque fois que tu joues Pika, Spiro ou Lyly, la
+    carte revient dans ta main au lieu de partir à la défausse.
 
 - cle: piercing
   nom: Un piercing de petitpoissonnn
@@ -511,8 +528,8 @@
   visuel: /assets/cartes/carte-care-package.svg
   forme: image
   regle: >-
-    Pioche ${cartes} cartes, garde-en ${gardees}, remets les autres AU-DESSUS
-    de ta pioche.
+    Pioche ${cartes} cartes, garde-en ${gardees}, et remélange les autres
+    AU HASARD dans ta pioche.
   stats:
     cartes: 3
     gardees: 1

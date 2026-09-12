@@ -268,11 +268,27 @@ def main() -> int:
               f"`--pousser` pour les écrire.")
         return 0
 
+    a_relire: list[str] = []
     for cle, ligne, charges in a_ecrire:
         _appel(jeton, f"/pages/{ligne['id']}", {"properties": charges},
                methode="PATCH")
         print(f"✅ {cle}")
+        # 🚨 Le CORPS de la page (la fiche détaillée : « Ce qu'elle fait »,
+        # « Exemple », « À savoir ») n'est pas synchronisé — il est rédigé, pas
+        # dérivé. Quand la description change sous une fiche déjà écrite, la
+        # fiche se met à mentir, et rien ne le signale. Vécu le 2026-09-12 sur
+        # le care package : la fiche vendait « tu sais ce que tu piocheras
+        # ensuite » après que la carte eut cessé de le permettre.
+        if "Description" in charges and _appel(
+                jeton, f"/blocks/{ligne['id']}/children?page_size=1",
+                methode="GET")["results"]:
+            a_relire.append(cle)
     print(f"\n{len(a_ecrire)} lignes écrites dans Notion.")
+    if a_relire:
+        print(f"\n⚠️ {len(a_relire)} fiche(s) détaillée(s) à RELIRE — leur "
+              f"description vient de changer sous un texte déjà rédigé :")
+        for cle in a_relire:
+            print(f"   {cle}")
     return 0
 
 
