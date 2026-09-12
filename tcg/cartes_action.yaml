@@ -434,6 +434,17 @@
     tours: null
     chance: une fois sur quatre
 
+- cle: miroir
+  nom: Le miroir
+  court: MIROIR
+  type: action
+  categorie: controle
+  visuel: /assets/icones/mirror-mirror.svg
+  face_cachee: true
+  regle: >-
+    Pose-la FACE CACHÉE. La prochaine attaque adverse est renvoyée à celui qui
+    l'a lancée.
+
 # ── Aura et coopération ───────────────────────────────────────────────────
 - cle: apero_zeddo
   nom: Apéro chez Zeddo
@@ -535,11 +546,15 @@
     gardees: 1
 
 - cle: de_l_air
-  nom: De l'air
+  nom: On mange quoi à midi ? → De l'air
   court: DE L'AIR
   type: action
   categorie: ressource
   visuel: /assets/icones/lungs.svg
+  regle: >-
+    L'adversaire gagne ${energie} d'énergie de moins à son prochain tour.
+  stats:
+    energie: null
 
 - cle: shop_loba
   nom: Le shop de Loba
@@ -568,7 +583,9 @@
   forme: image
   face_cachee: true
   regle: >-
-    La prochaine fois que l'adversaire pioche, C'EST TOI QUI PRENDS LA CARTE.
+    Pose-la FACE CACHÉE. Si elle survit jusqu'à la prochaine pioche de
+    l'adversaire, C'EST TOI QUI PRENDS LA CARTE. Détruite avant, elle est
+    perdue.
 
 - cle: pp_samedi
   nom: Les PP du samedi
@@ -576,3 +593,7 @@
   type: action
   categorie: ressource
   visuel: /assets/icones/dozen.svg
+  regle: >-
+    L'adversaire perd ${energie} d'énergie pour son prochain tour.
+  stats:
+    energie: null
