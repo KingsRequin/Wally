@@ -1220,7 +1220,10 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         largeur: Math.round(c.getBoundingClientRect().width),
         fenetre: Math.round(f.height),
         pochoir: p ? Math.round(p.getBoundingClientRect().width) : 0,
-        transform: getComputedStyle(c).transform,
+        // ⚠️ La torsion vit sur le RETOURNEUR depuis qu'une carte a deux
+        // faces, pas sur `.ca` : la mesurer sur la face rend « none » alors
+        // que la carte penche bel et bien.
+        transform: getComputedStyle(c.closest('.ca-retourneur')).transform,
         vernis: +getComputedStyle(c.querySelector('.ca-vernis')).opacity,
         deborde: Math.max(...cartes.map((x) => x.scrollHeight - x.clientHeight)),
       };
@@ -1243,6 +1246,43 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(action["vernis"] > 0.5, "cartes action : le vernis s'allume",
              str(action["vernis"]))
     rap.dire(not erreurs, "cartes action : aucune erreur JS", " · ".join(erreurs[:2]))
+
+    # 🚨 Le DOS ne se voit qu'après un clic : rien dans le parcours ci-dessus
+    # ne le charge. Une carte peut monter, se tordre, et n'avoir aucun dos —
+    # ou en avoir un resté face à l'endroit, la face visible EN MIROIR par
+    # dessus. On mesure donc l'état rendu APRÈS bascule.
+    page.locator(".tcgal-grille--action .ca-retourneur").first.click()
+    page.wait_for_timeout(1100)
+    dos = page.evaluate("""() => {
+      const t = document.querySelector('.tcgal-grille--action .ca-retourneur');
+      const d = t.querySelector('.ca-dos');
+      const b = d.getBoundingClientRect();
+      return {
+        retournee: t.classList.contains('ca-retournee'),
+        presse: t.getAttribute('aria-pressed'),
+        etincelles: d.querySelectorAll('.ca-dos-etincelle').length,
+        banderoles: d.querySelectorAll('.ca-dos-banderole').length,
+        titre: (d.querySelector('.ca-dos-titre') || {}).textContent || '',
+        largeur: Math.round(b.width),
+        // La face doit être hors de vue : sans `backface-visibility`, elle
+        // reste peinte en miroir par-dessus le dos.
+        faceCachee: getComputedStyle(t.querySelector('.ca')).backfaceVisibility,
+      };
+    }""")
+    rap.dire(dos["retournee"] and dos["presse"] == "true",
+             "dos : le clic retourne la carte", str(dos["presse"]))
+    rap.dire(dos["titre"] == "PURGATOIRE", "dos : la plaque porte son titre", dos["titre"])
+    rap.dire(dos["etincelles"] > 50, "dos : la trame est semée d'étincelles",
+             f"{dos['etincelles']} points")
+    rap.dire(dos["banderoles"] == 2, "dos : les deux banderoles sont là",
+             f"{dos['banderoles']}")
+    rap.dire(dos["largeur"] > 80, "dos : il a une largeur", f"{dos['largeur']} px")
+    rap.dire(dos["faceCachee"] == "hidden",
+             "dos : la face ne transparaît pas au travers", dos["faceCachee"])
+    trop = page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    rap.dire(trop <= 0, "dos : pas de débordement une fois retournée", f"{trop} px")
+    rap.dire(not erreurs, "dos : aucune erreur JS", " · ".join(erreurs[:2]))
     if captures:
         page.screenshot(path=str(captures / "public-tcg-action.png"), full_page=False)
     page.close()

@@ -144,6 +144,107 @@ function fenetre(carte, rang) {
   return h('div', { class: 'ca-fenetre' }, enfants);
 }
 
+// ── Le DOS ────────────────────────────────────────────────────────────────
+
+/** L'aire intérieure du cadre du dos, en em — le dos fait 28em de large. */
+const DOS_AIRE = { l: 25.4, h: 36.6 };
+const DOS_DEMI = 1.7;
+// La plaque est centrée (top:50% + translateY), donc sa boîte réelle va de
+// 12,3 à 24,3 : la zone morte se serre dessus, sinon elle emporte les deux
+// rangées de trame libre qui la bordent.
+const DOS_PLAQUE = { x0: 1.1, x1: 24.3, y0: 12.0, y1: 24.6 };
+// Serrée sur ce que la banderole RECOUVRE vraiment : la rangée à 32,3 lui est
+// tangente, donc à moitié visible, et elle doit scintiller comme les autres.
+const DOS_BANDEROLES = [{ y0: 2.1, y1: 3.9 }, { y0: 32.7, y1: 34.5 }];
+
+/** Les croisements de la trame où une étincelle peut naître.
+ *
+ * 🚨 La trame n'a pas deux grilles mais UNE : un damier de demi-pas dont on
+ * garde les cases de même parité. Elle est posée DEPUIS LE CENTRE de la carte,
+ * ce qui la rend d'office symétrique gauche/droite et haut/bas — calée sur le
+ * coin haut-gauche, elle était rognée en bas à droite.
+ *
+ * 🚨 Les points sont ÉNUMÉRÉS, jamais écrits à la main : trente-six points
+ * posés un par un laissaient toujours une rangée dehors, celle sous la
+ * banderole, puis celle au-dessus.
+ *
+ * Les zones couvertes par la plaque et par les banderoles sont retirées — un
+ * point invisible coûte un calque pour rien.
+ */
+function croisements() {
+  const pts = [];
+  const cx = DOS_AIRE.l / 2;
+  const cy = DOS_AIRE.h / 2;
+  const mMax = Math.floor(cx / DOS_DEMI);
+  const nMax = Math.floor(cy / DOS_DEMI);
+  for (let m = -mMax; m <= mMax; m++) {
+    for (let n = -nMax; n <= nMax; n++) {
+      if ((m + n) % 2 !== 0) continue;
+      const x = cx + m * DOS_DEMI;
+      const y = cy + n * DOS_DEMI;
+      const sousPlaque = x >= DOS_PLAQUE.x0 && x <= DOS_PLAQUE.x1
+        && y >= DOS_PLAQUE.y0 && y <= DOS_PLAQUE.y1;
+      if (sousPlaque || DOS_BANDEROLES.some((b) => y >= b.y0 && y <= b.y1)) continue;
+      // Retard pris sur la distance au centre en valeur ABSOLUE : les quatre
+      // points en miroir battent ensemble, deux voisins jamais.
+      const d = ((Math.abs(m) * 2 + Math.abs(n) * 5) % 12) * 0.5;
+      pts.push({
+        l: `${x.toFixed(2)}em`,
+        t: `${y.toFixed(2)}em`,
+        d: `${d.toFixed(2)}s`,
+      });
+    }
+  }
+  return pts;
+}
+
+// Calculés UNE fois pour la page : la trame est la même sur les cinquante dos,
+// et rien n'en dépend qui puisse changer.
+const DOS_POINTS = croisements();
+
+const DOS_DEFILE = 'PURGATOIRE · TCG · PURGATOIRE · TCG · PURGATOIRE · TCG · ';
+
+/** Une banderole défilante. Deux copies du texte, pour que la boucle se ferme
+ * sans couture — l'animation translate de −50 %, soit exactement une copie. */
+function banderole(bord) {
+  return h('div', { class: 'ca-dos-banderole', 'data-bord': bord },
+    h('div', { class: 'ca-dos-defile' },
+      h('span', { text: DOS_DEFILE }),
+      h('span', { text: DOS_DEFILE }),
+    ),
+  );
+}
+
+/** Le dos, identique pour toutes les cartes.
+ *
+ * 🚨 Identique, et c'est le point : l'or y est écrit en dur et aucune couleur
+ * de catégorie n'y entre. Un accent par carte trahirait son contenu depuis le
+ * dos, ce qui vide de son sens la pose face cachée.
+ */
+function dosCarte() {
+  return h('div', { class: 'ca-dos', 'aria-hidden': 'true' },
+    h('div', { class: 'ca-dos-plateau' },
+      h('div', { class: 'ca-dos-trame' }),
+      h('div', { class: 'ca-dos-vignette' }),
+      DOS_POINTS.map((p) => h('span', {
+        class: 'ca-dos-etincelle',
+        style: `left:${p.l};top:${p.t};animation-delay:${p.d}`,
+      })),
+      h('div', { class: 'ca-dos-plaque' },
+        h('span', { class: 'ca-dos-sur', text: 'LE TCG DU' }),
+        h('span', { class: 'ca-dos-titre', text: 'PURGATOIRE' }),
+        h('span', { class: 'ca-dos-trait' }),
+        h('span', { class: 'ca-dos-sous', text: 'TRADING CARD GAME' }),
+        ['hg', 'hd', 'bg', 'bd'].map((coin) =>
+          h('span', { class: 'ca-dos-coin', 'data-coin': coin })),
+      ),
+      banderole('haut'),
+      banderole('bas'),
+    ),
+    h('div', { class: 'ca-dos-cadre' }),
+  );
+}
+
 // ── La carte ──────────────────────────────────────────────────────────────
 
 /** Le degré de torsion, en degrés, au bord de la carte.
@@ -173,7 +274,8 @@ function phaseDe(cle) {
  * @param options.interactif branche souris et tactile. `false` quand la PAGE
  *                           pilote (gyroscope) — sans quoi les deux se
  *                           disputeraient la même transformation.
- * @returns {{boite, incliner, detruire}} `incliner(x, y)` attend [-0.5, 0.5].
+ * @returns {{boite, incliner, retourner, detruire}} `incliner(x, y)` attend
+ *          [-0.5, 0.5] ; `retourner(force?)` bascule et rend le nouvel état.
  */
 export function carteAction(carte, options = {}) {
   const rang = Number(options.rang) || 0;
@@ -191,8 +293,6 @@ export function carteAction(carte, options = {}) {
     class: 'ca',
     'data-type': carte.type,
     style: `--cat:${carte.categorieCouleur}`,
-    role: 'group',
-    'aria-label': `${carte.nom} — ${carte.type}, ${carte.categorieLabel}`,
   },
     h('div', { class: 'ca-vignette' }),
     h('div', { class: 'ca-tete' },
@@ -234,7 +334,20 @@ export function carteAction(carte, options = {}) {
   // est donc posée ici et pas laissée à la page : une page qui oublierait le
   // conteneur rendrait des cartes parfaitement plates — la transformation
   // s'applique, elle n'a simplement plus de profondeur — et rien ne le dirait.
-  const boite = h('div', { class: 'ca-scene' }, carteEl);
+  // 🚨 Trois niveaux, et chacun a une raison : la SCÈNE porte la perspective
+  // (posée sur l'élément qui tourne, chaque carte aurait son point de fuite en
+  // son propre centre) et sert de conteneur de requête pour les `em` ; le
+  // RETOURNEUR porte la torsion et la bascule dans une seule `transform` ; la
+  // face et le dos sont deux calques qui ne bougent pas d'eux-mêmes.
+  const retourneur = h('div', {
+    class: 'ca-retourneur',
+    role: 'button',
+    tabindex: '0',
+    'aria-pressed': 'false',
+    'aria-label': `${carte.nom} — ${carte.type}, ${carte.categorieLabel}.`
+      + ' Activer pour retourner la carte.',
+  }, carteEl, dosCarte());
+  const boite = h('div', { class: 'ca-scene' }, retourneur);
 
   /** Tord la carte et déplace le point chaud du vernis.
    *
@@ -247,64 +360,103 @@ export function carteAction(carte, options = {}) {
    * positif ; le pousser vers le bas doit faire fuir le bord bas, donc
    * `rotateX` NÉGATIF. Écrire les deux dans le même sens donne une carte qui
    * se penche à l'envers en vertical, et ça ne se voit qu'en le faisant.
+   *
+   * ⚠️ Tout s'écrit sur le RETOURNEUR : les propriétés personnalisées
+   * s'héritent, donc la face les lit pour son vernis sans qu'on les pose deux
+   * fois — et la torsion se compose avec la bascule au lieu de la remplacer.
    */
   const incliner = (x, y) => {
-    carteEl.style.setProperty('--ry', `${(x * 2 * TORSION).toFixed(2)}deg`);
-    carteEl.style.setProperty('--rx', `${(-y * 2 * TORSION).toFixed(2)}deg`);
+    retourneur.style.setProperty('--ry', `${(x * 2 * TORSION).toFixed(2)}deg`);
+    retourneur.style.setProperty('--rx', `${(-y * 2 * TORSION).toFixed(2)}deg`);
     // La traînée balaie la carte à contresens de la torsion : on l'incline
     // VERS la lumière, donc le reflet remonte du côté qui s'est relevé.
     // Course volontairement plus large que [0, 100] — la bande doit pouvoir
     // SORTIR du cadre aux deux extrémités, sinon elle s'arrête au bord et on
     // la voit s'écraser au lieu de partir.
     const bande = 50 - (x * 96) - (y * 34) + phase;
-    carteEl.style.setProperty('--bande', `${bande.toFixed(1)}%`);
+    retourneur.style.setProperty('--bande', `${bande.toFixed(1)}%`);
     // Le halo d'ambiance suit le même côté, en beaucoup plus mou.
-    carteEl.style.setProperty('--gx', `${(50 - x * 70).toFixed(0)}%`);
-    carteEl.style.setProperty('--gy', `${(50 - y * 80).toFixed(0)}%`);
+    retourneur.style.setProperty('--gx', `${(50 - x * 70).toFixed(0)}%`);
+    retourneur.style.setProperty('--gy', `${(50 - y * 80).toFixed(0)}%`);
     // L'arête qui remonte, pour le biseau. Bornée à ±1.
-    carteEl.style.setProperty('--ex', (-x * 2).toFixed(2));
-    carteEl.style.setProperty('--ey', (-y * 2).toFixed(2));
+    retourneur.style.setProperty('--ex', (-x * 2).toFixed(2));
+    retourneur.style.setProperty('--ey', (-y * 2).toFixed(2));
   };
 
   const reposer = () => {
-    carteEl.classList.remove('ca--vif');
-    carteEl.style.setProperty('--rx', '0deg');
-    carteEl.style.setProperty('--ry', '0deg');
-    carteEl.style.setProperty('--gy', '0%');
-    carteEl.style.setProperty('--ex', '0');
-    carteEl.style.setProperty('--ey', '0');
+    retourneur.classList.remove('ca-vif');
+    retourneur.style.setProperty('--rx', '0deg');
+    retourneur.style.setProperty('--ry', '0deg');
+    retourneur.style.setProperty('--gy', '0%');
+    retourneur.style.setProperty('--ex', '0');
+    retourneur.style.setProperty('--ey', '0');
+  };
+
+  /** Retourne la carte. Rend le nouvel état.
+   *
+   * ⚠️ `aria-pressed` suit, sinon un lecteur d'écran annonce toujours la même
+   * chose : le retournement est un CHANGEMENT D'ÉTAT, pas une navigation.
+   */
+  const retourner = (force) => {
+    const dessus = force === undefined
+      ? !retourneur.classList.contains('ca-retournee')
+      : !!force;
+    retourneur.classList.toggle('ca-retournee', dessus);
+    retourneur.setAttribute('aria-pressed', dessus ? 'true' : 'false');
+    return dessus;
   };
 
   const detachements = [];
+
+  // 🚨 Le retournement se branche TOUJOURS, y compris quand la page pilote la
+  // torsion au gyroscope (`interactif: false`). Ce drapeau ne dit pas « carte
+  // inerte », il dit « la torsion appartient à la page » — y attacher le clic
+  // rendrait la carte morte au doigt sur téléphone, là où le geste est le plus
+  // naturel.
+  const surClic = () => retourner();
+  const surTouche = (e) => {
+    // Entrée et Espace, comme un vrai bouton. `preventDefault` sur Espace,
+    // sinon la page défile d'un écran sous la carte qu'on vient de retourner.
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    e.preventDefault();
+    retourner();
+  };
+  retourneur.addEventListener('click', surClic);
+  retourneur.addEventListener('keydown', surTouche);
+  detachements.push(() => {
+    retourneur.removeEventListener('click', surClic);
+    retourneur.removeEventListener('keydown', surTouche);
+  });
 
   if (interactif) {
     // Un seul jeu d'écouteurs pour la souris ET le doigt : `pointermove` porte
     // les deux. Le tactile relâche sur `pointercancel` autant que sur
     // `pointerup` — un défilement qui démarre sur la carte émet le premier, et
     // sans lui la carte resterait tordue.
-    const surEntree = () => carteEl.classList.add('ca--vif');
+    const surEntree = () => retourneur.classList.add('ca-vif');
     const surMouvement = (e) => {
-      const r = carteEl.getBoundingClientRect();
+      const r = retourneur.getBoundingClientRect();
       if (!r.width || !r.height) return;
       incliner((e.clientX - r.left) / r.width - 0.5, (e.clientY - r.top) / r.height - 0.5);
     };
-    carteEl.addEventListener('pointerenter', surEntree);
-    carteEl.addEventListener('pointermove', surMouvement);
-    carteEl.addEventListener('pointerleave', reposer);
-    carteEl.addEventListener('pointercancel', reposer);
+    retourneur.addEventListener('pointerenter', surEntree);
+    retourneur.addEventListener('pointermove', surMouvement);
+    retourneur.addEventListener('pointerleave', reposer);
+    retourneur.addEventListener('pointercancel', reposer);
     detachements.push(() => {
-      carteEl.removeEventListener('pointerenter', surEntree);
-      carteEl.removeEventListener('pointermove', surMouvement);
-      carteEl.removeEventListener('pointerleave', reposer);
-      carteEl.removeEventListener('pointercancel', reposer);
+      retourneur.removeEventListener('pointerenter', surEntree);
+      retourneur.removeEventListener('pointermove', surMouvement);
+      retourneur.removeEventListener('pointerleave', reposer);
+      retourneur.removeEventListener('pointercancel', reposer);
     });
   }
 
   return {
     boite,
     incliner,
+    retourner,
     /** Allume le vernis sans pointeur — pour le pilotage au gyroscope. */
-    eveiller: () => carteEl.classList.add('ca--vif'),
+    eveiller: () => retourneur.classList.add('ca-vif'),
     endormir: reposer,
     detruire: () => detachements.forEach((d) => d()),
   };

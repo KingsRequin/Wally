@@ -42,12 +42,18 @@ function invitationHeros() {
 }
 
 function invitationAction() {
-  const geste = inclinaisonDisponible()
+  // Deux gestes, et ils ne se remplacent pas : l'un montre la matière, l'autre
+  // montre le dos. Le premier suit le moyen de pointage, le second est le même
+  // partout.
+  const matiere = inclinaisonDisponible()
     ? 'Penche ton téléphone : le vernis suit la lumière.'
     : 'Passe la souris dessus : elles se tordent sous le vernis.';
+  const retourne = window.matchMedia('(hover: none)').matches
+    ? 'Touche-en une pour la retourner.'
+    : 'Clique pour la retourner.';
   return 'Les cartes qu\'on joue en cours de partie. Le cadre dit le type —'
     + ' action ou passif — et le bandeau du haut dit la catégorie.'
-    + ` ${geste}`;
+    + ` ${matiere} ${retourne}`;
 }
 
 /** Fait suivre le gyroscope à la carte HÉROS que le lecteur a devant les yeux.

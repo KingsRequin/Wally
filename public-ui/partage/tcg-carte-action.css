@@ -33,7 +33,23 @@
   width: 100%;
 }
 
-.ca {
+/* 🚨 Le retournement et la torsion vivent sur le MÊME élément, et il n'est ni
+ * la face ni le dos. Posés séparément — la torsion sur la face, le retournement
+ * sur un parent — la face tournerait dans son propre repère et sortirait du
+ * dos pendant la bascule. Une seule `transform` les compose, dans cet ordre.
+ *
+ * ⚠️ Les variables sont déclarées ICI et pas sur `.ca` : elles sont héritées
+ * par les deux faces (une propriété personnalisée se transmet), donc le vernis
+ * les lit sans qu'on ait à les écrire deux fois. */
+.ca-retourneur {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 17 / 23.8;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx)) rotateY(calc(var(--ry) + var(--flip, 0deg)));
+  /* La bascule est plus lente que la torsion : c'est un geste, pas un suivi. */
+  transition: transform .55s cubic-bezier(.2, .8, .25, 1);
+  cursor: pointer;
   --rx: 0deg;
   --ry: 0deg;
   /* Où passe la TRAÎNÉE du vernis, en pourcentage de la diagonale. Au repos
@@ -43,18 +59,24 @@
    * collée sur du noir. */
   --gx: 50%;
   --gy: 0%;
+}
+
+.ca {
   --or: #e1a947;
   --encre: #12100c;
   --creme: #f7ecd9;
   --gris: #a9a2b0;
 
-  position: relative;
-  width: 100%;
-  aspect-ratio: 17 / 23.8;
+  position: absolute;
+  inset: 0;
   /* 100 / 17 : la carte fait 17em de large dans le design, donc 1em vaut un
    * dix-septième de SA largeur — jamais de celle de l'écran. Une seule valeur
    * commande toute l'échelle du dessin. */
   font-size: 5.8824cqw;
+  /* Sans ça, la face reste visible EN MIROIR par-dessus le dos une fois la
+   * carte tournée — les deux calques se disputent le même plan. */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   background: var(--encre);
   border-radius: .6em;
   border: .18em solid var(--typeC);
@@ -64,17 +86,18 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transform: rotateX(var(--rx)) rotateY(var(--ry));
-  /* Pas de `will-change: transform` en permanence : sur quarante cartes, ça
-   * réserve quarante calques GPU pour rien. Il est posé à la prise en main
-   * (`.ca--vif`) et retiré au relâchement. */
-  transition: transform .35s cubic-bezier(.2, .8, .2, 1);
 }
 
-.ca--vif {
+/* Pas de `will-change: transform` en permanence : sur cinquante cartes, ça
+ * réserve cinquante calques GPU pour rien. Il est posé à la prise en main et
+ * retiré au relâchement. */
+.ca-vif {
   will-change: transform;
   transition: transform .08s linear;
 }
+
+/* Retournée : une demi-rotation qui s'ajoute à la torsion. */
+.ca-retournee { --flip: 180deg; }
 
 /* Le type tient le CADRE. Deux dimensions, jamais mélangées : une carte de
  * soin passive et une carte de soin active partagent le vert et rien d'autre. */
@@ -134,7 +157,7 @@
   mix-blend-mode: screen;
 }
 
-.ca--vif .ca-vernis { opacity: 1; }
+.ca-vif .ca-vernis { opacity: 1; }
 
 /* 3. Le grain du vernis. Un plastique parfaitement lisse se lit comme du
  * rendu 3D ; c'est la micro-rugosité qui dit « objet réel ». Le bruit est un
@@ -169,7 +192,7 @@
   transition: box-shadow .35s ease;
 }
 
-.ca--vif .ca-biseau { transition: box-shadow .08s linear; }
+.ca-vif .ca-biseau { transition: box-shadow .08s linear; }
 
 /* ── L'en-tête : coût + catégorie ─────────────────────────────────────── */
 
@@ -408,6 +431,153 @@
  * n'a pas demandé moins d'information : la carte garde tout, elle ne bouge
  * plus. */
 @media (prefers-reduced-motion: reduce) {
-  .ca { transition: none; transform: none !important; }
+  /* ⚠️ On coupe la TORSION, pas la bascule : le dos porte une information que
+   * le lecteur a demandée en cliquant. Une carte qui ne se retourne plus n'est
+   * pas « moins animée », elle est cassée. */
+  .ca-retourneur { transition: none; --rx: 0deg !important; --ry: 0deg !important; }
   .ca-vernis { display: none; }
+  .ca-dos-etincelle, .ca-dos-defile { animation: none; }
+}
+
+/* ── Le DOS ───────────────────────────────────────────────────────────────
+ * Port de `Dos Carte.dc.html`, variante `purgatoire` — celle retenue dans les
+ * réglages de l'éditeur (sur cinq proposées : sceau, damas, ordre, braises).
+ *
+ * 🚨 Le dos est IDENTIQUE pour toutes les cartes, et l'or y est écrit en dur :
+ * un accent par carte trahirait son contenu depuis le dos. C'est la seule
+ * raison pour laquelle `--cat` n'entre pas ici.
+ *
+ * ⚠️ Le dos fait 28em de large dans le design, la face 17em. Les deux ont le
+ * MÊME ratio (0,714) mais pas la même échelle d'`em` : d'où deux `font-size`
+ * en `cqw` différents, 100/28 contre 100/17.
+ */
+
+@keyframes ca-defile { from { transform: translate3d(0, 0, 0) } to { transform: translate3d(-50%, 0, 0) } }
+
+@keyframes ca-scintille {
+  0%, 100% { transform: translate(-50%, -50%) scale(.5); opacity: 0 }
+  22%      { transform: translate(-50%, -50%) scale(1.25); opacity: 1 }
+  50%      { transform: translate(-50%, -50%) scale(1); opacity: .55 }
+  78%      { transform: translate(-50%, -50%) scale(.55); opacity: 0 }
+}
+
+.ca-dos {
+  position: absolute;
+  inset: 0;
+  /* 100 / 28 : le dos fait 28em de large dans le design. */
+  font-size: 3.5714cqw;
+  border-radius: .6em;
+  background: #12100c;
+  contain: layout style;
+  /* Pré-tourné : c'est lui la face cachée au repos. */
+  transform: rotateY(180deg);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.ca-dos-plateau {
+  position: absolute;
+  inset: 1.3em;
+  overflow: hidden;
+  border-radius: .25em;
+  background: #15111c;
+}
+
+/* La trame losange : un damier de demi-pas dont on garde les cases de même
+ * parité. Les quatre calques sont décalés du même montant que les points, pour
+ * que les pastilles tombent sur les croisements. */
+.ca-dos-trame {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(45deg, rgba(247, 236, 217, 0) 48.9%, rgba(247, 236, 217, .07) 48.9%, rgba(247, 236, 217, .07) 51.1%, rgba(247, 236, 217, 0) 51.1%),
+    linear-gradient(-45deg, rgba(247, 236, 217, 0) 48.9%, rgba(247, 236, 217, .07) 48.9%, rgba(247, 236, 217, .07) 51.1%, rgba(247, 236, 217, 0) 51.1%),
+    radial-gradient(circle .2em at 50% 50%, rgba(225, 169, 71, .28) 60%, transparent 62%),
+    radial-gradient(circle .2em at 50% 50%, rgba(225, 169, 71, .28) 60%, transparent 62%);
+  background-size: 3.4em 3.4em;
+  background-position: .8em -.4em, .8em -.4em, .8em -.4em, -.9em 1.3em;
+}
+
+.ca-dos-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(95% 68% at 50% 50%, rgba(0, 0, 0, 0) 28%, rgba(8, 6, 10, .8) 100%);
+}
+
+.ca-dos-etincelle {
+  position: absolute;
+  width: .52em;
+  height: .52em;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #fff6e2, #e1a947);
+  box-shadow: 0 0 .5em rgba(225, 169, 71, .7);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.5);
+  animation: ca-scintille 6s ease-in-out infinite backwards;
+}
+
+.ca-dos-plaque {
+  position: absolute;
+  left: 1.7em;
+  right: 1.7em;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(18, 16, 12, .92);
+  border: .16em solid #e1a947;
+  box-shadow: 0 0 0 .45em rgba(18, 16, 12, .7), 0 0 2.6em rgba(225, 169, 71, .18);
+  padding: 2.2em .9em 2em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1em;
+}
+
+.ca-dos-sur { font: 700 .78em/1 'JetBrains Mono', monospace; letter-spacing: .34em; color: rgba(247, 236, 217, .5); }
+
+.ca-dos-titre {
+  display: inline-block;
+  font: 400 2.5em/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: -.02em;
+  color: #f7ecd9;
+  text-shadow: .14em .14em 0 rgba(18, 16, 12, .95);
+}
+
+.ca-dos-trait { width: 6em; height: .2em; background: #e1a947; }
+
+.ca-dos-sous { white-space: nowrap; font: 700 .78em/1 'JetBrains Mono', monospace; letter-spacing: .2em; color: #e1a947; }
+
+.ca-dos-coin { position: absolute; width: .66em; height: .66em; background: #e1a947; transform: rotate(45deg); }
+.ca-dos-coin[data-coin="hg"] { left: -.5em; top: -.5em; }
+.ca-dos-coin[data-coin="hd"] { right: -.5em; top: -.5em; }
+.ca-dos-coin[data-coin="bg"] { left: -.5em; bottom: -.5em; }
+.ca-dos-coin[data-coin="bd"] { right: -.5em; bottom: -.5em; }
+
+/* Deux banderoles en miroir haut/bas. Celle du haut est retournée de 180° :
+ * le texte y défile donc dans l'autre sens, ce qui est ce qui fait la symétrie. */
+.ca-dos-banderole {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.4em;
+  overflow: hidden;
+  background: #f7ecd9;
+  border-top: .12em solid #12100c;
+  border-bottom: .12em solid #12100c;
+  display: flex;
+  align-items: center;
+}
+
+.ca-dos-banderole[data-bord="haut"] { top: 1.8em; transform: rotate(180deg); }
+.ca-dos-banderole[data-bord="bas"] { bottom: 1.8em; }
+
+.ca-dos-defile { display: flex; white-space: nowrap; animation: ca-defile 30s linear infinite; }
+.ca-dos-defile span { font: 700 .86em/1 'JetBrains Mono', monospace; letter-spacing: .3em; color: #12100c; padding-right: .3em; }
+
+.ca-dos-cadre {
+  position: absolute;
+  inset: 0;
+  border-radius: .6em;
+  pointer-events: none;
+  border: .15em solid rgba(247, 236, 217, .85);
+  box-shadow: inset 0 0 0 1.15em #12100c, inset 0 0 0 1.3em #e1a947;
 }
