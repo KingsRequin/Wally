@@ -54,7 +54,7 @@
   visuel: /assets/icones/flatbed-covered.svg
   regle: >-
     Reste sur le plateau, FACE VISIBLE, et se relance à chaque tour. Elle
-    blesse un héros adverse, puis un des tiens en ligne, tiré au hasard,
+    blesse un héros adverse, puis un des tiens, tiré au hasard,
     encaisse le contrecoup. Le risque et le contrecoup montent à chaque
     utilisation et ne redescendent JAMAIS de la partie.
 
@@ -127,7 +127,9 @@
   categorie: attaque
   visuel: /assets/cartes/carte-flatline.png
   forme: image
-  regle: Ajoute de l'Aura à un héros au hasard.
+  regle: >-
+    À la pose, ajoute de l'Aura à un de tes héros tiré au hasard. Si ce héros
+    meurt, la carte est détruite avec lui.
 
 - cle: manette
   nom: La manette
@@ -146,7 +148,7 @@
   categorie: attaque
   visuel: /assets/icones/speedometer.svg
   regle: >-
-    Tant qu'il ne te reste qu'UN SEUL héros en ligne, sa chance d'esquive est
+    Tant qu'il ne te reste qu'UN SEUL héros vivant, sa chance d'esquive est
     fortement accrue.
 
 - cle: codage_requin
@@ -194,7 +196,7 @@
   visuel: /assets/cartes/carte-totem.svg
   forme: image
   regle: >-
-    Une fois, un de tes héros MORTS revient en ligne avec la moitié de ses PV,
+    Une fois, un de tes héros MORTS revient en jeu avec la moitié de ses PV,
     arrondie au supérieur.
 
 - cle: statue_mirage
@@ -300,8 +302,8 @@
   categorie: controle
   visuel: /assets/icones/rod-of-asclepius.svg
   regle: >-
-    Un de tes héros quitte la ligne pour un tour — il ne peut ni agir ni être
-    touché — et revient complètement soigné.
+    Un de tes héros quitte la table pour un tour : il ne peut ni agir ni être
+    touché, et il revient complètement soigné.
 
 - cle: scan_seer
   nom: Le scan de Seer
@@ -362,6 +364,14 @@
   type: action
   categorie: controle
   visuel: /assets/icones/book-pile.svg
+  face_cachee: true
+  regle: >-
+    Pose-la FACE CACHÉE : elle gagne ${attaque} d'Attaque par tour passé
+    ainsi, et toi seul vois le compteur, au dos. Retourne-la quand tu veux,
+    l'Attaque accumulée se répartit AU HASARD entre tes héros. Si
+    l'adversaire la détruit avant, tout est perdu.
+  stats:
+    attaque: 1
 
 - cle: explication_requin
   nom: Requin qui tente d'expliquer
