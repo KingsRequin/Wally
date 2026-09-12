@@ -14,11 +14,16 @@ C'est donc le seul endroit où la commu s'écrit vraiment.
 
 ## 1. Deux sous-types
 
-| | **Passif** | **Tactique** |
+| | **Passif** | **Action** |
 |---|---|---|
 | Quand | posé, reste en jeu | joué, effet immédiat, part |
 | Emplacements | **2 par joueur** | aucun |
 | Coût | payé une fois à la pose | payé au moment de jouer |
+
+⚠️ **Le sous-type se dit ACTION, plus « tactique » — 2026-09-12.** C'est le mot de l'owner, et
+c'est celui que le recto affiche : le bandeau du bas d'une carte porte `ACTION` ou `PASSIF`. Le
+reste de ce fichier et `2026-09-05-tcg-regles-heros-tactiques.md` disent encore « tactique » par
+endroits — le renommage complet reste à faire, il touche deux specs et le nom d'un fichier.
 
 Un passif occupe une place limitée : c'est ce qui l'empêche d'être toujours meilleur qu'une
 tactique. Deux passifs maximum, on choisit.
@@ -49,6 +54,92 @@ trois » revaut **+2**.
 `coût en énergie = ⌈ valeur de l'effet en points / 3 ⌉`, borné 1-5 — le taux du barème
 (1 énergie ≈ 3 points de budget). Un effet qui frappe l'adversaire vaut ×1,25 : le tempo coûte
 plus cher que la masse.
+
+---
+
+## 3bis. ⚖️ Ce que le DESIGN a figé — relevé le 2026-09-12
+
+Le recto et le dos des cartes action/passif ont été dessinés dans le projet Claude Design
+« Conception plateau TCG Wally ». Trois fichiers font foi, et ils priment sur ce document pour
+tout ce qui touche au type, à la catégorie et au coût :
+
+| Fichier du projet | Ce qu'il porte |
+|---|---|
+| `Cartes Tactique.dc.html` | La planche — **46 entrées de catalogue, 52 cartes affichées** |
+| `Carte Tactique.dc.html` | UNE carte, recto figé, réutilisable par le plateau |
+| `Dos Carte.dc.html` | Le dos — 5 variantes, **`purgatoire` est celle retenue dans l'éditeur** |
+
+Relevé figé sur disque : `/opt/design-tcg/import-2026-09-12/catalogue-cartes-action-passif.tsv`.
+🚨 Les valeurs qui comptent dans un `.dc.html` sont les `default` des `data-props`, **jamais** les
+replis `?? '…'` du `renderVals()`.
+
+### 🚨 Tous les coûts sont remis à ZÉRO, et un 0 ne veut pas dire gratuit
+
+> ⚖️ L'owner, 2026-09-12 : *« on ne peut pas mettre de coût alors que les cartes ne sont pas
+> terminées, le coût est en rapport avec la puissance de la carte, donc faut attendre que tout
+> soit fini. »*
+
+Les colonnes `Coût` des tableaux du §4 portaient les valeurs calibrées des 2026-09-04/10. Elles
+**ne sont plus la vérité** : la planche met 0 partout, et **28 des 46 règles y sont encore
+« Règle pas encore écrite »**. La colonne est donc passée à `—`. Le raisonnement de prix qui avait
+produit les anciens chiffres n'est pas perdu — il vit dans la propriété `Notes` de chaque fiche
+de la base Notion « 🃏 Cartes du Purgatoire », carte par carte, avec sa chaîne de calcul.
+
+⚠️ Le barème du §3 reste la règle de tarification. Ce qui change, c'est **quand** on l'applique :
+à la fin, une fois l'effet arrêté, et pas pendant qu'on l'écrit.
+
+### 🆕 Deux dimensions au lieu d'une : le TYPE et la CATÉGORIE
+
+Le recto ne les mélange jamais. **Le cadre dit le type, le bandeau dit la catégorie.**
+
+| Dimension | Valeurs | Où ça se voit |
+|---|---|---|
+| **Type** | `ACTION` `#2f5f94` · `PASSIF` `#f7ecd9` | Le cadre de la carte, et le bandeau du bas |
+| **Catégorie** | attaque `#b23b2e` · soin `#3d6e46` · contrôle `#7a5296` · aura `#ad3f63` · ressource `#35707d` | La barrette du haut, avec son icône |
+
+🚨 **L'or `#e1a947` est RÉSERVÉ à la pastille de coût.** L'Aura était or, elle est passée en baie
+pour ça : deux choses différentes de la même couleur au même endroit se lisent comme la même
+chose. Aucune catégorie ne portera d'or.
+
+⚠️ **Ces cinq catégories ne sont PAS les cinq familles du §5** (Soin et protection · Attaque et
+dégâts · Énergie et tempo · Aura et coopération · Rares). Les familles servaient à mesurer la
+couverture du paquet ; les catégories sont ce qu'un joueur LIT sur la carte. Les comptes du §5
+n'en dérivent pas et ne doivent pas être recalculés dessus.
+
+Le passage aux catégories a **reclassé** quatre cartes par rapport aux familles : *Le
+clavier-souris* et *Push par 3 teams* sont en **soin**, *Le care package* en **ressource**, *Un
+montage de Malef* en **contrôle**.
+
+### 🆕 Six cartes de plus, une renommée, cinq sans visuel
+
+- **Renommée** : *Le scan de Crypto* → **`Le scan de Seer`**.
+- **Au design mais pas dans ce fichier** (6) : *L'anti-cheat* · *Pika* · *Spiro* · *Lili* ·
+  *Pika, Spiro et Lili* · *« C'est mon kill » / « NOTRE kill »*. Les quatre cartes de chats sont
+  en `PASSIF / aura`, les deux autres en `ACTION`.
+- **Ici mais pas encore dessinées** (5, arbitrage owner du 2026-09-12 — elles RESTENT au
+  catalogue) : *Le mode diva* · *Michel-Velux* · *Sur le chemin* · *La Chute* · *Le pendu*. Elles
+  portent `*(sans visuel)*` dans la colonne Type, et pas un type inventé : écrire `ACTION` pour
+  une carte que la planche ignore ferait croire que le design l'a tranché.
+
+### Les mécaniques d'illustration du recto
+
+Une seule s'applique par carte, dans cet ordre : **rang** (carte à regrouper : icône entière
+barrée en diagonale, frappée de « n SUR 3 ») · **semis** (l'icône répétée, position tirée d'une
+graine FIXE dérivée du nom — deux captures de la même carte sont identiques) · **arc** (la même
+figure, mais rangée en courbe : le semis dit « en vrac », l'arc dit « ensemble ») · **image**
+(un visuel fourni, posé en **pochoir** et teinté de la couleur de catégorie, jamais en image
+brute) · **texte** (le mot posé en Archivo Black à la taille d'une icône — *Quoi → FEUR* n'a pas
+d'objet à dessiner, il a une réplique) · **icône de catégorie** en dernier recours.
+
+⚠️ Chaque carte porte **deux** icônes, et c'est le but : celle du bandeau est celle de la
+CATÉGORIE — identique sur toutes les cartes de la famille, c'est ce qui la rend lisible d'un coup
+d'œil — et la grande est celle de la CARTE. Donner son icône au camion de Raiky n'efface pas
+l'épée du bandeau.
+
+⚠️ Le bandeau **FACE CACHÉE** n'est aujourd'hui posé que sur deux cartes (*Le baril de Caustique*,
+*Typical Octane*). L'owner a généralisé la pose face cachée à **toute** carte action le
+2026-09-12 — le recto ne le reflète pas encore, et il ne le doit peut-être pas : un bandeau porté
+par 46 cartes sur 46 ne dit plus rien.
 
 ---
 
@@ -222,18 +313,18 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 ### Soin et protection
 
-| Carte | Type | Coût | Effet | Origine |
-|---|---|---|---|---|
-| **Tenma à 10 HP** | passif | 2 | le premier de tes héros qui tomberait à **0 PV survit à 1 PV** et gagne **+5 d'Attaque** ce tour | 2 memes — *« TENMA A 10HP : moi qui pensais pouvoir gagner mon 1v1 »* · 17 pers. |
-| **Push par 3 teams** | tactique | 1 | **tu choisis** lequel de tes héros encaisse **toutes** les attaques adverses ce tour ; les autres ne subissent rien | le meme de la vache hébétée |
-| **Le mode diva** | tactique | 3 | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
-| **Lifeline** | passif | 3 | **Régénération** : +2 PV à un héros allié au début de chacun de tes tours | la médic d'Apex — la statue que Kassandre exige, et le perso que Raiky refuse de lâcher |
-| **Mets-le dans du riz** | tactique | 2 | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
-| 🆕 **Le totem** | passif | 3 | **une fois** : un de tes héros morts revient en ligne avec **la moitié de ses PV**, arrondie au supérieur | le totem de Revenant — 3 pers. au chat, mais la ref Apex se passe d'explication |
-| 🆕 **La statue de Mirage** | passif, **à regrouper** | 1 | une fois les **trois** réunies et regroupées, **tes cartes de soin ne coûtent plus rien** | la statue — celle que Kassandre exige déjà pour son entrée royale |
-| 🆕 **Le leurre** | tactique | 2 | double un de tes héros en jeu ; **une seule des deux copies est vraie**. Attaquer la fausse la détruit et **coûte le tour** de l'attaquant | Mirage — 5 pers. |
-| 🆕 **Le Rhum** | passif, **à regrouper** | 1 | chaque Rhum en jeu fait perdre **1 PV tous les 5 tours** à son porteur. Les **trois** regroupées donnent **50 % d'esquive** | *« le rhum là »* · *« ya du rhum ? »* |
-| 🆕 **Le baril de soins** | passif | 2 | tant qu'il est en jeu, **tout baril posé soigne au lieu de blesser** — y compris ceux de l'adversaire | le baril d'Apex, l'autre usage |
+| Carte | Type | Catégorie | Coût | Effet | Origine |
+|---|---|---|---|---|---|
+| **Tenma** | PASSIF | attaque | — | le premier de tes héros qui tomberait à **0 PV survit à 1 PV** et gagne **+5 d'Attaque** ce tour | 2 memes — *« TENMA A 10HP : moi qui pensais pouvoir gagner mon 1v1 »* · 17 pers. |
+| **Push par 3 teams** | ACTION | soin | — | **tu choisis** lequel de tes héros encaisse **toutes** les attaques adverses ce tour ; les autres ne subissent rien | le meme de la vache hébétée |
+| **Le mode diva** | *(sans visuel)* | — | — | un héros allié devient la seule cible possible ce tour, et gagne +3 PV | l'entrée royale de Kassandre, statue de Lifeline comprise |
+| **Lifeline** | PASSIF | soin | — | **Régénération** : +2 PV à un héros allié au début de chacun de tes tours | la médic d'Apex — la statue que Kassandre exige, et le perso que Raiky refuse de lâcher |
+| **Mets-le dans du riz** | ACTION | soin | — | rend **6 PV** à un héros allié — mais **au début de ton prochain tour**, pas maintenant | *« mets ton casque dans du riz »* · *« t'as essayé de mettre ton arc star dans du riz avant de la jeter ? »* |
+| 🆕 **Le totem** | PASSIF | soin | — | **une fois** : un de tes héros morts revient en ligne avec **la moitié de ses PV**, arrondie au supérieur | le totem de Revenant — 3 pers. au chat, mais la ref Apex se passe d'explication |
+| 🆕 **La statue de Mirage** | PASSIF, **à regrouper** | soin | — | une fois les **trois** réunies et regroupées, **tes cartes de soin ne coûtent plus rien** | la statue — celle que Kassandre exige déjà pour son entrée royale |
+| 🆕 **Le leurre** | ACTION | contrôle | — | double un de tes héros en jeu ; **une seule des deux copies est vraie**. Attaquer la fausse la détruit et **coûte le tour** de l'attaquant | Mirage — 5 pers. |
+| 🆕 **Le Rhum** | PASSIF, **à regrouper** | soin | — | chaque Rhum en jeu fait perdre **1 PV tous les 5 tours** à son porteur. Les **trois** regroupées donnent **50 % d'esquive** | *« le rhum là »* · *« ya du rhum ? »* |
+| 🆕 **Le baril de soins** | PASSIF | soin | — | tant qu'il est en jeu, **tout baril posé soigne au lieu de blesser** — y compris ceux de l'adversaire | le baril d'Apex, l'autre usage |
 
 > `Le totem` **introduit la RÉANIMATION**, et c'est la première fois qu'un héros mort revient. Ce
 > n'est pas un effet de plus : ça change la condition de victoire, qui repose sur les héros qui
@@ -287,23 +378,23 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 ### Attaque et dégâts
 
-| Carte | Type | Coût | Effet | Origine |
-|---|---|---|---|---|
-| **La manette** | passif | 2 | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | l'objet, plus personne derrière |
-| **Le clavier-souris** | passif | 2 | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | l'objet, plus personne derrière |
-| **La Flatline d'Azraël** | passif | 2 | **+4 d'Attaque** à un héros allié, pour toute la partie | *« c'est LE flatline »* · *« tu croises plus de hemlock que de flatline, ce jeu est si cruel »* |
-| **Le tunnel de Rina** | tactique | 2 | pose l'état **Tunnel** sur un héros adverse — il ne peut plus attaquer que le tien, 2 tours | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
-| **Codage à la Requin** | tactique | 2 | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
-| **Séance de révision avec Meliodas** | tactique | 1 | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
-| **Aim assist = aimbot** | tactique | 2 | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
-| **Azraël met ta perk !** | tactique | 2 | pose l'état **Oublie** sur un héros adverse | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
-| **POV le chevreuil** | tactique | 2 | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
-| **Mozambique here!** | tactique | 2 | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
-| **Raciste** | tactique | 2 | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
-| 🆕 **Le camion de Raiky** | tactique | 2 | **4 dégâts** à un héros adverse | son pseudo entier : *Raiky le fusible de camion* — 6 pers., 26 occ. |
-| 🆕 **Le stim d'Octane** | tactique | 1 | un héros allié perd **2 PV** et gagne **+4 d'Attaque** ce tour | Octane — 18 pers., 36 occ. |
-| 🆕 **Le cluster** | tactique | 2 | **4 dégâts répartis au hasard** entre les héros adverses, jamais plus de 2 sur le même | la grenade à fragmentation — 6 pers. |
-| 🆕 **Le baril de Caustique** | tactique, **face cachée** | 2 | **1 dégât à TOUS les héros** — les tiens compris — au début de chacun des 3 prochains tours | Caustique — 14 pers., 22 occ. |
+| Carte | Type | Catégorie | Coût | Effet | Origine |
+|---|---|---|---|---|---|
+| **La manette** | PASSIF | attaque | — | si le Tirage du tour ≥ 4, tes héros frappent **deux fois** ce tour | l'objet, plus personne derrière |
+| **Le clavier-souris** | PASSIF | soin | — | si le Tirage ≥ 3, tes héros ignorent les dégâts de zone | l'objet, plus personne derrière |
+| **La Flatline d'Azraël** | PASSIF | attaque | — | **+4 d'Attaque** à un héros allié, pour toute la partie | *« c'est LE flatline »* · *« tu croises plus de hemlock que de flatline, ce jeu est si cruel »* |
+| **Le tunnel de Rina** | ACTION | contrôle | — | pose l'état **Tunnel** sur un héros adverse — il ne peut plus attaquer que le tien, 2 tours | *« tout ça pour esquiver son tunel »* · *« tunel numero 2......... »* · le GIF Tenor dédié |
+| **Codage à la Requin** | ACTION | attaque | — | Tirage ≥ 5 : 8 dégâts à un héros adverse · Tirage ≤ 2 : 3 dégâts à un des tiens · sinon 4 | ça compile ou ça casse |
+| **Séance de révision avec Meliodas** | ACTION | contrôle | — | −3 d'Attaque à un héros adverse **et −1 au tien le plus fort** ce tour | on s'endort à deux |
+| **Aim assist = aimbot** | ACTION | attaque | — | copie l'Attaque de ton héros le plus fort sur un autre des tiens ce tour, **dans la limite de +5** | le meme *The Office* « they're the same picture », signé Taki — 7 pers. |
+| **Azraël met ta perk !** | ACTION | contrôle | — | pose l'état **Oublie** sur un héros adverse | le meme de la mouette qui inspire et hurle *« azrael met ta perk !!!! »* |
+| **POV le chevreuil** | ACTION | contrôle | — | pose **Stun** sur un héros adverse — figé dans les phares | le meme du chevreuil *« quand il a vu la voiture »* |
+| **Mozambique here!** | ACTION | attaque | — | un héros allié n'inflige plus que **1 dégât** ce tour, mais il frappe **TOUS** les héros adverses | le meme *« redis-le encore une fois »* — la pire arme d'Apex, devenue culte |
+| **Raciste** | ACTION | contrôle | — | **−3 d'Attaque à tous les héros adverses qui partagent la même faction**, ce tour | le mot ne veut PAS dire ça ici : dans la commu, être raciste c'est jouer toujours les mêmes persos ou la même arme — ~10 pers. |
+| 🆕 **Le camion de Raiky** | ACTION | attaque | — | **4 dégâts** à un héros adverse | son pseudo entier : *Raiky le fusible de camion* — 6 pers., 26 occ. |
+| 🆕 **Le stim d'Octane** | ACTION | attaque | — | un héros allié perd **2 PV** et gagne **+4 d'Attaque** ce tour | Octane — 18 pers., 36 occ. |
+| 🆕 **Le cluster** | ACTION | attaque | — | **4 dégâts répartis au hasard** entre les héros adverses, jamais plus de 2 sur le même | la grenade à fragmentation — 6 pers. |
+| 🆕 **Le baril de Caustique** | ACTION, **face cachée** | attaque | — | **1 dégât à TOUS les héros** — les tiens compris — au début de chacun des 3 prochains tours | Caustique — 14 pers., 22 occ. |
 
 > 🚨 **`Le tunnel de Rina` est la carte « Blabla Rina »**, proposée le 2026-09-05 dans la fiche
 > Notion et jamais écrite ici. Même gag, même effet, même prix : **une seule carte**, sous le nom
@@ -361,19 +452,19 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 ### Énergie et tempo
 
-| Carte | Type | Coût | Effet | Origine |
-|---|---|---|---|---|
-| **Les PP du samedi** | tactique | 2 | **+4 d'énergie**, mais l'adversaire en gagne **2** | le rituel du samedi — **42 pers.**, 149 occ. |
-| **Requin qui tente d'expliquer** | tactique | 2 | les tactiques de l'adversaire coûtent **+1 d'énergie** ce tour | le meme des formules confuses — 17 pers. |
-| **Raiky dans l'anneau** | tactique | 2 | un héros de ta **réserve** entre en ligne immédiatement, mais perd **2 PV** | le meme *Let me in* — hors zone, il veut rentrer |
-| **De l'air** | tactique | 2 | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
-| **Michel-Velux** | tactique | 1 | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
-| 🆕 **Rendez-vous au véto** | tactique | 3 | pose **Scroll** sur un héros adverse — il passe son tour — **et −2 d'Aura** | les vrais rendez-vous chez le véto d'Azraël pour l'œil de Spiro, qui annulent des streams — 4 pers. |
-| 🆕 **Le drone de Crypto** | tactique | 2 | **regarde la main de l'adversaire** jusqu'à la fin du tour | Crypto — **25 pers., 121 occ.**, la ref la mieux partagée du lot |
-| 🆕 **Le care package** | tactique | 2 | pioche **3 cartes**, garde-en **1**, remets les autres au-dessus de ta pioche | le ravitaillement d'Apex |
-| 🆕 **Le shop de Loba** | tactique | 2 | prends **une carte au hasard** dans la main de l'adversaire | Loba — 19 pers., 40 occ. |
-| 🆕 **Typical Octane** | tactique, **face cachée** | 2 | la prochaine fois que l'adversaire pioche, **c'est toi qui prends la carte** | le meme *typical octane* — le mec qui part avec ce qui n'est pas à lui |
-| 🆕 **Le scan de Crypto** | tactique | 3 | **désactive tous les passifs adverses** pendant 2 tours | le drone qui scanne — 14 pers. sur *scan* |
+| Carte | Type | Catégorie | Coût | Effet | Origine |
+|---|---|---|---|---|---|
+| **Les PP du samedi** | ACTION | ressource | — | **+4 d'énergie**, mais l'adversaire en gagne **2** | le rituel du samedi — **42 pers.**, 149 occ. |
+| **Requin qui tente d'expliquer** | ACTION | contrôle | — | les tactiques de l'adversaire coûtent **+1 d'énergie** ce tour | le meme des formules confuses — 17 pers. |
+| **Raiky dans l'anneau** | ACTION | contrôle | — | un héros de ta **réserve** entre en ligne immédiatement, mais perd **2 PV** | le meme *Let me in* — hors zone, il veut rentrer |
+| **De l'air** | ACTION | ressource | — | l'adversaire gagne 2 d'énergie de moins au tour suivant | *« tu manges quoi à midi ? — de l'air 😅 »* |
+| **Michel-Velux** | *(sans visuel)* | — | — | +4 d'énergie immédiatement, mais l'adversaire choisit ton Tirage au prochain tour | le running gag du TTS |
+| 🆕 **Rendez-vous au véto** | ACTION | contrôle | — | pose **Scroll** sur un héros adverse — il passe son tour — **et −2 d'Aura** | les vrais rendez-vous chez le véto d'Azraël pour l'œil de Spiro, qui annulent des streams — 4 pers. |
+| 🆕 **Le drone de Crypto** | ACTION | ressource | — | **regarde la main de l'adversaire** jusqu'à la fin du tour | Crypto — **25 pers., 121 occ.**, la ref la mieux partagée du lot |
+| 🆕 **Le care package** | ACTION | ressource | — | pioche **3 cartes**, garde-en **1**, remets les autres au-dessus de ta pioche | le ravitaillement d'Apex |
+| 🆕 **Le shop de Loba** | ACTION | ressource | — | prends **une carte au hasard** dans la main de l'adversaire | Loba — 19 pers., 40 occ. |
+| 🆕 **Typical Octane** | ACTION, **face cachée** | ressource | — | la prochaine fois que l'adversaire pioche, **c'est toi qui prends la carte** | le meme *typical octane* — le mec qui part avec ce qui n'est pas à lui |
+| 🆕 **Le scan de Seer** | ACTION | contrôle | — | **désactive tous les passifs adverses** pendant 2 tours | le drone qui scanne — 14 pers. sur *scan* |
 
 > `Rendez-vous au véto` : Scroll sur un héros adverse vaut plus qu'un Stun (il retire aussi
 > l'Ultime, cf. les états ci-dessus) — 4 points **× 1,25** = 5, plus 2 d'Aura retirée × 1,25 = 2,5
@@ -424,13 +515,13 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 ### Aura et coopération
 
-| Carte | Type | Coût | Effet | Origine |
-|---|---|---|---|---|
-| **Apéro chez Zeddo** | passif | 2 | +2 d'Aura à tous tes héros en ligne | l'apéro |
-| **10 pizzas géantes** | tactique | 3 | rend 4 PV à **tous** tes héros. En coop, à ceux de tous les joueurs | la commande à 240 € |
-| **Sur le chemin** | passif | 3 | l'Aura de tes héros s'applique aussi aux héros des **autres joueurs** | le rituel de chanson du salon |
-| **Un piercing de petitpoissonnn** | tactique | 1 | +3 d'Aura à un héros allié pour la partie, **et il perd 1 PV** | *« j'ai craqué j'ai un nouveau piercing azra »* · *« comme ça j'ai un nombre pair de piercing »* |
-| 🆕 **Le steak haché de Meliodas** | tactique | 2 | désigne un héros adverse : ce tour, il **ne reçoit ni Aura ni soin allié**. Il est seul dans son assiette | *« mon steak haché ressemblait un peu à un pissenlit à être seul dans mon assiette »* — 5 pers. sur une semaine |
+| Carte | Type | Catégorie | Coût | Effet | Origine |
+|---|---|---|---|---|---|
+| **Apéro chez Zeddo** | ACTION | aura | — | +2 d'Aura à tous tes héros en ligne | l'apéro |
+| **10 pizzas géantes** | ACTION | soin | — | rend 4 PV à **tous** tes héros. En coop, à ceux de tous les joueurs | la commande à 240 € |
+| **Sur le chemin** | *(sans visuel)* | — | — | l'Aura de tes héros s'applique aussi aux héros des **autres joueurs** | le rituel de chanson du salon |
+| **Un piercing de petitpoissonnn** | ACTION | aura | — | +3 d'Aura à un héros allié pour la partie, **et il perd 1 PV** | *« j'ai craqué j'ai un nouveau piercing azra »* · *« comme ça j'ai un nombre pair de piercing »* |
+| 🆕 **Le steak haché de Meliodas** | ACTION | contrôle | — | désigne un héros adverse : ce tour, il **ne reçoit ni Aura ni soin allié**. Il est seul dans son assiette | *« mon steak haché ressemblait un peu à un pissenlit à être seul dans mon assiette »* — 5 pers. sur une semaine |
 
 > `Le steak haché de Meliodas` : couper un héros de l'Aura et des soins de son camp ≈ 4 points
 > **× 1,25** → 5 → `⌈5/3⌉ = 2` d'énergie.
@@ -455,12 +546,12 @@ uniquement dans un catalogue de cartes est une mécanique qu'on retirera par err
 
 ### Les rares — elles touchent aux mécaniques signature
 
-| Carte | Type | Coût | Effet | Origine |
-|---|---|---|---|---|
-| **La Chute** | tactique | 5 | prends le contrôle d'un héros adverse jusqu'à la fin du tour suivant | l'auto-équilibrage emprunté au Mindbug, devenu une carte |
-| **Un montage de Malef** | tactique | 4 | échange un héros de ta ligne avec un de ta réserve, en gardant ses PV actuels | le montage |
-| **Le pendu** | tactique | 3 | nomme une carte ; si l'adversaire l'a en main, il la défausse. Sinon tu prends 2 dégâts | le jeu du pendu |
-| **Quoi → FEUR** | tactique | 2 | **annule la prochaine tactique jouée par l'adversaire** ce tour | le meme du bouton rouge : *« quand quelqu'un dit quoi et qu'il y a Requin »* |
+| Carte | Type | Catégorie | Coût | Effet | Origine |
+|---|---|---|---|---|---|
+| **La Chute** | *(sans visuel)* | — | — | prends le contrôle d'un héros adverse jusqu'à la fin du tour suivant | l'auto-équilibrage emprunté au Mindbug, devenu une carte |
+| **Un montage de Malef** | ACTION | contrôle | — | échange un héros de ta ligne avec un de ta réserve, en gardant ses PV actuels | le montage |
+| **Le pendu** | *(sans visuel)* | — | — | nomme une carte ; si l'adversaire l'a en main, il la défausse. Sinon tu prends 2 dégâts | le jeu du pendu |
+| **Quoi → FEUR** | ACTION | contrôle | — | **annule la prochaine tactique jouée par l'adversaire** ce tour | le meme du bouton rouge : *« quand quelqu'un dit quoi et qu'il y a Requin »* |
 
 ---
 
