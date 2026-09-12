@@ -17,7 +17,7 @@ from pathlib import Path
 
 DOSSIER_ICONES = Path("public-ui/assets/icones")
 MANIFESTE = DOSSIER_ICONES / "AUTEURS.json"
-DOSSIER_APEX = Path("public-ui/assets/apex")
+DOSSIER_CARTES = Path("public-ui/assets/cartes")
 PAGE_CREDITS = Path("public-ui/pages/credits.js")
 
 
@@ -95,9 +95,15 @@ def test_la_page_credits_ne_recopie_aucun_nom_d_auteur():
     assert not en_dur, f"auteur(s) recopié(s) en dur dans la page : {en_dur}"
 
 
-def test_les_visuels_apex_sont_bien_la():
-    """Ils ne viennent pas de game-icons et ne sont pas dans le manifeste : ce
-    sont les icônes du jeu, créditées en bloc à Apex Legends et au wiki."""
-    assert list(DOSSIER_APEX.glob("*.svg")), (
-        f"aucun visuel Apex dans {DOSSIER_APEX} — les cartes qui les utilisent "
+def test_les_pochoirs_de_l_owner_sont_bien_la():
+    """Les pochoirs dessinés par l'owner ne viennent PAS de game-icons et ne
+    sont donc pas dans le manifeste CC BY.
+
+    Ils reprennent des capacités d'Apex Legends relevées sur apexlegends.wiki.gg
+    — c'est à ce titre que les deux sont crédités en bloc sur /credits, et pas
+    parce qu'un fichier du wiki serait servi tel quel.
+    """
+    fichiers = list(DOSSIER_CARTES.glob("*.svg")) + list(DOSSIER_CARTES.glob("*.png"))
+    assert fichiers, (
+        f"aucun pochoir dans {DOSSIER_CARTES} — les cartes qui les utilisent "
         "seraient refusées au chargement du catalogue")

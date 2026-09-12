@@ -65,7 +65,7 @@
   court: MOZAMBIQUE
   type: action
   categorie: attaque
-  visuel: /assets/apex/Mozambique_Shotgun_Icon.svg
+  visuel: /assets/cartes/carte-mozambique.png
   forme: image
 
 - cle: baril_caustique
@@ -73,7 +73,7 @@
   court: BARIL
   type: action
   categorie: attaque
-  visuel: /assets/apex/Nox_Gas_Trap.svg
+  visuel: /assets/cartes/carte-baril-caustique.png
   forme: image
   face_cachee: true
   regle: >-
@@ -92,7 +92,7 @@
   court: STIM
   type: action
   categorie: attaque
-  visuel: /assets/apex/Stim.svg
+  visuel: /assets/cartes/carte-stim-octane.png
   forme: image
   regle: Un héros allié perd 2 PV et gagne +4 d'Attaque ce tour.
 
@@ -101,7 +101,7 @@
   court: FLATLINE
   type: passif
   categorie: attaque
-  visuel: /assets/icones/machine-gun.svg
+  visuel: /assets/cartes/carte-flatline.png
   forme: image
 
 - cle: manette
@@ -138,7 +138,7 @@
   court: LIFELINE
   type: passif
   categorie: soin
-  visuel: /assets/apex/Lifeline_Icon.svg
+  visuel: /assets/cartes/carte-lifeline.svg
   forme: image
   regle: >-
     RÉGÉNÉRATION — +2 PV à un héros allié au début de chacun de tes tours,
@@ -149,7 +149,7 @@
   court: TOTEM
   type: passif
   categorie: soin
-  visuel: /assets/apex/Death_Totem.svg
+  visuel: /assets/cartes/carte-totem.svg
   forme: image
   regle: >-
     Une fois, un de tes héros MORTS revient en ligne avec la moitié de ses PV,
@@ -160,7 +160,7 @@
   court: STATUE
   type: passif
   categorie: soin
-  visuel: /assets/apex/Life_of_the_Party.svg
+  visuel: /assets/cartes/carte-statue-mirage.svg
   forme: image
   groupe: 3
   regle: >-
@@ -193,7 +193,7 @@
   court: CLAVIER-SOURIS
   type: passif
   categorie: soin
-  visuel: /assets/icones/keyboard.svg
+  visuel: /assets/cartes/carte-clavier-souris.png
   forme: image
 
 - cle: push_3_teams
@@ -201,7 +201,7 @@
   court: PUSH PAR 3
   type: action
   categorie: soin
-  visuel: /assets/icones/cow.svg
+  visuel: /assets/cartes/carte-push-3-teams.png
   forme: image
 
 - cle: pizzas
@@ -229,7 +229,7 @@
   court: TUNNEL
   type: action
   categorie: controle
-  visuel: /assets/icones/tunnel.svg
+  visuel: /assets/cartes/carte-tunnel.png
   forme: image
   regle: >-
     Pose l'état TUNNEL sur un héros adverse — il ne peut plus attaquer que le
@@ -247,7 +247,7 @@
   court: SCAN
   type: action
   categorie: controle
-  visuel: /assets/apex/Focus_of_Attention.svg
+  visuel: /assets/cartes/carte-scan-seer.svg
   forme: image
   regle: Désactive TOUS les passifs adverses pendant 2 tours.
 
@@ -296,7 +296,7 @@
   type: action
   categorie: controle
   # Le MÊME pochoir que `tunnel_rina`, et c'est voulu (owner, 2026-09-12).
-  visuel: /assets/icones/tunnel.svg
+  visuel: /assets/cartes/carte-tunnel.png
   forme: image
 
 - cle: anneau_raiky
@@ -318,7 +318,7 @@
   court: LEURRE
   type: action
   categorie: controle
-  visuel: /assets/apex/Psyche_Out.svg
+  visuel: /assets/cartes/carte-leurre.svg
   forme: image
   regle: >-
     Double un de tes héros en jeu ; une seule des deux copies est vraie.
@@ -351,7 +351,7 @@
   court: PIKA
   type: passif
   categorie: aura
-  visuel: /assets/icones/cat.svg
+  visuel: /assets/cartes/carte-chat.png
   forme: image
 
 - cle: spiro
@@ -359,7 +359,7 @@
   court: SPIRO
   type: passif
   categorie: aura
-  visuel: /assets/icones/cat.svg
+  visuel: /assets/cartes/carte-chat.png
   forme: image
 
 - cle: lili
@@ -367,7 +367,7 @@
   court: LILI
   type: passif
   categorie: aura
-  visuel: /assets/icones/cat.svg
+  visuel: /assets/cartes/carte-chat.png
   forme: image
 
 - cle: les_trois_chats
@@ -375,7 +375,7 @@
   court: LES TROIS CHATS
   type: passif
   categorie: aura
-  visuel: /assets/icones/cat.svg
+  visuel: /assets/cartes/carte-chat.png
   forme: image
   # L'ARC est le contraire du semis : le semis veut du désordre (dix pizzas
   # jetées), l'arc veut une figure. C'est ce qui dit « ensemble ».
@@ -396,7 +396,7 @@
   court: CARE PACKAGE
   type: action
   categorie: ressource
-  visuel: /assets/apex/Care_Package.svg
+  visuel: /assets/cartes/carte-care-package.svg
   forme: image
   regle: >-
     Pioche 3 cartes, garde-en 1, remets les autres AU-DESSUS de ta pioche.
@@ -413,7 +413,7 @@
   court: SHOP DE LOBA
   type: action
   categorie: ressource
-  visuel: /assets/apex/Black_Market_Boutique.svg
+  visuel: /assets/cartes/carte-shop-loba.svg
   forme: image
   regle: Prends UNE CARTE AU HASARD dans la main de l'adversaire.
 
@@ -422,7 +422,7 @@
   court: DRONE
   type: action
   categorie: ressource
-  visuel: /assets/apex/Surveillance_Drone.svg
+  visuel: /assets/cartes/carte-drone-crypto.svg
   forme: image
   regle: Regarde la main de l'adversaire jusqu'à la fin du tour.
 
@@ -431,7 +431,7 @@
   court: TYPICAL OCTANE
   type: action
   categorie: ressource
-  visuel: /assets/apex/Octane_Icon.svg
+  visuel: /assets/cartes/carte-typical-octane.svg
   forme: image
   face_cachee: true
   regle: >-

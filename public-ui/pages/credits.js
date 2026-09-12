@@ -93,9 +93,10 @@ export function mount(el) {
           [['Apex Legends', 'https://www.ea.com/games/apex-legends']]),
 
         source('apexlegends.wiki.gg',
-          'C\'est de là que viennent les icônes tirées du jeu. Le wiki les'
-          + ' héberge et les tient à jour ; sans lui, il aurait fallu redessiner'
-          + ' chaque carte à la main.',
+          'C\'est de là que viennent les icônes tirées du jeu — celles des'
+          + ' capacités, reprises pour les pochoirs des cartes. Le wiki les'
+          + ' héberge et les tient à jour ; sans lui, il aurait fallu les'
+          + ' retrouver une par une.',
           [['apexlegends.wiki.gg', 'https://apexlegends.wiki.gg']]),
 
         source('Le reste',

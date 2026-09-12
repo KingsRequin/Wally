@@ -17,10 +17,7 @@
       "glass-celebration",
       "hammer-sickle",
       "lungs",
-      "heart-earrings",
-      "keyboard",
-      "cow",
-      "tunnel"
+      "heart-earrings"
     ],
     "lorc": [
       "grab",
@@ -30,14 +27,12 @@
       "wheat",
       "death-zone",
       "skull-mask",
-      "dozen",
-      "cat"
+      "dozen"
     ],
     "skoll": [
       "flatbed-covered",
       "console-controller",
-      "pc",
-      "machine-gun"
+      "pc"
     ],
     "caro-asercion": [
       "test-tube-rack",
