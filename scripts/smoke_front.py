@@ -1247,6 +1247,37 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
              str(action["vernis"]))
     rap.dire(not erreurs, "cartes action : aucune erreur JS", " · ".join(erreurs[:2]))
 
+    # 🚨 CLIQUET DE PERFORMANCE. Rien ne l'aurait attrapé autrement : la page
+    # montait, les cartes s'affichaient, aucun test ne bronchait — et elle
+    # tournait à 8 images par seconde. Le dos monté d'avance faisait tourner
+    # 96 étincelles + 2 banderoles PAR CARTE, soit 5 099 animations pour des
+    # dos que personne ne regardait.
+    #
+    # ⚠️ On compte les animations qui TOURNENT, pas celles qui existent : une
+    # animation en pause ne coûte rien, et c'est justement le garde-fou posé
+    # sur les dos hors champ.
+    #
+    # ⚠️ Pointeur ÉCARTÉ avant de mesurer : le contrôle de torsion ci-dessus
+    # laisse une carte survolée, donc un calque de fusion allumé — ce qui est
+    # le comportement voulu, et fausserait un relevé « au repos ».
+    page.mouse.move(4, 4)
+    page.wait_for_timeout(500)
+    charge = page.evaluate("""() => ({
+      animations: document.getAnimations().filter(a => a.playState === 'running').length,
+      noeuds: document.querySelectorAll('.tcgal-grille--action *').length,
+      fusion: [...document.querySelectorAll('.tcgal-grille--action *')]
+        .filter(e => getComputedStyle(e).mixBlendMode !== 'normal').length,
+    })""")
+    rap.dire(charge["animations"] <= 20,
+             "cartes action : la grille au repos n'anime presque rien",
+             f"{charge['animations']} animations en cours (plafond 20)")
+    rap.dire(charge["noeuds"] <= 2500,
+             "cartes action : la grille reste légère en nœuds",
+             f"{charge['noeuds']} nœuds (plafond 2500)")
+    rap.dire(charge["fusion"] == 0,
+             "cartes action : aucun calque de fusion au repos",
+             f"{charge['fusion']} élément(s) en mix-blend-mode")
+
     # 🚨 Le DOS ne se voit qu'après un clic : rien dans le parcours ci-dessus
     # ne le charge. Une carte peut monter, se tordre, et n'avoir aucun dos —
     # ou en avoir un resté face à l'endroit, la face visible EN MIROIR par

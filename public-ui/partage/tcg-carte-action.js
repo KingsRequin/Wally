@@ -260,6 +260,33 @@ function dosCarte() {
  */
 const TORSION = 18;
 
+/** Le veilleur qui met en pause les dos SORTIS DE L'ÉCRAN.
+ *
+ * 🚨 Mesuré le 2026-09-12 : douze cartes retournées, c'est 1 179 animations et
+ * 30 images par seconde au défilement. Un dos retourné garde ses 96 étincelles
+ * et ses 2 banderoles en vie même une fois remonté hors du champ — et on en
+ * retourne autant qu'on veut.
+ *
+ * UN seul observateur pour toute la page, créé à la première carte : cinquante
+ * observateurs coûteraient plus cher que ce qu'ils économisent.
+ *
+ * ⚠️ La marge de 200 px est volontaire : mettre en pause pile au bord ferait
+ * démarrer les étincelles sous les yeux du lecteur, ce qui se voit. Hors du
+ * champ plus une demi-hauteur de carte, personne ne l'attrape.
+ */
+let _veilleur = null;
+
+function veilleur() {
+  if (!_veilleur) {
+    _veilleur = new IntersectionObserver((entrees) => {
+      entrees.forEach((e) => {
+        e.target.classList.toggle('ca-hors-champ', !e.isIntersecting);
+      });
+    }, { rootMargin: '200px 0px' });
+  }
+  return _veilleur;
+}
+
 /** Un décalage de traînée dans [-22, 22], dérivé du nom de la carte. */
 function phaseDe(cle) {
   let g = 2166136261;
@@ -274,6 +301,10 @@ function phaseDe(cle) {
  * @param options.interactif branche souris et tactile. `false` quand la PAGE
  *                           pilote (gyroscope) — sans quoi les deux se
  *                           disputeraient la même transformation.
+ * @param options.surRetournement prévenu à chaque bascule, avec le nouvel
+ *                           état. C'est par là que la page n'en garde qu'une
+ *                           retournée — la carte, elle, ne connaît pas ses
+ *                           voisines.
  * @returns {{boite, incliner, retourner, detruire}} `incliner(x, y)` attend
  *          [-0.5, 0.5] ; `retourner(force?)` bascule et rend le nouvel état.
  */
@@ -346,7 +377,7 @@ export function carteAction(carte, options = {}) {
     'aria-pressed': 'false',
     'aria-label': `${carte.nom} — ${carte.type}, ${carte.categorieLabel}.`
       + ' Activer pour retourner la carte.',
-  }, carteEl, dosCarte());
+  }, carteEl);
   const boite = h('div', { class: 'ca-scene' }, retourneur);
 
   /** Tord la carte et déplace le point chaud du vernis.
@@ -397,16 +428,37 @@ export function carteAction(carte, options = {}) {
    * ⚠️ `aria-pressed` suit, sinon un lecteur d'écran annonce toujours la même
    * chose : le retournement est un CHANGEMENT D'ÉTAT, pas une navigation.
    */
+  // 🚨 Le dos n'est construit qu'au PREMIER retournement, et c'est la
+  // correction de performance la plus lourde de cette page. Monté d'avance, il
+  // coûtait 99 nœuds et 98 animations infinies PAR CARTE — sur cinquante-deux
+  // cartes, 5 096 animations tournaient en permanence pour des dos que
+  // personne ne regardait. Mesuré : 8,1 images par seconde au défilement.
+  //
+  // La construction tient dans la même image que le clic, et la bascule dure
+  // 550 ms : elle ne se voit pas.
+  let dosMonte = null;
+
   const retourner = (force) => {
     const dessus = force === undefined
       ? !retourneur.classList.contains('ca-retournee')
       : !!force;
+    if (dessus && !dosMonte) {
+      dosMonte = dosCarte();
+      retourneur.appendChild(dosMonte);
+    }
     retourneur.classList.toggle('ca-retournee', dessus);
     retourneur.setAttribute('aria-pressed', dessus ? 'true' : 'false');
+    if (options.surRetournement) options.surRetournement(dessus);
     return dessus;
   };
 
   const detachements = [];
+
+  // Le veilleur ne sert qu'une fois un dos monté — mais l'abonnement se prend
+  // tout de suite : le savoir « hors champ » AVANT le premier retournement
+  // évite de démarrer 98 animations pour une carte qu'on ne regarde pas.
+  veilleur().observe(retourneur);
+  detachements.push(() => veilleur().unobserve(retourneur));
 
   // 🚨 Le retournement se branche TOUJOURS, y compris quand la page pilote la
   // torsion au gyroscope (`interactif: false`). Ce drapeau ne dit pas « carte

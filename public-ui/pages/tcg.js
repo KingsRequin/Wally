@@ -95,11 +95,25 @@ function brancherAppuiEtGyroscope(rendues) {
   // `x` et `y` arrivent dans [−1, 1] ; `incliner` attend [−0.5, 0.5]. Le
   // facteur donne donc la course COMPLÈTE d'un curseur passant d'un bord à
   // l'autre — pareil qu'à la souris, ce qui est ce qu'on veut.
+  // Même garde que pour les cartes action : un relevé par IMAGE, pas par
+  // événement du capteur. Une seule carte est ouverte, mais elle porte neuf
+  // calques et se repeint au même rythme.
+  let dernier = null;
+  let prevu = 0;
+  const ecrire = () => {
+    prevu = 0;
+    if (ouverte && dernier) ouverte.incliner(dernier[0] * 0.5, dernier[1] * 0.5);
+  };
   const stop = surInclinaison((x, y) => {
-    if (ouverte) ouverte.incliner(x * 0.5, y * 0.5);
+    dernier = [x, y];
+    if (!prevu) prevu = requestAnimationFrame(ecrire);
   });
 
-  return () => { surAppui.forEach((d) => d()); stop(); };
+  return () => {
+    surAppui.forEach((d) => d());
+    if (prevu) cancelAnimationFrame(prevu);
+    stop();
+  };
 }
 
 /** Fait suivre le gyroscope aux cartes ACTION visibles à l'écran.
@@ -127,11 +141,29 @@ function brancherGyroscopeAction(rendues) {
   }, { threshold: 0.35 });
   rendues.forEach((r) => observateur.observe(r.boite));
 
-  const stop = surInclinaison((x, y) => {
+  // 🚨 Le capteur émet bien plus souvent que l'écran ne se repeint (jusqu'à
+  // 60 relevés par seconde, parfois plus). Écrire directement, c'était six
+  // propriétés personnalisées × le nombre de cartes visibles × chaque relevé —
+  // du style recalculé plusieurs fois pour une seule image affichée. On garde
+  // le dernier relevé et on n'écrit qu'une fois par image.
+  let dernier = null;
+  let prevu = 0;
+  const ecrire = () => {
+    prevu = 0;
+    if (!dernier) return;
+    const [x, y] = dernier;
     visibles.forEach((r) => r.incliner(x * 0.5, y * 0.5));
+  };
+  const stop = surInclinaison((x, y) => {
+    dernier = [x, y];
+    if (!prevu) prevu = requestAnimationFrame(ecrire);
   });
 
-  return () => { observateur.disconnect(); stop(); };
+  return () => {
+    observateur.disconnect();
+    if (prevu) cancelAnimationFrame(prevu);
+    stop();
+  };
 }
 
 /** Le bandeau qui dit ce qui n'est pas encore décidé.
@@ -306,8 +338,22 @@ export function mount(el) {
   const remplirAction = (famille, liste) => {
     const grille = h('div', { class: famille.grille });
     const auGyroscope = inclinaisonDisponible();
+    // 🚨 UNE seule carte retournée à la fois, comme les héros n'en ouvrent
+    // qu'une — et pour une raison qui vaut encore plus ici : **tous les dos
+    // sont identiques**. En garder douze ouverts n'apprend rien à personne et
+    // coûte 1 179 animations, soit 30 images par seconde au défilement contre
+    // 60 (mesuré le 2026-09-12). Retourner la nouvelle remet la précédente.
+    let retournee = null;
     exemplaires(liste).forEach(({ carte, rang }) => {
-      const rendu = carteAction(carte, { rang, interactif: !auGyroscope });
+      const rendu = carteAction(carte, {
+        rang,
+        interactif: !auGyroscope,
+        surRetournement: (dessus) => {
+          if (!dessus) { if (retournee === rendu) retournee = null; return; }
+          if (retournee && retournee !== rendu) retournee.retourner(false);
+          retournee = rendu;
+        },
+      });
       grille.appendChild(h('div', { class: 'tcgal-case tcgal-case--action' },
         rendu.boite));
       posees.push(rendu);
