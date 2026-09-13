@@ -302,7 +302,8 @@
   visuel: /assets/icones/rod-of-asclepius.svg
   regle: >-
     Un de tes héros quitte la table pour un tour : il ne peut ni agir ni être
-    touché, et il revient complètement soigné.
+    touché, et il revient complètement soigné, mais sans aucun de ses bonus ni
+    de ses états.
 
 - cle: scan_seer
   nom: Le scan de Seer
