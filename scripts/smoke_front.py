@@ -974,6 +974,47 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     actifs = page.locator(".nav-link.active")
     rap.dire(actifs.count() == 1 and actifs.first.get_attribute("data-route") == "/wallycard",
              "Bibliothèque garde l'onglet Wallycard allumé", f"{actifs.count()} onglet(s) actif(s)")
+
+    # L'éditeur de deck. On le PARCOURT, on ne se contente pas de le voir monter :
+    # le bouton sous une carte, la puce qui retire, et surtout la frontière entre
+    # les deux gestes — cliquer une carte la retourne, il ne l'ajoute pas.
+    del erreurs[:]
+    page.wait_for_function(
+        "() => (document.querySelector('.wcd-resume') || {}).textContent?.includes('/15')",
+        timeout=_ATTENTE_PANNEAU_MS)
+    heros = page.evaluate("""() => {
+      const b = [...document.querySelectorAll('.tcgal-grille .wcd-carte')];
+      return { n: b.length, grises: b.filter((x) => x.disabled).length };
+    }""")
+    rap.dire(heros["n"] > 0 and heros["grises"] == heros["n"],
+             "éditeur : aucun héros n'est encore ajoutable", str(heros))
+    page.click("button[data-famille='action']")
+    page.wait_for_selector(".tcgal-grille--action .wcd-carte", timeout=_ATTENTE_PANNEAU_MS)
+    page.locator(".wcd-tete").click()
+    # Ouvert, le panneau ne doit plus coller : collant, il couvrait tout l'écran
+    # d'un téléphone avec les deux barres, et aucun bouton de carte n'était
+    # plus cliquable (vu en 390 px le 2026-09-14).
+    rap.dire(page.evaluate("() => getComputedStyle(document.querySelector('.wcd-zone')).position") != "sticky",
+             "éditeur : ouvert, le panneau suit la page au lieu de coller",
+             page.evaluate("() => getComputedStyle(document.querySelector('.wcd-zone')).position"))
+    avant = page.locator(".wcd-resume").inner_text()
+    page.locator(".tcgal-grille--action .ca").first.click()
+    page.wait_for_timeout(700)
+    rap.dire(page.locator(".wcd-resume").inner_text() == avant,
+             "éditeur : cliquer une carte la retourne sans l'ajouter au deck", avant)
+    bouton = page.locator(".tcgal-grille--action .wcd-carte").first
+    bouton.click()
+    resume = page.locator(".wcd-resume").inner_text()
+    rap.dire("cartes 1/15" in resume and bouton.get_attribute("aria-pressed") == "true"
+             and page.locator(".wcd-puce").count() == 1,
+             "éditeur : le bouton ajoute la carte au deck", resume)
+    page.locator(".wcd-puce").first.click()
+    rap.dire("cartes 0/15" in page.locator(".wcd-resume").inner_text(),
+             "éditeur : la puce retire la carte", page.locator(".wcd-resume").inner_text())
+    rap.dire(page.locator(".wcd-bouton--or").inner_text().lower().startswith("se connecter"),
+             "éditeur : sans connexion, il propose de se connecter pour enregistrer",
+             page.locator(".wcd-bouton--or").inner_text())
+    rap.dire(not erreurs, "éditeur : aucune erreur JS", " · ".join(erreurs[:2]))
     page.close()
 
     # Le gyroscope de la galerie. Sur un ordinateur il suffit de PASSER la

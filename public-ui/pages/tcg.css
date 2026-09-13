@@ -25,6 +25,19 @@
   margin: 0 auto;
 }
 
+/* Le retour au menu Wallycard. Discret : la barre du site y mène aussi, mais
+ * sur téléphone l'onglet est en bas de l'écran, loin du pouce en haut de page. */
+.tcgal-retour {
+  display: inline-block;
+  margin-bottom: 14px;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .2em;
+  color: #e1a947;
+  text-decoration: none;
+}
+
+.tcgal-retour:hover, .tcgal-retour:focus-visible { text-decoration: underline; }
+
 .tcgal-head {
   display: flex;
   align-items: baseline;

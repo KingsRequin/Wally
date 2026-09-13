@@ -1,0 +1,185 @@
+/* public-ui/pages/wallycard-deck.css — l'éditeur de deck de la Bibliothèque
+ *
+ * Même vocabulaire que l'écran titre : encre, un seul accent or, crème. Le
+ * panneau est un `<details>` : fermé, sa ligne de résumé colle sous la barre
+ * du site ; ouvert, il suit la page.
+ */
+
+/* 🚨 Le COLLANT est sur la zone, pas sur le panneau. Un élément `sticky` ne se
+ * déplace que dans son parent : posé sur `.wcd`, dont le parent fait exactement
+ * sa taille, il défilait avec la page et passait sous la barre du site
+ * (mesuré le 2026-09-14, `top` à −436 px). La zone, elle, vit dans la colonne
+ * haute de la Bibliothèque. */
+.wcd-zone {
+  position: sticky;
+  top: calc(var(--nav-h) + 8px);
+  /* Au-dessus des couches internes des cartes, qui montent jusqu'à 56 (le héros
+   * qui déborde de son cadre) : à 20, les cartes transparaissaient à travers. */
+  z-index: 70;
+  isolation: isolate;
+  margin: 0 0 28px;
+}
+
+/* 🚨 OUVERT, il ne colle plus. Mesuré en 390 px le 2026-09-14 : le panneau ouvert
+ * et collant, la barre du site et la barre du pouce couvraient tout l'écran, et
+ * plus aucun bouton de carte n'était cliquable. Fermé, le résumé tient sur une
+ * ligne et donne le compte ; on l'ouvre pour nommer et enregistrer. */
+.wcd-zone:has(.wcd[open]) { position: relative; }
+
+.wcd {
+  border: 1px solid rgba(225, 169, 71, .55);
+  background: #12100c;
+  color: #f7ecd9;
+  box-shadow: 0 0 0 4px rgba(18, 16, 12, .6), 0 10px 28px rgba(0, 0, 0, .45);
+}
+
+.wcd-tete {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.wcd-tete::-webkit-details-marker { display: none; }
+
+.wcd-tete::after {
+  content: '▾';
+  margin-left: auto;
+  color: #e1a947;
+  transition: transform .18s ease;
+}
+
+.wcd[open] .wcd-tete::after { transform: rotate(180deg); }
+
+.wcd-titre {
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .3em;
+  color: #e1a947;
+}
+
+.wcd-resume {
+  font: 500 13px/1.3 var(--sans);
+  color: rgba(247, 236, 217, .8);
+}
+
+.wcd-corps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 16px;
+  border-top: 1px solid rgba(247, 236, 217, .1);
+}
+
+.wcd-ligne { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.wcd-choix,
+.wcd-nom {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(247, 236, 217, .25);
+  background: #15111c;
+  color: #f7ecd9;
+  font: 500 14px/1 var(--sans);
+}
+
+.wcd-nom { flex: 1 1 200px; }
+
+.wcd-choix:focus-visible,
+.wcd-nom:focus-visible { outline: 2px solid #e1a947; outline-offset: 1px; }
+
+.wcd-bloc { display: flex; flex-direction: column; gap: 8px; }
+
+.wcd-etiquette {
+  font: 700 10px/1 var(--mono);
+  letter-spacing: .28em;
+  color: rgba(247, 236, 217, .5);
+}
+
+.wcd-heros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.wcd-emplacement {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(247, 236, 217, .22);
+  font: 700 11px/1.2 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(247, 236, 217, .35);
+  text-align: center;
+}
+
+.wcd-emplacement.is-rempli { border-style: solid; border-color: #e1a947; color: #f7ecd9; }
+
+.wcd-cartes { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.wcd-vide { font: 400 13px/1.4 var(--sans); color: rgba(247, 236, 217, .5); }
+
+.wcd-puce {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid rgba(247, 236, 217, .3);
+  background: #15111c;
+  color: #f7ecd9;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.wcd-puce:hover, .wcd-puce:focus-visible { border-color: #e1a947; outline: none; }
+
+.wcd-puce-x { color: #e1a947; font-size: 14px; line-height: 1; }
+
+.wcd-actions { justify-content: flex-start; }
+
+.wcd-bouton {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(247, 236, 217, .3);
+  background: transparent;
+  color: #f7ecd9;
+  font: 700 12px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wcd-bouton--or { border-color: #e1a947; color: #12100c; background: #e1a947; }
+
+.wcd-bouton:disabled { opacity: .5; cursor: progress; }
+
+.wcd-bouton:focus-visible { outline: 2px solid #f7ecd9; outline-offset: 2px; }
+
+.wcd-message { margin: 0; min-height: 1em; font: 500 13px/1.4 var(--sans); color: #e1a947; }
+
+.wcd-message.is-erreur { color: #e06a5c; }
+
+/* Le bouton sous chaque carte de la galerie. */
+.wcd-carte {
+  margin-top: 10px;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(247, 236, 217, .25);
+  background: rgba(18, 16, 12, .8);
+  color: #f7ecd9;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wcd-carte:hover:not(:disabled), .wcd-carte:focus-visible { border-color: #e1a947; outline: none; }
+
+.wcd-carte.is-dans { border-color: #e1a947; color: #12100c; background: #e1a947; }
+
+.wcd-carte:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcd-tete::after { transition: none; }
+}

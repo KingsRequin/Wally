@@ -19,8 +19,10 @@ import {
   carteAction,
   monterStylesCarteAction,
 } from '../partage/tcg-carte-action.js';
+import { editeurDeck } from './wallycard-deck.js';
 
 const FEUILLE = '/pages/tcg.css';
+const FEUILLE_DECK = '/pages/wallycard-deck.css';
 
 let _demonter = null;
 
@@ -272,10 +274,13 @@ function exemplaires(liste) {
 }
 
 export function mount(el) {
-  const lien = document.createElement('link');
-  lien.rel = 'stylesheet';
-  lien.href = FEUILLE;
-  document.head.appendChild(lien);
+  const liens = [FEUILLE, FEUILLE_DECK].map((href) => {
+    const lien = document.createElement('link');
+    lien.rel = 'stylesheet';
+    lien.href = href;
+    document.head.appendChild(lien);
+    return lien;
+  });
   // Les deux feuilles de carte sont posées dès le montage, pas au changement
   // d'onglet : une feuille chargée à la bascule fait clignoter la grille le
   // temps qu'elle arrive, et le premier rendu se fait sans styles.
@@ -286,13 +291,18 @@ export function mount(el) {
   const avisBoite = h('div', {});
   const panneau = h('div', {});
   const onglets = h('div', { class: 'tcgal-onglets', role: 'tablist' });
+  // Le panneau « mon deck » s'y pose quand les deux familles sont chargées :
+  // l'éditeur a besoin des deux pour nommer une carte depuis sa clé.
+  const zoneDeck = h('div', { class: 'wcd-zone' });
 
   el.appendChild(h('section', { class: 'tcgal' },
     h('div', { class: 'tcgal-inner' },
+      h('a', { class: 'tcgal-retour', href: '/wallycard', 'data-route': '/wallycard', text: '← Wallycard' }),
       h('header', { class: 'tcgal-head' },
-        h('h1', { class: 'tcgal-titre', text: 'La collection' }),
+        h('h1', { class: 'tcgal-titre', text: 'Bibliothèque' }),
         compte,
       ),
+      zoneDeck,
       onglets,
       chapo,
       avisBoite,
@@ -312,10 +322,13 @@ export function mount(el) {
   let debrancherGyro = null;
   let familleActive = null;
 
+  let editeur = null;
+
   const vider = () => {
     if (debrancherGyro) { debrancherGyro(); debrancherGyro = null; }
     posees.forEach((r) => r.detruire());
     posees = [];
+    if (editeur) editeur.oublierBoutons();
     panneau.textContent = '';
   };
 
@@ -327,6 +340,7 @@ export function mount(el) {
       const noeud = h('div', { class: 'tcgal-case' },
         rendu.boite,
         h('div', { class: 'tcgal-legende', text: carte.legende }),
+        editeur ? editeur.bouton(carte, 'heros') : null,
       );
       posees.push({ ...rendu, noeud });
       grille.appendChild(noeud);
@@ -354,8 +368,11 @@ export function mount(el) {
           retournee = rendu;
         },
       });
+      // Un seul bouton par carte à regrouper, sur la carte complète : les
+      // exemplaires numérotés ne sont pas des cartes de deck à part.
       grille.appendChild(h('div', { class: 'tcgal-case tcgal-case--action' },
-        rendu.boite));
+        rendu.boite,
+        editeur && rang === 0 ? editeur.bouton(carte, 'action') : null));
       posees.push(rendu);
     });
     panneau.appendChild(grille);
@@ -399,7 +416,7 @@ export function mount(el) {
       b.classList.toggle('is-actif', actif);
       b.setAttribute('aria-selected', actif ? 'true' : 'false');
     });
-    famille.charger().then((liste) => {
+    Promise.all([famille.charger(), editeurPret]).then(([liste]) => {
       // Deux bascules rapprochées laissent deux requêtes en vol : sans ce
       // second garde, la plus lente écrirait sa grille par-dessus la plus
       // récente — et l'onglet marqué ne serait plus celui affiché.
@@ -425,13 +442,24 @@ export function mount(el) {
     }));
   });
 
+  // Un échec de l'éditeur ne doit pas coûter la galerie : les cartes restent
+  // consultables, simplement sans boutons de deck.
+  const editeurPret = Promise.all([cartes(), cartesAction()])
+    .then(([heros, tactiques]) => {
+      if (!vivante) return;
+      editeur = editeurDeck({ heros, tactiques });
+      zoneDeck.appendChild(editeur.noeud);
+    })
+    .catch((e) => console.warn('Wallycard : éditeur de deck non monté', e));
+
   ouvrir(FAMILLES[0], false);
 
   _demonter = () => {
     vivante = false;
     vider();
+    if (editeur) editeur.detruire();
     demonterStyles.forEach((d) => d());
-    lien.remove();
+    liens.forEach((l) => l.remove());
   };
 }
 
