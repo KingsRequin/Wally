@@ -11,9 +11,12 @@ rendre.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from bot.core import tcg_cartes
 from bot.core.tcg_cartes import CARTES
 from bot.core.tcg_cartes_action import CARTES_ACTION
 from bot.core.tcg_decks import DECKS_PAR_COMPTE, NOM_MAX, TAILLE_DECK
@@ -49,6 +52,18 @@ def A():
 @pytest.fixture
 def B():
     return _jeton("222222222222222222")
+
+
+@pytest.fixture
+def heros_jouables(monkeypatch):
+    """Rend TOUS les héros jouables le temps d'un test.
+
+    Aucun ne l'est dans le vrai catalogue aujourd'hui (arbitrage de l'owner du
+    2026-09-13) : sans ça, aucun test ne pourrait composer un deck complet. On
+    remplace les entrées du dictionnaire lui-même, celui que `tcg_decks` lit.
+    """
+    for cle, carte in list(tcg_cartes.CARTES.items()):
+        monkeypatch.setitem(tcg_cartes.CARTES, cle, dataclasses.replace(carte, jouable=True))
 
 
 @pytest.fixture
@@ -91,7 +106,7 @@ async def test_un_deck_incomplet_s_enregistre(client, A):
     assert deck["complet"] is False
 
 
-async def test_un_deck_plein_est_complet(client, A):
+async def test_un_deck_plein_est_complet(client, A, heros_jouables):
     r = await client.post("/api/public/tcg/decks", headers=A,
                           json=_deck(heros=HEROS[:3], cartes=TACTIQUES[:TAILLE_DECK]))
     assert r.status_code == 201, r.text
@@ -126,6 +141,7 @@ async def test_supprimer_son_deck(client, A):
     pytest.param({"cartes": [TACTIQUES[0], TACTIQUES[0]]}, id="carte-en-double"),
     pytest.param({"cartes": ["carte_qui_n_existe_pas"]}, id="carte-inconnue"),
     pytest.param({"heros": HEROS[:4]}, id="trop-de-heros"),
+    pytest.param({"heros": [HEROS[0]]}, id="heros-pas-encore-jouable"),
     pytest.param({"heros": [HEROS[0], HEROS[0]]}, id="heros-en-double"),
     pytest.param({"heros": ["heros_inconnu"]}, id="heros-inconnu"),
     pytest.param({"cartes": [HEROS[0]]}, id="heros-pose-en-carte-tactique"),
@@ -181,3 +197,25 @@ async def test_le_plafond_se_compte_par_compte(client, A, B):
     for n in range(DECKS_PAR_COMPTE):
         await client.post("/api/public/tcg/decks", headers=A, json=_deck(nom=f"deck {n}"))
     assert (await client.post("/api/public/tcg/decks", headers=B, json=_deck())).status_code == 201
+
+
+async def test_un_heros_jouable_entre_dans_un_deck(client, A, heros_jouables):
+    r = await client.post("/api/public/tcg/decks", headers=A, json=_deck(heros=[HEROS[0]]))
+    assert r.status_code == 201, r.text
+    assert r.json()["deck"]["heros"] == [HEROS[0]]
+
+
+def test_aucun_heros_n_est_jouable_aujourd_hui():
+    """L'owner, 2026-09-13 : « aucun héros n'a de stats prêtes pour le moment ».
+    Le jour où l'un d'eux passe `jouable: true` dans `tcg/cartes.yaml`, ce test
+    tombe : c'est voulu, il faut alors le supprimer en connaissance de cause."""
+    assert not [c.cle for c in CARTES.values() if c.jouable]
+
+
+async def test_les_limites_sont_servies_au_front_sans_connexion(client):
+    """L'éditeur les LIT ici au lieu de les recopier : une limite écrite deux
+    fois finit par dire deux choses. Publique, parce qu'on compose un deck
+    avant de se connecter."""
+    r = await client.get("/api/public/tcg/decks/limites")
+    assert r.status_code == 200
+    assert r.json() == {"taille": TAILLE_DECK, "heros": 3, "nomMax": NOM_MAX}

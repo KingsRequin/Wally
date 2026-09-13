@@ -96,6 +96,18 @@ def _valider(entree: DeckEntree) -> str:
         raise HTTPException(400, detail=str(exc)) from exc
 
 
+@public_router.get("/tcg/decks/limites")
+async def limites_deck() -> dict:
+    """Les limites d'un deck, SERVIES à l'éditeur plutôt que recopiées en JS :
+    une limite écrite deux fois finit par dire deux choses. Publique, parce
+    qu'on compose un deck avant de se connecter."""
+    return {
+        "taille": tcg_decks.TAILLE_DECK,
+        "heros": tcg_decks.HEROS_PAR_DECK,
+        "nomMax": tcg_decks.NOM_MAX,
+    }
+
+
 @public_router.get("/tcg/decks")
 async def lister_decks(request: Request) -> dict:
     compte = _compte(request)

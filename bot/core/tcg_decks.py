@@ -59,6 +59,9 @@ def valider(nom: str, heros: list[str], cartes: list[str]) -> str:
     inconnus = [cle for cle in heros if cle not in CARTES]
     if inconnus:
         raise DeckInvalide(f"Héros inconnu : {inconnus[0]}.")
+    pas_prets = [CARTES[cle].nom for cle in heros if not CARTES[cle].jouable]
+    if pas_prets:
+        raise DeckInvalide(f"{pas_prets[0]} n'est pas encore jouable.")
 
     if len(cartes) > TAILLE_DECK:
         raise DeckInvalide(f"Un deck compte au plus {TAILLE_DECK} cartes.")

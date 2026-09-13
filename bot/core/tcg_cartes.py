@@ -133,6 +133,16 @@ class CarteTcg:
     # lui retirerait. Le jour où les cinq paliers seront saisis, c'est ici
     # qu'il faudra revenir.
     rarete: str = "indefinie"
+    # Le héros peut-il entrer dans un deck ? Décidé par l'owner, carte par
+    # carte, et FAUX par défaut.
+    #
+    # 🚨 Il ne se déduit PAS des données, et c'est essayé : Azraël a des stats
+    # et un Ultime écrits, et l'owner dit pourtant le 2026-09-13 qu'« aucun
+    # héros n'a de stats prêtes pour le moment » — ses chiffres sont à reposer.
+    # Une déduction l'aurait déclaré jouable contre la parole de l'owner. Lu par
+    # le serveur (`tcg_decks.valider` le refuse dans un deck) et par l'éditeur
+    # de la Bibliothèque (grisé).
+    jouable: bool = False
 
     @property
     def accent(self) -> str:
@@ -459,4 +469,5 @@ def en_json(carte: CarteTcg) -> dict:
         "holoForce": carte.holo_force,
         "bulles": carte.bulles,
         "rarete": carte.rarete,
+        "jouable": carte.jouable,
     }
