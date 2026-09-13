@@ -1013,4 +1013,15 @@ async def _demarrer() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(_demarrer())
+    try:
+        asyncio.run(_demarrer())
+    # Signal d'arrêt reçu PENDANT le démarrage : un arrêt voulu, pas une panne.
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        os._exit(0)
+    except BaseException as exc:  # noqa: BLE001 — sortir, quelle que soit la cause
+        # `os._exit` et pas un simple `raise` : une exception au démarrage laissait
+        # le traceback, mais un thread non-démon gardait l'interpréteur en vie. Le
+        # conteneur restait « Up » sans bot, `restart: unless-stopped` ne voyait
+        # rien (vécu le 2026-09-13 : 45 min muet sur une carte TCG refusée).
+        logger.opt(exception=exc).critical("Wally s'arrête sur une erreur: {e!r}", e=exc)
+        os._exit(1)
