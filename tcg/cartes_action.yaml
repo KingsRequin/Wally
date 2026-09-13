@@ -80,7 +80,7 @@
   forme: image
   regle: >-
     Reste sur le plateau, FACE VISIBLE, et peut donc être détruite. Tant
-    qu'elle y est, TOUT LE MONDE est en RAGE — tes héros comme ceux d'en
+    qu'elle y est, TOUT LE MONDE est en RAGE, tes héros comme ceux d'en
     face : chacun a une chance d'infliger un coup critique.
 
 - cle: baril_caustique
@@ -92,7 +92,7 @@
   forme: image
   face_cachee: true
   regle: >-
-    ${degats} dégât à TOUS les héros — les tiens compris — au début de chacun
+    ${degats} dégât à TOUS les héros, les tiens compris, au début de chacun
     des ${tours} prochains tours.
   stats:
     degats: 1
@@ -183,7 +183,7 @@
   categorie: soin
   visuel: /assets/icones/bowl-of-rice.svg
   regle: >-
-    Soigne un de tes héros — mais seulement à la FIN du tour suivant. Si
+    Soigne un de tes héros, mais seulement à la FIN du tour suivant. Si
     l'adversaire l'achève d'ici là, le soin est perdu avec la carte.
 
 - cle: lifeline
@@ -194,7 +194,7 @@
   visuel: /assets/cartes/carte-lifeline.svg
   forme: image
   regle: >-
-    RÉGÉNÉRATION — +${soin} PV à un héros allié au début de chacun de tes
+    RÉGÉNÉRATION : +${soin} PV à un héros allié au début de chacun de tes
     tours, tant que le passif est en jeu.
   stats:
     soin: 2
@@ -219,7 +219,7 @@
   forme: image
   groupe: 3
   regle: >-
-    PASSIF À REGROUPER — une fois les TROIS réunies et regroupées, tes cartes
+    PASSIF À REGROUPER : une fois les TROIS réunies et regroupées, tes cartes
     de soin ne coûtent plus rien.
 
 - cle: baril_soins
@@ -241,7 +241,7 @@
   visuel: /assets/icones/beer-bottle.svg
   groupe: 3
   regle: >-
-    PASSIF À REGROUPER — chaque Rhum en jeu fait perdre ${pv} PV tous les
+    PASSIF À REGROUPER : chaque Rhum en jeu fait perdre ${pv} PV tous les
     ${tours} tours à son porteur. Les TROIS regroupées donnent ${chance}
     d'esquive.
   stats:
@@ -290,7 +290,7 @@
   categorie: controle
   visuel: /assets/icones/deer.svg
   regle: >-
-    Pose STUN sur un héros adverse — il n'attaque pas ce tour, sans condition.
+    Pose STUN sur un héros adverse : il n'attaque pas ce tour, sans condition.
     Figé dans les phares.
 
 - cle: tunnel_rina
@@ -301,7 +301,7 @@
   visuel: /assets/cartes/carte-tunnel.png
   forme: image
   regle: >-
-    Pose l'état TUNNEL sur un héros adverse — il ne peut plus attaquer que le
+    Pose l'état TUNNEL sur un héros adverse : il ne peut plus attaquer que le
     tien, ${tours} tours.
   stats:
     tours: 2
@@ -357,7 +357,7 @@
   visuel: /assets/icones/wheat.svg
   regle: >-
     Un de tes héros se spécialise : il gagne beaucoup d'Attaque, mais ne peut
-    plus changer de cible — il tape le même héros adverse jusqu'à ce qu'il
+    plus changer de cible : il tape le même héros adverse jusqu'à ce qu'il
     tombe.
 
 - cle: perk
