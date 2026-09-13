@@ -385,7 +385,7 @@
     Les cartes de l'adversaire lui coûtent ${energie} d'énergie de plus ce
     tour.
   stats:
-    energie: 1
+    energie: null
 
 - cle: anneau_raiky
   nom: Raiky dans l'anneau

@@ -36,7 +36,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot.core.tcg_cartes import CARTES  # noqa: E402
-from bot.core.tcg_cartes_action import CARTES_ACTION, rendre_regle  # noqa: E402
+from bot.core.tcg_cartes_action import INDEFINI, CARTES_ACTION, rendre_regle  # noqa: E402
 
 CHEMIN_SECRET = Path("/root/.secrets/notion.env")
 BASE = "eb3f9319-0b30-444c-b877-0728a6f40ac3"
@@ -254,6 +254,16 @@ def main() -> int:
             if (diff := _ecart(ligne, champ, valeur)) is not None:
                 charges[champ] = _charge(champ, ligne, valeur)
                 ecarts.append(f"{champ} : {diff[0]!r} → {diff[1]!r}")
+        # Le statut n'est PAS un champ comme les autres : il porte aussi
+        # « illustrée », « en jeu », « hommage — hors jeu », que le YAML ne sait
+        # pas dire. On ne le pousse donc que dans UN sens, « à écrire » vers
+        # « spec figée », quand la carte a une description. Vécu le 2026-09-13 :
+        # treize cartes écrites depuis des heures étaient encore « à écrire ».
+        carte = CARTES_ACTION.get(cle)
+        statut = ((ligne["properties"].get("Statut") or {}).get("select") or {}).get("name")
+        if carte is not None and carte.regle != INDEFINI and statut == "à écrire":
+            charges["Statut"] = {"select": {"name": "spec figée"}}
+            ecarts.append("Statut : 'à écrire' → 'spec figée'")
         if charges:
             a_ecrire.append((cle, ligne, charges))
             print(f"\n{cle}")
