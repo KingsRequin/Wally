@@ -65,10 +65,11 @@
   categorie: attaque
   visuel: /assets/icones/laser-sparks.svg
   regle: >-
-    Tu ne choisis AUCUNE cible. Elle frappe un héros adverse tiré au hasard,
-    puis rebondit sur un autre, tiré au hasard lui aussi, et ainsi de suite
-    en faisant moins de dégâts à chaque rebond. Elle s'arrête au premier
-    rebond raté.
+    Tu ne choisis AUCUNE cible. Elle frappe ${rebonds} fois des héros adverses
+    tirés au hasard, un même héros pouvant être touché plusieurs fois, en
+    faisant moins de dégâts à chaque rebond. Un rebond esquivé est perdu.
+  stats:
+    rebonds: null
 
 - cle: mozambique
   nom: Mozambique here!
@@ -228,8 +229,9 @@
   categorie: soin
   visuel: /assets/icones/gas-mask.svg
   regle: >-
-    Tant qu'il est en jeu, TOUT baril posé soigne au lieu de blesser — y
-    compris ceux de l'adversaire.
+    Tant qu'il est dans tes passifs, tout baril actif te SOIGNE au lieu de te
+    blesser, et continue de blesser l'adversaire. Si vous l'avez tous les
+    deux, le baril soigne tout le monde.
 
 - cle: rhum
   nom: Un petit cadeau de Zeddo
@@ -404,8 +406,8 @@
   categorie: controle
   visuel: /assets/icones/death-zone.svg
   regle: >-
-    Reste sur la table, FACE VISIBLE. À chaque tour, TOUS les héros perdent
-    ${degats} PV, les tiens comme ceux d'en face.
+    Reste sur la table, FACE VISIBLE. À chaque tour complet, TOUS les héros
+    perdent ${degats} PV, les tiens comme ceux d'en face.
   stats:
     degats: 1
 
@@ -417,7 +419,8 @@
   visuel: /assets/icones/vhs.svg
   regle: >-
     Annule tout ce qui s'est passé pendant le tour précédent : les dégâts, les
-    soins, les états. On refait la prise.
+    soins, les états, les morts. Les cartes jouées reviennent en main et
+    l'énergie est rendue. On refait la prise.
 
 - cle: leurre
   nom: Le leurre
@@ -427,8 +430,9 @@
   visuel: /assets/cartes/carte-leurre.svg
   forme: image
   regle: >-
-    Double un de tes héros en jeu ; une seule des deux copies est vraie.
-    Attaquer la fausse la détruit et COÛTE LE TOUR de l'attaquant.
+    Double un de tes héros ; une seule des deux copies est vraie. Attaquer la
+    fausse la détruit et COÛTE LE TOUR de l'attaquant. Si le vrai héros meurt,
+    la copie disparaît avec lui.
 
 - cle: anti_cheat
   nom: L'anti-cheat
@@ -522,7 +526,7 @@
   forme: image
   regle: >-
     Lance-la sur un héros adverse : pendant ${tours} tours, il attaque une
-    cible tirée au hasard, y compris ses propres alliés.
+    cible tirée au hasard sur toute la table, lui-même compris.
   stats:
     tours: null
 
@@ -607,7 +611,10 @@
   categorie: ressource
   visuel: /assets/cartes/carte-drone-crypto.svg
   forme: image
-  regle: Regarde la main de l'adversaire jusqu'à la fin du tour.
+  regle: >-
+    Joue-la pour voir la main de l'adversaire jusqu'à la fin du tour, ou
+    pose-la sur la table pour la voir tant qu'elle n'est pas détruite. Elle
+    révèle aussi le vrai héros si un leurre est en jeu.
 
 - cle: typical_octane
   nom: Typical Octane
