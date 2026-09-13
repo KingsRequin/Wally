@@ -14,11 +14,14 @@ devrait deviner à quelle famille il a affaire avant de savoir quoi lire.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 
+from bot.core import tcg_decks
 from bot.core.tcg_cartes import en_json, par_prestige
 from bot.core.tcg_cartes_action import en_json as en_json_action
 from bot.core.tcg_cartes_action import par_categorie
+from bot.dashboard.routes.chat_auth import _jwt_secret_raw, decode_jwt
 
 public_router = APIRouter()
 
@@ -46,3 +49,87 @@ async def cartes_action() -> dict:
     appartient à la carte.
     """
     return {"cartes": [en_json_action(c) for c in par_categorie()]}
+
+
+# ── Les decks ─────────────────────────────────────────────────────────────
+#
+# Rangés sur le compte Discord du joueur (arbitrage de l'owner du 2026-09-13),
+# derrière le JWT que le site délivre à la connexion. Les limites vivent dans
+# `bot/core/tcg_decks.py`, le cloisonnement entre comptes dans le mixin : la
+# route ne fait que relier les deux.
+
+
+class DeckEntree(BaseModel):
+    nom: str = Field(max_length=200)
+    heros: list[str] = Field(default_factory=list, max_length=50)
+    cartes: list[str] = Field(default_factory=list, max_length=200)
+
+
+def _compte(request: Request) -> str:
+    """Le `discord_id` du porteur du jeton, ou 401.
+
+    Un jeton falsifié ou expiré est traité exactement comme une absence de
+    jeton : dire lequel des deux aiderait celui qui essaie.
+    """
+    entete = request.headers.get("Authorization", "")
+    charge = decode_jwt(entete[7:], _jwt_secret_raw()) if entete.startswith("Bearer ") else None
+    if not charge or not charge.get("discord_id"):
+        raise HTTPException(401, detail="Connexion Discord requise.")
+    return str(charge["discord_id"])
+
+
+def _deck_json(deck: dict) -> dict:
+    return {
+        "id": deck["id"],
+        "nom": deck["nom"],
+        "heros": deck["heros"],
+        "cartes": deck["cartes"],
+        "complet": tcg_decks.complet(deck["heros"], deck["cartes"]),
+        "modifieLe": deck["modifie_le"],
+    }
+
+
+def _valider(entree: DeckEntree) -> str:
+    try:
+        return tcg_decks.valider(entree.nom, entree.heros, entree.cartes)
+    except tcg_decks.DeckInvalide as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
+@public_router.get("/tcg/decks")
+async def lister_decks(request: Request) -> dict:
+    compte = _compte(request)
+    decks = await request.app.state.wally.db.lister_decks(compte)
+    return {"decks": [_deck_json(d) for d in decks]}
+
+
+@public_router.post("/tcg/decks", status_code=201)
+async def creer_deck(entree: DeckEntree, request: Request) -> dict:
+    compte = _compte(request)
+    nom = _valider(entree)
+    db = request.app.state.wally.db
+    if await db.compter_decks(compte) >= tcg_decks.DECKS_PAR_COMPTE:
+        raise HTTPException(400, detail=(
+            f"Tu as déjà {tcg_decks.DECKS_PAR_COMPTE} decks : "
+            f"supprimes-en un pour en créer un nouveau."))
+    deck_id = await db.creer_deck(compte, nom, entree.heros, entree.cartes)
+    return {"deck": _deck_json(await db.lire_deck(deck_id, compte))}
+
+
+@public_router.put("/tcg/decks/{deck_id}")
+async def modifier_deck(deck_id: int, entree: DeckEntree, request: Request) -> dict:
+    compte = _compte(request)
+    nom = _valider(entree)
+    db = request.app.state.wally.db
+    # 404 et non 403 pour le deck d'un autre : un 403 confirmerait qu'il existe.
+    if not await db.modifier_deck(deck_id, compte, nom, entree.heros, entree.cartes):
+        raise HTTPException(404, detail="Deck introuvable.")
+    return {"deck": _deck_json(await db.lire_deck(deck_id, compte))}
+
+
+@public_router.delete("/tcg/decks/{deck_id}", status_code=204)
+async def supprimer_deck(deck_id: int, request: Request) -> Response:
+    compte = _compte(request)
+    if not await request.app.state.wally.db.supprimer_deck(deck_id, compte):
+        raise HTTPException(404, detail="Deck introuvable.")
+    return Response(status_code=204)

@@ -19,9 +19,24 @@ from bot.db.mixins import (
     RSSMixin,
     ApexMixin,
     StateMixin,
+    TcgMixin,
 )
 
 SCHEMA = """
+-- Les decks Wallycard, un par ligne, rangés par compte Discord. `discord_id`
+-- en TEXTE : un snowflake dépasse ce qu'un nombre JavaScript représente
+-- exactement, et il transite par le front.
+CREATE TABLE IF NOT EXISTS tcg_decks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    discord_id TEXT NOT NULL,
+    nom TEXT NOT NULL,
+    heros TEXT NOT NULL DEFAULT '[]',
+    cartes TEXT NOT NULL DEFAULT '[]',
+    cree_le TEXT NOT NULL DEFAULT (datetime('now')),
+    modifie_le TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tcg_decks_compte ON tcg_decks(discord_id);
+
 CREATE TABLE IF NOT EXISTS cost_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp REAL NOT NULL,
@@ -511,6 +526,7 @@ class Database(
     RSSMixin,
     ApexMixin,
     StateMixin,
+    TcgMixin,
 ):
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn
