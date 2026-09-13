@@ -119,7 +119,7 @@ ICONE_CATEGORIE = {
 # le jour où une carte l'emploie** — un nom sans employeur est un bouton
 # branché sur rien.
 STATS = ("attaque", "aura", "cartes", "degats", "energie", "gardees", "pv",
-         "soin", "tours", "chance")
+         "secondes", "soin", "tours", "chance")
 
 # Ce qu'affiche une stat déclarée mais pas encore calibrée (`null` en YAML).
 # 🚨 `None` n'est PAS `0`, et c'est exactement le piège déjà payé sur `cout` :

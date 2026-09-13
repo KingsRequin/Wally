@@ -7,7 +7,6 @@
       "swords-power",
       "remedy",
       "human-target",
-      "speedometer",
       "beer-bottle",
       "full-pizza",
       "rod-of-asclepius",
@@ -29,7 +28,11 @@
       "death-zone",
       "skull-mask",
       "dozen",
-      "mirror-mirror"
+      "mirror-mirror",
+      "sprint",
+      "sensuousness",
+      "sly",
+      "stopwatch"
     ],
     "skoll": [
       "flatbed-covered",

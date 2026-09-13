@@ -146,7 +146,7 @@
   court: TENMA
   type: passif
   categorie: attaque
-  visuel: /assets/icones/speedometer.svg
+  visuel: /assets/icones/sprint.svg
   regle: >-
     Tant qu'il ne te reste qu'UN SEUL héros vivant, sa chance d'esquive est
     fortement accrue.
@@ -163,6 +163,16 @@
     TIENS, tiré au hasard, qui prend la MOITIÉ de ces dégâts.
   stats:
     chance: 50 %
+
+- cle: traitre
+  nom: Traître
+  court: TRAÎTRE
+  type: action
+  categorie: attaque
+  visuel: /assets/icones/sly.svg
+  regle: >-
+    Retire des PV à un de tes héros et les donne en Attaque à un autre de tes
+    héros.
 
 # ── Soin et survie ────────────────────────────────────────────────────────
 - cle: riz
@@ -445,6 +455,19 @@
     Pose-la FACE CACHÉE. La prochaine attaque adverse est renvoyée à celui qui
     l'a lancée.
 
+- cle: viens_en_vocal
+  nom: « Viens en vocal »
+  court: VIENS EN VOCAL
+  type: passif
+  categorie: controle
+  visuel: /assets/icones/stopwatch.svg
+  regle: >-
+    Pose-la FACE VISIBLE. À chacun de ses tours, l'adversaire n'a que
+    ${secondes} secondes pour jouer : le décompte s'affiche sur la carte, et
+    quand il est écoulé, son tour passe.
+  stats:
+    secondes: null
+
 # ── Aura et coopération ───────────────────────────────────────────────────
 - cle: apero_zeddo
   nom: Apéro chez Zeddo
@@ -529,6 +552,17 @@
   stats:
     aura: 3
     pv: 1
+
+- cle: belle_bite
+  nom: Belle bite
+  court: BELLE BITE
+  type: passif
+  categorie: aura
+  visuel: /assets/icones/sensuousness.svg
+  regle: >-
+    Ajoute de l'Aura à un de tes héros, pendant ${tours} tours.
+  stats:
+    tours: null
 
 # ── Ressource ─────────────────────────────────────────────────────────────
 - cle: care_package

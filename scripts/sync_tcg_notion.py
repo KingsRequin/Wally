@@ -63,6 +63,11 @@ TITRES_HISTORIQUES = {
     "rhae": "rhae___",
     "kingsrequin": "KingsRequin",
     "meliodas": "meliodas987_",
+    # Trois idées de l'owner qui avaient une fiche Notion avant d'avoir une
+    # carte. « Traite » est le titre saisi ; la carte s'appelle « Traître ».
+    "belle_bite": "Belle bite",
+    "traitre": "Traite",
+    "viens_en_vocal": "« Viens en vocal »",
 }
 
 
