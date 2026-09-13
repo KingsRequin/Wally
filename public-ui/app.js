@@ -126,6 +126,7 @@ import * as pageClips from './pages/clips.js';
 import * as pageDemoCarteAzrael from './pages/demo-carte-azrael.js';
 import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
+import * as pageWallycard from './pages/wallycard.js';
 
 // ── Fabrique de DOM ───────────────────────────────────────────────────────
 // `h()` vit dans `partage/dom.js` : l'overlay OBS en a besoin et ne peut pas
@@ -386,7 +387,10 @@ const ROUTES = {
   '/chat':    { page: pageChat,    plein: true },
   '/galerie': { page: pageGalerie, plein: false },
   '/clips':   { page: pageClips,   plein: false },
-  '/tcg':     { page: pageTcg,     plein: false },
+  // Wallycard : l'écran titre, puis ses sous-pages. La galerie des cartes est
+  // devenue la Bibliothèque ; elle garde son module.
+  '/wallycard':              { page: pageWallycard, plein: false },
+  '/wallycard/bibliotheque': { page: pageTcg,       plein: false },
   // HORS de la barre d'onglets, mais PAS hors navigation : on y arrive par le
   // pied de page. Une page de crédits dans la nav principale prendrait la
   // place d'une page qu'on vient lire ; l'absente du menu reste atteignable,
@@ -402,14 +406,20 @@ const ROUTES = {
 // pas tomber sur une page blanche.
 const HASH_LEGACY = {
   status: '/', chat: '/chat', gallery: '/galerie', galerie: '/galerie',
-  journal: '/', about: '/', tcg: '/tcg',
+  journal: '/', about: '/', tcg: '/wallycard',
 };
+
+// Les chemins RENOMMÉS. `/tcg` a été partagé avant que le jeu ne s'appelle
+// Wallycard : il redirige, et l'adresse affichée est corrigée, pour qu'un
+// lien recopié depuis la barre d'adresse porte le bon nom.
+const ALIAS = { '/tcg': '/wallycard' };
 
 const _vue = document.getElementById('vue');
 let _routeActive = null;
 
 function normaliser(pathname) {
-  const p = (pathname || '/').replace(/\/+$/, '') || '/';
+  const brut = (pathname || '/').replace(/\/+$/, '') || '/';
+  const p = ALIAS[brut] || brut;
   return ROUTES[p] ? p : '/';
 }
 
@@ -418,7 +428,9 @@ function syncNav(route) {
   // (téléphone). Une seule est visible à la fois, mais l'autre garde sa marque
   // en mémoire — une rotation d'écran ne repasse pas par ici.
   document.querySelectorAll('.nav-link, .tab').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === route);
+    // Une sous-page garde son onglet allumé : la Bibliothèque est dans Wallycard.
+    const r = a.dataset.route;
+    a.classList.toggle('active', route === r || (r !== '/' && route.startsWith(`${r}/`)));
   });
 }
 
@@ -477,6 +489,8 @@ window.addEventListener('popstate', () => rendre(normaliser(location.pathname)))
     rendre(cible);
     return;
   }
+  const brut = location.pathname.replace(/\/+$/, '') || '/';
+  if (ALIAS[brut]) history.replaceState({}, '', ALIAS[brut] + location.search);
   rendre(normaliser(location.pathname));
 }());
 

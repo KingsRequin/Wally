@@ -384,7 +384,8 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
 # l'accueil sur les quatre routes sans que personne ne le voie.
 RAIL_ATTENDU = ["HAUT", "CERVEAU", "ÉMOTIONS", "CHAT", "GALERIE", "JOURNAL", "CAPOT"]
 
-# Le 4e champ dit si la route a un onglet dans la nav. La démo de carte n'en a
+# Le 4e champ dit si la route a un onglet dans la nav : `True` (le sien),
+# `False` (aucun), ou la route de l'onglet parent pour une sous-page. La démo de carte n'en a
 # PAS — c'est une URL qu'on donne à la main — et exiger « un seul onglet actif »
 # sur elle échouerait pour la bonne raison.
 PAGES_PUBLIQUES = [
@@ -392,7 +393,10 @@ PAGES_PUBLIQUES = [
     ("Chat", "/chat", ".chat-vue", True),
     ("Galerie", "/galerie", ".gal-grid", True),
     ("Clips", "/clips", ".clip-grid", True),
-    ("TCG", "/tcg", ".tcgal-grille", True),
+    ("Wallycard", "/wallycard", ".wcm-menu", True),
+    # SOUS-PAGE : le 4e champ porte la route de l'onglet PARENT. Un onglet reste
+    # allumé (celui de Wallycard), mais la page n'en ajoute aucun à la barre.
+    ("Bibliothèque", "/wallycard/bibliotheque", ".tcgal-grille", "/wallycard"),
     # HORS de la barre d'onglets : on y arrive par le pied de page. Le dernier
     # champ à `False` la retire donc du compte d'onglets — sans quoi ce test
     # exigerait un onglet qui n'existe nulle part.
@@ -403,7 +407,9 @@ PAGES_PUBLIQUES = [
 # Les onglets attendus dans les deux barres : celles de PAGES_PUBLIQUES qui en
 # ont une. CALCULÉ et non écrit en dur — une liste à la main laisserait la
 # prochaine page hors du compte, en silence.
-ONGLETS_ATTENDUS = sum(1 for *_, dans_nav in PAGES_PUBLIQUES if dans_nav)
+# `is True` et non la vérité du champ : une SOUS-PAGE porte la route de son onglet
+# parent (une chaîne, donc vraie) mais n'ajoute aucun onglet à la barre.
+ONGLETS_ATTENDUS = sum(1 for *_, dans_nav in PAGES_PUBLIQUES if dans_nav is True)
 
 
 def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
@@ -462,7 +468,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # fait qu'une fonction ait été appelée : un test qui assère une ligne
     # d'implémentation fige le défaut le jour où elle change.
     del erreurs[:]
-    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.goto(f"{BASE}/wallycard/bibliotheque", wait_until="networkidle", timeout=40000)
     page.wait_for_selector(".chero", timeout=_ATTENTE_PANNEAU_MS)
     page.wait_for_timeout(1500)
     boite = page.locator(".chero").first.bounding_box()
@@ -943,13 +949,31 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(not erreurs, "aucune erreur JS pendant la navigation", " · ".join(erreurs[:2]))
 
     # Les anciennes ancres du site arcade sont partagées et mises en favori.
-    # Le détour par /tcg n'est pas cosmétique : depuis `/`, aller à `/#gallery`
+    # Le détour par /wallycard n'est pas cosmétique : depuis `/`, aller à `/#gallery`
     # est une navigation DANS le document — la page ne se recharge pas et la
     # redirection, qui vit au premier chargement du module, ne s'exécute jamais.
-    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.goto(f"{BASE}/wallycard", wait_until="networkidle", timeout=40000)
     page.goto(f"{BASE}/#gallery", wait_until="networkidle", timeout=40000)
     page.wait_for_timeout(1500)
     rap.dire(page.url.endswith("/galerie"), "l'ancre héritée #gallery redirige", page.url)
+
+    # `/tcg` a été partagé avant le nom Wallycard : il doit rediriger, ET
+    # corriger l'adresse affichée.
+    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector(".wcm-menu", timeout=_ATTENTE_PANNEAU_MS)
+    rap.dire(page.url.endswith("/wallycard"), "l'ancien lien /tcg redirige vers /wallycard", page.url)
+    # Une entrée qui n'est pas livrée ne doit pas être un lien : on clique,
+    # rien ne se passe, rien ne l'explique.
+    grisees = page.locator(".wcm-entree[aria-disabled='true']")
+    rap.dire(grisees.count() == 2 and page.locator("a.wcm-entree").count() == 1,
+             "menu Wallycard : Jouer et Règles grisés, Bibliothèque seule cliquable",
+             f"{grisees.count()} grisées, {page.locator('a.wcm-entree').count()} lien(s)")
+    page.locator("a.wcm-entree").first.click()
+    page.wait_for_selector(".tcgal-grille", timeout=_ATTENTE_PANNEAU_MS)
+    rap.dire(page.url.endswith("/wallycard/bibliotheque"), "menu Wallycard : Bibliothèque ouvre la collection", page.url)
+    actifs = page.locator(".nav-link.active")
+    rap.dire(actifs.count() == 1 and actifs.first.get_attribute("data-route") == "/wallycard",
+             "Bibliothèque garde l'onglet Wallycard allumé", f"{actifs.count()} onglet(s) actif(s)")
     page.close()
 
     # Le gyroscope de la galerie. Sur un ordinateur il suffit de PASSER la
@@ -960,7 +984,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     gyro = nav.new_page(viewport={"width": 390, "height": 844},
                         is_mobile=True, has_touch=True)
     erreurs_gyro = _brancher_erreurs(gyro)
-    gyro.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    gyro.goto(f"{BASE}/wallycard/bibliotheque", wait_until="networkidle", timeout=40000)
     gyro.wait_for_selector(".chero", timeout=_ATTENTE_PANNEAU_MS)
     gyro.wait_for_timeout(2000)
 
@@ -1200,7 +1224,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # après tous ses contrôles — donc sur un échec qui ne dit rien du front.
     page = nav.new_page(viewport={"width": 1440, "height": 1000})
     erreurs = _brancher_erreurs(page)
-    page.goto(f"{BASE}/tcg", wait_until="networkidle", timeout=40000)
+    page.goto(f"{BASE}/wallycard/bibliotheque", wait_until="networkidle", timeout=40000)
     page.wait_for_selector("button[data-famille='action']", timeout=_ATTENTE_PANNEAU_MS)
     page.click("button[data-famille='action']")
     page.wait_for_selector(".tcgal-grille--action .ca", state="visible",

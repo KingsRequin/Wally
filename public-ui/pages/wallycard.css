@@ -1,0 +1,198 @@
+/* public-ui/pages/wallycard.css — l'écran titre de Wallycard (`/wallycard`)
+ *
+ * Le vocabulaire est celui du dos de carte « purgatoire » (projet de design,
+ * note CLAUDE.md) : encre #12100c, un seul accent or #e1a947, crème #f7ecd9,
+ * trame losange posée DEPUIS LE CENTRE, plaque de titre à losanges or,
+ * banderoles crème en miroir. Tout est en `em` : l'écran se met à l'échelle
+ * par le seul `font-size` de `.wcm`.
+ */
+
+/* Déjà déclarée dans `partage/tcg-carte.css`. Redéclarée ici parce que le menu
+ * ne charge pas la feuille des cartes : le navigateur ne télécharge le fichier
+ * qu'une fois, même déclaré deux fois. */
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/vendor/archivo-black-400.woff2') format('woff2');
+}
+
+@keyframes wcm-defile { from { transform: translate3d(0, 0, 0) } to { transform: translate3d(-50%, 0, 0) } }
+
+@keyframes wcm-scintille {
+  0%, 100% { transform: translate(-50%, -50%) scale(.5); opacity: 0 }
+  22%      { transform: translate(-50%, -50%) scale(1.25); opacity: 1 }
+  50%      { transform: translate(-50%, -50%) scale(1); opacity: .55 }
+  78%      { transform: translate(-50%, -50%) scale(.55); opacity: 0 }
+}
+
+.wcm {
+  position: relative;
+  /* La barre du site est `fixed` : sans ce retrait, la banderole du haut passe
+   * dessous. */
+  min-height: calc(100dvh - var(--tab-reserve, 0px));
+  padding: calc(var(--nav-h) + 5.5em) 1.2em 5.5em;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #15111c;
+  color: #f7ecd9;
+  font-size: clamp(12px, 1.45vw, 17px);
+}
+
+/* La trame losange. Posée depuis le CENTRE : calée sur un coin, elle serait
+ * rognée d'un côté et la symétrie sauterait. */
+.wcm-trame {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(45deg, rgba(247, 236, 217, 0) 48.9%, rgba(247, 236, 217, .07) 48.9%, rgba(247, 236, 217, .07) 51.1%, rgba(247, 236, 217, 0) 51.1%),
+    linear-gradient(-45deg, rgba(247, 236, 217, 0) 48.9%, rgba(247, 236, 217, .07) 48.9%, rgba(247, 236, 217, .07) 51.1%, rgba(247, 236, 217, 0) 51.1%),
+    radial-gradient(circle .2em at 50% 50%, rgba(225, 169, 71, .28) 60%, transparent 62%);
+  background-size: 3.4em 3.4em;
+  background-position: center center;
+}
+
+.wcm-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(95% 68% at 50% 50%, rgba(0, 0, 0, 0) 28%, rgba(8, 6, 10, .8) 100%);
+}
+
+.wcm-etincelles { position: absolute; inset: 0; pointer-events: none; }
+
+.wcm-etincelle {
+  position: absolute;
+  width: .52em;
+  height: .52em;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #fff6e2, #e1a947);
+  box-shadow: 0 0 .5em rgba(225, 169, 71, .7);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.5);
+  animation: wcm-scintille 6s ease-in-out infinite backwards;
+}
+
+/* Deux banderoles en miroir. Celle du haut est retournée de 180° : son texte
+ * défile donc dans l'autre sens, et c'est ce qui fait la symétrie. */
+.wcm-banderole {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.4em;
+  overflow: hidden;
+  background: #f7ecd9;
+  border-top: .12em solid #12100c;
+  border-bottom: .12em solid #12100c;
+  display: flex;
+  align-items: center;
+}
+
+.wcm-banderole[data-bord="haut"] { top: calc(var(--nav-h) + 1.4em); transform: rotate(180deg); }
+.wcm-banderole[data-bord="bas"] { bottom: 1.4em; }
+
+.wcm-defile { display: flex; white-space: nowrap; animation: wcm-defile 60s linear infinite; }
+.wcm-defile span { font: 700 .86em/1 'JetBrains Mono', monospace; letter-spacing: .3em; color: #12100c; padding-right: .3em; }
+
+.wcm-centre { position: relative; width: min(30em, 100%); }
+
+.wcm-plaque {
+  position: relative;
+  background: rgba(18, 16, 12, .92);
+  border: .16em solid #e1a947;
+  box-shadow: 0 0 0 .45em rgba(18, 16, 12, .7), 0 0 2.6em rgba(225, 169, 71, .18);
+  padding: 2.6em 1.6em 2.2em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1em;
+  text-align: center;
+}
+
+.wcm-sur {
+  font: 700 .72em/1.4 'JetBrains Mono', monospace;
+  letter-spacing: .3em;
+  color: rgba(247, 236, 217, .55);
+}
+
+.wcm-titre {
+  margin: 0;
+  font: 400 clamp(2.2em, 7vw, 3.4em)/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: -.02em;
+  color: #f7ecd9;
+  text-shadow: .14em .14em 0 rgba(18, 16, 12, .95);
+}
+
+.wcm-trait { width: 6em; height: .2em; background: #e1a947; }
+
+.wcm-coin { position: absolute; width: .66em; height: .66em; background: #e1a947; transform: rotate(45deg); }
+.wcm-coin[data-coin="hg"] { left: -.5em; top: -.5em; }
+.wcm-coin[data-coin="hd"] { right: -.5em; top: -.5em; }
+.wcm-coin[data-coin="bg"] { left: -.5em; bottom: -.5em; }
+.wcm-coin[data-coin="bd"] { right: -.5em; bottom: -.5em; }
+
+.wcm-menu {
+  width: 100%;
+  margin-top: .8em;
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+
+/* Une entrée est une plaque à son tour : filet crème, fond d'encre. L'or est
+ * réservé au survol et au focus, pour qu'il désigne ce qu'on va choisir. */
+.wcm-entree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .35em;
+  padding: 1em 1.2em;
+  border: .12em solid rgba(247, 236, 217, .35);
+  background: rgba(21, 17, 28, .85);
+  color: #f7ecd9;
+  text-decoration: none;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.wcm-entree-libelle {
+  font: 400 1.35em/1 'Archivo Black', 'Space Grotesk', sans-serif;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.wcm-entree-detail {
+  font: 700 .66em/1 'JetBrains Mono', monospace;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: rgba(247, 236, 217, .55);
+}
+
+a.wcm-entree:hover,
+a.wcm-entree:focus-visible {
+  border-color: #e1a947;
+  box-shadow: 0 0 0 .3em rgba(225, 169, 71, .14), 0 0 1.6em rgba(225, 169, 71, .2);
+  transform: translateY(-.08em);
+  outline: none;
+}
+
+a.wcm-entree:hover .wcm-entree-detail,
+a.wcm-entree:focus-visible .wcm-entree-detail { color: #e1a947; }
+
+/* Pas encore livrée : lisible, mais clairement éteinte. */
+.wcm-entree[aria-disabled="true"] {
+  border-style: dashed;
+  border-color: rgba(247, 236, 217, .16);
+  color: rgba(247, 236, 217, .38);
+  cursor: not-allowed;
+}
+
+.wcm-entree[aria-disabled="true"] .wcm-entree-detail { color: rgba(225, 169, 71, .55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcm-etincelle, .wcm-defile { animation: none; }
+  .wcm-etincelle { opacity: .5; }
+  .wcm-entree { transition: none; }
+}
