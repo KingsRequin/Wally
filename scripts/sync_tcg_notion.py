@@ -50,7 +50,7 @@ VERSION_API = "2022-06-28"
 TITRES_HISTORIQUES = {
     "flatline_azrael": "Flatline",
     "push_3_teams": "Amitié",
-    "lyly": "Lyly",
+    "lily": "Lyly",
     "les_trois_chats": "Pika, Spiro et Lili",
     "rhum": "Le Rhum",
     "tunnel_rina": "Le tunnel de Rina",

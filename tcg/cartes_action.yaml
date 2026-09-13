@@ -472,6 +472,18 @@
   stats:
     secondes: null
 
+- cle: champi
+  nom: Champi
+  court: CHAMPI
+  type: action
+  categorie: controle
+  visuel: /assets/icones/mushrooms.svg
+  regle: >-
+    Joue-la sur l'adversaire : pendant un tour, il voit chacun de tes héros en
+    double, et ses dégâts sont réduits de ${reduction}.
+  stats:
+    reduction: 50 %
+
 # ── Aura et coopération ───────────────────────────────────────────────────
 - cle: apero_zeddo
   nom: Apéro chez Zeddo
@@ -517,9 +529,9 @@
     Lance-la sur un héros adverse : il a une chance de rater sa prochaine
     attaque.
 
-- cle: lyly
-  nom: Lyly
-  court: LYLY
+- cle: lily
+  nom: Lily
+  court: LILY
   type: action
   categorie: aura
   visuel: /assets/cartes/carte-chat.png
@@ -531,7 +543,7 @@
     tours: null
 
 - cle: les_trois_chats
-  nom: Pika, Spiro et Lyly
+  nom: Pika, Spiro et Lily
   court: LES TROIS CHATS
   type: passif
   categorie: aura
@@ -542,7 +554,7 @@
   semis: 3
   arc: true
   regle: >-
-    Tant qu'elle est en jeu, chaque fois que tu joues Pika, Spiro ou Lyly, la
+    Tant qu'elle est en jeu, chaque fois que tu joues Pika, Spiro ou Lily, la
     carte revient dans ta main au lieu de partir à la défausse.
 
 - cle: piercing
