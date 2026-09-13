@@ -469,15 +469,48 @@ document.addEventListener('click', (e) => {
 
 window.addEventListener('popstate', () => rendre(normaliser(location.pathname)));
 
+/** Échange le code de retour OAuth contre les jetons, et prévient le site.
+ *
+ * UN seul endroit : le chat le faisait seul tant qu'il était le seul à envoyer
+ * vers la connexion. La Bibliothèque de Wallycard y envoie aussi, et une copie
+ * de l'échange dans chaque page divergerait au premier changement de l'API. */
+export function echangerCodeConnexion(code) {
+  return fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(code))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || !data.jwt) return false;
+      localStorage.setItem('discord_jwt', data.jwt);
+      if (data.refresh_token) localStorage.setItem('discord_refresh', data.refresh_token);
+      window.dispatchEvent(new CustomEvent('wally-auth-changed'));
+      return true;
+    })
+    .catch((err) => { console.warn('échange OAuth impossible', err); return false; });
+}
+
+/** La route où revenir après la connexion Discord. Posée par la page qui envoie
+ * vers la connexion, consommée au retour. `sessionStorage` : l'aller-retour vers
+ * Discord se fait dans le même onglet, et une valeur oubliée n'y survit pas. */
+export const CLE_APRES_CONNEXION = 'wally_apres_connexion';
+
 // Position initiale. Trois entrées possibles, dans cet ordre :
 //   1. le retour OAuth (`/?chat_code=…`) — le serveur ne sait rediriger que
-//      vers la racine, c'est ici qu'on le remet sur le chat ;
+//      vers la racine. Par défaut on le remet sur le chat, qui échange le code ;
+//      si une page a demandé à y revenir (la Bibliothèque), on l'échange ici ;
 //   2. une ancre de l'ancien site (`#chat`, `#gallery`…) ;
 //   3. le chemin demandé.
 (function routeInitiale() {
   history.scrollRestoration = 'manual';
   const params = new URLSearchParams(location.search);
-  if (params.get('chat_code')) {
+  const code = params.get('chat_code');
+  if (code) {
+    const retour = sessionStorage.getItem(CLE_APRES_CONNEXION);
+    sessionStorage.removeItem(CLE_APRES_CONNEXION);
+    if (retour && ROUTES[retour] && retour !== '/chat') {
+      history.replaceState({}, '', retour);
+      rendre(retour);
+      echangerCodeConnexion(code);
+      return;
+    }
     history.replaceState({}, '', '/chat' + location.search);
     rendre('/chat');
     return;

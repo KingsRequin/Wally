@@ -13,9 +13,13 @@
 // qui refuse. Le serveur reste seul juge ; le panneau ne fait qu'éviter qu'on
 // tente l'impossible.
 
-import { ensureFreshToken, h, utilisateur } from '../app.js';
+import { CLE_APRES_CONNEXION, ensureFreshToken, h, utilisateur } from '../app.js';
 
 const API = '/api/public/tcg/decks';
+// Le deck en cours, mis de côté le temps de l'aller-retour vers Discord. Sans
+// lui, « Se connecter pour enregistrer » faisait perdre tout ce qu'on venait de
+// composer : la page est quittée pour l'OAuth, et la mémoire du panneau avec.
+const CLE_BROUILLON = 'wallycard_brouillon';
 
 function deckVide() {
   return { id: null, nom: 'Nouveau deck', heros: [], cartes: [] };
@@ -173,6 +177,8 @@ export function editeurDeck({ heros, tactiques }) {
 
   enregistrer.addEventListener('click', async () => {
     if (!utilisateur() && !(await ensureFreshToken())) {
+      sessionStorage.setItem(CLE_BROUILLON, JSON.stringify(deck));
+      sessionStorage.setItem(CLE_APRES_CONNEXION, '/wallycard/bibliotheque');
       window.location.href = '/api/chat/auth/login';
       return;
     }
@@ -224,6 +230,23 @@ export function editeurDeck({ heros, tactiques }) {
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
     .then((l) => { limites = l; rafraichir(); })
     .catch((e) => dire(`Les règles du deck n'ont pas pu être chargées : ${e.message}`, true));
+  // Retour de la connexion Discord : le deck composé avant de partir revient.
+  const brouillon = sessionStorage.getItem(CLE_BROUILLON);
+  if (brouillon) {
+    sessionStorage.removeItem(CLE_BROUILLON);
+    try {
+      const d = JSON.parse(brouillon);
+      deck = { id: d.id ?? null, nom: String(d.nom || ''), heros: [...(d.heros || [])], cartes: [...(d.cartes || [])] };
+      modifie = true;
+      dire('Ton deck est revenu : tu peux l’enregistrer.');
+      // Ouvert : le joueur revient de Discord pour enregistrer, et un panneau
+      // fermé cacherait à la fois son deck et ce message.
+      noeud.open = true;
+    } catch (e) {
+      console.warn('Wallycard : brouillon de deck illisible', e);
+    }
+  }
+
   chargerDecks();
   rafraichir();
 

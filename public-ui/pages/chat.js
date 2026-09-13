@@ -4,7 +4,7 @@
 // même bot que Discord et Twitch. La colonne de droite montre ce qu'il sait de
 // toi — c'est la partie qui distingue ce chat d'un formulaire de contact.
 
-import { emotions, ensureFreshToken, h, nomBot, onEmotionUpdate, openModal } from '../app.js';
+import { echangerCodeConnexion, emotions, ensureFreshToken, h, nomBot, onEmotionUpdate, openModal } from '../app.js';
 import { renderMarkdown } from '../markdown.js';
 
 const DATE_MIN = new Date('2026-03-01');
@@ -469,20 +469,9 @@ export function mount(el) {
   if (code) {
     history.replaceState({}, '', '/chat');
     el.appendChild(attente('Connexion en cours…'));
-    fetch('/api/chat/auth/exchange?code=' + encodeURIComponent(code))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && data.jwt) {
-          localStorage.setItem('discord_jwt', data.jwt);
-          if (data.refresh_token) localStorage.setItem('discord_refresh', data.refresh_token);
-          window.dispatchEvent(new CustomEvent('wally-auth-changed'));
-        }
-        if (_monte && _hote === el) { el.textContent = ''; mount(el); }
-      })
-      .catch((err) => {
-        console.warn('échange OAuth impossible', err);
-        if (_monte && _hote === el) { el.textContent = ''; mount(el); }
-      });
+    echangerCodeConnexion(code).then(() => {
+      if (_monte && _hote === el) { el.textContent = ''; mount(el); }
+    });
     return;
   }
 
