@@ -552,7 +552,8 @@
   categorie: ressource
   visuel: /assets/icones/lungs.svg
   regle: >-
-    L'adversaire gagne ${energie} d'énergie de moins à son prochain tour.
+    L'adversaire gagne ${energie} d'énergie de moins à son prochain tour. Sa
+    réserve déjà constituée n'est pas touchée.
   stats:
     energie: null
 
@@ -594,6 +595,7 @@
   categorie: ressource
   visuel: /assets/icones/dozen.svg
   regle: >-
-    L'adversaire perd ${energie} d'énergie pour son prochain tour.
+    L'adversaire perd ${energie} d'énergie dans sa RÉSERVE, celle qu'il a déjà
+    mise de côté pour son Ultime.
   stats:
     energie: null
