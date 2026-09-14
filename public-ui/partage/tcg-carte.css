@@ -793,7 +793,8 @@
   text-shadow: 4px 4px 0 #12100c;
 }
 
-/* Le nom GRAVÉ dans le même vitrage que le fond, sur les paliers hauts. Il
+/* Le nom GRAVÉ dans le même vitrage que le fond, sur les cartes au vitrage en
+ * surface (depuis le 2026-09-14 ; avant, sur les paliers hauts de rareté). Il
  * réutilise la tuile déjà cuite pour l'holo : aucune image de plus, aucun
  * calcul de plus.
  *
