@@ -38,7 +38,14 @@
        "g": true
       },
       {
-       "t": " En 1 contre 1, il faut tuer les trois héros adverses. En 2 contre 2, les six héros de l'équipe adverse."
+       "t": " En 1 contre 1, il faut tuer les trois héros adverses. En 2 contre 2, les six héros de l'équipe adverse. Si les derniers héros de tous les camps meurent en même temps, "
+      },
+      {
+       "t": "tout le monde perd",
+       "g": true
+      },
+      {
+       "t": ". Une roulette peut aussi terminer la partie plus tôt (voir « Les roulettes »)."
       }
      ]
     },
@@ -158,11 +165,25 @@
        ],
        [
         {
-         "t": "Des dégâts qui touchent tous les héros à la fois, comme le gaz du "
+         "t": "Des dégâts ou des pertes de PV qui touchent d'un coup tous les héros de la table ou tous ceux d'un camp, comme le gaz du "
         },
         {
          "t": "BARIL",
          "carte": "baril_caustique"
+        },
+        {
+         "t": ", l'"
+        },
+        {
+         "t": "ANNEAU",
+         "carte": "anneau_raiky"
+        },
+        {
+         "t": " ou l'"
+        },
+        {
+         "t": "APÉRO",
+         "carte": "apero_zeddo"
         },
         {
          "t": ". On ne peut pas les esquiver."
@@ -310,19 +331,6 @@
       [
        [
         {
-         "t": "Tour complet",
-         "g": true
-        }
-       ],
-       [
-        {
-         "t": "Chaque joueur a joué son tour une fois."
-        }
-       ]
-      ],
-      [
-       [
-        {
          "t": "Main",
          "g": true
         }
@@ -355,7 +363,20 @@
        ],
        [
         {
-         "t": "Un tirage au hasard qui change la partie pour tout le monde : la roulette du tour et la roulette de fin de deck."
+         "t": "Un tirage au hasard qui change la partie : la roulette de début de partie et la roulette de fin de deck."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Jeton",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Gagné en remportant une partie. Il sert à relancer une roulette."
         }
        ]
       ],
@@ -527,6 +548,18 @@
        {
         "t": " compte pour une seule place dans le deck, mais en donne trois exemplaires (voir « Les effets dans la durée »)."
        }
+      ],
+      [
+       {
+        "t": "Une carte et sa "
+       },
+       {
+        "t": "variante de rang S",
+        "g": true
+       },
+       {
+        "t": " peuvent être dans le même deck."
+       }
       ]
      ]
     }
@@ -572,6 +605,18 @@
       ],
       [
        {
+        "t": "La "
+       },
+       {
+        "t": "roulette de début de partie",
+        "g": true
+       },
+       {
+        "t": " est lancée (voir « Les roulettes »)."
+       }
+      ],
+      [
+       {
         "t": "On joue ensuite "
        },
        {
@@ -579,7 +624,7 @@
         "g": true
        },
        {
-        "t": ", sauf si une roulette en décide autrement."
+        "t": ", sauf si la roulette en décide autrement."
        }
       ]
      ]
@@ -595,18 +640,6 @@
     {
      "type": "ul",
      "items": [
-      [
-       {
-        "t": "Le tour commence par la "
-       },
-       {
-        "t": "roulette du tour",
-        "g": true
-       },
-       {
-        "t": " (voir « Les roulettes »)."
-       }
-      ],
       [
        {
         "t": "Le joueur fait ses actions "
@@ -873,6 +906,18 @@
       ],
       [
        {
+        "t": "Chaque héros attaque "
+       },
+       {
+        "t": "une seule fois par tour",
+        "g": true
+       },
+       {
+        "t": ", sauf si une carte tactique dit le contraire."
+       }
+      ],
+      [
+       {
         "t": "Esquive",
         "g": true
        },
@@ -1112,11 +1157,23 @@
         "t": "« À chaque tour » veut dire "
        },
        {
-        "t": "à chaque tour de son joueur",
+        "t": "à chaque tour de joueur",
         "g": true
        },
        {
-        "t": ". Une carte qui dit « à chaque tour complet » agit une fois quand tous les joueurs ont joué."
+        "t": ". Une carte que son joueur relance lui-même (comme CAMION ou CODAGE) se relance à chacun de ses tours ; un passif qui agit seul (comme l'"
+       },
+       {
+        "t": "ANNEAU",
+        "carte": "anneau_raiky"
+       },
+       {
+        "t": ") agit au tour de chaque joueur."
+       }
+      ],
+      [
+       {
+        "t": "Une carte qui vise l'adversaire pour « son prochain tour » agit pendant le tour où il joue, pas pendant le tien : c'est le cas de STUN, FEUR, STEAK HACHÉ, EXPLICATION et VÉTO."
        }
       ]
      ]
@@ -1375,7 +1432,7 @@
       ],
       [
        {
-        "t": "En plus des cartes, trois moments sont tirés au hasard pour tout le monde : le "
+        "t": "En plus des cartes, trois moments sont tirés au hasard : le "
        },
        {
         "t": "dé",
@@ -1385,7 +1442,7 @@
         "t": " qui désigne le premier joueur, la "
        },
        {
-        "t": "roulette du tour",
+        "t": "roulette de début de partie",
         "g": true
        },
        {
@@ -1410,7 +1467,7 @@
      "type": "h2",
      "texte": [
       {
-       "t": "La roulette du tour"
+       "t": "La roulette de début de partie"
       }
      ]
     },
@@ -1418,14 +1475,14 @@
      "type": "p",
      "texte": [
       {
-       "t": "Au début de chaque tour, une roulette tire un "
+       "t": "Une fois, au début de la partie, une roulette tire une "
       },
       {
-       "t": "bonus ou un malus général",
+       "t": "règle spéciale",
        "g": true
       },
       {
-       "t": ", qui vaut pour tout le monde pendant ce tour. Par exemple :"
+       "t": " qui vaut pour tout le monde et pour toute la partie. Le tirage peut aussi ne rien donner. Par exemple :"
       }
      ]
     },
@@ -1434,22 +1491,42 @@
      "items": [
       [
        {
-        "t": "les cartes coûtent plus cher ;"
+        "t": "les cartes coûtent plus d'énergie ;"
        }
       ],
       [
        {
-        "t": "impossible d'esquiver ;"
+        "t": "la main est limitée à 3 cartes ;"
        }
       ],
       [
        {
-        "t": "aucune Aura ;"
+        "t": "poser une carte dans la zone tactique ne coûte plus rien, mais elle n'a qu'un seul PV ;"
        }
       ],
       [
        {
-        "t": "Attaque doublée pour tout le monde."
+        "t": "3 emplacements de passifs au lieu de 6 ;"
+       }
+      ],
+      [
+       {
+        "t": "l'Attaque augmente de 50 % ;"
+       }
+      ],
+      [
+       {
+        "t": "les PV des héros sont divisés par deux ;"
+       }
+      ],
+      [
+       {
+        "t": "la partie ne dure que 5 tours, et le joueur avec le plus de PV gagne ;"
+       }
+      ],
+      [
+       {
+        "t": "rien."
        }
       ]
      ]
@@ -1466,21 +1543,25 @@
      "type": "p",
      "texte": [
       {
-       "t": "Quand un joueur arrive au bout de son deck, une "
+       "t": "Chaque fois",
+       "g": true
+      },
+      {
+       "t": " qu'un joueur vide son deck, une "
       },
       {
        "t": "autre roulette",
        "g": true
       },
       {
-       "t": " est lancée. Ses effets peuvent "
+       "t": " est lancée : il peut donc y en avoir deux de suite. Son effet s'applique "
       },
       {
-       "t": "retourner la partie",
+       "t": "au joueur qui a vidé son deck",
        "g": true
       },
       {
-       "t": ". Par exemple :"
+       "t": ", et à ses adversaires seulement si l'effet les implique. Ses effets peuvent retourner la partie. Par exemple :"
       }
      ]
     },
@@ -1489,17 +1570,78 @@
      "items": [
       [
        {
-        "t": "deux joueurs échangent leurs decks ;"
+        "t": "il échange son deck avec un adversaire ;"
        }
       ],
       [
        {
-        "t": "deux joueurs échangent un héros sur la table ;"
+        "t": "ses passifs sont réinitialisés : les cartes de sa zone des passifs partent à la défausse ;"
        }
       ],
       [
        {
-        "t": "la partie se termine dans deux tours, et le joueur dont les héros ont le moins de PV cumulés perd."
+        "t": "rien."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Les jetons"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le gagnant d'une partie gagne des "
+       },
+       {
+        "t": "jetons",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Un jeton sert à "
+       },
+       {
+        "t": "relancer une roulette",
+        "g": true
+       },
+       {
+        "t": " dont le tirage ne plaît pas."
+       }
+      ],
+      [
+       {
+        "t": "La roulette de début de partie peut être relancée "
+       },
+       {
+        "t": "une seule fois par joueur",
+        "g": true
+       },
+       {
+        "t": ", en dépensant un jeton."
+       }
+      ],
+      [
+       {
+        "t": "La roulette de fin de deck ne peut être relancée "
+       },
+       {
+        "t": "que par le joueur qui a vidé son deck",
+        "g": true
+       },
+       {
+        "t": "."
        }
       ]
      ]
@@ -1550,6 +1692,11 @@
       [
        {
         "t": "Le rang S des cartes tactiques et le grade des héros (S, A ou B) sont deux choses différentes."
+       }
+      ],
+      [
+       {
+        "t": "Une carte et sa variante de rang S peuvent être dans le même deck."
        }
       ]
      ]
@@ -1989,7 +2136,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "L'anneau se pose face visible et reste sur la table. À chaque tour complet, tous les héros perdent des PV, ceux de ton camp comme ceux d'en face."
+       "t": "L'anneau se pose face visible et reste sur la table. À chaque tour, tous les héros perdent des PV, ceux de ton camp comme ceux d'en face."
       }
      ]
     },
@@ -2021,7 +2168,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Chaque tour complet, les six héros perdent des PV."
+       "t": "À chaque tour, les six héros perdent des PV."
       }
      ]
     },
@@ -2066,7 +2213,12 @@
       ],
       [
        {
-        "t": "Elle agit une fois par tour complet, pas au tour de chaque joueur."
+        "t": "Elle agit au tour de chaque joueur, pas une seule fois quand tout le monde a joué."
+       }
+      ],
+      [
+       {
+        "t": "Ses pertes de PV sont des dégâts de zone : l'esquive ne les évite pas."
        }
       ],
       [
@@ -2320,6 +2472,11 @@
       [
        {
         "t": "La perte de PV touche TOUS tes héros, sans exception. Compter les PV du plus faible avant de la jouer."
+       }
+      ],
+      [
+       {
+        "t": "Cette perte de PV est un dégât de zone : l'esquive ne l'évite pas."
        }
       ],
       [
@@ -3894,7 +4051,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Pendant le tour où tu la joues, chaque carte que l'adversaire pose lui coûte un peu plus d'énergie que d'habitude. Elle ne bloque rien : elle rend chaque coup plus cher."
+       "t": "Pendant le prochain tour de l'adversaire, chaque carte qu'il pose lui coûte un peu plus d'énergie que d'habitude. Elle ne bloque rien : elle rend chaque coup plus cher."
       }
      ]
     },
@@ -3902,7 +4059,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Elle freine l'adversaire deux fois. Il pose moins de cartes ce tour, ou il les paie plus cher, et chaque énergie dépensée en plus ne va pas dans sa réserve : sa charge d'Ultime ralentit aussi."
+       "t": "Elle freine l'adversaire deux fois. Il pose moins de cartes à ce tour-là, ou il les paie plus cher, et chaque énergie dépensée en plus ne va pas dans sa réserve : sa charge d'Ultime ralentit aussi."
       }
      ]
     },
@@ -3934,7 +4091,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Pour poser quand même son attaque, il puise davantage, et sa réserve pour l'Ultime ne monte pas ce tour."
+       "t": "Pour poser quand même son attaque, il puise davantage, et sa réserve pour l'Ultime ne monte pas à ce tour-là."
       }
      ]
     },
@@ -3942,7 +4099,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Au tour suivant, ses cartes retrouvent leur prix normal."
+       "t": "À son tour d'après, ses cartes retrouvent leur prix normal."
       }
      ]
     },
@@ -3959,7 +4116,7 @@
      "items": [
       [
        {
-        "t": "Elle ne dure que le tour où elle est jouée. Jouée à un moment où l'adversaire ne pose rien, elle ne produit rien."
+        "t": "Elle ne dure que le prochain tour de l'adversaire. S'il ne pose rien ce tour-là, elle ne produit rien."
        }
       ],
       [
@@ -3969,7 +4126,7 @@
       ],
       [
        {
-        "t": "Posée face cachée, « ce tour » désigne le tour où elle est retournée, pas celui où elle a été posée."
+        "t": "Posée face cachée, elle vise le prochain tour de l'adversaire après son retournement."
        }
       ],
       [
@@ -3993,7 +4150,7 @@
       ],
       [
        {
-        "t": "Question ouverte : retournée en cours de tour, les cartes que l'adversaire a déjà payées avant le retournement sont-elles concernées ?"
+        "t": "Question ouverte : retournée pendant le tour de l'adversaire, les cartes qu'il a déjà payées avant le retournement sont-elles concernées ?"
        }
       ]
      ]
@@ -4018,7 +4175,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "FEUR annule l'EFFET de la prochaine ACTION que l'adversaire joue pendant ce tour, quelle qu'elle soit. Elle annule l'effet, pas la pose. Tu la joues avant de savoir ce que tu vas annuler : c'est un pari sur le tour, pas une réponse à une carte déjà vue. Si l'adversaire ne joue aucune ACTION ce tour-là, elle est dépensée sans rien produire."
+       "t": "FEUR annule l'EFFET de la prochaine ACTION que l'adversaire joue d'ici la fin de son prochain tour, quelle qu'elle soit. Elle annule l'effet, pas la pose. Tu la joues avant de savoir ce que tu vas annuler : c'est un pari sur son tour, pas une réponse à une carte déjà vue. Si l'adversaire ne joue aucune ACTION ce tour-là, elle est dépensée sans rien produire."
       }
      ]
     },
@@ -4042,7 +4199,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Même tour : l'adversaire joue un "
+       "t": "Tour de l'adversaire : il joue un "
       },
       {
        "t": "BARIL",
@@ -4057,7 +4214,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tour suivant : tu rejoues FEUR. Cette fois, l'adversaire ne joue que des PASSIFS, et rien n'est annulé."
+       "t": "À ton tour suivant, tu rejoues FEUR. Cette fois, l'adversaire ne joue que des PASSIFS, et rien n'est annulé."
       }
      ]
     },
@@ -4082,7 +4239,7 @@
      "items": [
       [
        {
-        "t": "Elle ne prend que la PREMIÈRE ACTION du tour : celle qui suit passe."
+        "t": "Elle ne prend que la PREMIÈRE ACTION adverse : celle qui suit passe."
        }
       ],
       [
@@ -4109,7 +4266,7 @@
       ],
       [
        {
-        "t": "Posée face cachée, le « ce tour » se compte à partir de son RETOURNEMENT."
+        "t": "Posée face cachée, elle vise la prochaine ACTION adverse après son RETOURNEMENT. Comme on peut retourner une carte à tout moment, elle peut aussi être retournée pendant le tour de l'adversaire."
        }
       ],
       [
@@ -7210,7 +7367,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Tu désignes un héros adverse : pour ce tour, il ne reçoit ni Aura ni soin de son camp. La carte n'inflige aucun dégât, elle ouvre une fenêtre, celle où le héros visé ne peut plus être remonté ni renforcé par les siens. Elle se joue donc avant l'attaque, pour que les dégâts du tour restent inscrits."
+       "t": "Tu désignes un héros adverse : jusqu'à la fin du prochain tour de son joueur, il ne reçoit ni Aura ni soin de son camp. La carte n'inflige aucun dégât, elle ouvre une fenêtre, celle où le héros visé ne peut plus être remonté ni renforcé par les siens. Elle se joue donc avec ton attaque : à son tour, l'adversaire ne pourra pas effacer les dégâts."
       }
      ]
     },
@@ -7234,7 +7391,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tu joues le steak haché sur lui : ce tour, il ne recevra ni Aura ni soin des siens."
+       "t": "Tu joues le steak haché sur lui : jusqu'à la fin du prochain tour adverse, il ne recevra ni Aura ni soin des siens."
       }
      ]
     },
@@ -7242,7 +7399,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tes héros frappent. L'adversaire tente un soin, il ne l'atteint pas."
+       "t": "Tes héros frappent. À son tour, l'adversaire tente un soin, il ne l'atteint pas."
       }
      ]
     },
@@ -7250,7 +7407,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Au tour suivant, la fenêtre est refermée et son camp peut de nouveau le soigner."
+       "t": "Au tour d'après, la fenêtre est refermée et son camp peut de nouveau le soigner."
       }
      ]
     },
@@ -7301,7 +7458,7 @@
       ],
       [
        {
-        "t": "Elle ne dure que le tour où elle est jouée, ce qui en fait une carte d'ouverture et non une carte de fond de partie. Posée face cachée, ce tour est celui de son RETOURNEMENT."
+        "t": "Elle ne dure que jusqu'à la fin du prochain tour adverse, ce qui en fait une carte d'ouverture et non une carte de fond de partie. Posée face cachée, cette durée part de son RETOURNEMENT."
        }
       ],
       [
@@ -7834,6 +7991,11 @@
       ],
       [
        {
+        "t": "Le héros qui paie peut ESQUIVER le prix. Si l'esquive part, il ne perd aucun PV, et l'autre héros ne reçoit aucune Attaque : rien n'a été pris, donc rien n'est donné. Faire payer un héros qui esquive beaucoup, c'est parier."
+       }
+      ],
+      [
+       {
         "t": "Le bonus d'Attaque meurt avec son porteur : si le héros renforcé tombe, le bonus disparaît."
        }
       ],
@@ -8226,7 +8388,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Le VÉTO fait quitter la table à un de tes héros pour un tour. Pendant ce tour, il ne peut ni agir ni être touché, et il revient ensuite complètement soigné, mais sans aucun de ses bonus ni de ses états."
+       "t": "Le VÉTO fait quitter la table à un de tes héros jusqu'à ton prochain tour. Pendant ce temps, il ne peut ni agir ni être touché, et il revient ensuite complètement soigné, mais sans aucun de ses bonus ni de ses états."
       }
      ]
     },
@@ -8266,7 +8428,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tour 6 : tu joues avec un héros de moins. L'adversaire frappe ailleurs et tu encaisses."
+       "t": "Tour de l'adversaire : LILITH n'est plus là. Il frappe ailleurs et tu encaisses."
       }
      ]
     },
@@ -8274,7 +8436,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tour 7 : LILITH revient avec tous ses PV, comme au début de la partie, mais sans aucun de ses bonus ni de ses états."
+       "t": "À ton tour suivant, LILITH revient avec tous ses PV, comme au début de la partie, mais sans aucun de ses bonus ni de ses états."
       }
      ]
     },
@@ -8291,7 +8453,7 @@
      "items": [
       [
        {
-        "t": "L'absence se paie en tempo : le héros ne frappe pas, ne défend pas, et son Aura n'est pas sur la table pendant ce tour."
+        "t": "L'absence se paie en tempo : le héros ne frappe pas, ne défend pas, et son Aura n'est pas sur la table pendant son absence."
        }
       ],
       [
@@ -8341,7 +8503,7 @@
         "carte": "baril_caustique"
        },
        {
-        "t": " ne l'atteint pas ce tour-là."
+        "t": " ne l'atteint pas pendant son absence."
        }
       ],
       [

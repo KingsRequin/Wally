@@ -985,7 +985,8 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     lien = page.locator(".wcr-chapitre:not(#cartes) .wcr-lien-carte").first
     cible = (lien.get_attribute("href") or "").split("#")[-1]
     lien.click()
-    page.wait_for_timeout(600)
+    # Le défilement inertiel dure 1,1 s : mesurer avant, c'est mesurer en vol.
+    page.wait_for_timeout(1600)
     ouverte = page.evaluate("""(id) => {
       const f = document.getElementById(id);
       const r = f ? f.getBoundingClientRect() : null;

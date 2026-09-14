@@ -313,9 +313,9 @@
   categorie: controle
   visuel: /assets/icones/rod-of-asclepius.svg
   regle: >-
-    Un de tes héros quitte la table pour un tour : il ne peut ni agir ni être
-    touché, et il revient complètement soigné, mais sans aucun de ses bonus ni
-    de ses états.
+    Un de tes héros quitte la table jusqu'à ton prochain tour : il ne peut ni
+    agir ni être touché, et il revient complètement soigné, mais sans aucun de
+    ses bonus ni de ses états.
 
 - cle: scan_seer
   nom: Le scan de Seer
@@ -337,7 +337,7 @@
   # n'a pas d'objet à dessiner, il a une réplique. Le mot prend donc la place
   # de l'illustration, pas celle du titre.
   texte: FEUR
-  regle: Annule la prochaine ACTION jouée par l'adversaire ce tour.
+  regle: Annule la prochaine ACTION jouée par l'adversaire, jusqu'à la fin de son prochain tour.
 
 - cle: steak_meliodas
   nom: Le steak haché de Meliodas
@@ -346,8 +346,8 @@
   categorie: controle
   visuel: /assets/icones/steak.svg
   regle: >-
-    Désigne un héros adverse : ce tour, il ne reçoit ni Aura ni soin de son
-    camp. Seul dans son assiette.
+    Désigne un héros adverse : jusqu'à la fin du prochain tour de son joueur,
+    il ne reçoit ni Aura ni soin de son camp. Seul dans son assiette.
 
 - cle: raciste
   nom: Raciste
@@ -394,8 +394,8 @@
   visuel: /assets/cartes/carte-tunnel.png
   forme: image
   regle: >-
-    Les cartes de l'adversaire lui coûtent ${energie} d'énergie de plus ce
-    tour.
+    Les cartes de l'adversaire lui coûtent ${energie} d'énergie de plus à son
+    prochain tour.
   stats:
     energie: null
 
@@ -406,8 +406,8 @@
   categorie: controle
   visuel: /assets/icones/death-zone.svg
   regle: >-
-    Reste sur la table, FACE VISIBLE. À chaque tour complet, TOUS les héros
-    perdent ${degats} PV, les tiens comme ceux d'en face.
+    Reste sur la table, FACE VISIBLE. À chaque tour, TOUS les héros perdent
+    ${degats} PV, les tiens comme ceux d'en face.
   stats:
     degats: 1
 

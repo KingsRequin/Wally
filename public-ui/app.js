@@ -920,6 +920,11 @@ function majCompagnon(el, sy, prog) {
     const cible = document.querySelector(a.getAttribute('href'));
     if (!cible) return;
     e.preventDefault();
+    // Lenis mesure la hauteur de la page avec 250 ms de retard, et BORNE sa
+    // cible à cette mesure. Un clic qui allonge la page (une fiche des règles
+    // qui s'ouvre) visait donc une ancre au-delà de l'ancienne fin : le
+    // défilement s'arrêtait mille pixels trop haut. On remesure d'abord.
+    lenis.resize();
     lenis.scrollTo(cible, { offset: -90, duration: 1.1 });
   });
 }());

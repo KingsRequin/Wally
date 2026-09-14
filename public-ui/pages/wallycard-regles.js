@@ -25,11 +25,15 @@ function segments(liste, ouvrir) {
   return liste.map((s) => {
     let noeud;
     if (s.carte) {
+      // Une ancre `#…` : le défilement inertiel d'`app.js` la prend comme les
+      // autres. Un `scrollIntoView` maison se faisait reprendre la position
+      // par lui (vu au smoke test : fiche ouverte, mais hors de l'écran). Le
+      // clic ne fait donc qu'OUVRIR la fiche avant que le défilement ne parte.
       noeud = h('a', {
         class: 'wcr-lien-carte',
-        href: `/wallycard/regles#${PREFIXE}${s.carte}`,
+        href: `#${PREFIXE}${s.carte}`,
         text: s.t,
-        onclick: (e) => { e.preventDefault(); ouvrir(s.carte); },
+        onclick: () => ouvrir(s.carte, false),
       });
     } else if (s.lien) {
       noeud = h('a', { href: s.lien, target: '_blank', rel: 'noopener', text: s.t });
@@ -69,12 +73,12 @@ function ancreChapitre(i) { return `chapitre-${i + 1}`; }
 function rendre(racine, donnees) {
   const fiches = new Map();
 
-  function ouvrir(cle) {
+  function ouvrir(cle, defiler = true) {
     const fiche = fiches.get(cle);
     if (!fiche) return;
     fiche.open = true;
     history.replaceState(history.state, '', `#${PREFIXE}${cle}`);
-    fiche.scrollIntoView({ block: 'start' });
+    if (defiler) fiche.scrollIntoView({ block: 'start' });
     fiche.querySelector('summary').focus({ preventScroll: true });
   }
 
