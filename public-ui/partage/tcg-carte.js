@@ -542,10 +542,9 @@ const DEFAUTS = {
   // Deux nappes de bulles qui montent derrière l'illustration. Réservé aux
   // cartes aquatiques : ailleurs, ce sont des taches claires sans raison.
   bulles: false,
-  // Le palier de rareté, tel que le sert `bot/core/tcg_cartes.py`. Le défaut
-  // est `indefinie` et pas le palier le plus bas : une carte dont le palier
-  // n'est pas décidé n'est pas une carte commune.
-  rarete: 'indefinie',
+  // Le grade (S, A ou B), tel que le sert `bot/core/tcg_cartes.py`. `null` et
+  // pas B par défaut : une carte non notée n'est pas une carte faible.
+  grade: null,
   intensite: 1, parallaxe: 1,
   reflet: true, pulsation: true, debordement: true, selectionnee: false,
 };
@@ -567,26 +566,18 @@ export const INDEFINI = 'INDÉFINI';
 // celles du YAML (sans accent, lisibles dans un attribut) ; les libellés sont
 // ce qui s'écrit sur la carte.
 //
-// 🚨 « INDÉFINIE » s'affiche, il ne se cache pas. Deux cartes sur cinq n'ont
-// pas de palier saisi dans Notion au 2026-09-09 : masquer le cartouche les
-// ferait passer pour des cartes sans rareté, alors qu'elles en ont une qui
-// n'est pas encore écrite. Un blanc muet se lit comme une réponse.
-const RARETES = {
-  ame: 'ÂME',
-  fidele: 'FIDÈLE',
-  ame_promise: 'ÂME PROMISE',
-  elu: 'ÉLU',
-  ange: 'ANGE',
-  archange: 'ARCHANGE',
-  indefinie: 'INDÉFINIE',
-};
-
-// Les paliers qui reçoivent le traitement de faveur — liseré doublé, nom en
-// foil. Ils sont ÉNUMÉRÉS et pas calculés par un seuil sur l'ordre : deux
-// paliers existent en base aujourd'hui (`ange`, `archange`), et écrire un
-// seuil ordonné ferait entrer `elu` et `ame_promise` dans le traitement le
-// jour où quelqu'un les saisira, sans que personne ne l'ait décidé.
-const RARETES_HAUTES = new Set(['ange', 'archange']);
+// Le libellé du cartouche. « GRADE ? » s'affiche, il ne se cache pas : aucun
+// grade n'est posé aujourd'hui, et un cartouche absent ferait passer la carte
+// pour une carte sans grade plutôt que pour une carte pas encore notée.
+//
+// ⚖️ Le grade REMPLACE la rareté, retirée le 2026-09-14 (owner : « il n'y a
+// que de la puissance, d'où le grade »). Les deux traitements de faveur de
+// l'ancienne rareté ne l'ont pas suivi : le double filet ne disait QUE la
+// rareté et disparaît ; le nom en foil suit désormais le vitrage en surface,
+// qui est déjà ce qui classe les cartes (`par_prestige`).
+function libelleGrade(grade) {
+  return grade ? `GRADE ${grade}` : 'GRADE ?';
+}
 
 /** Construit une carte de héros. Rend `{ boite, detruire }`.
  *
@@ -767,11 +758,11 @@ export function carteHero(carte, options = {}) {
     h('span', { class: 'chero-cout-lbl', text: 'ULTIME' }),
   );
 
-  // Le cartouche de rareté, sous le coût. Il monte au MÊME Z que lui (70) et
+  // Le cartouche de grade, sous le coût. Il monte au MÊME Z que lui (70) et
   // compense la perspective comme lui (`data-net`) : il porte du texte de
   // 9 px, et 6,4 % d'agrandissement suffisent à l'empâter.
-  const cartouche = h('div', { class: 'chero-rarete', 'data-z': '70', 'data-net': '1' },
-    h('span', { text: RARETES[c.rarete] || RARETES.indefinie }));
+  const cartouche = h('div', { class: 'chero-grade', 'data-z': '70', 'data-net': '1' },
+    h('span', { text: libelleGrade(c.grade) }));
 
   // Le VERNIS : la tache de lumière qui glisse sur le plastique quand on
   // bouge la carte. Toutes les cartes l'ont — une commune est vernie elle
@@ -795,7 +786,7 @@ export function carteHero(carte, options = {}) {
   // vitrage EN SURFACE. Sur la variante `bords`, l'irisation est confinée au
   // liseré par choix — un titre irisé la ferait déborder au milieu de la
   // carte, ce que la variante existe justement pour éviter.
-  const nomFoil = c.holographique && !holoBords && RARETES_HAUTES.has(c.rarete);
+  const nomFoil = c.holographique && !holoBords;
   const nom = h('span', {
     class: `chero-nom${nomFoil ? ' chero-nom--foil' : ''}`, text: c.nom });
   const bas = h('div', { class: 'chero-bas', 'data-z': '70', 'data-net': '1' },
@@ -858,7 +849,7 @@ export function carteHero(carte, options = {}) {
   // Le palier part en ATTRIBUT et pas en classe : le CSS a besoin de le
   // lire, et un attribut nommé dit ce qu'il porte là où `chero--ange` ne dit
   // rien.
-  const racine = h('div', { class: 'chero', 'data-rarete': c.rarete },
+  const racine = h('div', { class: 'chero', 'data-grade': c.grade || 'aucun' },
     h('div', { class: 'chero-ombre' }), plateau);
   racine.style.cssText = `--chero-acc:${c.accent}`
     + `;--chero-cote:${c.heroCote}`

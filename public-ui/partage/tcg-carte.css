@@ -739,16 +739,15 @@
     rgba(0, 0, 0, .5) 90%);
 }
 
-/* ── Le cartouche de rareté ──────────────────────────────────────────────
- * Sous le bandeau de coût, en haut à gauche : le palier de la carte, repris
- * de la base Notion. C'est le SEUL endroit où la rareté est écrite — elle
- * traînait avant dans la seconde moitié de `classe`, en texte libre, où elle
- * disait « LÉGENDAIRE » sur deux cartes traitées différemment.
+/* ── Le cartouche de grade ───────────────────────────────────────────────
+ * Sous le bandeau de coût, en haut à gauche : le grade de la carte (S, A, B),
+ * repris de la base Notion. Il a pris la place du cartouche de rareté, retirée
+ * du jeu le 2026-09-14.
  *
  * Encre sur crème, à l'inverse du bandeau de coût juste au-dessus : les deux
  * blocs se touchent, et deux cartouches de même valeur tonale se liraient
  * comme un seul objet à deux lignes. */
-.chero-rarete {
+.chero-grade {
   position: absolute;
   left: 18px; top: 62px;
   pointer-events: none;
@@ -762,32 +761,14 @@
               var(--chero-plans);
 }
 
-/* Une carte sans palier saisi le DIT, elle ne se tait pas — mais elle ne
- * l'annonce pas non plus comme une valeur : fond creusé, texte en retrait.
- * `[data-rarete]` sur la racine et pas une classe sur le cartouche : c'est la
- * carte qui a un palier, pas son étiquette. */
-.chero[data-rarete="indefinie"] .chero-rarete {
+/* Une carte non notée le DIT, elle ne se tait pas, mais elle ne l'annonce pas
+ * non plus comme une valeur : fond creusé, texte en retrait. `[data-grade]` sur
+ * la racine et pas une classe sur le cartouche : c'est la carte qui a un grade,
+ * pas son étiquette. */
+.chero[data-grade="aucun"] .chero-grade {
   color: rgba(247, 236, 217, .62);
   background: #12100c;
   border-color: rgba(247, 236, 217, .3);
-}
-
-/* ── Le traitement des paliers hauts ─────────────────────────────────────
- * 🚨 Les paliers visés sont ÉNUMÉRÉS (`ange`, `archange`), jamais désignés
- * par un seuil : deux paliers existent en base au 2026-09-09, et un seuil
- * ordonné ferait entrer `elu` et `ame_promise` dans le traitement le jour où
- * quelqu'un les saisira, sans que personne ne l'ait décidé.
- *
- * Un SECOND filet, à l'intérieur du liseré. Le liseré porte déjà l'accent,
- * donc l'identité de la carte — il ne peut pas dire aussi la rareté sans que
- * les deux se marchent dessus. Un filet de plus, lui, se compte : on voit du
- * premier coup d'œil qu'il y en a deux. */
-.chero[data-rarete="ange"] .chero-bord,
-.chero[data-rarete="archange"] .chero-bord {
-  box-shadow: inset 0 0 0 11px #12100c,
-              inset 0 0 0 12.5px rgba(247, 236, 217, .55),
-              inset 0 0 0 14px #12100c,
-              inset 0 0 0 15.5px var(--chero-acc);
 }
 
 /* ── La fiche : nom, texte, stats ────────────────────────────────────────*/

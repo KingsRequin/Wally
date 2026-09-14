@@ -120,19 +120,17 @@ class CarteTcg:
     # Deux nappes de bulles qui montent derrière l'illustration. Aquatique et
     # rien d'autre : ailleurs ce sont des taches claires sans raison.
     bulles: bool = False
-    # Le palier de rareté, repris TEL QUEL de la base Notion « 🃏 Cartes du
-    # Purgatoire » (propriété « Rareté »), qui en est la source. Six paliers
-    # ordonnés, plus `indefinie` — et `indefinie` est la valeur HONNÊTE, pas un
-    # repli : deux cartes sur cinq n'ont pas de palier saisi dans Notion au
-    # 2026-09-09, et en inventer un ferait mentir la carte sur une donnée de
-    # jeu.
+    # Le GRADE : la puissance de la carte, S, A ou B.
     #
-    # ⚠️ Il ne pilote PAS l'holographie. `holographique` et `holo_zone`
-    # restent choisis carte par carte au moment du cadrage : KingsRequin porte
-    # le liseré irisé sans avoir de palier, et lier les deux aujourd'hui le
-    # lui retirerait. Le jour où les cinq paliers seront saisis, c'est ici
-    # qu'il faudra revenir.
-    rarete: str = "indefinie"
+    # ⚖️ Il REMPLACE la rareté, retirée le 2026-09-14. L'owner, la veille :
+    # « il n'y a pas de rareté, tous les héros sont là dès le début, il n'y a
+    # que de la puissance, d'où le grade ». Les six paliers (Âme → Archange)
+    # venaient des rôles du serveur Discord et donnaient un bonus de budget.
+    #
+    # `None` et pas un grade par défaut : aucun n'est décidé aujourd'hui, et un
+    # défaut à B ferait passer une carte non notée pour une carte faible. La
+    # carte affiche alors « GRADE ? ».
+    grade: str | None = None
     # Le héros peut-il entrer dans un deck ? Décidé par l'owner, carte par
     # carte, et FAUX par défaut.
     #
@@ -170,26 +168,13 @@ _OBLIGATOIRES = {f.name for f in fields(CarteTcg) if f.default is MISSING}
 # côté JS — elle rend simplement l'effet par défaut, en silence.
 _PARTICULES = {"braises", "poussiere", "aucune"}
 _HOLO_ZONES = {"surface", "bords"}
-# Les six paliers de la base Notion, dans l'ordre, plus l'absence de palier.
-# 🚨 L'ORDRE compte : c'est celui de la rareté croissante, et c'est lui que le
-# rendu lira le jour où il en dérivera quoi que ce soit. `indefinie` est
-# volontairement HORS de l'échelle et pas à son pied — une carte sans palier
-# saisi n'est pas une carte du palier le plus bas.
-RARETES = ("ame", "fidele", "ame_promise", "elu", "ange", "archange")
-_RARETES = {*RARETES, "indefinie"}
-
-# ── Le budget d'une carte-héros ───────────────────────────────────────────
-# `atk + pv + aura = BUDGET_BASE + bonus de rareté`.
+# Les grades, du plus puissant au moins puissant. `None` (pas de grade) est
+# HORS de l'échelle : une carte non notée n'est pas une carte de grade B.
 #
-# 🚨 C'est la SEULE règle d'équilibre encore vérifiable mécaniquement. Les
-# chiffres sortaient d'une formule tirée de la mémoire de Wally jusqu'au
-# 2026-09-10, où l'owner l'a retirée : ils s'écrivent désormais à la main.
-# Une formule se relit, une opinion non — si le budget n'est pas tenu ici,
-# plus rien ne rattrape une carte qui en écrase une autre, et ça ne se voit
-# qu'après vingt parties.
-BUDGET_BASE = 12
-BONUS_RARETE = {"ame": 0, "fidele": 1, "ame_promise": 2,
-                "elu": 3, "ange": 5, "archange": 8}
+# ⚠️ La règle de budget (`atk + pv + aura = 12 + bonus de rareté`) est partie
+# avec la rareté le 2026-09-14 : elle n'avait plus rien sur quoi s'appuyer. Le
+# jour où l'owner donnera un budget par grade, c'est ici qu'il reviendra.
+GRADES = ("S", "A", "B")
 
 # ── L'accent, dérivé du coût de l'ultime ──────────────────────────────────
 # Une rampe FROID → CHAUD sur la plage des coûts : 1 en bleu, 12 en rouge.
@@ -259,23 +244,8 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
                 f"particules={carte.particules!r} hors de {sorted(_PARTICULES)}")
         _exiger(carte.holo_zone in _HOLO_ZONES, cle,
                 f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
-        _exiger(carte.rarete in _RARETES, cle,
-                f"rarete={carte.rarete!r} hors de {sorted(_RARETES)}")
-        # Le budget, seule règle d'équilibre encore vérifiable (cf. BUDGET_BASE).
-        # Deux cartes y échappent, et pour la même raison — il n'y a rien à
-        # vérifier : celle dont la rareté n'est pas décidée (le budget n'existe
-        # pas encore) et celle dont les stats sont toutes à zéro (pas écrite).
-        # ⚠️ Wally, lui, est le BOSS : ses PV ne tiennent aucun budget de héros.
-        # Il porte `rarete: indefinie` et passe donc à travers aujourd'hui. Le
-        # jour où on lui posera un palier, c'est ICI qu'il faudra l'excepter.
-        somme = carte.atk + carte.pv + carte.aura
-        if carte.rarete != "indefinie" and somme:
-            budget = BUDGET_BASE + BONUS_RARETE[carte.rarete]
-            _exiger(somme == budget, cle,
-                    f"budget non tenu : atk+pv+aura = {carte.atk}+{carte.pv}"
-                    f"+{carte.aura} = {somme}, attendu {budget} "
-                    f"({BUDGET_BASE} + {BONUS_RARETE[carte.rarete]} pour "
-                    f"{carte.rarete})")
+        _exiger(carte.grade is None or carte.grade in GRADES, cle,
+                f"grade={carte.grade!r} hors de {list(GRADES)}")
         # Hors bornes, le `calc()` de la feuille rendrait un filtre absurde —
         # un `saturate` négatif est INVALIDE et fait tomber la propriété
         # entière, donc le vitrage disparaît en silence. On refuse ici.
@@ -299,12 +269,10 @@ CARTES: dict[str, CarteTcg] = _lire(CHEMIN_CARTES)
 def par_prestige() -> list[CarteTcg]:
     """Les cartes de la plus haute à la plus basse, pour la collection.
 
-    🚨 Le classement dérive de l'HOLOGRAPHIE, pas du champ `rarete`, et c'est
-    une décision de l'owner (2026-09-09) et non un raccourci. Trier par palier
-    donnerait Azraël, rhae, Claker, puis Lilith et KingsRequin — alors que
-    KingsRequin doit venir TROISIÈME. Son palier n'est pas saisi dans Notion,
-    et il ne le sera peut-être pas de sitôt ; son traitement visuel, lui, est
-    déjà tranché. C'est le liseré irisé qui dit son rang, pas une case vide.
+    🚨 Le classement dérive de l'HOLOGRAPHIE, pas du grade (ni de l'ancienne
+    rareté, retirée le 2026-09-14), et c'est une décision de l'owner
+    (2026-09-09) et non un raccourci : KingsRequin doit venir TROISIÈME, et
+    c'est son liseré irisé qui dit son rang, pas une case vide.
 
     Trois rangs, et pas six : ce sont exactement les trois traitements que le
     rendu sait faire — le vitrage en surface, le vitrage au liseré, rien. Un
@@ -468,6 +436,6 @@ def en_json(carte: CarteTcg) -> dict:
         "holoZone": carte.holo_zone,
         "holoForce": carte.holo_force,
         "bulles": carte.bulles,
-        "rarete": carte.rarete,
+        "grade": carte.grade,
         "jouable": carte.jouable,
     }

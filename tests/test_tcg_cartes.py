@@ -246,28 +246,33 @@ def test_l_ordre_du_fichier_est_celui_du_registre(tmp_path):
     assert list(cartes) == ["un", "deux", "trois"]
 
 
-# ── La rareté et l'accent dérivé (2026-09-09) ─────────────────────────────
+# ── Le grade (2026-09-14) ─────────────────────────────────────────────────
+#
+# ⚖️ L'owner, 2026-09-13 : « il n'y a pas de rareté, tous les héros sont là dès
+# le début, il n'y a que de la puissance, d'où le grade ». La rareté (six
+# paliers repris des rôles du serveur) est RETIRÉE ; le grade la remplace.
 
-def test_la_rarete_hors_vocabulaire_est_refusee(tmp_path):
-    """Six paliers plus `indefinie`, et rien d'autre.
+def test_un_grade_hors_vocabulaire_est_refuse(tmp_path):
+    """S, A ou B, et rien d'autre : c'est une donnée de JEU. Un grade mal
+    saisi chargé en silence ferait mentir la carte sur sa puissance."""
+    import pytest
+    with pytest.raises(ValueError, match="grade"):
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(grade="Z")]))
 
-    Un palier mal orthographié ne doit pas être chargé en silence : c'est une
-    donnée de JEU, reprise de Notion, et une carte qui s'annonce d'un palier
-    qui n'existe pas ment au joueur.
-    """
+
+def test_sans_grade_une_carte_n_en_a_aucun(tmp_path):
+    """Pas de grade par défaut : aucun n'est décidé aujourd'hui, et un défaut
+    à B ferait passer une carte non notée pour une carte faible."""
+    cartes = tcg_cartes._lire(_fichier(tmp_path, [_carte_valide()]))
+    assert cartes["essai"].grade is None
+
+
+def test_la_rarete_ne_revient_pas_par_le_fichier(tmp_path):
+    """Retirée pour de bon : écrire `rarete` dans le catalogue REFUSE le
+    fichier, comme tout champ inconnu, au lieu d'être ignoré en silence."""
     import pytest
     with pytest.raises(ValueError, match="rarete"):
-        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(rarete="legendaire")]))
-
-
-def test_la_rarete_par_defaut_est_indefinie(tmp_path):
-    """Une carte ajoutée sans palier ne doit pas en hériter d'un.
-
-    `indefinie` est la valeur HONNÊTE : deux cartes sur cinq n'ont pas de
-    palier saisi dans Notion, et le défaut ne doit pas prétendre le contraire.
-    """
-    cartes = tcg_cartes._lire(_fichier(tmp_path, [_carte_valide()]))
-    assert cartes["essai"].rarete == "indefinie"
+        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(rarete="archange")]))
 
 
 def test_la_dose_de_vitrage_hors_bornes_est_refusee(tmp_path):
@@ -347,10 +352,13 @@ def test_les_cartes_livrees_ne_portent_que_ce_que_notion_porte():
         assert carte.accent == tcg_cartes.ACCENT_INDEFINI, cle
 
 
-def test_la_rarete_part_au_front():
-    """Un champ que le front ne reçoit pas n'existe pas pour lui."""
+def test_le_grade_part_au_front():
+    """Un champ que le front ne reçoit pas n'existe pas pour lui. Aucun grade
+    n'est posé aujourd'hui : il part à `None`, que la carte affiche « ? »."""
     from bot.core.tcg_cartes import en_json
-    assert en_json(tcg_cartes.CARTES["azrael"])["rarete"] == "archange"
+    donnees = en_json(tcg_cartes.CARTES["azrael"])
+    assert "grade" in donnees and donnees["grade"] is None
+    assert "rarete" not in donnees
 
 
 def test_le_prestige_suit_l_holo_et_non_le_palier():
@@ -363,8 +371,6 @@ def test_le_prestige_suit_l_holo_et_non_le_palier():
     ordre = [c.cle for c in tcg_cartes.par_prestige()]
     assert ordre == ["azrael", "rhae", "wally", "kingsrequin", "claker",
                      "lilith", "meliodas"], ordre
-    assert tcg_cartes.CARTES["kingsrequin"].rarete == "indefinie"
-    assert tcg_cartes.CARTES["claker"].rarete == "ame"
 
 
 def test_a_rang_egal_l_ordre_du_fichier_departage():
@@ -376,44 +382,3 @@ def test_a_rang_egal_l_ordre_du_fichier_departage():
     surface = [c for c in ordre if c in ("azrael", "rhae", "wally")]
     assert surface == [c for c in fichier if c in ("azrael", "rhae", "wally")]
 
-
-# ── Le budget : la dernière règle d'équilibre vérifiable ──────────────────
-#
-# L'owner a retiré la mémoire de la fabrication des cartes le 2026-09-10 : les
-# stats s'écrivent désormais à la main. Une formule se relit, une opinion non —
-# `atk + pv + aura = 12 + bonus de rareté` est tout ce qui reste pour qu'une
-# carte n'en écrase pas une autre par accident. Ces trois tests le tiennent.
-
-def test_une_carte_hors_budget_refuse_le_fichier(tmp_path):
-    """5+4+3 = 12 pour une Âme, mais 13 ne passe pas. Sans ce refus, la carte
-    part en prod et le déséquilibre ne se voit qu'après vingt parties."""
-    import pytest
-    juste = _carte_valide(rarete="ame", atk=5, pv=4, aura=3)
-    assert tcg_cartes._lire(_fichier(tmp_path, [juste]))
-
-    with pytest.raises(ValueError, match="budget non tenu"):
-        tcg_cartes._lire(_fichier(
-            tmp_path, [_carte_valide(rarete="ame", atk=5, pv=5, aura=3)]))
-
-
-def test_le_bonus_de_rarete_ouvre_le_budget(tmp_path):
-    """Un Archange joue sur 20, pas sur 12 : c'est ce que son palier achète.
-    Le MÊME 5/10/5 serait donc refusé à une Âme."""
-    import pytest
-    assert tcg_cartes._lire(_fichier(
-        tmp_path, [_carte_valide(rarete="archange", atk=5, pv=10, aura=5)]))
-
-    with pytest.raises(ValueError, match="budget non tenu"):
-        tcg_cartes._lire(_fichier(
-            tmp_path, [_carte_valide(rarete="ame", atk=5, pv=10, aura=5)]))
-
-
-def test_une_carte_pas_encore_ecrite_passe(tmp_path):
-    """Six des sept cartes livrées sont à 0/0/0, et quatre n'ont pas de palier.
-    Le garde-fou ne doit mordre que sur une carte ÉCRITE : sinon il interdit
-    d'ajouter une ligne avant d'en avoir décidé les chiffres, et il finira
-    contourné."""
-    assert tcg_cartes._lire(_fichier(
-        tmp_path, [_carte_valide(rarete="ame", atk=0, pv=0, aura=0)]))
-    assert tcg_cartes._lire(_fichier(
-        tmp_path, [_carte_valide(rarete="indefinie", atk=9, pv=9, aura=9)]))

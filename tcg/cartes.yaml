@@ -7,7 +7,7 @@
 #
 # 🚨 CE FICHIER NE PORTE QUE CE QUE NOTION PORTE. La base
 # « 🃏 Cartes du Purgatoire » est la SEULE source des chiffres, des ultimes et
-# des paliers de rareté. Relevé le 2026-09-10 : Azraël est la seule des sept
+# des grades. Relevé le 2026-09-10 : Azraël est la seule des sept
 # cartes d'ici dont Notion tienne des valeurs (coût d'ultime 10, 5/10/5,
 # « F07 Rework », statut « en cours ») ; les six autres sont « à écrire » ou
 # « en cours » et n'ont RIEN.
@@ -25,11 +25,16 @@
 # la page `/tcg` était seule à prévenir. Un placeholder qui ressemble à une
 # donnée finit par être lu comme une donnée.
 #
-# 🚨 Ne JAMAIS justifier une valeur d'ici par le barème (« budget 12 +
-# rareté », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
+# 🚨 Ne JAMAIS justifier une valeur d'ici par un barème (« budget 12 +
+# bonus », « ce palier vaut +8 »). Trois commentaires de ce genre ont été
 # écrits le 2026-09-07 sur des chiffres qui ne sortaient d'aucun calcul — une
 # justification fausse coûte plus cher qu'une absence de justification, elle
 # envoie vérifier une règle qui n'a jamais été appliquée.
+#
+# ⚖️ La RARETÉ n'existe plus (owner, 2026-09-14) : « il n'y a que de la
+# puissance, d'où le grade ». Un champ `grade:` (S, A ou B) se pose carte par
+# carte ; absent, la carte affiche « GRADE ? ». Écrire `rarete:` ici REFUSE le
+# fichier au boot.
 #
 # 🚨 `accent` N'EXISTE PLUS comme champ : la couleur DÉRIVE du coût de
 # l'ultime (`accent_du_cout` dans `bot/core/tcg_cartes.py`). En écrire une ici
@@ -66,7 +71,6 @@
   legende: AZRAËL · ARCHANGE
   classe: ARCHANGE
   ultime: REWORK
-  rarete: archange
   # 🚨 Réécrit le 2026-09-10 sur arbitrage de l'owner. L'ancien Rework
   # affaiblissait une cible (« son Ultime coûte +3, tous ses nombres baissent
   # de 2 ») ; celui-ci EMPRUNTE. La ref tient toujours — un rework change ce
@@ -94,7 +98,6 @@
   legende: CLAKERNOJUTSU · ÂME
   classe: ÂME · NO JUTSU
   ultime: INDÉFINI
-  rarete: ame
   description: INDÉFINI
   ambiance: Il ne demande pas si tu suis. Il vérifie.
   cout: 0
@@ -121,7 +124,6 @@
   legende: RHAE___ · FÉLIN
   classe: FÉLIN
   ultime: INDÉFINI
-  rarete: ange
   description: INDÉFINI
   ambiance: INDÉFINI
   cout: 0
@@ -148,7 +150,6 @@
   legende: LILITH · DÉMON
   classe: DÉMON
   ultime: INDÉFINI
-  rarete: indefinie
   description: INDÉFINI
   ambiance: INDÉFINI
   cout: 0
@@ -174,7 +175,6 @@
   legende: KINGSREQUIN · REQUIN
   classe: REQUIN
   ultime: INDÉFINI
-  rarete: indefinie
   description: INDÉFINI
   ambiance: INDÉFINI
   cout: 0
@@ -206,7 +206,6 @@
   legende: WALLY · ARCHANGE
   classe: ARCHANGE
   ultime: INDÉFINI
-  rarete: indefinie
   description: INDÉFINI
   ambiance: INDÉFINI
   cout: 0
@@ -233,7 +232,6 @@
   legende: MÉLIODAS · INDÉFINIE
   classe: INDÉFINIE
   ultime: INDÉFINI
-  rarete: indefinie
   description: INDÉFINI
   ambiance: INDÉFINI
   cout: 0

@@ -508,7 +508,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const sn = getComputedStyle(nom);
       const vernis = carte.querySelector('.chero-vernis');
       const holo = carte.querySelector('.chero-holo');
-      const cartouche = carte.querySelector('.chero-rarete');
+      const cartouche = carte.querySelector('.chero-grade');
       return {
         tuile: getComputedStyle(document.documentElement)
           .getPropertyValue('--chero-voronoi').trim().slice(0, 5),
@@ -540,7 +540,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
         rap.dire(matiere["holo"] > 0, "carte TCG : le chatoiement s'allume au survol",
                  str(matiere["holo"]))
         rap.dire(bool(matiere["cartouche"]),
-                 "carte TCG : le cartouche de rareté porte un libellé",
+                 "carte TCG : le cartouche de grade porte un libellé",
                  matiere["cartouche"])
 
     # 🚨 L'ordre des plans PENDANT la transition, pas seulement à l'arrivée.

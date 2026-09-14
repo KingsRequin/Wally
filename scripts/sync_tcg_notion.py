@@ -163,6 +163,8 @@ def _attendu() -> dict[str, dict]:
             "Attaque": heros.atk,
             "Aura": heros.aura,
             "Coût": heros.cout,
+            # `None` vide la case : un héros non noté ne garde pas un vieux grade.
+            "Grade": heros.grade,
         }
     return attendu
 
