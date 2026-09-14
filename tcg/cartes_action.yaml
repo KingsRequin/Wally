@@ -290,7 +290,7 @@
   categorie: controle
   visuel: /assets/icones/deer.svg
   regle: >-
-    Pose STUN sur un héros adverse : il n'attaque pas ce tour, sans condition.
+    Pose STUN sur un héros adverse : il n'attaque pas à son prochain tour, sans condition.
     Figé dans les phares.
 
 - cle: tunnel_rina

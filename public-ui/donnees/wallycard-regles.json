@@ -34,8 +34,11 @@
      "type": "p",
      "texte": [
       {
-       "t": "Le but : tuer les trois héros adverses.",
+       "t": "Le but : être le dernier joueur à avoir un héros vivant.",
        "g": true
+      },
+      {
+       "t": " En 1 contre 1, il faut tuer les trois héros adverses. En 2 contre 2, les six héros de l'équipe adverse."
       }
      ]
     },
@@ -90,7 +93,7 @@
        ],
        [
         {
-         "t": "Les points de vie d'un héros. À zéro, il meurt."
+         "t": "Les points de vie d'un héros ou d'une carte posée. À zéro, le héros meurt et la carte est détruite."
         }
        ]
       ],
@@ -142,7 +145,27 @@
        ],
        [
         {
-         "t": "La chance, en pourcentage, de ne pas recevoir les dégâts d'un coup."
+         "t": "La chance, en pourcentage, de ne pas recevoir des dégâts. Elle ne protège pas des dégâts de zone."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Dégâts de zone",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Des dégâts qui touchent tous les héros à la fois, comme le gaz du "
+        },
+        {
+         "t": "BARIL",
+         "carte": "baril_caustique"
+        },
+        {
+         "t": ". On ne peut pas les esquiver."
         }
        ]
       ],
@@ -202,26 +225,26 @@
       [
        [
         {
-         "t": "Énergie",
+         "t": "Catégorie",
          "g": true
         }
        ],
        [
         {
-         "t": "La ressource qui paie les cartes et charge l'Ultime."
+         "t": "Le rôle d'une carte tactique : attaque, aura, contrôle, ressource ou soin."
         }
        ]
       ],
       [
        [
         {
-         "t": "Ultime",
+         "t": "Énergie",
          "g": true
         }
        ],
        [
         {
-         "t": "La capacité propre à chaque héros, qui coûte beaucoup d'énergie."
+         "t": "La ressource qui paie les cartes et les Ultimes."
         }
        ]
       ],
@@ -234,7 +257,7 @@
        ],
        [
         {
-         "t": "L'énergie non dépensée, gardée d'un tour à l'autre. Elle est plafonnée."
+         "t": "L'énergie non dépensée, gardée d'un tour à l'autre. Elle est plafonnée, et chaque joueur n'en a qu'une."
         }
        ]
       ],
@@ -254,13 +277,33 @@
       [
        [
         {
+         "t": "Ultime",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "La capacité propre à chaque héros. Le joueur la lance quand il veut et la paie avec sa réserve."
+        }
+       ]
+      ],
+      [
+       [
+        {
          "t": "Tour",
          "g": true
         }
        ],
        [
         {
-         "t": "Le moment où un joueur joue."
+         "t": "Le moment où "
+        },
+        {
+         "t": "un",
+         "g": true
+        },
+        {
+         "t": " joueur joue. Chaque joueur a son tour."
         }
        ]
       ],
@@ -306,13 +349,13 @@
       [
        [
         {
-         "t": "Catégorie",
+         "t": "Roulette",
          "g": true
         }
        ],
        [
         {
-         "t": "Le rôle d'une carte tactique : attaque, aura, contrôle, ressource ou soin."
+         "t": "Un tirage au hasard qui change la partie pour tout le monde : la roulette du tour et la roulette de fin de deck."
         }
        ]
       ],
@@ -353,7 +396,7 @@
         "g": true
        },
        {
-        "t": " : ses trois héros, les seuls avec lesquels il joue toute la partie. Il n'y a pas de réserve : un héros est sur la table ou il est mort."
+        "t": " : ses trois héros, les seuls avec lesquels il joue toute la partie. Il n'y a pas de réserve de héros : un héros est sur la table ou il est mort."
        }
       ],
       [
@@ -362,7 +405,14 @@
         "g": true
        },
        {
-        "t": " : l'espace où l'on pose des cartes sur la table. Elles s'y déclenchent automatiquement ou manuellement selon leur nature. On peut les y poser face cachée. L'adversaire peut les attaquer et les détruire, sauf certaines cartes qui ne peuvent pas l'être."
+        "t": " : l'espace où l'on pose des cartes sur la table. Elles s'y déclenchent automatiquement ou manuellement selon leur nature. On peut les y poser face cachée. Une carte posée a des "
+       },
+       {
+        "t": "PV égaux au double de son coût",
+        "g": true
+       },
+       {
+        "t": ", et l'adversaire peut l'attaquer et la détruire."
        }
       ],
       [
@@ -378,9 +428,45 @@
         "g": true
        },
        {
-        "t": " pour le moment."
+        "t": " pour le moment. Un passif rangé ici est "
+       },
+       {
+        "t": "indestructible",
+        "g": true
+       },
+       {
+        "t": "."
        }
       ]
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Un passif posé dans la zone tactique, comme "
+      },
+      {
+       "t": "MOZAMBIQUE",
+       "carte": "mozambique"
+      },
+      {
+       "t": ", "
+      },
+      {
+       "t": "ANNEAU",
+       "carte": "anneau_raiky"
+      },
+      {
+       "t": " ou "
+      },
+      {
+       "t": "VIENS EN VOCAL",
+       "carte": "viens_en_vocal"
+      },
+      {
+       "t": ", peut être attaqué et détruit comme les autres cartes de cette zone."
+      }
      ]
     },
     {
@@ -447,7 +533,164 @@
    ]
   },
   {
-   "titre": "4. Qui fait quoi",
+   "titre": "4. Le déroulé d'une partie",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Le début de la partie"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Chaque joueur pose ses trois héros et pioche "
+       },
+       {
+        "t": "5 cartes",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Chaque joueur lance un "
+       },
+       {
+        "t": "dé",
+        "g": true
+       },
+       {
+        "t": " : le plus grand nombre commence. En cas d'égalité, les joueurs à égalité relancent."
+       }
+      ],
+      [
+       {
+        "t": "On joue ensuite "
+       },
+       {
+        "t": "dans le sens des aiguilles d'une montre",
+        "g": true
+       },
+       {
+        "t": ", sauf si une roulette en décide autrement."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Pendant son tour"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le tour commence par la "
+       },
+       {
+        "t": "roulette du tour",
+        "g": true
+       },
+       {
+        "t": " (voir « Les roulettes »)."
+       }
+      ],
+      [
+       {
+        "t": "Le joueur fait ses actions "
+       },
+       {
+        "t": "dans l'ordre qu'il veut",
+        "g": true
+       },
+       {
+        "t": " : piocher, jouer des cartes, attaquer, lancer un Ultime."
+       }
+      ],
+      [
+       {
+        "t": "Il peut piocher "
+       },
+       {
+        "t": "jusqu'à 2 cartes",
+        "g": true
+       },
+       {
+        "t": " par tour."
+       }
+      ],
+      [
+       {
+        "t": "Sa main ne dépasse jamais "
+       },
+       {
+        "t": "5 cartes",
+        "g": true
+       },
+       {
+        "t": " : on ne pioche pas au-delà."
+       }
+      ],
+      [
+       {
+        "t": "À la fin de son tour, il gagne son "
+       },
+       {
+        "t": "revenu",
+        "g": true
+       },
+       {
+        "t": " d'énergie."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Quand le deck est vide"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "La défausse est mélangée et redevient le deck."
+       }
+      ],
+      [
+       {
+        "t": "La "
+       },
+       {
+        "t": "roulette de fin de deck",
+        "g": true
+       },
+       {
+        "t": " est lancée (voir « Les roulettes »)."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "5. Qui fait quoi",
    "blocs": [
     {
      "type": "p",
@@ -465,11 +708,55 @@
        "t": "Un héros ne pose ni ne lance aucune carte. C'est pourquoi un héros sous STUN perd son attaque, et rien d'autre : son joueur continue de jouer ses cartes normalement."
       }
      ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "L'Ultime"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "C'est le "
+       },
+       {
+        "t": "joueur",
+        "g": true
+       },
+       {
+        "t": " qui décide quand lancer l'Ultime d'un de ses héros. Il le paie avec sa réserve d'énergie."
+       }
+      ],
+      [
+       {
+        "t": "Un Ultime est "
+       },
+       {
+        "t": "fort, mais pas décisif",
+        "g": true
+       },
+       {
+        "t": " : c'est une variante plus puissante d'une carte tactique. Par exemple, l'Ultime de CLAKER reprend l'effet de "
+       },
+       {
+        "t": "DRONE",
+        "carte": "drone_crypto"
+       },
+       {
+        "t": " : son joueur voit la main adverse, mais jusqu'à la fin de la partie ou jusqu'à la mort de CLAKER."
+       }
+      ]
+     ]
     }
    ]
   },
   {
-   "titre": "5. L'énergie",
+   "titre": "6. L'énergie",
    "blocs": [
     {
      "type": "ul",
@@ -484,7 +771,7 @@
         "t": "L'énergie se gagne "
        },
        {
-        "t": "à la fin du tour",
+        "t": "à la fin de son tour",
         "g": true
        },
        {
@@ -509,14 +796,14 @@
       ],
       [
        {
-        "t": "C'est cette réserve qui "
+        "t": "Chaque joueur n'a "
        },
        {
-        "t": "charge l'Ultime",
+        "t": "qu'une seule réserve",
         "g": true
        },
        {
-        "t": " des héros."
+        "t": ", commune à ses trois héros. C'est elle qui paie les Ultimes."
        }
       ],
       [
@@ -548,7 +835,7 @@
    ]
   },
   {
-   "titre": "6. Attaquer",
+   "titre": "7. Attaquer",
    "blocs": [
     {
      "type": "ul",
@@ -586,15 +873,6 @@
       ],
       [
        {
-        "t": "Critique",
-        "g": true
-       },
-       {
-        "t": " : l'Aura du héros donne sa chance de porter un coup critique."
-       }
-      ],
-      [
-       {
         "t": "Esquive",
         "g": true
        },
@@ -606,7 +884,61 @@
         "g": true
        },
        {
-        "t": " au lieu de s'additionner. On multiplie ce qui reste de chances de toucher : +20 %, puis +50 %, puis +30 % donnent 72 % d'esquive, jamais 100 %. Un « raté » du côté de l'attaquant se multiplie de la même façon."
+        "t": " au lieu de s'additionner. On multiplie ce qui reste de chances de toucher : +20 %, puis +50 %, puis +30 % donnent 72 % d'esquive, jamais 100 %."
+       }
+      ],
+      [
+       {
+        "t": "Le "
+       },
+       {
+        "t": "raté",
+        "g": true
+       },
+       {
+        "t": " de l'attaquant se multiplie de la même façon, et "
+       },
+       {
+        "t": "avec",
+        "g": true
+       },
+       {
+        "t": " l'esquive du défenseur : 20 % de raté face à 50 % d'esquive laissent 40 % de chances de toucher."
+       }
+      ],
+      [
+       {
+        "t": "L'esquive protège de "
+       },
+       {
+        "t": "tous les dégâts",
+        "g": true
+       },
+       {
+        "t": ", ceux des attaques comme ceux des cartes, "
+       },
+       {
+        "t": "sauf les dégâts de zone",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Critique",
+        "g": true
+       },
+       {
+        "t": " : l'Aura du héros donne sa chance de porter un coup critique. Les autres chances de critique (RAGE, cartes) se "
+       },
+       {
+        "t": "multiplient",
+        "g": true
+       },
+       {
+        "t": " avec elle comme l'esquive : 20 % d'Aura et 50 % de RAGE donnent 60 % de critique."
        }
       ]
      ]
@@ -622,7 +954,7 @@
    ]
   },
   {
-   "titre": "7. Jouer une carte tactique",
+   "titre": "8. Jouer une carte tactique",
    "blocs": [
     {
      "type": "h2",
@@ -780,11 +1112,11 @@
         "t": "« À chaque tour » veut dire "
        },
        {
-        "t": "une fois par tour complet",
+        "t": "à chaque tour de son joueur",
         "g": true
        },
        {
-        "t": ", pas au tour de chaque joueur."
+        "t": ". Une carte qui dit « à chaque tour complet » agit une fois quand tous les joueurs ont joué."
        }
       ]
      ]
@@ -819,7 +1151,7 @@
    ]
   },
   {
-   "titre": "8. Les effets dans la durée",
+   "titre": "9. Les effets dans la durée",
    "blocs": [
     {
      "type": "ul",
@@ -912,7 +1244,7 @@
    ]
   },
   {
-   "titre": "9. Soigner",
+   "titre": "10. Soigner",
    "blocs": [
     {
      "type": "ul",
@@ -955,7 +1287,7 @@
    ]
   },
   {
-   "titre": "10. Les états",
+   "titre": "11. Les états",
    "blocs": [
     {
      "type": "table",
@@ -982,7 +1314,14 @@
        ],
        [
         {
-         "t": "Le héros n'attaque pas ce tour."
+         "t": "Le héros n'attaque pas pendant le "
+        },
+        {
+         "t": "prochain tour de son joueur",
+         "g": true
+        },
+        {
+         "t": ". Il attaque de nouveau au tour d'après."
         }
        ]
       ],
@@ -1017,27 +1356,158 @@
    ]
   },
   {
-   "titre": "11. Le hasard",
+   "titre": "12. Le hasard",
    "blocs": [
     {
-     "type": "p",
-     "texte": [
-      {
-       "t": "Le hasard est "
-      },
-      {
-       "t": "pur",
-       "g": true
-      },
-      {
-       "t": ". Il n'y a ni dé ni tirage partagé : chaque carte porte ses propres chances, résolues au moment de l'effet."
-      }
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le hasard est "
+       },
+       {
+        "t": "pur",
+        "g": true
+       },
+       {
+        "t": " : chaque carte porte ses propres chances, résolues au moment de l'effet."
+       }
+      ],
+      [
+       {
+        "t": "En plus des cartes, trois moments sont tirés au hasard pour tout le monde : le "
+       },
+       {
+        "t": "dé",
+        "g": true
+       },
+       {
+        "t": " qui désigne le premier joueur, la "
+       },
+       {
+        "t": "roulette du tour",
+        "g": true
+       },
+       {
+        "t": " et la "
+       },
+       {
+        "t": "roulette de fin de deck",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ]
      ]
     }
    ]
   },
   {
-   "titre": "12. Collection et progression",
+   "titre": "13. Les roulettes",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "La roulette du tour"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Au début de chaque tour, une roulette tire un "
+      },
+      {
+       "t": "bonus ou un malus général",
+       "g": true
+      },
+      {
+       "t": ", qui vaut pour tout le monde pendant ce tour. Par exemple :"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "les cartes coûtent plus cher ;"
+       }
+      ],
+      [
+       {
+        "t": "impossible d'esquiver ;"
+       }
+      ],
+      [
+       {
+        "t": "aucune Aura ;"
+       }
+      ],
+      [
+       {
+        "t": "Attaque doublée pour tout le monde."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "La roulette de fin de deck"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Quand un joueur arrive au bout de son deck, une "
+      },
+      {
+       "t": "autre roulette",
+       "g": true
+      },
+      {
+       "t": " est lancée. Ses effets peuvent "
+      },
+      {
+       "t": "retourner la partie",
+       "g": true
+      },
+      {
+       "t": ". Par exemple :"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "deux joueurs échangent leurs decks ;"
+       }
+      ],
+      [
+       {
+        "t": "deux joueurs échangent un héros sur la table ;"
+       }
+      ],
+      [
+       {
+        "t": "la partie se termine dans deux tours, et le joueur dont les héros ont le moins de PV cumulés perd."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "14. Collection et progression",
    "blocs": [
     {
      "type": "ul",
@@ -1076,13 +1546,18 @@
        {
         "t": ". Elle n'est pas meilleure, elle est différente : une option pour la fin de partie. C'est ce qui évite qu'un joueur ancien ait un avantage réel sur un nouveau."
        }
+      ],
+      [
+       {
+        "t": "Le rang S des cartes tactiques et le grade des héros (S, A ou B) sont deux choses différentes."
+       }
       ]
      ]
     }
    ]
   },
   {
-   "titre": "13. Jouer à plusieurs",
+   "titre": "15. Jouer à plusieurs",
    "blocs": [
     {
      "type": "p",
@@ -1120,6 +1595,18 @@
       ],
       [
        {
+        "t": "Sur une carte, "
+       },
+       {
+        "t": "« l'adversaire »",
+        "g": true
+       },
+       {
+        "t": " désigne le joueur que l'on vise en la jouant."
+       }
+      ],
+      [
+       {
         "t": "2 contre 2",
         "g": true
        },
@@ -1139,7 +1626,7 @@
    ]
   },
   {
-   "titre": "14. Le temps de jeu",
+   "titre": "16. Le temps de jeu",
    "blocs": [
     {
      "type": "p",
@@ -1159,7 +1646,7 @@
    ]
   },
   {
-   "titre": "15. En dehors des parties",
+   "titre": "17. En dehors des parties",
    "blocs": [
     {
      "type": "ul",
@@ -2636,7 +3123,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Le chevreuil pose STUN sur un héros adverse que tu désignes : ce héros n'attaque pas ce tour. Il n'y a ni condition ni taux, la carte fait exactement ce qu'elle annonce à chaque fois. Sa valeur est cette certitude et non son ampleur : elle retire un tour d'attaque, une seule fois, à un seul héros. On la garde donc pour le tour où ce héros précis ferait le plus de dégâts."
+       "t": "Le chevreuil pose STUN sur un héros adverse que tu désignes : ce héros n'attaque pas pendant le prochain tour de son joueur. Il n'y a ni condition ni taux, la carte fait exactement ce qu'elle annonce à chaque fois. Sa valeur est cette certitude et non son ampleur : elle retire un tour d'attaque, une seule fois, à un seul héros. On la garde donc pour le tour où ce héros précis ferait le plus de dégâts."
       }
      ]
     },
@@ -2660,7 +3147,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Même tour : il n'attaque pas. Les autres héros adverses, eux, attaquent normalement."
+       "t": "Tour suivant de l'adversaire : il n'attaque pas. Les autres héros adverses, eux, attaquent normalement."
       }
      ]
     },
@@ -2668,7 +3155,7 @@
      "type": "citation",
      "texte": [
       {
-       "t": "Tour 5 : le STUN est terminé, il frappe. Tu as gagné un tour, pas davantage."
+       "t": "Le tour d'après : le STUN est terminé, il frappe. Tu as gagné un tour, pas davantage."
       }
      ]
     },
@@ -2700,7 +3187,7 @@
       ],
       [
        {
-        "t": "Posée face cachée, « ce tour » désigne le tour où elle est retournée."
+        "t": "Posée face cachée, le STUN vise le prochain tour du héros après le retournement."
        }
       ],
       [

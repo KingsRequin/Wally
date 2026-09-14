@@ -1008,6 +1008,14 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     rap.dire(partage["ouverte"] and partage["visible"],
              "règles : un lien partagé ouvre la fiche à l'écran", f"{cible} {partage}")
 
+    # Le rail des chapitres suit la lecture : un seul trait allumé, et c'est
+    # celui du chapitre qu'on vient d'atteindre.
+    if page.viewport_size and page.viewport_size["width"] > 1200:
+        page.evaluate("document.getElementById('chapitre-3').scrollIntoView()")
+        page.wait_for_timeout(800)
+        rail = page.evaluate("""() => [...document.querySelectorAll('.wcr .rail a.active')].map((a) => a.getAttribute('href'))""")
+        rap.dire(rail == ["#chapitre-3"], "règles : le rail allume le chapitre lu", str(rail))
+
     page.goto(f"{BASE}/wallycard", wait_until="networkidle", timeout=40000)
     page.wait_for_selector(".wcm-menu", timeout=_ATTENTE_PANNEAU_MS)
     page.locator("a.wcm-entree[data-route='/wallycard/bibliotheque']").click()

@@ -10,7 +10,7 @@
 // 🚨 Tout le texte passe par `textContent` : aucune ligne de l'export n'est
 // interprétée comme du HTML, même si Notion en contenait.
 
-import { h, pageFooter } from '../app.js';
+import { h, pageFooter, surAnimation } from '../app.js';
 
 const FEUILLE = '/pages/wallycard-regles.css';
 const DONNEES = '/donnees/wallycard-regles.json';
@@ -19,6 +19,7 @@ const PREFIXE = 'carte-';
 let _lien = null;
 let _vivant = false;
 let _surHash = null;
+let _desabonnerRail = null;
 
 function segments(liste, ouvrir) {
   return liste.map((s) => {
@@ -77,23 +78,15 @@ function rendre(racine, donnees) {
     fiche.querySelector('summary').focus({ preventScroll: true });
   }
 
+  // Les liens `#…` du sommaire et du rail ne portent AUCUN gestionnaire : le
+  // défilement inertiel d'`app.js` prend déjà toutes les ancres internes. Un
+  // `scrollIntoView` en plus se disputerait la position avec lui.
+  const sections = [
+    ...donnees.chapitres.map((c, i) => [ancreChapitre(i), c.titre]),
+    ['cartes', 'Les cartes'],
+  ];
   const sommaire = h('nav', { class: 'wcr-sommaire', 'aria-label': 'Sommaire des règles' },
-    h('ol', {},
-      donnees.chapitres.map((c, i) => h('li', {},
-        h('a', {
-          href: `#${ancreChapitre(i)}`,
-          text: c.titre,
-          onclick: (e) => {
-            e.preventDefault();
-            document.getElementById(ancreChapitre(i))?.scrollIntoView({ block: 'start' });
-          },
-        }))),
-      h('li', {}, h('a', {
-        href: '#cartes',
-        text: 'Les cartes',
-        onclick: (e) => { e.preventDefault(); document.getElementById('cartes')?.scrollIntoView({ block: 'start' }); },
-      })),
-    ));
+    h('ol', {}, sections.map(([id, titre]) => h('li', {}, h('a', { href: `#${id}`, text: titre })))));
 
   const chapitres = donnees.chapitres.map((c, i) => h('section', { class: 'wcr-chapitre', id: ancreChapitre(i) },
     h('h2', { class: 'wcr-chapitre-titre', text: c.titre }),
@@ -121,6 +114,28 @@ function rendre(racine, donnees) {
       listeFiches),
     h('p', { class: 'wcr-date', text: `Règles exportées le ${donnees.exporte_le.split('-').reverse().join('/')}.` }),
   );
+
+  // Le rail : un trait par chapitre sur la droite, celui qu'on lit s'allume.
+  // Mêmes classes que celui de l'accueil, dont il reprend le style.
+  const rail = h('nav', { class: 'rail', 'aria-label': 'Chapitres des règles' },
+    sections.map(([id, titre]) => h('a', { href: `#${id}`, title: titre },
+      h('span', { class: 'lbl', text: titre.toUpperCase() }),
+      h('span', { class: 'tick' }))));
+  racine.appendChild(rail);
+  const cibles = sections.map(([id]) => document.getElementById(id));
+  const liens = Array.from(rail.children);
+  let allume = -1;
+  const suivre = (_sy, vh) => {
+    // La DERNIÈRE section dont le haut a passé les 42 % de l'écran : toujours
+    // exactement une allumée, comme sur l'accueil.
+    let actif = 0;
+    cibles.forEach((el, i) => { if (el && el.getBoundingClientRect().top < vh * 0.42) actif = i; });
+    if (actif === allume) return;
+    allume = actif;
+    liens.forEach((a, i) => a.classList.toggle('active', i === actif));
+  };
+  _desabonnerRail = surAnimation(suivre);
+  suivre(window.scrollY, window.innerHeight);
 
   // Arrivée par un lien partagé vers une fiche, ou ancre changée sans
   // rechargement (lien collé dans la barre d'adresse, page déjà ouverte).
@@ -165,6 +180,8 @@ export function mount(el) {
 
 export function unmount() {
   _vivant = false;
+  if (_desabonnerRail) _desabonnerRail();
+  _desabonnerRail = null;
   if (_surHash) window.removeEventListener('hashchange', _surHash);
   _surHash = null;
   if (_lien) _lien.remove();
