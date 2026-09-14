@@ -43,7 +43,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Modes prévus : 1 contre 1, 1 contre 1 contre 1, 1 contre 1 contre 1 contre 1, et 2 contre 2."
+       "t": "Modes prévus : chacun pour soi à deux, trois ou quatre joueurs, et 2 contre 2."
       }
      ]
     }
@@ -228,6 +228,97 @@
       [
        [
         {
+         "t": "Réserve",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "L'énergie non dépensée, gardée d'un tour à l'autre. Elle est plafonnée."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Revenu",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "L'énergie qu'un joueur gagne à la fin de son tour."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Tour",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Le moment où un joueur joue."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Tour complet",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Chaque joueur a joué son tour une fois."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Main",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Les cartes piochées et pas encore jouées. L'adversaire ne les voit pas."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Défausse",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Là où part une carte jouée qui ne reste pas en jeu."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Catégorie",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Le rôle d'une carte tactique : attaque, aura, contrôle, ressource ou soin."
+        }
+       ]
+      ],
+      [
+       [
+        {
          "t": "État",
          "g": true
         }
@@ -296,8 +387,61 @@
      "type": "p",
      "texte": [
       {
-       "t": "Toutes les cartes tactiques sont dans le deck du joueur et se piochent."
+       "t": "Les héros sont sur la table dès le début de la partie. Les cartes tactiques sont dans le deck du joueur et se piochent."
       }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Le deck"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un deck contient "
+       },
+       {
+        "t": "15 cartes tactiques",
+        "g": true
+       },
+       {
+        "t": " et "
+       },
+       {
+        "t": "3 héros",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Un seul exemplaire",
+        "g": true
+       },
+       {
+        "t": " de chaque carte tactique."
+       }
+      ],
+      [
+       {
+        "t": "Une "
+       },
+       {
+        "t": "carte à regrouper",
+        "g": true
+       },
+       {
+        "t": " compte pour une seule place dans le deck, mais en donne trois exemplaires (voir « Les effets dans la durée »)."
+       }
+      ]
      ]
     }
    ]
@@ -568,7 +712,7 @@
         "g": true
        },
        {
-        "t": "."
+        "t": ", qu'elle soit retournée par son joueur ou par une attaque."
        }
       ],
       [
@@ -585,6 +729,25 @@
        },
        {
         "t": " : on en subit l'effet sans savoir d'où il vient."
+       }
+      ],
+      [
+       {
+        "t": "Deux exceptions : un passif dont la carte dit qu'il se pose "
+       },
+       {
+        "t": "face visible",
+        "g": true
+       },
+       {
+        "t": " (comme "
+       },
+       {
+        "t": "VIENS EN VOCAL",
+        "carte": "viens_en_vocal"
+       },
+       {
+        "t": "), et les passifs révélés par une carte qui les montre."
        }
       ]
      ]
@@ -723,6 +886,9 @@
        {
         "t": "Deux exemplaires de la même carte en jeu cumulent leurs effets.",
         "g": true
+       },
+       {
+        "t": " Un deck n'en contient qu'un, mais deux joueurs peuvent jouer la même carte."
        }
       ],
       [
@@ -781,7 +947,7 @@
         "g": true
        },
        {
-        "t": " soin, pas l'effet."
+        "t": " soin, pas l'effet. Une carte de catégorie soin qui ne rend aucun PV reste une carte de soin ; une carte d'une autre catégorie qui soigne n'en est pas une."
        }
       ]
      ]
@@ -878,16 +1044,11 @@
      "items": [
       [
        {
-        "t": "Toutes les cartes sont disponibles dès le début.",
+        "t": "Toutes les cartes sont disponibles dès le début",
         "g": true
        },
        {
-        "t": " Il n'y a pas de système de déblocage."
-       }
-      ],
-      [
-       {
-        "t": "Seule exception : les cartes tactiques de "
+        "t": ", à une exception près : les cartes tactiques de "
        },
        {
         "t": "rang S",
@@ -984,7 +1145,7 @@
      "type": "p",
      "texte": [
       {
-       "t": "Pas de minuteur par défaut, ou un minuteur très large. C'est "
+       "t": "Pas de minuteur par défaut. C'est "
       },
       {
        "t": "VIENS EN VOCAL",
