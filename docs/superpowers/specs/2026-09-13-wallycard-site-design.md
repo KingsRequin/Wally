@@ -81,7 +81,8 @@ Dans *Bibliothèque* :
 - Prérequis : partager la page Notion « TCG de la commu » avec l'intégration *syncro wallycard*,
   qui ne voit aujourd'hui que la base.
   Tant que ce partage manque, l'export garde les chapitres déjà présents et rafraîchit les fiches.
-  Les chapitres du premier export ont été lus par le connecteur Notion (2026-09-14).
+  Partage fait par l'owner le 2026-09-14 ; l'export par l'API a redonné à l'identique les
+  chapitres du premier export, lus par le connecteur.
 - L'avertissement en tête de la page Notion n'est pas publié : il renvoie aux sections de travail.
 - La page *Règles* affiche les chapitres ; chaque carte citée mène à sa fiche.
 - On relance l'export à chaque modification des règles. La page affiche la date du dernier export.

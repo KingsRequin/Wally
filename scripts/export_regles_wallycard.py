@@ -87,6 +87,10 @@ def _segments(rich_text: list[dict], cartes: dict[str, str]) -> list[dict]:
                 seg["lien"] = morceau["href"]
         if cible in cartes:
             seg["carte"] = cartes[cible]
+            if morceau["type"] == "mention":
+                # Une mention porte le TITRE de la ligne Notion (« Quoi → FEUR ») ;
+                # le livre nomme les cartes par leur nom court, comme la prose autour.
+                seg["t"] = CARTES_ACTION[cartes[cible]].court
         sortie.append(seg)
     return sortie
 

@@ -26,7 +26,7 @@ def test_puces_consecutives_forment_une_seule_liste():
 
 
 def test_carte_citee_par_mention_ou_par_lien_devient_un_lien_de_fiche():
-    mention = {"type": "mention", "plain_text": "FEUR", "href": None, "annotations": {},
+    mention = {"type": "mention", "plain_text": "Quoi → FEUR", "href": None, "annotations": {},
                "mention": {"type": "page", "page": {"id": "3d7e93dd-d545-818c-befd-d1d581684d58"}}}
     lien = {**_texte("FEUR", bold=True), "href": f"https://app.notion.com/p/{ID_FEUR}"}
     [bloc] = convertir_blocs([_bloc("paragraph", mention, lien)], CARTES)
