@@ -20,7 +20,7 @@ const DEFILE = 'WALLYCARD · JEU DE CARTES DE LA COMMU · ';
 const ENTREES = [
   { libelle: 'Jouer', detail: 'Les parties arrivent' },
   { libelle: 'Bibliothèque', detail: 'Les cartes et tes decks', route: '/wallycard/bibliotheque' },
-  { libelle: 'Règles', detail: 'Le livre des règles' },
+  { libelle: 'Règles', detail: 'Le livre des règles', route: '/wallycard/regles' },
 ];
 
 // Les étincelles de la trame. ÉNUMÉRÉES sur la grille, jamais posées à la main

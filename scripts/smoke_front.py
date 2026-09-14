@@ -397,6 +397,7 @@ PAGES_PUBLIQUES = [
     # SOUS-PAGE : le 4e champ porte la route de l'onglet PARENT. Un onglet reste
     # allumé (celui de Wallycard), mais la page n'en ajoute aucun à la barre.
     ("Bibliothèque", "/wallycard/bibliotheque", ".tcgal-grille", "/wallycard"),
+    ("Règles", "/wallycard/regles", ".wcr-fiche", "/wallycard"),
     # HORS de la barre d'onglets : on y arrive par le pied de page. Le dernier
     # champ à `False` la retire donc du compte d'onglets — sans quoi ce test
     # exigerait un onglet qui n'existe nulle part.
@@ -965,10 +966,51 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # Une entrée qui n'est pas livrée ne doit pas être un lien : on clique,
     # rien ne se passe, rien ne l'explique.
     grisees = page.locator(".wcm-entree[aria-disabled='true']")
-    rap.dire(grisees.count() == 2 and page.locator("a.wcm-entree").count() == 1,
-             "menu Wallycard : Jouer et Règles grisés, Bibliothèque seule cliquable",
+    rap.dire(grisees.count() == 1 and page.locator("a.wcm-entree").count() == 2,
+             "menu Wallycard : Jouer grisé, Bibliothèque et Règles cliquables",
              f"{grisees.count()} grisées, {page.locator('a.wcm-entree').count()} lien(s)")
-    page.locator("a.wcm-entree").first.click()
+
+    # Le livre des règles : une carte citée dans un chapitre OUVRE sa fiche et
+    # l'amène à l'écran, et un lien partagé vers une fiche l'ouvre à l'arrivée.
+    # Les sections de travail de la page Notion ne doivent jamais sortir.
+    page.locator("a.wcm-entree[data-route='/wallycard/regles']").click()
+    page.wait_for_selector(".wcr-fiche", timeout=_ATTENTE_PANNEAU_MS)
+    regles = page.evaluate("""() => ({
+      chapitres: document.querySelectorAll('.wcr-chapitre').length,
+      fiches: document.querySelectorAll('.wcr-fiche').length,
+      nonDecide: /À trancher|Propositions à discuter/.test(document.querySelector('.wcr').innerText),
+    })""")
+    rap.dire(regles["chapitres"] > 1 and regles["fiches"] > 0 and not regles["nonDecide"],
+             "règles : chapitres et fiches montés, rien de non décidé", str(regles))
+    lien = page.locator(".wcr-chapitre:not(#cartes) .wcr-lien-carte").first
+    cible = (lien.get_attribute("href") or "").split("#")[-1]
+    lien.click()
+    page.wait_for_timeout(600)
+    ouverte = page.evaluate("""(id) => {
+      const f = document.getElementById(id);
+      const r = f ? f.getBoundingClientRect() : null;
+      return { ouverte: Boolean(f && f.open), visible: Boolean(r && r.top >= 0 && r.top < innerHeight) };
+    }""", cible)
+    rap.dire(ouverte["ouverte"] and ouverte["visible"] and page.url.endswith(f"#{cible}"),
+             "règles : une carte citée ouvre sa fiche à l'écran", f"{cible} {ouverte} {page.url}")
+    # 🚨 Le détour par /wallycard force un VRAI chargement : aller de
+    # `/wallycard/regles#a` à `/wallycard/regles#b` ne recharge pas le document,
+    # et la fiche déjà ouverte par le clic ferait passer le test pour rien.
+    page.goto(f"{BASE}/wallycard", wait_until="networkidle", timeout=40000)
+    page.goto(f"{BASE}/wallycard/regles#{cible}", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector(".wcr-fiche", timeout=_ATTENTE_PANNEAU_MS)
+    page.wait_for_timeout(600)
+    partage = page.evaluate("""(id) => {
+      const f = document.getElementById(id);
+      const r = f ? f.getBoundingClientRect() : null;
+      return { ouverte: Boolean(f && f.open), visible: Boolean(r && r.top >= 0 && r.top < innerHeight) };
+    }""", cible)
+    rap.dire(partage["ouverte"] and partage["visible"],
+             "règles : un lien partagé ouvre la fiche à l'écran", f"{cible} {partage}")
+
+    page.goto(f"{BASE}/wallycard", wait_until="networkidle", timeout=40000)
+    page.wait_for_selector(".wcm-menu", timeout=_ATTENTE_PANNEAU_MS)
+    page.locator("a.wcm-entree[data-route='/wallycard/bibliotheque']").click()
     page.wait_for_selector(".tcgal-grille", timeout=_ATTENTE_PANNEAU_MS)
     rap.dire(page.url.endswith("/wallycard/bibliotheque"), "menu Wallycard : Bibliothèque ouvre la collection", page.url)
     actifs = page.locator(".nav-link.active")

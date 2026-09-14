@@ -1,0 +1,7721 @@
+{
+ "exporte_le": "2026-09-14",
+ "chapitres": [
+  {
+   "titre": "1. Le jeu en bref",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Wallycard",
+       "g": true
+      },
+      {
+       "t": " est un jeu de cartes où chaque joueur aligne "
+      },
+      {
+       "t": "trois héros",
+       "g": true
+      },
+      {
+       "t": " et les soutient avec des "
+      },
+      {
+       "t": "cartes tactiques",
+       "g": true
+      },
+      {
+       "t": "."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le but : tuer les trois héros adverses.",
+       "g": true
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Modes prévus : 1 contre 1, 1 contre 1 contre 1, 1 contre 1 contre 1 contre 1, et 2 contre 2."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "2. Lexique",
+   "blocs": [
+    {
+     "type": "table",
+     "entete": true,
+     "lignes": [
+      [
+       [
+        {
+         "t": "Terme"
+        }
+       ],
+       [
+        {
+         "t": "Définition"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Héros",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Carte posée sur la table, qui porte des PV, une Attaque et une Aura. C'est ce qu'on défend et ce qu'on veut abattre."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "PV",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Les points de vie d'un héros. À zéro, il meurt."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Attaque",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Les dégâts que le héros inflige quand il attaque."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Aura",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "La chance du héros de porter un coup critique."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Critique",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Un coup qui inflige plus de dégâts que l'Attaque normale."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Esquive",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "La chance, en pourcentage, de ne pas recevoir les dégâts d'un coup."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Carte tactique",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Désigne à la fois les cartes "
+        },
+        {
+         "t": "action",
+         "g": true
+        },
+        {
+         "t": " et les cartes "
+        },
+        {
+         "t": "passif",
+         "g": true
+        },
+        {
+         "t": "."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Carte action",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Carte que le joueur déclenche lui-même."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Carte passif",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Carte qui se déclenche toute seule, sans que le joueur l'active."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Énergie",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "La ressource qui paie les cartes et charge l'Ultime."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "Ultime",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "La capacité propre à chaque héros, qui coûte beaucoup d'énergie."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "État",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Un effet qui reste sur un héros pendant une durée : STUN, TUNNEL, RAGE."
+        }
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "3. La table",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Chaque joueur dispose de trois espaces :"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Les héros",
+        "g": true
+       },
+       {
+        "t": " : ses trois héros, les seuls avec lesquels il joue toute la partie. Il n'y a pas de réserve : un héros est sur la table ou il est mort."
+       }
+      ],
+      [
+       {
+        "t": "La zone tactique",
+        "g": true
+       },
+       {
+        "t": " : l'espace où l'on pose des cartes sur la table. Elles s'y déclenchent automatiquement ou manuellement selon leur nature. On peut les y poser face cachée. L'adversaire peut les attaquer et les détruire, sauf certaines cartes qui ne peuvent pas l'être."
+       }
+      ],
+      [
+       {
+        "t": "La zone des passifs",
+        "g": true
+       },
+       {
+        "t": " : les emplacements réservés aux cartes passif. "
+       },
+       {
+        "t": "Six emplacements",
+        "g": true
+       },
+       {
+        "t": " pour le moment."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Toutes les cartes tactiques sont dans le deck du joueur et se piochent."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "4. Qui fait quoi",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Ce sont les joueurs qui jouent les cartes. Les héros ne font qu'attaquer.",
+       "g": true
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Un héros ne pose ni ne lance aucune carte. C'est pourquoi un héros sous STUN perd son attaque, et rien d'autre : son joueur continue de jouer ses cartes normalement."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "5. L'énergie",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Jouer une carte coûte de l'énergie. Sans énergie, on ne peut plus rien jouer, sauf une carte qui coûte zéro ou qu'un effet rend gratuite."
+       }
+      ],
+      [
+       {
+        "t": "L'énergie se gagne "
+       },
+       {
+        "t": "à la fin du tour",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "L'énergie non dépensée se garde",
+        "g": true
+       },
+       {
+        "t": " d'un tour à l'autre, dans une réserve "
+       },
+       {
+        "t": "plafonnée",
+        "g": true
+       },
+       {
+        "t": ". Ce qui dépasserait le plafond est perdu."
+       }
+      ],
+      [
+       {
+        "t": "C'est cette réserve qui "
+       },
+       {
+        "t": "charge l'Ultime",
+        "g": true
+       },
+       {
+        "t": " des héros."
+       }
+      ],
+      [
+       {
+        "t": "Le plafond de la réserve est bas, et il se règle sur le coût des cartes",
+        "g": true
+       },
+       {
+        "t": " : assez pour garder de quoi lancer un Ultime ou une grosse carte, pas assez pour tout garder plusieurs tours puis tout lâcher d'un coup."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le choix central du jeu est donc : "
+      },
+      {
+       "t": "dépenser maintenant, ou garder pour l'Ultime",
+       "g": true
+      },
+      {
+       "t": ". Chaque carte jouée retarde un Ultime."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "6. Attaquer",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un héros attaque "
+       },
+       {
+        "t": "un héros adverse",
+        "g": true
+       },
+       {
+        "t": " ou "
+       },
+       {
+        "t": "une carte de la zone tactique adverse",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Le joueur "
+       },
+       {
+        "t": "choisit sa cible",
+        "g": true
+       },
+       {
+        "t": ". Le hasard ne décide que quand une carte le dit en toutes lettres."
+       }
+      ],
+      [
+       {
+        "t": "Critique",
+        "g": true
+       },
+       {
+        "t": " : l'Aura du héros donne sa chance de porter un coup critique."
+       }
+      ],
+      [
+       {
+        "t": "Esquive",
+        "g": true
+       },
+       {
+        "t": " : les chances d'esquive se "
+       },
+       {
+        "t": "multiplient",
+        "g": true
+       },
+       {
+        "t": " au lieu de s'additionner. On multiplie ce qui reste de chances de toucher : +20 %, puis +50 %, puis +30 % donnent 72 % d'esquive, jamais 100 %. Un « raté » du côté de l'attaquant se multiplie de la même façon."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Pour l'équilibre, un héros qui a beaucoup d'Attaque a peu d'Aura, et inversement. C'est au joueur de décider s'il bâtit son équipe sur la force brute ou sur le critique."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "7. Jouer une carte tactique",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Action ou passif"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Une "
+       },
+       {
+        "t": "action",
+        "g": true
+       },
+       {
+        "t": " est déclenchée par le joueur."
+       }
+      ],
+      [
+       {
+        "t": "Un "
+       },
+       {
+        "t": "passif",
+        "g": true
+       },
+       {
+        "t": " se déclenche tout seul. Le critère est le déclencheur, pas l'endroit où la carte se trouve : une carte posée sur la table que son joueur relance lui-même reste une action."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Face visible ou face cachée"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Une carte action peut se poser "
+       },
+       {
+        "t": "face visible ou face cachée",
+        "g": true
+       },
+       {
+        "t": ", au choix, sauf si la carte impose l'un des deux."
+       }
+      ],
+      [
+       {
+        "t": "Une carte cachée s'active "
+       },
+       {
+        "t": "quand son joueur la retourne",
+        "g": true
+       },
+       {
+        "t": ", à n'importe quel moment, ou "
+       },
+       {
+        "t": "quand elle se fait attaquer",
+        "g": true
+       },
+       {
+        "t": ". Si le coup la détruit, elle part sans rien déclencher."
+       }
+      ],
+      [
+       {
+        "t": "Pour une carte cachée, les durées (« ce tour », « le prochain tour ») se comptent "
+       },
+       {
+        "t": "à partir du retournement",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Un passif ne se pose jamais face cachée",
+        "g": true
+       },
+       {
+        "t": ", mais les passifs de l'adversaire restent "
+       },
+       {
+        "t": "invisibles",
+        "g": true
+       },
+       {
+        "t": " : on en subit l'effet sans savoir d'où il vient."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Déclencheurs"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Si une carte porte "
+       },
+       {
+        "t": "son propre déclencheur",
+        "g": true
+       },
+       {
+        "t": " (« à la prochaine pioche adverse », « à la prochaine attaque »), c'est lui qui s'applique, que la carte soit cachée ou non."
+       }
+      ],
+      [
+       {
+        "t": "« À chaque tour » veut dire "
+       },
+       {
+        "t": "une fois par tour complet",
+        "g": true
+       },
+       {
+        "t": ", pas au tour de chaque joueur."
+       }
+      ]
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Annuler une carte"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "FEUR",
+       "carte": "feur"
+      },
+      {
+       "t": " annule l'"
+      },
+      {
+       "t": "effet",
+       "g": true
+      },
+      {
+       "t": " d'une carte, pas le fait qu'elle soit posée. Une carte dont l'effet se déclenche à la pose et qui se fait annuler compte comme déjà utilisée : elle part à la défausse."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "8. Les effets dans la durée",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte.",
+        "g": true
+       },
+       {
+        "t": " Carte détruite : son effet disparaît. Héros porteur mort : l'effet disparaît, et la carte qui l'a posé est détruite avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Sur une carte qui touche plusieurs héros, seul le mort perd son bonus.",
+        "g": true
+       },
+       {
+        "t": " La carte reste tant qu'elle a un porteur vivant."
+       }
+      ],
+      [
+       {
+        "t": "Un effet différé dont la cible meurt est perdu.",
+        "g": true
+       },
+       {
+        "t": " Il ne se reporte sur personne."
+       }
+      ],
+      [
+       {
+        "t": "Quitter la table annule tout.",
+        "g": true
+       },
+       {
+        "t": " Un héros qui s'absente, même un tour, revient sans aucun bonus ni état. Pendant son absence il n'est pas touché, et aucune carte ne peut lui être liée."
+       }
+      ],
+      [
+       {
+        "t": "Si le héros qu'un état force à attaquer meurt, l'état disparaît.",
+        "g": true
+       }
+      ],
+      [
+       {
+        "t": "Un passif suspendu",
+        "g": true
+       },
+       {
+        "t": " (par exemple par "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": ") reprend ses bonus à la fin de la suspension. S'il devait se déclencher pendant ce temps, ce déclenchement est perdu."
+       }
+      ],
+      [
+       {
+        "t": "Deux exemplaires de la même carte en jeu cumulent leurs effets.",
+        "g": true
+       }
+      ],
+      [
+       {
+        "t": "Les cartes à regrouper",
+        "g": true
+       },
+       {
+        "t": " comptent pour une carte dans le deck mais en donnent trois. Une fois les trois réunies, elles "
+       },
+       {
+        "t": "fusionnent en une seule carte",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "9. Soigner",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un soin au-delà des PV maximum est "
+       },
+       {
+        "t": "perdu",
+        "g": true
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Empêcher de soigner n'annule pas un soin déjà reçu",
+        "g": true
+       },
+       {
+        "t": " : ça bloque les soins à venir."
+       }
+      ],
+      [
+       {
+        "t": "Une « carte de soin » désigne la "
+       },
+       {
+        "t": "catégorie",
+        "g": true
+       },
+       {
+        "t": " soin, pas l'effet."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "10. Les états",
+   "blocs": [
+    {
+     "type": "table",
+     "entete": true,
+     "lignes": [
+      [
+       [
+        {
+         "t": "État"
+        }
+       ],
+       [
+        {
+         "t": "Effet"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "STUN",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Le héros n'attaque pas ce tour."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "TUNNEL",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Le héros ne peut attaquer que le héros désigné par la carte qui a posé l'état."
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "RAGE",
+         "g": true
+        }
+       ],
+       [
+        {
+         "t": "Chaque héros concerné a une chance de porter un coup critique."
+        }
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "11. Le hasard",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le hasard est "
+      },
+      {
+       "t": "pur",
+       "g": true
+      },
+      {
+       "t": ". Il n'y a ni dé ni tirage partagé : chaque carte porte ses propres chances, résolues au moment de l'effet."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "12. Collection et progression",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Toutes les cartes sont disponibles dès le début.",
+        "g": true
+       },
+       {
+        "t": " Il n'y a pas de système de déblocage."
+       }
+      ],
+      [
+       {
+        "t": "Seule exception : les cartes tactiques de "
+       },
+       {
+        "t": "rang S",
+        "g": true
+       },
+       {
+        "t": ", débloquées en gagnant des niveaux."
+       }
+      ],
+      [
+       {
+        "t": "Une carte de rang S est une "
+       },
+       {
+        "t": "variante",
+        "g": true
+       },
+       {
+        "t": " d'une carte existante : plus chère et plus puissante, mais avec "
+       },
+       {
+        "t": "le même rapport puissance sur coût",
+        "g": true
+       },
+       {
+        "t": ". Elle n'est pas meilleure, elle est différente : une option pour la fin de partie. C'est ce qui évite qu'un joueur ancien ait un avantage réel sur un nouveau."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "13. Jouer à plusieurs",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Wallycard se joue "
+      },
+      {
+       "t": "entre potes",
+       "g": true
+      },
+      {
+       "t": ", en vocal, pas contre des inconnus. Les règles en tiennent compte."
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Chacun contre chacun",
+        "g": true
+       },
+       {
+        "t": " (à trois ou à quatre) : chaque joueur attaque "
+       },
+       {
+        "t": "qui il veut",
+        "g": true
+       },
+       {
+        "t": ". Les alliances, les trahisons et les négociations en vocal font partie du jeu."
+       }
+      ],
+      [
+       {
+        "t": "2 contre 2",
+        "g": true
+       },
+       {
+        "t": " : les deux coéquipiers jouent "
+       },
+       {
+        "t": "pendant le même tour",
+        "g": true
+       },
+       {
+        "t": ", chacun avec ses trois héros et sa propre énergie. Une carte qui vise « chaque adversaire » touche chaque membre de l'équipe adverse séparément."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "14. Le temps de jeu",
+   "blocs": [
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Pas de minuteur par défaut, ou un minuteur très large. C'est "
+      },
+      {
+       "t": "VIENS EN VOCAL",
+       "carte": "viens_en_vocal"
+      },
+      {
+       "t": " qui impose un temps limité à l'adversaire."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "titre": "15. En dehors des parties",
+   "blocs": [
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Tout est tracé",
+        "g": true
+       },
+       {
+        "t": ", au moins pendant les premières parties : pickrate des cartes, winrate, durée des parties, et ce que chaque carte a réellement fait. Ces chiffres serviront à calibrer les coûts."
+       }
+      ],
+      [
+       {
+        "t": "Un bouton pour signaler un bug",
+        "g": true
+       },
+       {
+        "t": " sera présent dans le jeu, et le signalement arrivera sur Discord."
+       }
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "fiches": [
+  {
+   "cle": "aim_assist",
+   "court": "AIM ASSIST",
+   "nom": "Aim assist = aimbot",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tant qu'elle est en jeu, les héros adverses ne peuvent plus esquiver : leurs chances d'esquive tombent à zéro. Elle n'inflige rien et ne soigne personne, elle supprime une variable, le hasard de l'esquive d'en face. Sa valeur dépend donc entièrement de ce que l'adversaire a posé : contre un camp qui n'a aucune carte d'esquive, elle ne produit rien du tout."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a posé "
+      },
+      {
+       "t": "CLAVIER-SOURIS",
+       "carte": "clavier_souris"
+      },
+      {
+       "t": ", caché comme tout passif : ses héros ont une chance d'esquiver, sans que tu le saches."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses AIM ASSIST. Sa carte reste sur la table, mais ne produit plus rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il perd des héros et n'en garde qu'un seul vivant, "
+      },
+      {
+       "t": "TENMA",
+       "carte": "tenma"
+      },
+      {
+       "t": " devrait s'allumer : l'esquive reste à zéro."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tes attaques touchent toutes, tant que l'aim assist tient."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle éteint les trois cartes d'esquive du jeu : "
+       },
+       {
+        "t": "CLAVIER-SOURIS",
+        "carte": "clavier_souris"
+       },
+       {
+        "t": ", "
+       },
+       {
+        "t": "RHUM",
+        "carte": "rhum"
+       },
+       {
+        "t": " et "
+       },
+       {
+        "t": "TENMA",
+        "carte": "tenma"
+       },
+       {
+        "t": ". Ni la condition ni le taux n'y changent quoi que ce soit, y compris pour Tenma qui est le plus haut de l'échelle."
+       }
+      ],
+      [
+       {
+        "t": "Les passifs adverses sont cachés : tu la poses sans savoir si l'adversaire a une carte d'esquive en jeu. Et comme c'est elle-même un passif, l'adversaire ne la voit pas non plus."
+       }
+      ],
+      [
+       {
+        "t": "Elle annule l'effet, elle ne détruit pas la carte adverse : celle-ci reste en jeu et reprend son effet si l'aim assist n'est plus là."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF. "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " désactive tous les passifs adverses : pendant un scan d'en face, l'aim assist s'éteint et les esquives adverses reviennent le temps de son effet."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne touche que l'esquive. Le critique de "
+       },
+       {
+        "t": "MOZAMBIQUE",
+        "carte": "mozambique"
+       },
+       {
+        "t": " et de "
+       },
+       {
+        "t": "MANETTE",
+        "carte": "manette"
+       },
+       {
+        "t": " n'est pas concerné, et la copie du "
+       },
+       {
+        "t": "LEURRE",
+        "carte": "leurre"
+       },
+       {
+        "t": " non plus, qui n'est pas une esquive."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "push_3_teams",
+   "court": "AMITIÉ",
+   "nom": "Pouvoir de l'amitié !",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "AMITIÉ porte deux effets sur deux portées différentes : l'Attaque monte sur un seul héros, que tu choisis, et l'Aura monte sur tous tes héros à la fois."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Sa valeur dépend donc de l'état de ton équipe. Plus il te reste de héros au moment où tu la joues, plus la part collective rapporte. Jouée quand tu es réduit à un seul héros, elle ne vaut presque plus que son bonus d'Attaque."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 3 : tes trois héros sont debout. Tu joues AMITIÉ : l'Aura monte sur toute l'équipe, l'Attaque sur CLAKER seul."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : l'adversaire tue CLAKER. Ses bonus d'AMITIÉ disparaissent avec lui, mais la carte reste en jeu."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Les deux héros encore debout gardent leur bonus d'Aura."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 7 : il ne te reste que RHAE. La même carte, jouée maintenant, n'aurait augmenté qu'une seule Aura."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le bonus d'Attaque est le seul que tu choisis. Le bonus d'Aura tombe sur tous tes héros sans que tu aies la main dessus."
+       }
+      ],
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte, mais sur une carte qui touche plusieurs héros, seul le MORT perd son bonus : les survivants gardent le leur, et la carte reste en jeu tant qu'il lui reste au moins un porteur vivant. La destruction de la carte avec son porteur ne vaut que pour une carte à porteur unique."
+       }
+      ],
+      [
+       {
+        "t": "Elle est rangée en catégorie soin alors qu'elle ne rend aucun PV : la catégorie décrit le rôle de soutien, pas l'effet. Une « carte de soin » désignant la catégorie, elle bénéficie de "
+       },
+       {
+        "t": "STATUE",
+        "carte": "statue_mirage"
+       },
+       {
+        "t": ", qui rend les cartes de soin gratuites."
+       }
+      ],
+      [
+       {
+        "t": "La durée des deux bonus n'est pas précisée. "
+       },
+       {
+        "t": "PIERCING",
+        "carte": "piercing"
+       },
+       {
+        "t": " dit explicitement « pour la partie », AMITIÉ ne dit rien."
+       }
+      ],
+      [
+       {
+        "t": "Le bonus d'Attaque et celui de "
+       },
+       {
+        "t": "RACISTE",
+        "carte": "raciste"
+       },
+       {
+        "t": " visent la même statistique, mais AMITIÉ n'impose aucun verrou de cible."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "anneau_raiky",
+   "court": "ANNEAU",
+   "nom": "Raiky dans l'anneau",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "L'anneau se pose face visible et reste sur la table. À chaque tour complet, tous les héros perdent des PV, ceux de ton camp comme ceux d'en face."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle ne choisit pas de camp. Elle sert au joueur qui supporte le mieux une perte régulière : plus de PV en jeu, ou plus de soins en main."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu as des soins en main, l'adversaire n'en montre pas. Tu poses l'anneau."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Chaque tour complet, les six héros perdent des PV."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu soignes les tiens, l'adversaire ne peut pas en faire autant."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Quelques tours plus tard, un héros adverse affaibli tombe sans que tu l'aies attaqué."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle est face visible par sa propre description : c'est l'exception à la règle des passifs invisibles, l'adversaire la voit sans "
+       },
+       {
+        "t": "PIKA",
+        "carte": "pika"
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Elle agit une fois par tour complet, pas au tour de chaque joueur."
+       }
+      ],
+      [
+       {
+        "t": "Comme "
+       },
+       {
+        "t": "BARIL",
+        "carte": "baril_caustique"
+       },
+       {
+        "t": ", elle frappe les deux camps. Le baril s'épuise, l'anneau dure jusqu'à ce qu'il soit détruit."
+       }
+      ],
+      [
+       {
+        "t": "Un héros retiré de la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " n'est pas touché tant qu'il est absent."
+       }
+      ],
+      [
+       {
+        "t": "Détruit, l'anneau arrête tout de suite de faire perdre des PV."
+       }
+      ],
+      [
+       {
+        "t": "Éteinte par "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": ", elle est suspendue : les pertes de PV qui tombaient pendant ce temps sont perdues, elles ne sont pas rattrapées ensuite."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "anti_cheat",
+   "court": "ANTI-CHEAT",
+   "nom": "L'anti-cheat",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "L'anti-cheat se pose face visible et vise un héros adverse que tu choisis : pendant quelques tours, ce héros ne peut plus rien faire. C'est la carte pour sortir du jeu la menace du moment sans avoir à la tuer."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le prix, c'est le risque : de temps en temps, au hasard, le ban ne tombe pas sur le héros désigné mais sur un de tes propres héros, qui se retrouve bloqué à sa place."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu vois RHAE adverse prête à tout faire basculer. Tu poses l'anti-cheat face visible et tu la désignes."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le ban tombe bien sur RHAE : elle n'attaque plus pendant quelques tours, et tu en profites pour frapper ailleurs."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Une autre partie, tu la joues sur CLAKER adverse. Cette fois, le hasard retourne le ban contre ton camp, et c'est ton KINGSREQUIN qui le prend."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu as dépensé la carte pour bloquer ton propre héros."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle se pose obligatoirement face visible : la description l'impose, ce qui prime sur le choix libre de la face cachée. L'adversaire sait donc tout de suite qui est visé."
+       }
+      ],
+      [
+       {
+        "t": "Elle peut se retourner contre toi, et c'est voulu : le retournement relève du hasard pur, tu ne peux pas l'empêcher."
+       }
+      ],
+      [
+       {
+        "t": "C'est toi qui choisis le héros adverse visé. Quand le ban tombe sur ton camp, rien n'indique que le héros touché est tiré au hasard : c'est donc le joueur qui choisit, comme pour toute cible."
+       }
+      ],
+      [
+       {
+        "t": "Les héros ne font qu'attaquer, ce sont les joueurs qui jouent les cartes : un héros banni perd ses attaques, et son joueur continue de poser et de lancer ses cartes normalement."
+       }
+      ],
+      [
+       {
+        "t": "Un héros banni qui quitte la table, même un tour avec "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", revient sans aucun état : le ban est effacé."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : ce que le ban change à la charge de l'Ultime lié à ce héros."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "apero_zeddo",
+   "court": "APÉRO",
+   "nom": "Apéro chez Zeddo",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tous tes héros gagnent beaucoup d'Aura pendant le tour où tu la joues. Au tour suivant, ils perdent tous des PV."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est un gain immédiat payé plus tard. Elle se joue le tour où cette Aura sert vraiment, et quand tes héros ont assez de PV pour encaisser la suite."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues APÉRO : AZRAËL, CLAKER et WALLY gagnent beaucoup d'Aura ce tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu profites de ce tour pour pousser ton avantage."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant, tes trois héros perdent des PV."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "WALLY était déjà bas : il tombe, et c'est l'APÉRO qui l'a achevé, pas l'adversaire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "La perte de PV touche TOUS tes héros, sans exception. Compter les PV du plus faible avant de la jouer."
+       }
+      ],
+      [
+       {
+        "t": "Un héros retiré de la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " revient sans aucun bonus ni état : il perd l'Aura gagnée, et absent, il n'est lié à aucune carte, donc pas touché par la perte de PV."
+       }
+      ],
+      [
+       {
+        "t": "Si un de tes héros meurt pendant le tour de l'APÉRO, seul ce héros perd son Aura : les autres gardent la leur."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, le « ce tour » et le « tour suivant » se comptent à partir de son RETOURNEMENT, pas de sa pose."
+       }
+      ],
+      [
+       {
+        "t": "MONTAGE",
+        "carte": "montage_malef"
+       },
+       {
+        "t": " est un vrai rembobinage : les morts reviennent, les cartes jouées reviennent en main, l'énergie est rendue. Joué au tour qui suit la perte de PV, il l'annule avec tout le reste de ce tour. Si l'adversaire rembobine le tour de l'APÉRO, la carte revient dans ta main : elle n'a jamais été jouée, et la perte de PV n'a pas lieu."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet. Elle compte alors comme utilisée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "baril_caustique",
+   "court": "BARIL",
+   "nom": "Le baril de Caustique",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le baril se joue une fois, puis frappe seul au début de chacun des tours suivants, pendant plusieurs tours. Il ne fait aucune différence entre les camps : chaque héros sur la table encaisse, les tiens comme ceux d'en face. C'est une carte de position et non de finition ciblée : elle paie quand les héros adverses sont plus nombreux ou plus bas en PV que les tiens, et elle se retourne contre toi dans le cas inverse. Une fois posée, tu ne décides plus rien."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses le baril. Rien ne se déclenche encore ce tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au début du tour suivant, toute la table perd des PV, RHAE comprise."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour d'après, même chose. Un héros adverse tombe, mais AZRAËL n'a presque plus rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Dernier passage du baril : tu gagnes l'échange, de peu."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Tes propres héros encaissent au même titre. Un héros à bout de PV peut mourir de ton baril, et tu ne peux en exclure personne."
+       }
+      ],
+      [
+       {
+        "t": "Elle se déclenche au DÉBUT du tour, donc avant l'échange d'attaques."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, ses tours se comptent à partir du moment où elle est retournée."
+       }
+      ],
+      [
+       {
+        "t": "Deux barils en jeu en même temps cumulent leurs effets : chaque passage frappe pour les deux."
+       }
+      ],
+      [
+       {
+        "t": "BARIL DE SOINS",
+        "carte": "baril_soins"
+       },
+       {
+        "t": " change ce que fait un baril activé : il soigne le camp qui a BARIL DE SOINS dans ses passifs et blesse l'autre. Si les deux joueurs l'ont, le baril soigne tout le monde."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " n'a pas prise dessus puisqu'il ne vise que les PASSIFS. Un "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " adverse annule son effet, pas sa pose : la carte compte comme utilisée et part à la défausse."
+       }
+      ],
+      [
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " fait quitter la table à un héros pour un tour : pendant son absence il n'est pas touché, donc le passage du baril ne l'atteint pas ce tour-là."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "baril_soins",
+   "court": "BARIL DE SOINS",
+   "nom": "Le baril de soins",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tant que le baril de soins est dans tes passifs, tout baril activé sur la table te soigne au lieu de te blesser, et continue de blesser l'adversaire."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Si les deux joueurs l'ont dans leurs passifs, le baril soigne tout le monde. C'est un PASSIF qui ne fait rien par lui-même : sans baril activé sur la table, il ne produit aucun effet."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses "
+      },
+      {
+       "t": "BARIL",
+       "carte": "baril_caustique"
+      },
+      {
+       "t": ". Tes héros et ceux de l'adversaire prennent des dégâts."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire met le baril de soins dans ses passifs. Ton baril soigne maintenant ses héros et blesse les tiens."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, tu mets aussi le baril de soins dans tes passifs."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le baril soigne désormais tout le monde."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne profite qu'au camp qui l'a dans ses passifs : le baril soigne ce camp et blesse l'autre, quel que soit le joueur qui a posé le baril."
+       }
+      ],
+      [
+       {
+        "t": "Si les deux camps l'ont, plus personne n'est blessé par le baril."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne soigne rien elle-même : sa valeur dépend entièrement d'un baril activé sur la table."
+       }
+      ],
+      [
+       {
+        "t": "Un soin au-delà des PV max est perdu."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : il ne se pose jamais face cachée, mais reste invisible à l'adversaire. "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le suspend : pendant ce temps le baril te blesse à nouveau, et l'effet revient ensuite."
+       }
+      ],
+      [
+       {
+        "t": "C'est une carte de catégorie soin : "
+       },
+       {
+        "t": "STEAK HACHÉ",
+        "carte": "steak_meliodas"
+       },
+       {
+        "t": " la bloque."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "belle_bite",
+   "court": "BELLE BITE",
+   "nom": "Belle bite",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Belle bite est un passif qui ajoute de l'Aura à un de tes héros pendant quelques tours. C'est toi qui choisis le héros. Elle ne frappe rien et ne soigne rien : elle renforce un héros sur la durée, puis s'arrête."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses Belle bite sur AZRAËL : il gagne de l'Aura."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Pendant les tours qui suivent, AZRAËL garde ce bonus."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire ne voit pas le passif posé."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Une fois les tours écoulés, le bonus disparaît."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "C'est un PASSIF : il ne se pose jamais face cachée, mais l'adversaire ne le voit pas."
+       }
+      ],
+      [
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le SUSPEND : l'Aura revient après la suspension."
+       }
+      ],
+      [
+       {
+        "t": "L'effet est porté par le héros : s'il meurt, le bonus disparaît avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Un héros qui quitte la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " revient sans l'Aura : quitter la table annule tous les bonus, et pendant son absence aucune carte ne peut lui être liée."
+       }
+      ],
+      [
+       {
+        "t": "Deux Belle bite en jeu cumulent leurs effets."
+       }
+      ],
+      [
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": ", qui n'annule que les ACTIONS, n'a aucune prise sur elle."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : l'Aura va-t-elle bien à un de TES héros, ou la carte peut-elle viser un autre héros ? La description le dit, l'owner ne l'a pas encore confirmé."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "camion_raiky",
+   "court": "CAMION",
+   "nom": "Le camion de Raiky",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le camion se pose sur le plateau face visible et n'en bouge plus. À chaque tour, tu peux le relancer sur un héros adverse. Ce n'est pas une carte qu'on joue une fois : elle reste et se réutilise."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le prix, c'est le contrecoup. Chaque fois que tu t'en sers, un de tes propres héros, tiré au hasard, risque d'encaisser. Le risque et les dégâts du contrecoup montent à chaque utilisation et ne redescendent jamais de la partie."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 3 : tu poses le camion et tu le lances. Le héros adverse encaisse, rien ne te revient."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : tu le relances. Le contrecoup tombe, sur LILITH, que tu n'aurais pas choisie."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 6 : quatrième usage. Le contrecoup tape plus fort, et le risque est plus haut qu'à tous les usages précédents."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 7 : tu ne le lances pas. Le compteur ne redescend pas pour autant."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le compteur ne redescend jamais, même après des tours sans s'en servir. C'est ce qui la sépare de "
+       },
+       {
+        "t": "CODAGE",
+        "carte": "codage_requin"
+       },
+       {
+        "t": ", dont le taux ne bouge jamais."
+       }
+      ],
+      [
+       {
+        "t": "Tu ne choisis pas qui encaisse. Le contrecoup tombe sur un de tes héros au hasard, y compris celui qui a le moins de PV. Le hasard est pur."
+       }
+      ],
+      [
+       {
+        "t": "Elle se pose face visible, donc l'adversaire lit le compteur comme toi."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION et non un passif, bien qu'elle reste sur le plateau : c'est toi qui la déclenches."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "care_package",
+   "court": "CARE PACKAGE",
+   "nom": "Le care package",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le care package te fait piocher plusieurs cartes d'un coup. Tu en gardes une, celle qui t'arrange le plus, et les autres repartent se mélanger au hasard dans ta pioche."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est une carte de sélection : au lieu de subir la prochaine pioche, tu choisis parmi plusieurs. Elle ne donne en revanche aucune information sur la suite, puisque ce que tu n'as pas gardé peut revenir n'importe quand, ou jamais."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tes héros sont abîmés et tu n'as rien pour les soigner."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le care package : parmi les cartes piochées, il y a "
+      },
+      {
+       "t": "PIZZAS",
+       "carte": "pizzas"
+      },
+      {
+       "t": ". Tu la gardes."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Les deux autres repartent dans ta pioche, mélangées. Tu ne sais pas quand tu les reverras."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle te fait gagner une carte en main, et surtout la bonne : c'est de la sélection, pas de l'information."
+       }
+      ],
+      [
+       {
+        "t": "Les cartes non retenues sont remélangées au hasard. Tu ne sais pas ce que tu piocheras ensuite, et une carte que tu as vue peut sortir dès le tour suivant comme ne jamais revenir."
+       }
+      ],
+      [
+       {
+        "t": "Plus ta pioche est petite, plus les cartes remélangées ont de chances de revenir vite."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " peut l'annuler avant que tu choisisses."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "champi",
+   "court": "CHAMPI",
+   "nom": "Champi",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le joueur joue Champi sur l'adversaire. Pendant un tour, l'adversaire voit chacun de tes héros en double, et les dégâts qu'il inflige sont réduits de moitié."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est une carte défensive : elle achète un tour pendant lequel l'adversaire frappe moins fort et hésite sur ses cibles."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire s'apprête à lancer une grosse attaque sur LILITH."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues Champi : il voit six héros au lieu de trois, et ses coups ne font plus que la moitié de leurs dégâts."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, tout revient à la normale."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne dure qu'un tour. Posée face cachée, ce tour se compte à partir du retournement."
+       }
+      ],
+      [
+       {
+        "t": "Elle cumule deux effets distincts : la confusion sur les cibles et la réduction des dégâts."
+       }
+      ],
+      [
+       {
+        "t": "Proche du "
+       },
+       {
+        "t": "LEURRE",
+        "carte": "leurre"
+       },
+       {
+        "t": ", qui double un seul héros pour de bon, là où Champi double les trois pour un tour."
+       }
+      ],
+      [
+       {
+        "t": "❓ Non tranché : que se passe-t-il quand l'adversaire attaque un double ? Le coup est-il perdu, ou atteint-il quand même le vrai héros avec la réduction ?"
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " peut annuler son effet."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "chevreuil",
+   "court": "CHEVREUIL",
+   "nom": "POV le chevreuil",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le chevreuil pose STUN sur un héros adverse que tu désignes : ce héros n'attaque pas ce tour. Il n'y a ni condition ni taux, la carte fait exactement ce qu'elle annonce à chaque fois. Sa valeur est cette certitude et non son ampleur : elle retire un tour d'attaque, une seule fois, à un seul héros. On la garde donc pour le tour où ce héros précis ferait le plus de dégâts."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : le héros adverse le plus lourd est en position de frapper. Tu poses le chevreuil sur lui."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Même tour : il n'attaque pas. Les autres héros adverses, eux, attaquent normalement."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : le STUN est terminé, il frappe. Tu as gagné un tour, pas davantage."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle vise UN héros : les autres héros adverses attaquent sans être gênés."
+       }
+      ],
+      [
+       {
+        "t": "« Sans condition » veut dire qu'elle ne dépend d'aucun taux : elle ne peut pas rater."
+       }
+      ],
+      [
+       {
+        "t": "Un héros sous STUN n'attaque pas, et c'est tout ce qu'il perd. Les cartes sont jouées par les joueurs, pas par les héros : l'adversaire continue de poser et de lancer les siennes normalement."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, « ce tour » désigne le tour où elle est retournée."
+       }
+      ],
+      [
+       {
+        "t": "À ne pas confondre avec "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": ", qui annule l'effet d'une action adverse, ni avec "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", qui fait quitter la table à un héros pour un tour. Le chevreuil laisse le héros en place et ne lui retire que son attaque."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " n'a pas prise dessus, mais un "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " adverse peut en annuler l'effet."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "clavier_souris",
+   "court": "CLAVIER-SOURIS",
+   "nom": "Le clavier-souris",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tant qu'elle est en jeu, tes héros ont une chance d'esquiver une attaque. Aucune condition : elle marche dès qu'elle est posée, pour tous tes héros, du premier au dernier tour. C'est le plancher de l'échelle d'esquive du jeu, donc le taux le plus bas des trois, et en échange la seule qui n'a rien à réunir ni à attendre."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu la poses tôt : chacun de tes héros a désormais sa chance d'esquiver, quelle que soit la situation."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire attaque CLAKER, l'attaque se perd. Tu n'as rien fait pour, la carte a joué seule."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il pose "
+      },
+      {
+       "t": "AIM ASSIST",
+       "carte": "aim_assist"
+      },
+      {
+       "t": " : ton taux d'esquive tombe à zéro."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le clavier-souris reste sur la table, mais ne produira plus rien tant que l'aim assist est là."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Son taux est le plus bas des trois cartes d'esquive : "
+       },
+       {
+        "t": "RHUM",
+        "carte": "rhum"
+       },
+       {
+        "t": " monte plus haut mais demande de réunir les trois, et "
+       },
+       {
+        "t": "TENMA",
+        "carte": "tenma"
+       },
+       {
+        "t": " monte plus haut encore mais ne s'allume que quand il ne reste qu'un héros vivant."
+       }
+      ],
+      [
+       {
+        "t": "C'est la seule esquive sans condition, donc la seule qui protège aussi le début de partie, quand tes trois héros sont encore vivants."
+       }
+      ],
+      [
+       {
+        "t": "AIM ASSIST",
+        "carte": "aim_assist"
+       },
+       {
+        "t": " met toutes les esquives adverses à zéro : il l'éteint comme il éteint le rhum et le tenma."
+       }
+      ],
+      [
+       {
+        "t": "Les esquives se multiplient, elles ne s'additionnent pas : avec le clavier-souris et une autre carte d'esquive en jeu, on multiplie entre elles les chances de toucher qui restent après chaque esquive. L'esquive totale n'est donc jamais atteinte."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF de la catégorie soin alors qu'il ne rend aucun PV : il évite des dégâts au lieu d'en réparer. Comme tout passif, l'adversaire ne le voit pas. "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le désactive comme tout autre passif."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "cluster",
+   "court": "CLUSTER",
+   "nom": "Le cluster",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le cluster est une attaque sans cible : tu la joues, et c'est le hasard qui désigne chaque héros adverse touché. Elle frappe un nombre de fois fixé par la carte, en faisant moins de dégâts à chaque rebond. Chaque rebond part au hasard sur les héros adverses, et un même héros peut être touché plusieurs fois."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu échanges le contrôle de la cible contre la possibilité de toucher plusieurs héros avec une seule carte. Ce que tu gagnes ne se décide pas : il se constate."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le cluster. Il part sur RHAE, qui encaisse le coup plein."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il rebondit sur LILITH, pour moins."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le rebond suivant retombe sur RHAE, qui l'esquive : ce rebond est perdu."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le dernier rebond touche encore LILITH, pour moins encore."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu voulais achever MÉLIODAS, il n'a rien pris."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Tu ne choisis aucune cible : le héros adverse au bord de la mort peut ne jamais être touché, et celui qui est intact peut tout prendre."
+       }
+      ],
+      [
+       {
+        "t": "Un héros déjà touché peut être repris par un rebond suivant. Le hasard est pur, rien ne répartit les coups."
+       }
+      ],
+      [
+       {
+        "t": "Une esquive adverse peut faire rater un rebond. Le rebond esquivé est CONSOMMÉ : il ne se rejoue pas, et la carte frappe une fois de moins."
+       }
+      ],
+      [
+       {
+        "t": "AIM ASSIST",
+        "carte": "aim_assist"
+       },
+       {
+        "t": ", qui supprime toutes les esquives adverses, garantit donc que chaque rebond touche."
+       }
+      ],
+      [
+       {
+        "t": "Chaque rebond frappe moins fort que le précédent. La carte vaut par le nombre de rebonds qui touchent, pas par son premier coup."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, et il n'y a alors ni premier coup ni rebond."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "codage_requin",
+   "court": "CODAGE",
+   "nom": "Codage à la Requin",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le CODAGE se pose et ne quitte plus la table : il se relance à chaque tour et ne se défausse jamais. Une fois sur deux il blesse un héros adverse ; sinon c'est un des tiens, tiré au hasard, qui prend la moitié de ces dégâts."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le taux ne bouge jamais de la partie. Le pari est le même au premier usage qu'au dernier, ce qui en fait une source de dégâts régulière que tu peux planifier."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 2 : tu poses le CODAGE et tu le lances. Il touche un héros adverse."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 3 : tu le relances. Cette fois c'est RHAE, tirée au hasard chez toi, qui encaisse la moitié des dégâts."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : le taux n'a pas bougé, c'est toujours une fois sur deux."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 9 : la carte est toujours là, et tu ne peux pas t'en débarrasser."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le taux est fixe du début à la fin. C'est ce qui la sépare de "
+       },
+       {
+        "t": "CAMION",
+        "carte": "camion_raiky"
+       },
+       {
+        "t": ", dont le risque et le contrecoup montent à chaque usage et ne redescendent jamais."
+       }
+      ],
+      [
+       {
+        "t": "Le retour de flamme ne fait que la moitié des dégâts : perdre le pari coûte moins cher que le gagner ne rapporte."
+       }
+      ],
+      [
+       {
+        "t": "Tu ne choisis pas qui encaisse chez toi. Le hasard est pur et peut viser ton héros le plus bas."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne se défausse jamais : tu ne peux pas t'en débarrasser. L'adversaire, lui, peut la détruire, et son effet disparaît alors avec elle."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION et non un PASSIF, bien qu'elle reste en jeu : c'est toi qui la relances. La poser face cachée reste un choix, mais son déclencheur écrit prime sur la règle des cartes cachées : là où une carte cachée n'agit que tapée ou retournée, le CODAGE se relance à chaque tour, caché ou non."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "de_l_air",
+   "court": "DE L'AIR",
+   "nom": "On mange quoi à midi ? → De l'air",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "De l'air réduit l'énergie que l'adversaire gagne à son prochain tour. Sa réserve déjà constituée n'est pas touchée : seul le revenu de ce tour-là baisse."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle sert à ralentir un adversaire avant qu'il ait accumulé : moins de revenu, c'est moins de cartes posées ou moins d'énergie qui part en réserve pour l'Ultime, au choix de l'adversaire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire sort d'un tour où il a tout dépensé, sa réserve est presque vide. Tu joues De l'air."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "À son tour suivant, il gagne moins d'énergie que d'habitude."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il doit choisir : jouer sa carte d'attaque, ou mettre de côté pour l'Ultime de KINGSREQUIN. Il ne peut pas faire les deux."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le tour d'après, son revenu redevient normal."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne touche pas la réserve. Contre un adversaire qui a déjà beaucoup accumulé, c'est "
+       },
+       {
+        "t": "PP DU SAMEDI",
+        "carte": "pp_samedi"
+       },
+       {
+        "t": " qui fait mal, pas celle-ci."
+       }
+      ],
+      [
+       {
+        "t": "Elle agit sur le prochain tour de l'adversaire, pas sur celui où elle est jouée. À ne pas confondre avec "
+       },
+       {
+        "t": "EXPLICATION",
+        "carte": "explication_requin"
+       },
+       {
+        "t": ", qui rend ses cartes plus chères pendant le tour même."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, « son prochain tour » se compte à partir du retournement : c'est le premier tour de l'adversaire qui suit le moment où la carte est retournée."
+       }
+      ],
+      [
+       {
+        "t": "Contre un adversaire déjà au plafond de sa réserve, elle ne fait presque rien : le revenu qui dépasse le plafond est de toute façon perdu, elle ne retire donc que ce qu'il aurait pu garder."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "drone_crypto",
+   "court": "DRONE",
+   "nom": "Le drone de Crypto",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Montre la main de l'adversaire en direct. Deux usages au choix : la jouer une fois, et la main reste visible jusqu'à la fin du tour ; ou la poser sur la table, et la main reste visible jusqu'à ce que l'adversaire la détruise. Elle révèle aussi le vrai héros si un "
+      },
+      {
+       "t": "LEURRE",
+       "carte": "leurre"
+      },
+      {
+       "t": " est en jeu."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La carte ne touche ni les PV, ni l'Aura : elle n'achète que de l'information, et sa valeur tient à la décision qu'elle te permet de prendre."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu as une action forte en main et tu hésites à la poser tout de suite."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses le drone sur la table : tu vois "
+      },
+      {
+       "t": "FEUR",
+       "carte": "feur"
+      },
+      {
+       "t": " dans la main adverse."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu gardes ton action forte et tu joues une carte moins importante à la place."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire dépense son feur dessus. Tu vois sa main se vider, et au tour suivant ton action forte passe."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "La main se voit en direct : une carte que l'adversaire pioche ou joue pendant que le drone agit apparaît ou disparaît sous tes yeux."
+       }
+      ],
+      [
+       {
+        "t": "Jouée, elle agit jusqu'à la fin du tour. Posée sur la table, elle agit tant que l'adversaire ne la détruit pas."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne montre que la MAIN : les cartes adverses posées face cachée restent cachées, les passifs adverses aussi, et elle ne dit rien de ce qui reste dans le deck."
+       }
+      ],
+      [
+       {
+        "t": "Si un "
+       },
+       {
+        "t": "LEURRE",
+        "carte": "leurre"
+       },
+       {
+        "t": " est en jeu, elle te dit lequel est le vrai héros."
+       }
+      ],
+      [
+       {
+        "t": "Elle est rangée en ressource et ne produit ni dégâts ni soin."
+       }
+      ],
+      [
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, pas sa pose : le drone annulé ne montre rien et compte comme utilisé."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "explication_requin",
+   "court": "EXPLICATION",
+   "nom": "Requin qui tente d'expliquer",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Pendant le tour où tu la joues, chaque carte que l'adversaire pose lui coûte un peu plus d'énergie que d'habitude. Elle ne bloque rien : elle rend chaque coup plus cher."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle freine l'adversaire deux fois. Il pose moins de cartes ce tour, ou il les paie plus cher, et chaque énergie dépensée en plus ne va pas dans sa réserve : sa charge d'Ultime ralentit aussi."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a gardé de l'énergie pour enchaîner plusieurs cartes. Tu joues Explication."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Ce tour-là, chacune de ses cartes lui coûte plus cher : il n'en pose qu'une partie de ce qu'il prévoyait."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Pour poser quand même son attaque, il puise davantage, et sa réserve pour l'Ultime ne monte pas ce tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, ses cartes retrouvent leur prix normal."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne dure que le tour où elle est jouée. Jouée à un moment où l'adversaire ne pose rien, elle ne produit rien."
+       }
+      ],
+      [
+       {
+        "t": "Le surcoût s'applique à chaque carte, pas une seule fois : plus l'adversaire joue de cartes, plus il perd."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, « ce tour » désigne le tour où elle est retournée, pas celui où elle a été posée."
+       }
+      ],
+      [
+       {
+        "t": "À ne pas confondre avec "
+       },
+       {
+        "t": "DE L'AIR",
+        "carte": "de_l_air"
+       },
+       {
+        "t": ", qui réduit ce qu'il gagne au tour suivant, ni avec "
+       },
+       {
+        "t": "PP DU SAMEDI",
+        "carte": "pp_samedi"
+       },
+       {
+        "t": ", qui retire de l'énergie de sa réserve."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : retournée en cours de tour, les cartes que l'adversaire a déjà payées avant le retournement sont-elles concernées ?"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "feur",
+   "court": "FEUR",
+   "nom": "Quoi → FEUR",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "FEUR annule l'EFFET de la prochaine ACTION que l'adversaire joue pendant ce tour, quelle qu'elle soit. Elle annule l'effet, pas la pose. Tu la joues avant de savoir ce que tu vas annuler : c'est un pari sur le tour, pas une réponse à une carte déjà vue. Si l'adversaire ne joue aucune ACTION ce tour-là, elle est dépensée sans rien produire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu sens venir un gros coup, tu joues FEUR."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Même tour : l'adversaire joue un "
+      },
+      {
+       "t": "BARIL",
+       "carte": "baril_caustique"
+      },
+      {
+       "t": ". Son effet est annulé, rien ne se déclenche."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant : tu rejoues FEUR. Cette fois, l'adversaire ne joue que des PASSIFS, et rien n'est annulé."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le tour d'après, tu n'en as plus, et c'est le tour où il enchaîne deux ACTIONS."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne prend que la PREMIÈRE ACTION du tour : celle qui suit passe."
+       }
+      ],
+      [
+       {
+        "t": "Elle n'a aucune prise sur les PASSIFS. Pour ceux-là, c'est "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " qui les suspend."
+       }
+      ],
+      [
+       {
+        "t": "Tu ne choisis pas l'ACTION annulée : elle prend ce qui vient, y compris une carte sans importance jouée avant celle que tu craignais."
+       }
+      ],
+      [
+       {
+        "t": "Elle doit être en place AVANT l'ACTION adverse, puisqu'elle vise la prochaine : jouée après, elle ne rattrape rien."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, le « ce tour » se compte à partir de son RETOURNEMENT."
+       }
+      ],
+      [
+       {
+        "t": "Une carte dont l'effet se déclenche à la pose et qui est annulée compte comme utilisée : si elle est détruite, elle part à la défausse."
+       }
+      ],
+      [
+       {
+        "t": "Face à une carte qui reste en jeu et se relance, comme "
+       },
+       {
+        "t": "CAMION",
+        "carte": "camion_raiky"
+       },
+       {
+        "t": " ou "
+       },
+       {
+        "t": "CODAGE",
+        "carte": "codage_requin"
+       },
+       {
+        "t": ", la pose n'est pas annulée : la carte reste sur la table. Savoir si l'annulation couvre aussi ses relances suivantes n'est pas tranché."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "flatline_azrael",
+   "court": "FLATLINE",
+   "nom": "vous avez vu mon skin de flatline ?",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La flatline est un PASSIF qui agit à la pose : elle ajoute de l'Aura à un de tes héros tiré au hasard. Si ce héros meurt, la carte est détruite avec lui, et le bonus d'Aura disparaît."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu gagnes de l'Aura, mais tu ne décides pas qui en profite. La carte se paie donc en contrôle : le hasard désigne le porteur une fois pour toutes, parfois le héros dont tu n'avais pas besoin."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses la flatline. L'Aura part sur CLAKER."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu comptais sur RHAE, qui est celle qui frappe ce tour : elle n'a rien de plus."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire concentre ses coups sur CLAKER et le tue."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "La flatline est détruite avec lui, et son Aura disparaît."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Aucun choix n'est offert : la carte dit « au hasard », donc le héros qui reçoit l'Aura est tiré au hasard parmi tes héros, y compris quand un autre en avait bien plus besoin."
+       }
+      ],
+      [
+       {
+        "t": "Elle agit une seule fois, à la pose. Le porteur désigné le reste jusqu'à sa mort."
+       }
+      ],
+      [
+       {
+        "t": "Elle est rangée en attaque et ne rend aucun PV : elle ne touche que l'Aura."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : elle ne se pose jamais face cachée, mais reste invisible à l'adversaire."
+       }
+      ],
+      [
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " ne vise que les passifs adverses : la tienne n'est pas touchée par ton propre scan. Éteinte par un scan adverse, elle est suspendue : l'Aura disparaît le temps de l'effet et revient ensuite sur le même porteur."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "les_trois_chats",
+   "court": "LES TROIS CHATS",
+   "nom": "Pika, Spiro et Lily",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tant que ce passif est en jeu, "
+      },
+      {
+       "t": "PIKA",
+       "carte": "pika"
+      },
+      {
+       "t": ", "
+      },
+      {
+       "t": "SPIRO",
+       "carte": "spiro"
+      },
+      {
+       "t": " et "
+      },
+      {
+       "t": "LILY",
+       "carte": "lily"
+      },
+      {
+       "t": " ne partent plus à la défausse quand tu les joues : elles reviennent dans ta main. Une carte à usage unique devient une carte que tu peux rejouer à chaque tour."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "En pratique, elle sert SPIRO et LILY, les deux actions : un raté ou une attaque détournée disponible tour après tour."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses Les trois chats, puis tu joues LILY sur CLAKER adverse. LILY revient dans ta main."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, tu joues SPIRO sur AZRAËL adverse. SPIRO revient aussi."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Les tours d'après, tu alternes les deux, tant que ton énergie le permet."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire joue "
+      },
+      {
+       "t": "SCAN",
+       "carte": "scan_seer"
+      },
+      {
+       "t": " : pendant ce temps, la SPIRO que tu joues part à la défausse comme n'importe quelle carte."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "PIKA est un passif qui reste en jeu et ne part jamais à la défausse : elle est citée, mais n'est pas concernée en pratique."
+       }
+      ],
+      [
+       {
+        "t": "La carte revient en main, mais chaque nouvelle pose se paie en énergie. Rejouer SPIRO tous les tours, c'est de l'énergie qui ne va pas en réserve pour l'Ultime."
+       }
+      ],
+      [
+       {
+        "t": "C'est un passif : il ne se pose jamais face cachée, mais reste invisible à l'adversaire, sauf s'il a "
+       },
+       {
+        "t": "PIKA",
+        "carte": "pika"
+       },
+       {
+        "t": " en jeu."
+       }
+      ],
+      [
+       {
+        "t": "Éteinte par "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": ", elle est suspendue : une carte jouée pendant ce temps part à la défausse et ne revient pas ensuite. L'effet reprend quand SCAN s'arrête."
+       }
+      ],
+      [
+       {
+        "t": "Si SPIRO ou LILY est annulée par "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": ", FEUR annule l'effet, pas la pose : la carte compte comme jouée, et revient donc en main."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "leurre",
+   "court": "LEURRE",
+   "nom": "Le leurre",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Double un de tes héros en jeu : deux exemplaires identiques se présentent, dont un seul est vrai. Si l'adversaire attaque la fausse copie, elle est détruite et l'attaquant perd son tour. La carte n'ajoute ni PV ni dégâts : elle transforme chaque attaque sur ce héros en un choix que l'adversaire doit faire sans information, et lui fait payer l'erreur par son tour."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La copie reste tant que ni le vrai héros ni le leurre ne meurt : elle disparaît dès qu'elle est tapée, ou dès que le vrai héros meurt."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "AZRAËL est bas en PV, et c'est lui que l'adversaire vise."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le leurre : deux AZRAËL se présentent, un seul est vrai."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire attaque et tombe sur la fausse copie : elle disparaît, son tour est consommé, AZRAËL n'a rien pris."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "S'il était tombé sur le vrai, l'attaque aurait porté normalement, et la copie serait restée en place pour la prochaine attaque."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le tour n'est perdu que si l'attaquant vise la fausse copie. Viser la vraie est une attaque ordinaire, qui touche comme si le leurre n'existait pas, et le leurre reste."
+       }
+      ],
+      [
+       {
+        "t": "Aucune durée : la copie tient jusqu'à ce qu'elle soit tapée ou que le vrai héros meure."
+       }
+      ],
+      [
+       {
+        "t": "Ce n'est pas une esquive : "
+       },
+       {
+        "t": "AIM ASSIST",
+        "carte": "aim_assist"
+       },
+       {
+        "t": " met les chances d'esquive adverses à zéro, il ne dit rien des copies et ne désigne pas la vraie."
+       }
+      ],
+      [
+       {
+        "t": "Le "
+       },
+       {
+        "t": "DRONE",
+        "carte": "drone_crypto"
+       },
+       {
+        "t": " révèle le vrai héros quand un leurre est en jeu : contre lui, le leurre ne trompe plus personne."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : ce qui se passe quand un effet ciblé comme "
+       },
+       {
+        "t": "TUNNEL",
+        "carte": "tunnel_rina"
+       },
+       {
+        "t": " ou "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " désigne la copie plutôt que le héros."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : un "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " adverse en annule l'effet, pas la pose. Les copies ne se présentent pas, et la carte compte comme utilisée : elle part à la défausse."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "lifeline",
+   "court": "LIFELINE",
+   "nom": "Lifeline",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Lifeline reste en jeu et rend des PV à un de tes héros au début de chacun de tes tours, aussi longtemps qu'elle n'est pas retirée. C'est toi qui choisis le héros soigné. Elle ne renverse rien sur un tour isolé : sa valeur vient de l'accumulation, et elle augmente avec la durée de la partie. C'est la carte qui répond à l'usure, pas au gros coup."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses Lifeline. La régénération commence dès ton tour suivant."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Pendant plusieurs tours, elle rend des PV à RHAE, sans que tu aies rien à jouer."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire pose un "
+      },
+      {
+       "t": "BARIL",
+       "carte": "baril_caustique"
+      },
+      {
+       "t": ". La régénération ne couvre plus tout ce qui part."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il joue ensuite "
+      },
+      {
+       "t": "SCAN",
+       "carte": "scan_seer"
+      },
+      {
+       "t": " : tu perds le soin de ce tour, et le baril, lui, continue."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle soigne au début de TES tours, pas à ceux de l'adversaire : entre deux de tes tours, rien ne remonte."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : il ne se pose jamais face cachée, mais l'adversaire ne le voit pas."
+       }
+      ],
+      [
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " la SUSPEND : elle reprend ensuite, mais le soin qui tombait pendant la suspension est perdu."
+       }
+      ],
+      [
+       {
+        "t": "Un soin qui dépasse les PV max du héros est perdu : sur un héros déjà plein, le soin du tour ne sert à rien."
+       }
+      ],
+      [
+       {
+        "t": "C'est une carte de soin : "
+       },
+       {
+        "t": "STEAK HACHÉ",
+        "carte": "steak_meliodas"
+       },
+       {
+        "t": " posé sur le héros soigné la bloque pour ce tour, sans reprendre les PV déjà rendus."
+       }
+      ],
+      [
+       {
+        "t": "Deux Lifeline en jeu cumulent leurs soins."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : le héros soigné se choisit-il une fois, à la pose, ou à nouveau à chacun de tes tours ?"
+       }
+      ],
+      [
+       {
+        "t": "Elle efface l'usure plutôt qu'elle ne sauve d'un coup fort : elle se compare bien au passage répété d'un "
+       },
+       {
+        "t": "BARIL",
+        "carte": "baril_caustique"
+       },
+       {
+        "t": " ou au contrecoup du "
+       },
+       {
+        "t": "CAMION",
+        "carte": "camion_raiky"
+       },
+       {
+        "t": ", moins bien à une grosse frappe unique."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "lily",
+   "court": "LILY",
+   "nom": "Lily",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu lances LILY sur un héros adverse. Pendant quelques tours, ses attaques ne vont plus où son joueur le décide : chaque attaque part sur une cible tirée au hasard sur toute la table, ses propres alliés et lui-même compris."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "L'intention est de retourner le plus gros frappeur adverse contre son camp, en acceptant qu'il puisse encore tomber sur un de tes héros."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a un héros qui frappe fort. Tu lances LILY sur lui."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant, il attaque : le hasard désigne un de ses alliés, qui encaisse le coup."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour d'après, il attaque encore : cette fois le hasard tombe sur RHAE, dans ton camp."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Les tours passent, l'effet s'arrête et son joueur retrouve le choix de ses cibles."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "C'est une carte que TU joues. Le héros visé ne joue rien : il attaque seulement, et c'est la cible de ses attaques qui devient hasardeuse."
+       }
+      ],
+      [
+       {
+        "t": "Le hasard est pur et couvre toute la table : ton camp, son camp, et le héros visé lui-même, qui peut se frapper."
+       }
+      ],
+      [
+       {
+        "t": "Avec "
+       },
+       {
+        "t": "LES TROIS CHATS",
+        "carte": "les_trois_chats"
+       },
+       {
+        "t": ", LILY revient en main après usage et peut être rejouée. C'est le combo le plus fort écrit."
+       }
+      ],
+      [
+       {
+        "t": "L'effet est porté par le héros visé : s'il meurt, l'effet disparaît avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Un héros retiré de la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " revient sans aucun état : LILY ne le touche plus à son retour."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : l'effet s'applique-t-il aussi à son Ultime ?"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "manette",
+   "court": "MANETTE",
+   "nom": "La manette",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La manette reste en jeu et donne à TES héros une chance de coup critique, sans rien à activer ni à payer chaque tour. Elle ne change pas ce que tes héros font, elle augmente ce que leurs attaques rapportent les fois où le critique part. C'est la version à sens unique de cet effet : l'avantage va à ton camp seul."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 2 : tu poses la manette. CLAKER attaque, le critique ne part pas, l'échange est ordinaire."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 3 : KINGSREQUIN attaque, le critique part, le héros adverse tombe plus tôt que prévu."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : l'adversaire joue "
+      },
+      {
+       "t": "SCAN",
+       "carte": "scan_seer"
+      },
+      {
+       "t": ". Ce tour, la manette ne donne rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : elle refonctionne sans que tu aies à la rejouer."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Même effet que "
+       },
+       {
+        "t": "MOZAMBIQUE",
+        "carte": "mozambique"
+       },
+       {
+        "t": ", mais pour ton camp seulement. Le Mozambique le donne aux deux camps et doit donc afficher un taux plus élevé ; la manette se contente du sien."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : elle ne se pose jamais face cachée, mais l'adversaire ne la voit pas."
+       }
+      ],
+      [
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " désactive tous les passifs adverses : la manette est suspendue le temps de son effet, puis son bonus revient sans qu'elle soit rejouée."
+       }
+      ],
+      [
+       {
+        "t": "Rien à activer : une fois posée, elle fonctionne sans que tu aies à y revenir."
+       }
+      ],
+      [
+       {
+        "t": "Le critique relève d'un hasard pur : sur un tour donné, il peut ne jamais partir."
+       }
+      ],
+      [
+       {
+        "t": "Deux manettes en jeu cumulent leurs effets."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "miroir",
+   "court": "MIROIR",
+   "nom": "Le miroir",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le miroir se pose face cachée et attend la prochaine attaque de l'adversaire. Quand elle arrive, l'attaque n'atteint pas sa cible : elle repart vers le héros qui l'a lancée."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est une carte de piège. L'adversaire voit une carte posée sans savoir ce qu'elle fait, et plus il frappe fort, plus le retour lui coûte cher."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses le miroir face cachée."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant, AZRAËL adverse lance une grosse attaque sur un de tes héros."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le miroir se déclenche : l'attaque repart sur AZRAËL, qui encaisse ses propres dégâts."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le miroir a servi, il est consommé."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Il ne renvoie qu'une seule attaque, la prochaine. Une fois déclenché, il est fini."
+       }
+      ],
+      [
+       {
+        "t": "Il punit d'autant plus que l'attaque est forte : face à un adversaire qui frappe petit, il rapporte peu."
+       }
+      ],
+      [
+       {
+        "t": "Détruit avant la prochaine attaque adverse, il est perdu et son effet disparaît avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Comme "
+       },
+       {
+        "t": "TYPICAL OCTANE",
+        "carte": "typical_octane"
+       },
+       {
+        "t": ", il porte son propre déclencheur : il n'a pas besoin d'être tapé ou retourné pour agir."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " peut l'annuler au moment où tu le poses."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "montage_malef",
+   "court": "MONTAGE",
+   "nom": "Un montage de Malef",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "MONTAGE rembobine le tour précédent : les dégâts, les soins, les états et les morts sont annulés. Les cartes jouées pendant ce tour reviennent dans la main de leur joueur, et l'énergie dépensée est rendue. La partie repart comme si ce tour n'avait pas eu lieu."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle se garde pour le tour qui a mal tourné : un héros tombé, une grosse attaque encaissée. Elle rembobine aussi ce que TU as fait pendant ce tour."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire joue "
+      },
+      {
+       "t": "LILY",
+       "carte": "lily"
+      },
+      {
+       "t": " sur ton KINGSREQUIN, qui frappe MÉLIODAS au hasard. MÉLIODAS tombe."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Pendant ce même tour, tu as soigné RHAE avec une carte."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues MONTAGE : MÉLIODAS revient sur la table, et l'adversaire récupère LILY en main avec son énergie."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le soin sur RHAE est annulé, ta carte de soin revient dans ta main et ton énergie t'est rendue."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "C'est un vrai rembobinage : les morts reviennent, les cartes jouées reviennent en main, l'énergie est rendue."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne trie pas : tes soins, tes dégâts et tes cartes du tour précédent sont rembobinés avec ceux de l'adversaire."
+       }
+      ],
+      [
+       {
+        "t": "Face à "
+       },
+       {
+        "t": "APÉRO",
+        "carte": "apero_zeddo"
+       },
+       {
+        "t": ", elle peut effacer la perte de PV si elle vise le tour où cette perte a eu lieu."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, le « tour précédent » se compte à partir du moment où elle est retournée."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, et rien n'est rembobiné."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "mozambique",
+   "court": "MOZAMBIQUE",
+   "nom": "Mozambique here!",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le Mozambique se pose face visible et met toute la table en RAGE : chaque héros, le tien comme celui d'en face, a une chance d'infliger un coup critique."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La carte ne donne d'avantage à personne. Elle augmente la violence et l'imprévisibilité des échanges des deux côtés."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Comme elle reste sur le plateau à visage découvert, l'adversaire peut la détruire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses le Mozambique. WALLY frappe, le critique part."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant, c'est l'adversaire qui en profite, sur ton héros le plus faible."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu voudrais la retirer, mais tu ne peux pas : elle reste tant que personne ne la casse."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle arme aussi l'adversaire. C'est le cœur de la carte et non un effet de bord : elle sert quand tu es derrière et que tu as besoin que la table devienne imprévisible."
+       }
+      ],
+      [
+       {
+        "t": "Son taux de critique est plus élevé que celui de "
+       },
+       {
+        "t": "La manette",
+        "carte": "manette"
+       },
+       {
+        "t": ", qui donne le même effet à toi seul. Le supplément paie le fait d'armer l'autre camp. À taux égal, personne ne jouerait le Mozambique."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : la rage s'applique d'elle-même, personne ne l'active."
+       }
+      ],
+      [
+       {
+        "t": "Face visible, donc destructible. Elle peut ne durer qu'un tour."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "notre_kill",
+   "court": "NOTRE KILL",
+   "nom": "« C'est mon kill » / « NOTRE kill »",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu prends au hasard un des passifs de l'adversaire, et son effet s'applique aussi à ton camp. L'original reste chez l'adversaire : vous profitez tous les deux du même effet."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Les passifs adverses sont cachés, donc tu ne sais pas ce que tu vas récupérer. Tu joues la carte parce que l'adversaire a des passifs sur la table, pas parce que tu en vises un."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a posé deux passifs il y a quelques tours. Tu ne sais pas lesquels."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues NOTRE KILL. Le hasard désigne l'un des deux."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'effet s'applique désormais à ton camp aussi, et tu découvres ce que tu as pris."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Si c'était un passif qui ne sert qu'à celui qui le porte, le coup est bon. S'il était pensé contre ton camp, tu viens peut-être d'en hériter la version qui ne t'apporte rien."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le choix est au hasard, pur. Avec "
+       },
+       {
+        "t": "PIKA",
+        "carte": "pika"
+       },
+       {
+        "t": " en jeu, tu vois les passifs adverses avant de jouer la carte : tu sais ce qui peut tomber, mais tu ne choisis toujours pas."
+       }
+      ],
+      [
+       {
+        "t": "La copie dure tant qu'elle n'est pas utilisée."
+       }
+      ],
+      [
+       {
+        "t": "Elle dépend de l'original : si le passif copié disparaît de chez l'adversaire, la copie disparaît avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Si l'adversaire n'a aucun passif, la carte ne fait rien."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : peut-elle prendre un passif qui se déclare face visible, comme "
+       },
+       {
+        "t": "ANNEAU",
+        "carte": "anneau_raiky"
+       },
+       {
+        "t": " ? La description ne parle que de passifs cachés."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "perk",
+   "court": "PERK",
+   "nom": "Azraël met ta perk !",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu choisis un héros adverse : à chaque tour de l'adversaire, il a une chance d'oublier d'attaquer. L'effet dure quelques tours, et le hasard se rejoue à chaque fois."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle ne garantit donc rien : elle peut coûter à l'adversaire toutes les attaques du héros visé comme elle peut ne lui en coûter aucune. C'est du contrôle au hasard, et personne ne peut prévoir le tour suivant."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues la perk sur le héros adverse qui frappe le plus fort."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour de l'adversaire, ce héros oublie d'attaquer : tu gagnes un tour sans son coup."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au suivant, il attaque normalement, et la perk n'aura rien empêché."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour d'après, il oublie encore : ce héros a perdu deux de ses attaques."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Ce n'est pas un STUN : le héros n'est pas bloqué à coup sûr, il a seulement une chance d'oublier d'attaquer, recalculée à chaque tour."
+       }
+      ],
+      [
+       {
+        "t": "Un héros ne fait qu'attaquer, ce sont les joueurs qui jouent les cartes : quand il oublie, il ne perd que son attaque. L'adversaire joue ses cartes normalement."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne vise qu'un seul héros adverse : elle ralentit une menace et laisse les deux autres héros adverses intacts."
+       }
+      ],
+      [
+       {
+        "t": "L'effet est porté par le héros visé : s'il meurt, l'effet disparaît et la carte est détruite avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Si le héros visé quitte la table à cause de "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", il revient sans la perk : quitter la table annule tous ses bonus et ses états, et pendant son absence aucune carte ne peut lui être liée."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, les tours de l'effet se comptent à partir de son RETOURNEMENT."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, et la perk compte alors comme utilisée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "piercing",
+   "court": "PIERCING",
+   "nom": "Un piercing de petitpoissonnn",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "PIERCING donne de l'Aura à un héros allié pour toute la partie, et lui coûte des PV au moment où tu la joues."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le bonus n'expire pas : c'est un investissement, pas un coup. Sa valeur dépend du nombre de tours qu'il reste à jouer, donc la même carte vaut beaucoup au début de la partie et presque rien à la fin, pour le même coût en PV."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tôt dans la partie, tu joues PIERCING sur RHAE. Elle perd des PV et gagne de l'Aura pour le reste de la partie."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tours suivants : le bonus tient sans que tu aies à y revenir, et la carte est déjà rentabilisée."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Jouée dans les derniers tours, elle aurait coûté les mêmes PV pour très peu de bonus."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Si RHAE meurt, l'Aura part avec elle : il n'y a rien à récupérer."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Tu choisis le héros allié qui la reçoit."
+       }
+      ],
+      [
+       {
+        "t": "Le bonus est permanent, ce qui la sépare de "
+       },
+       {
+        "t": "STIM",
+        "carte": "stim_octane"
+       },
+       {
+        "t": " : même logique de vie échangée contre de la statistique, mais STIM expire à la fin du tour."
+       }
+      ],
+      [
+       {
+        "t": "Le coût en PV est immédiat et ne se rembourse pas tout seul. Un soin rend les PV, dans la limite des PV max, et le bonus d'Aura reste acquis."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne touche que l'Aura. "
+       },
+       {
+        "t": "AMITIÉ",
+        "carte": "push_3_teams"
+       },
+       {
+        "t": " donne aussi de l'Aura, mais à toute l'équipe et sans coût en PV."
+       }
+      ],
+      [
+       {
+        "t": "Plusieurs PIERCING sur le même héros cumulent leurs effets : l'Aura s'additionne, les PV perdus aussi."
+       }
+      ],
+      [
+       {
+        "t": "Le bonus meurt avec son porteur. Le poser sur un héros déjà bas est un pari sur sa survie, aggravé par le fait que la carte le descend encore."
+       }
+      ],
+      [
+       {
+        "t": "Un porteur qui quitte la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " perd tous ses bonus, celui-ci compris."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "pika",
+   "court": "PIKA",
+   "nom": "Pika",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Les passifs de l'adversaire sont cachés par défaut. Tant que PIKA est en jeu, tu les vois. C'est la seule carte qui donne cette information."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle ne frappe ni ne soigne : elle sert à savoir ce que l'adversaire a posé pour choisir tes cartes en conséquence."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses PIKA."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu vois que l'adversaire a un passif qui renforce ses soins."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu gardes tes attaques pour le tour où tu peux faire tomber un héros d'un coup, plutôt que de le blesser un peu à chaque tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Plus tard PIKA est détruite, et les passifs adverses redeviennent cachés."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne montre que les PASSIFS. Les actions posées face cachée restent cachées."
+       }
+      ],
+      [
+       {
+        "t": "Avant de jouer "
+       },
+       {
+        "t": "NOTRE KILL",
+        "carte": "notre_kill"
+       },
+       {
+        "t": ", elle te montre ce que la copie peut prendre. Le choix reste au hasard."
+       }
+      ],
+      [
+       {
+        "t": "C'est un passif : elle ne part jamais à la défausse, donc "
+       },
+       {
+        "t": "LES TROIS CHATS",
+        "carte": "les_trois_chats"
+       },
+       {
+        "t": " ne la concerne pas en pratique."
+       }
+      ],
+      [
+       {
+        "t": "Détruite, son effet disparaît avec elle."
+       }
+      ],
+      [
+       {
+        "t": "Une PIKA adverse est elle-même un passif caché : l'adversaire peut voir tes passifs sans que tu le saches."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "pizzas",
+   "court": "PIZZAS",
+   "nom": "10 pizzas géantes",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Les pizzas rendent des PV à tous tes héros d'un coup, sans condition et sans cible à choisir. Le soin arrive au moment où la carte s'active : à la pose si tu la joues face visible, ou quand tu la retournes ou qu'elle se fait taper si tu as choisi de la poser face cachée."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est le soin collectif du jeu : ce qu'il rapporte dépend du nombre de héros abîmés à l'instant où elle s'active. Sur tes trois héros entamés, elle rend beaucoup ; sur un seul héros touché, elle gâche presque tout."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : plusieurs de tes héros ont encaissé, aucun n'est au bord de la mort."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues les pizzas : ils remontent tous en même temps."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : l'adversaire doit recommencer son travail sur chacun d'eux."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Jouée un tour plus tôt, quand un seul héros était touché, elle n'aurait presque rien rendu."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le soin ne se concentre pas : tu ne peux pas tout donner au héros qui va mourir. C'est une carte qui répare une équipe, pas une carte qui sauve un héros."
+       }
+      ],
+      [
+       {
+        "t": "Elle soigne tous tes héros sur la table et seulement eux, au contraire de "
+       },
+       {
+        "t": "BARIL DE SOINS",
+        "carte": "baril_soins"
+       },
+       {
+        "t": ", dont l'inversion profite aussi à l'adversaire."
+       }
+      ],
+      [
+       {
+        "t": "Le soin est immédiat dès que la carte s'active, au contraire de "
+       },
+       {
+        "t": "RIZ",
+        "carte": "riz"
+       },
+       {
+        "t": ", qui attend la fin du tour suivant et se perd si la cible meurt avant."
+       }
+      ],
+      [
+       {
+        "t": "Elle est de catégorie soin : c'est une « carte de soin » au sens de "
+       },
+       {
+        "t": "STATUE",
+        "carte": "statue_mirage"
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " peut l'annuler, et c'est alors le soin de toute l'équipe qui est perdu d'un coup."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "pp_samedi",
+   "court": "PP DU SAMEDI",
+   "nom": "Les PP du samedi",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "PP du samedi retire de l'énergie de la réserve de l'adversaire, celle qu'il accumule d'un tour à l'autre et qui charge l'Ultime de ses héros. C'est l'arme anti-Ultime du jeu."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle punit le joueur qui a choisi de charger plutôt que de dépenser : plus il a mis de côté, plus la carte fait mal au bon moment."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Depuis plusieurs tours, l'adversaire joue peu et remplit sa réserve. Son LILITH est presque prête à lancer son Ultime."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues PP du samedi : sa réserve redescend, l'Ultime n'est plus à portée."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il doit recommencer à charger, ou dépenser ce qui lui reste sur des cartes ordinaires."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Face à un adversaire qui dépense tout à chaque tour, la même carte n'aurait presque rien retiré."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle touche la réserve déjà constituée, pas le revenu du tour suivant. C'est l'inverse de "
+       },
+       {
+        "t": "DE L'AIR",
+        "carte": "de_l_air"
+       },
+       {
+        "t": "."
+       }
+      ],
+      [
+       {
+        "t": "Sa valeur dépend du moment : elle vaut le plus juste avant que l'adversaire lance son Ultime, et presque rien sur une réserve vide."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, tu peux la retourner quand tu veux : attendre que la réserve adverse monte avant de la déclencher."
+       }
+      ],
+      [
+       {
+        "t": "Elle retire une partie de la réserve, pas toute la réserve. La quantité n'est pas encore calibrée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "raciste",
+   "court": "RACISTE",
+   "nom": "Raciste",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "RACISTE spécialise un de tes héros : il gagne beaucoup d'Attaque, mais il perd le choix de sa cible. Il tape le même héros adverse jusqu'à ce que celui-ci tombe."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le gain et le verrou vont ensemble, on ne prend pas l'un sans l'autre. C'est une carte de contrôle appliquée à ton propre camp : ce qu'elle contraint, c'est ton héros, pas l'adversaire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues RACISTE sur KINGSREQUIN, verrouillé sur le héros adverse le plus avancé."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, l'adversaire soigne cette cible. KINGSREQUIN continue de frapper dessus, il n'a plus le choix."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Ensuite, un autre héros adverse fait tout le travail, et ton héros renforcé ne peut pas le viser."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "La cible finit par tomber, et seulement là ton héros redevient libre."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "C'est la mort de la cible qui libère le verrou, pas la fin d'un tour. Tant qu'elle tient, le verrou tient."
+       }
+      ],
+      [
+       {
+        "t": "L'adversaire peut jouer contre la carte en soignant la cible verrouillée : il neutralise ton meilleur frappeur sans le toucher."
+       }
+      ],
+      [
+       {
+        "t": "Tu choisis le héros verrouillé et sa cible au moment où tu joues la carte. Mal visée, elle transforme un gain d'Attaque en handicap."
+       }
+      ],
+      [
+       {
+        "t": "Le bonus se cumule avec celui de "
+       },
+       {
+        "t": "STIM",
+        "carte": "stim_octane"
+       },
+       {
+        "t": ", et avec la part Attaque d'"
+       },
+       {
+        "t": "AMITIÉ",
+        "carte": "push_3_teams"
+       },
+       {
+        "t": ", qui elle n'impose aucun verrou."
+       }
+      ],
+      [
+       {
+        "t": "Si c'est ton héros verrouillé qui quitte la table avec "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", il revient sans le bonus ni le verrou : quitter la table annule tout."
+       }
+      ],
+      [
+       {
+        "t": "Si c'est la cible qui part chez le "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", aucune carte ne peut lui être liée pendant son absence : RACISTE ne peut donc pas la tenir pour cible tant qu'elle n'est pas revenue."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : quand la cible revient du véto, le verrou reprend-il sur elle, et ton héros garde-t-il son bonus d'Attaque entre-temps ?"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "rhum",
+   "court": "RHUM",
+   "nom": "Un petit cadeau de Zeddo",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le Rhum est un PASSIF À REGROUPER : il compte pour une seule carte dans ton deck mais en donne trois exemplaires. Chaque exemplaire en jeu coûte des PV à son porteur, régulièrement, et ne rapporte rien tant qu'il est seul. Quand les trois sont réunis, ils fusionnent en une seule carte, et c'est elle qui ouvre l'esquive. Toute la carte tient dans cet écart : tu paies d'abord, pendant plusieurs tours, et tu n'es remboursé que si tu vas au bout."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 2 : tu poses le premier Rhum. Pour l'instant, il ne fait que coûter des PV."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : le deuxième est en jeu. Toujours aucune esquive, et deux porteurs qui s'usent."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 6 : le troisième arrive, les trois fusionnent en une seule carte et l'esquive s'ouvre enfin."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 7 : l'adversaire joue "
+      },
+      {
+       "t": "AIM ASSIST",
+       "carte": "aim_assist"
+      },
+      {
+       "t": ". L'esquive tombe à zéro ; la perte de PV, elle, reste due."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Échelle d'esquive du jeu : "
+       },
+       {
+        "t": "CLAVIER-SOURIS",
+        "carte": "clavier_souris"
+       },
+       {
+        "t": " est le plancher et n'a aucune condition, le Rhum passe au-dessus mais exige les trois exemplaires, "
+       },
+       {
+        "t": "TENMA",
+        "carte": "tenma"
+       },
+       {
+        "t": " est le plus fort mais ne s'ouvre qu'à un seul héros restant. Plus la condition est dure, plus le taux monte."
+       }
+      ],
+      [
+       {
+        "t": "Trois exemplaires réunis fusionnent en une seule carte : ils ne restent pas trois cartes côte à côte."
+       }
+      ],
+      [
+       {
+        "t": "AIM ASSIST",
+        "carte": "aim_assist"
+       },
+       {
+        "t": " met toutes les esquives adverses à zéro : il annule donc ce que les Rhums réunis t'apportent, alors que la perte de PV, qui vient de la carte et non de l'esquive, continue."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : il ne se pose jamais face cachée, mais l'adversaire ne le voit pas. "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le suspend : l'esquive revient après, et une perte de PV qui tombait pendant ce temps est perdue."
+       }
+      ],
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte : si le porteur d'un Rhum meurt, ce Rhum s'éteint avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : qui porte chaque exemplaire, et si c'est toi qui le décides."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : une fois les trois fusionnés, la carte unique fait-elle perdre des PV à un seul porteur ou garde-t-elle la perte des trois exemplaires ?"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "riz",
+   "court": "RIZ",
+   "nom": "Mets-le dans du riz",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le riz soigne un de tes héros, mais le soin n'arrive qu'à la fin du tour suivant. Entre le moment où tu joues la carte et le moment où l'effet tombe, l'adversaire a le temps d'achever la cible."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Si elle meurt d'ici là, le soin part avec elle : il ne se reporte sur personne et la carte est dépensée pour rien. Elle se joue donc en avance, sur un héros qui va tenir, pas sur un héros qu'on essaie de sauver dans l'urgence."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 2 : tu joues le riz sur MÉLIODAS, qui a encaissé mais qui tient encore."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 3 : l'adversaire concentre tout sur lui et l'achève."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Fin du tour 3 : le soin devait tomber, il ne tombe sur personne."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu as perdu la carte et le héros dans le même tour."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un soin différé dont la cible meurt avant l'échéance est PERDU, il ne va pas à un autre héros. Cette carte fait précédent pour tout le jeu : tout effet différé se lit de la même façon."
+       }
+      ],
+      [
+       {
+        "t": "Elle vise un seul héros, au contraire de "
+       },
+       {
+        "t": "PIZZAS",
+        "carte": "pizzas"
+       },
+       {
+        "t": ", qui rend des PV à toute ton équipe au moment où tu la joues."
+       }
+      ],
+      [
+       {
+        "t": "Annoncer le soin renseigne l'adversaire : il sait quel héros tu tiens à garder, et il a un tour pour l'achever avant."
+       }
+      ],
+      [
+       {
+        "t": "Si la cible quitte la table pour un tour à cause de "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " pendant que le soin est en attente, le soin est perdu : elle revient sans aucun de ses bonus ni de ses états, ce soin différé compris."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " peut l'annuler avant que l'effet soit posé."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "revision_meliodas",
+   "court": "RÉVISION",
+   "nom": "Séance de révision avec Meliodas",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La révision se pose FACE CACHÉE et gagne de l'Attaque à chaque tour où elle reste ainsi. Toi seul lis le compteur, au dos de la carte : l'adversaire voit une carte cachée, sans savoir laquelle ni où en est le compteur. Tu la retournes au moment de ton choix, et l'Attaque accumulée se répartit alors AU HASARD entre tes héros, pour toute la partie. Si l'adversaire la détruit avant, tout ce qui était accumulé part avec elle. La carte ne demande donc qu'une décision, mais elle la repose à chaque tour : encaisser maintenant, ou laisser monter."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu la poses face cachée. Le compteur démarre, tu es le seul à le voir."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Les deux tours suivants, elle monte. Tu pourrais la retourner, tu attends."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire ne s'en occupe pas, elle monte encore."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour d'après, il la détruit. Tout ce que tu avais accumulé disparaît d'un coup, et tu n'as rien joué d'autre entre-temps."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "La répartition se fait AU HASARD entre tes héros : tu ne choisis pas qui reçoit quoi, y compris un héros sur le point de mourir. Le hasard est pur."
+       }
+      ],
+      [
+       {
+        "t": "L'Attaque répartie dure toute la partie : elle ne retombe pas après quelques tours."
+       }
+      ],
+      [
+       {
+        "t": "Un héros qui meurt emporte avec lui l'Attaque qu'il a reçue. Les autres gardent la leur."
+       }
+      ],
+      [
+       {
+        "t": "Un héros qui quitte la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " revient sans l'Attaque reçue : quitter la table annule tous les bonus."
+       }
+      ],
+      [
+       {
+        "t": "Comme toute carte cachée, elle s'active aussi quand elle se fait taper sans être détruite : un coup qui ne la détruit pas déclenche la répartition au compteur du moment."
+       }
+      ],
+      [
+       {
+        "t": "L'information est asymétrique. C'est l'inverse du "
+       },
+       {
+        "t": "CAMION",
+        "carte": "camion_raiky"
+       },
+       {
+        "t": ", posé face visible, dont l'adversaire lit le compteur aussi bien que toi."
+       }
+      ],
+      [
+       {
+        "t": "La destruction fait tout perdre, sans compensation ni report : un effet meurt avec la carte qui le porte."
+       }
+      ],
+      [
+       {
+        "t": "Retourner tôt assure un petit gain, retourner tard vise plus haut sans aucune garantie. C'est le seul arbitrage que la carte demande."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "scan_seer",
+   "court": "SCAN",
+   "nom": "Le scan de Seer",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le scan éteint tous les passifs adverses d'un coup, pour la durée écrite sur la carte. Il ne fait aucun dégât et ne détruit rien : il suspend chez l'adversaire tout ce qui tourne sans qu'il ait à l'activer."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Sa valeur dépend donc entièrement de ce que l'adversaire a en jeu. Contre une table couverte de passifs, elle vaut un répit sur plusieurs cartes à la fois ; contre un adversaire qui n'en a aucun, elle ne fait rien."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a "
+      },
+      {
+       "t": "MOZAMBIQUE",
+       "carte": "mozambique"
+      },
+      {
+       "t": " et "
+      },
+      {
+       "t": "BARIL DE SOINS",
+       "carte": "baril_soins"
+      },
+      {
+       "t": " dans ses passifs : sa table tourne sans lui."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le scan, les deux s'éteignent."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tant que l'effet dure, tu attaques sans que ses passifs jouent."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "La durée finit, et les deux reviennent avec leurs bonus : le scan n'a rien cassé."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Un passif éteint est SUSPENDU, pas retiré : ses bonus reviennent à la fin de l'effet. En revanche, un déclenchement qui tombait pendant la suspension est perdu, il ne se rattrape pas après."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne touche que les passifs ADVERSES. Les tiens continuent de tourner pendant tout l'effet, "
+       },
+       {
+        "t": "FLATLINE",
+        "carte": "flatline_azrael"
+       },
+       {
+        "t": " comprise."
+       }
+      ],
+      [
+       {
+        "t": "Les passifs adverses sont invisibles pour toi : tu joues le scan sans savoir exactement ce qu'il éteint. Face à un adversaire qui n'a encore aucun passif, elle est perdue."
+       }
+      ],
+      [
+       {
+        "t": "Posée face cachée, sa durée se compte à partir du moment où elle est retournée."
+       }
+      ],
+      [
+       {
+        "t": "MOZAMBIQUE",
+        "carte": "mozambique"
+       },
+       {
+        "t": " est un passif qui arme les DEUX camps. Si c'est l'adversaire qui l'a posé, la description ne dit pas si l'éteindre te prive aussi de ton critique : non tranché."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, pas sa pose. Aucun passif adverse ne s'éteint, et le scan compte comme utilisé."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "shop_loba",
+   "court": "SHOP DE LOBA",
+   "nom": "Le shop de Loba",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le shop prend une carte au hasard dans la main de l'adversaire et te la donne. L'effet compte double : tu gagnes une carte et il en perd une, sans que ni l'un ni l'autre ne choisisse laquelle. C'est la seule ressource que tu vas chercher directement chez l'adversaire, et son rendement dépend entièrement de ce qu'il a en main au moment où tu la joues."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire a plusieurs cartes en main, tu joues le shop."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu prends au hasard, et tu tombes sur un PASSIF que tu n'aurais jamais mis dans ton deck."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, tu le poses quand même, faute de mieux."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Quelques tours plus tard, sa main s'est remplie. Le même shop, joué à ce moment, aurait valu bien plus."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le hasard est pur : tu ne vises rien et tu ne peux pas aller chercher une carte précise."
+       }
+      ],
+      [
+       {
+        "t": "Le rendement dépend du moment : joué quand l'adversaire a peu de cartes en main, le shop rapporte peu."
+       }
+      ],
+      [
+       {
+        "t": "Si la main adverse est vide, rien n'est récupéré."
+       }
+      ],
+      [
+       {
+        "t": "Si la carte prise est une carte à regrouper comme "
+       },
+       {
+        "t": "RHUM",
+        "carte": "rhum"
+       },
+       {
+        "t": ", l'adversaire ne pourra plus jamais réunir ses trois exemplaires. Tu peux la garder : elle ne te sert à rien, sauf si tu as les mêmes dans ton deck, où elle t'en fait une de moins à attendre."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, et rien n'est pris. "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " n'a pas prise dessus."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "spiro",
+   "court": "SPIRO",
+   "nom": "Spiro",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu lances Spiro sur un héros adverse que tu choisis. Sa prochaine attaque a une chance de rater. Elle ne protège pas une cible précise : c'est l'attaquant qu'elle gêne, quelle que soit la victime qu'il vise."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle est pensée pour se jouer sur le héros qui s'apprête à frapper fort, afin que le coup qui compte ait une chance de tomber dans le vide."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "AZRAËL adverse est en position de porter une grosse attaque. Tu joues Spiro sur lui."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour suivant, il attaque ton WALLY. Le hasard tranche : l'attaque rate, WALLY n'encaisse rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Une autre partie, tu la joues sur MÉLIODAS adverse. Cette fois l'attaque passe quand même."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Spiro a été consommée dans les deux cas : elle ne vise que la prochaine attaque."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne compte que pour la PROCHAINE attaque du héros visé. Que l'attaque rate ou passe, l'effet est terminé."
+       }
+      ],
+      [
+       {
+        "t": "L'effet attend cette prochaine attaque indéfiniment : si le héros visé n'attaque pas pendant plusieurs tours, Spiro reste en place."
+       }
+      ],
+      [
+       {
+        "t": "Son raté se combine aux esquives de la même façon qu'elles se combinent entre elles : on multiplie les chances de toucher. Même empilé avec des esquives, un coup ne rate jamais à coup sûr."
+       }
+      ],
+      [
+       {
+        "t": "Avec "
+       },
+       {
+        "t": "LES TROIS CHATS",
+        "carte": "les_trois_chats"
+       },
+       {
+        "t": " en jeu, Spiro revient en main au lieu de partir à la défausse : tu peux la rejouer tour après tour."
+       }
+      ],
+      [
+       {
+        "t": "Si le héros visé quitte la table, même un tour avec "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", il revient sans aucun état : Spiro est effacée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "statue_mirage",
+   "court": "STATUE",
+   "nom": "La statue de Mirage",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "La STATUE est une carte à REGROUPEMENT : elle ne compte que pour une place dans ton deck, mais elle en donne trois exemplaires. Tant que les trois ne sont pas réunies et regroupées, elle ne fait strictement rien."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Une fois le regroupement complet, tes cartes de soin ne coûtent plus d'énergie. Elle ne soigne donc personne : elle rend ton économie de soin gratuite, ce qui change ce que tu peux enchaîner dans un même tour."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 2 : tu pioches une première STATUE. Aucun effet, tu la gardes."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : la deuxième arrive. Toujours aucun effet, et deux cartes immobilisées en main."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 9 : la troisième tombe. Tu regroupes, et à partir de là tes soins ne coûtent plus rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 10 : tu enchaînes plusieurs soins dans le tour sans dépenser d'énergie, ce que tu n'aurais pas pu payer avant."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Il n'y a pas d'effet partiel. Deux exemplaires réunis ne donnent rien du tout, et la carte reste morte jusqu'au troisième."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : une fois le regroupement fait, il n'y a rien à activer. Elle est donc éteinte par "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": ", qui désactive tous les passifs adverses le temps de son effet."
+       }
+      ],
+      [
+       {
+        "t": "L'effet porte sur le coût en énergie, pas sur la puissance des soins. Un soin gratuit soigne autant qu'avant."
+       }
+      ],
+      [
+       {
+        "t": "Le REGROUPEMENT économise une place de deck, mais c'est la pioche qui décide du moment où l'effet démarre : tu peux finir la partie sans jamais avoir réuni les trois."
+       }
+      ],
+      [
+       {
+        "t": "« Carte de soin » désigne la CATÉGORIE soin, pas l'effet : "
+       },
+       {
+        "t": "AMITIÉ",
+        "carte": "push_3_teams"
+       },
+       {
+        "t": " en fait partie et devient gratuite alors qu'elle ne rend aucun PV, et "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": ", rangée en contrôle, reste payante alors qu'elle soigne entièrement."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "steak_meliodas",
+   "court": "STEAK HACHÉ",
+   "nom": "Le steak haché de Meliodas",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tu désignes un héros adverse : pour ce tour, il ne reçoit ni Aura ni soin de son camp. La carte n'inflige aucun dégât, elle ouvre une fenêtre, celle où le héros visé ne peut plus être remonté ni renforcé par les siens. Elle se joue donc avant l'attaque, pour que les dégâts du tour restent inscrits."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le héros adverse d'en face est bas, mais l'adversaire le remonte à chaque tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le steak haché sur lui : ce tour, il ne recevra ni Aura ni soin des siens."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tes héros frappent. L'adversaire tente un soin, il ne l'atteint pas."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, la fenêtre est refermée et son camp peut de nouveau le soigner."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne fait aucun dégât. Sa valeur tient entièrement à ce que tu enchaînes dans le même tour."
+       }
+      ],
+      [
+       {
+        "t": "Elle coupe l'Aura autant que le soin, donc aussi ce qui renforce le héros et pas seulement ce qui le remonte. Et elle ne coupe que ce qui vient de SON camp : le texte vise le camp du héros désigné."
+       }
+      ],
+      [
+       {
+        "t": "Elle n'annule pas un soin déjà reçu : elle empêche seulement de le soigner à partir de là."
+       }
+      ],
+      [
+       {
+        "t": "Elle bloque toutes les cartes de catégorie soin, "
+       },
+       {
+        "t": "TOTEM",
+        "carte": "totem"
+       },
+       {
+        "t": " compris, et donc aussi le soin d'un passif comme "
+       },
+       {
+        "t": "LIFELINE",
+        "carte": "lifeline"
+       },
+       {
+        "t": " sur ce héros."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne dure que le tour où elle est jouée, ce qui en fait une carte d'ouverture et non une carte de fond de partie. Posée face cachée, ce tour est celui de son RETOURNEMENT."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, et la carte compte alors comme utilisée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "stim_octane",
+   "court": "STIM",
+   "nom": "Le stim d'Octane",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le STIM échange de la vie contre de la puissance, sur un seul tour. Tu choisis le héros allié : il perd des PV et gagne de l'Attaque pour ce tour uniquement."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "L'intention est de finir une cible maintenant plutôt que d'attendre le tour suivant, en acceptant de sortir plus fragile de l'échange. Le gain expire, la perte reste."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : un héros adverse est presque à terre, mais ton Attaque ne suffit pas à le finir ce tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le STIM sur AZRAËL. Il perd des PV, frappe plus fort, et la cible tombe."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : le bonus d'Attaque a disparu, la perte de PV non. AZRAËL encaisse la riposte en étant plus bas."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Si tu avais attendu, la cible aurait pu être soignée entre-temps."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Le bonus d'Attaque ne vaut que pour le tour où tu joues la carte. Le coût en PV, lui, ne revient pas tout seul : il faut un soin."
+       }
+      ],
+      [
+       {
+        "t": "C'est ce qui la sépare de "
+       },
+       {
+        "t": "PIERCING",
+        "carte": "piercing"
+       },
+       {
+        "t": ", qui paie aussi en PV mais dont le bonus tient pour la partie."
+       }
+      ],
+      [
+       {
+        "t": "Le coût se paie à la mise, que le héros arrive à frapper ou non (STUN posé ensuite, esquive adverse, cible déjà morte)."
+       }
+      ],
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte : si le héros meurt dans le tour, le bonus disparaît et la carte est détruite avec lui."
+       }
+      ],
+      [
+       {
+        "t": "Elle se cumule avec le gain d'Attaque de "
+       },
+       {
+        "t": "RACISTE",
+        "carte": "raciste"
+       },
+       {
+        "t": " : les deux visent la même statistique, l'un pour un tour, l'autre tant que la cible verrouillée tient."
+       }
+      ],
+      [
+       {
+        "t": "Si le héros quitte la table dans le tour (voir "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": "), le bonus est perdu : il revient sans aucun de ses bonus ni de ses états. La perte de PV, elle, est effacée par le soin total du VÉTO."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "tenma",
+   "court": "TENMA",
+   "nom": "Tenma",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tant qu'il ne te reste qu'un seul héros vivant sur la table, sa chance d'esquive est fortement accrue. C'est le haut de l'échelle d'esquive du jeu : le taux le plus élevé, contre la condition la plus dure, celle d'avoir déjà perdu tes deux autres héros. Elle ne sert donc à rien tant que tes trois héros sont debout, et ne s'allume qu'au moment où il n'en reste plus qu'un."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu ouvres avec tes trois héros sur la table. Tenma est en jeu, elle ne produit rien."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire met tout le monde à terre sauf RHAE : l'esquive de Tenma s'allume."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il attaque, l'attaque se perd, RHAE reste debout."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le "
+      },
+      {
+       "t": "TOTEM",
+       "carte": "totem"
+      },
+      {
+       "t": " ramène un de tes morts en jeu : tu n'es plus à un seul héros vivant, l'esquive s'éteint."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Son taux est le plus haut des trois cartes d'esquive : "
+       },
+       {
+        "t": "CLAVIER-SOURIS",
+        "carte": "clavier_souris"
+       },
+       {
+        "t": " est le plancher sans condition, "
+       },
+       {
+        "t": "RHUM",
+        "carte": "rhum"
+       },
+       {
+        "t": " monte plus haut mais demande de réunir les trois, Tenma monte plus haut encore et ne vit qu'à un héros restant."
+       }
+      ],
+      [
+       {
+        "t": "Cumulée avec une autre esquive, les esquives ne s'additionnent pas : on multiplie les chances de toucher des coups qui passent. Le 100 % d'esquive reste inatteignable."
+       }
+      ],
+      [
+       {
+        "t": "AIM ASSIST",
+        "carte": "aim_assist"
+       },
+       {
+        "t": " met toutes les esquives adverses à zéro : il l'éteint comme les deux autres, sans égard pour la difficulté de sa condition."
+       }
+      ],
+      [
+       {
+        "t": "La condition se vérifie en continu. Tout ce qui ramène un héros en jeu, comme le "
+       },
+       {
+        "t": "TOTEM",
+        "carte": "totem"
+       },
+       {
+        "t": ", la fait cesser d'être remplie."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le désactive le temps de son effet, au moment précis où il ne te reste plus qu'un héros."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "totem",
+   "court": "TOTEM",
+   "nom": "Le totem",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Une fois dans la partie, un de tes héros morts revient en jeu avec la moitié de ses PV, arrondie au supérieur. Elle ne soigne aucun vivant : elle rend à la table un héros qui avait été perdu. Comme c'est un PASSIF, elle se déclenche d'elle-même, sans que tu aies à la jouer, et elle ne se relance jamais."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "LILITH tombe, il ne te reste que deux héros sur la table."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu choisis de la ramener : le totem la remet en jeu, à la moitié de ses PV arrondie au supérieur."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Elle est debout, mais c'est désormais la cible la plus fragile de tes héros."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Si elle retombe, le totem ne la ramènera pas une seconde fois : il est dépensé."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne se déclenche qu'une fois de la partie. Après ça, la carte reste sans effet jusqu'à la fin."
+       }
+      ],
+      [
+       {
+        "t": "C'est toi qui choisis quel héros mort revient : la carte ne parle pas de hasard."
+       }
+      ],
+      [
+       {
+        "t": "Le héros revient à la moitié de ses PV arrondie au supérieur, donc plus bas que tes autres héros : il invite l'attaque du tour suivant."
+       }
+      ],
+      [
+       {
+        "t": "Ramener un héros en jeu éteint "
+       },
+       {
+        "t": "TENMA",
+        "carte": "tenma"
+       },
+       {
+        "t": ", dont la condition est de n'avoir qu'un seul héros vivant."
+       }
+      ],
+      [
+       {
+        "t": "C'est un PASSIF : il ne se pose jamais face cachée, mais reste invisible à l'adversaire."
+       }
+      ],
+      [
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": " le suspend le temps de son effet. Un retour qui aurait dû se déclencher pendant ce laps est perdu."
+       }
+      ],
+      [
+       {
+        "t": "C'est une carte de catégorie soin : tant que "
+       },
+       {
+        "t": "STEAK HACHÉ",
+        "carte": "steak_meliodas"
+       },
+       {
+        "t": " empêche ton camp de soigner, le totem est bloqué. Un héros déjà ramené avant le steak reste en jeu."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "traitre",
+   "court": "TRAÎTRE",
+   "nom": "Traître",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "TRAÎTRE retire des PV à un de tes héros et les donne en Attaque à un autre de tes héros. Tu fais payer UN héros pour en renforcer UN AUTRE."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est ce qui la sépare de "
+      },
+      {
+       "t": "STIM",
+       "carte": "stim_octane"
+      },
+      {
+       "t": ", où c'est le héros qui gagne l'Attaque qui perd lui-même les PV. Avec TRAÎTRE, le frappeur garde toute sa vie, et c'est un allié qui encaisse le prix."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "RHAE doit frapper ce tour, et WALLY a encore de la marge en PV."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues TRAÎTRE : WALLY perd des PV, RHAE reçoit ces PV en Attaque."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "RHAE attaque avec son bonus, sans avoir rien perdu de sa vie."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "WALLY, plus bas qu'avant, devient une cible plus facile pour l'adversaire."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Tu choisis les deux héros : celui qui paie et celui qui reçoit. Ce sont forcément deux héros différents de ton camp."
+       }
+      ],
+      [
+       {
+        "t": "Un héros qui a quitté la table par "
+       },
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " ne peut être lié à la carte pendant son absence : il ne peut ni payer ni recevoir."
+       }
+      ],
+      [
+       {
+        "t": "Le bonus d'Attaque meurt avec son porteur : si le héros renforcé tombe, le bonus disparaît."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, pas sa pose. La carte compte comme utilisée."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : combien de temps dure le bonus d'Attaque (ce tour, plusieurs tours, toute la partie) ?"
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : le héros qui paie peut-il mourir du prix, ou faut-il qu'il ait assez de PV pour être désigné ?"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "tunnel_rina",
+   "court": "TUNNEL",
+   "nom": "Encore une histoire de Rina...",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Pose l'état TUNNEL sur un héros adverse : pendant la durée inscrite sur la carte, il ne peut plus attaquer qu'un seul de tes héros, celui que tu choisis. Il continue de frapper, la carte ne lui retire pas son attaque, elle lui retire le choix de sa cible. L'intérêt est de rediriger ses dégâts vers celui de tes héros qui les encaisse le mieux, et de mettre tes autres héros hors de sa portée le temps de l'état."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "L'adversaire concentre ses attaques sur RHAE, qui est bas en PV."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses TUNNEL sur son attaquant et tu le braques sur KINGSREQUIN, qui tient debout."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour suivant, il frappe toujours aussi fort, mais il ne peut viser que KINGSREQUIN."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "RHAE n'est plus visée le temps de l'état. Quand l'état prend fin, l'adversaire peut de nouveau viser tous tes héros."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle n'empêche pas d'attaquer : un héros sous TUNNEL garde son attaque et ses dégâts, seule sa cible est imposée. TUNNEL et STUN sont deux états distincts, à ne pas confondre."
+       }
+      ],
+      [
+       {
+        "t": "L'état est posé sur le héros ADVERSE, mais ce qu'il contraint est sa cible chez toi : il te faut donc un héros capable d'encaisser ce que tu lui renvoies."
+       }
+      ],
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte : si le héros adverse sous TUNNEL meurt, l'état disparaît et la carte est détruite avec lui. Si la carte est détruite, l'état disparaît."
+       }
+      ],
+      [
+       {
+        "t": "Si c'est ton héros que l'adversaire est forcé d'attaquer qui meurt, l'état disparaît."
+       }
+      ],
+      [
+       {
+        "t": "VÉTO",
+        "carte": "veto"
+       },
+       {
+        "t": " fait quitter la table à un héros. Un héros sous TUNNEL qui quitte la table revient sans l'état : quitter la table annule tout. Un héros visé par le tunnel qui s'absente ne peut être lié à aucune carte pendant son absence, et l'attaquant sous TUNNEL ne peut pas le frapper."
+       }
+      ],
+      [
+       {
+        "t": "C'est une ACTION : "
+       },
+       {
+        "t": "FEUR",
+        "carte": "feur"
+       },
+       {
+        "t": " annule son effet, pas sa pose. L'état ne se pose pas, et la carte compte comme utilisée."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "typical_octane",
+   "court": "TYPICAL OCTANE",
+   "nom": "Typical Octane",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "TYPICAL OCTANE se pose face cachée sur la table et attend la prochaine pioche de l'adversaire. Si elle tient jusque-là, c'est toi qui prends la carte qu'il devait piocher."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Tout se joue sur la survie de la carte. Tant qu'elle est cachée, l'adversaire voit une carte posée sans savoir ce qu'elle fait. S'il la détruit avant sa pioche, elle est perdue et rien ne se passe. S'il la laisse, il perd une carte et tu en gagnes une."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 4 : tu poses TYPICAL OCTANE face cachée. L'adversaire voit une carte, sans savoir laquelle."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Il hésite à la frapper : ses héros ont mieux à faire ce tour."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Sa pioche suivante t'arrive à toi. Il joue avec une carte de moins que prévu."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Si à la place il l'avait détruite avant de piocher, elle serait partie sans effet."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle ne détourne qu'une seule pioche, la prochaine. Une fois déclenchée, elle est finie."
+       }
+      ],
+      [
+       {
+        "t": "La carte volée vient du deck adverse. Tu ne la choisis pas et elle n'est pas forcément utile pour toi."
+       }
+      ],
+      [
+       {
+        "t": "Sa force est d'être cachée : l'adversaire doit décider s'il gaspille une attaque sur une carte dont il ignore l'effet."
+       }
+      ],
+      [
+       {
+        "t": "Détruite avant la pioche adverse, elle est perdue et son effet disparaît avec elle."
+       }
+      ],
+      [
+       {
+        "t": "Elle ne vise aucun héros : la mort d'un héros ne lui fait rien perdre."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "viens_en_vocal",
+   "court": "VIENS EN VOCAL",
+   "nom": "« Viens en vocal »",
+   "type": "passif",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "VIENS EN VOCAL se pose face visible et reste sur la table. À chacun de ses tours, l'adversaire n'a qu'un temps limité pour jouer. Le décompte s'affiche sur la carte, et quand il est écoulé, son tour passe."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Elle ne touche ni les PV, ni l'Attaque, ni les héros : elle presse le joueur d'en face, qui doit décider vite ou perdre ce qu'il n'a pas eu le temps de jouer."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu poses VIENS EN VOCAL. Le décompte apparaît sur la carte."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Au tour de l'adversaire, il hésite entre plusieurs cartes et relit sa main."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Le décompte arrive au bout avant qu'il ait joué."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Son tour passe, et c'est de nouveau à toi."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "Elle est face visible par sa propre description : c'est l'exception à la règle des passifs invisibles, l'adversaire la voit et voit le décompte."
+       }
+      ],
+      [
+       {
+        "t": "Le décompte ne s'applique qu'aux tours de l'adversaire, jamais aux tiens."
+       }
+      ],
+      [
+       {
+        "t": "Quand le décompte est écoulé, c'est tout le reste du tour de l'adversaire qui passe."
+       }
+      ],
+      [
+       {
+        "t": "Éteinte par "
+       },
+       {
+        "t": "SCAN",
+        "carte": "scan_seer"
+       },
+       {
+        "t": ", elle est suspendue : l'adversaire joue sans décompte pendant ce temps, et l'effet revient ensuite."
+       }
+      ],
+      [
+       {
+        "t": "Question ouverte : un passif peut-il être détruit ? La réponse dira si l'adversaire a un moyen de se débarrasser de VIENS EN VOCAL."
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "cle": "veto",
+   "court": "VÉTO",
+   "nom": "Rendez-vous au véto",
+   "type": "action",
+   "blocs": [
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Ce qu'elle fait"
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "Le VÉTO fait quitter la table à un de tes héros pour un tour. Pendant ce tour, il ne peut ni agir ni être touché, et il revient ensuite complètement soigné, mais sans aucun de ses bonus ni de ses états."
+      }
+     ]
+    },
+    {
+     "type": "p",
+     "texte": [
+      {
+       "t": "C'est le seul retrait temporaire du jeu. Tu échanges un tour d'action contre la totalité des PV manquants : plus le héros est bas quand tu la joues, plus la carte rapporte."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "Exemple"
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 5 : LILITH est presque morte et l'adversaire a de quoi la finir au tour suivant."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tu joues le VÉTO. Elle quitte la table, et l'attaque qui la visait ne trouve plus personne."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 6 : tu joues avec un héros de moins. L'adversaire frappe ailleurs et tu encaisses."
+      }
+     ]
+    },
+    {
+     "type": "citation",
+     "texte": [
+      {
+       "t": "Tour 7 : LILITH revient avec tous ses PV, comme au début de la partie, mais sans aucun de ses bonus ni de ses états."
+      }
+     ]
+    },
+    {
+     "type": "h2",
+     "texte": [
+      {
+       "t": "À savoir"
+      }
+     ]
+    },
+    {
+     "type": "ul",
+     "items": [
+      [
+       {
+        "t": "L'absence se paie en tempo : le héros ne frappe pas, ne défend pas, et son Aura n'est pas sur la table pendant ce tour."
+       }
+      ],
+      [
+       {
+        "t": "Le soin est total, pas partiel. Jouée sur un héros à pleine vie, la carte ne sert qu'à esquiver un tour."
+       }
+      ],
+      [
+       {
+        "t": "Quitter la table annule TOUT : le héros revient sans aucun de ses bonus ni de ses états. Bonus d'Attaque ou d'Aura, bonus temporaire de "
+       },
+       {
+        "t": "STIM",
+        "carte": "stim_octane"
+       },
+       {
+        "t": ", STUN, TUNNEL, verrou de "
+       },
+       {
+        "t": "RACISTE",
+        "carte": "raciste"
+       },
+       {
+        "t": ", "
+       },
+       {
+        "t": "PERK",
+        "carte": "perk"
+       },
+       {
+        "t": ", soin différé du "
+       },
+       {
+        "t": "RIZ",
+        "carte": "riz"
+       },
+       {
+        "t": " en attente sur lui : tout est perdu. C'est le prix à payer pour le soin total."
+       }
+      ],
+      [
+       {
+        "t": "Pendant son absence, le héros n'est pas touché : un effet de zone comme le "
+       },
+       {
+        "t": "BARIL",
+        "carte": "baril_caustique"
+       },
+       {
+        "t": " ne l'atteint pas ce tour-là."
+       }
+      ],
+      [
+       {
+        "t": "Un effet meurt avec ce qui le porte : un effet dont le héros porteur MEURT disparaît, et une carte à porteur unique est détruite avec lui. Un héros retiré par le VÉTO n'est pas mort, mais il perd quand même tous ses bonus et ses états en quittant la table."
+       }
+      ],
+      [
+       {
+        "t": "Elle est rangée en contrôle et non en soin, bien qu'elle soigne entièrement. Une « carte de soin » désigne la catégorie : "
+       },
+       {
+        "t": "STATUE",
+        "carte": "statue_mirage"
+       },
+       {
+        "t": ", qui rend les cartes de soin gratuites, ne rend donc pas le VÉTO gratuit."
+       }
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

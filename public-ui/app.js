@@ -127,6 +127,7 @@ import * as pageDemoCarteAzrael from './pages/demo-carte-azrael.js';
 import * as pageGalerie from './pages/galerie.js';
 import * as pageTcg from './pages/tcg.js';
 import * as pageWallycard from './pages/wallycard.js';
+import * as pageWallycardRegles from './pages/wallycard-regles.js';
 
 // ── Fabrique de DOM ───────────────────────────────────────────────────────
 // `h()` vit dans `partage/dom.js` : l'overlay OBS en a besoin et ne peut pas
@@ -391,6 +392,7 @@ const ROUTES = {
   // devenue la Bibliothèque ; elle garde son module.
   '/wallycard':              { page: pageWallycard, plein: false },
   '/wallycard/bibliotheque': { page: pageTcg,       plein: false },
+  '/wallycard/regles':       { page: pageWallycardRegles, plein: false },
   // HORS de la barre d'onglets, mais PAS hors navigation : on y arrive par le
   // pied de page. Une page de crédits dans la nav principale prendrait la
   // place d'une page qu'on vient lire ; l'absente du menu reste atteignable,

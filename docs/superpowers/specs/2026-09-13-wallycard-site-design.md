@@ -73,11 +73,16 @@ Dans *Bibliothèque* :
 
 ## 4. Le livre des règles
 
-- Un export (extension de `scripts/sync_tcg_notion.py`) écrit dans le dépôt :
+- Un export écrit dans le dépôt. Livré le 2026-09-14 comme script À PART,
+  `scripts/export_regles_wallycard.py` (le sens inverse de la synchro, qui ne sait que pousser),
+  vers `public-ui/donnees/wallycard-regles.json` :
   - la page de règles, chapitre par chapitre ;
   - le corps des 51 fiches détaillées (« Ce qu'elle fait », « Exemple », « À savoir »).
 - Prérequis : partager la page Notion « TCG de la commu » avec l'intégration *syncro wallycard*,
   qui ne voit aujourd'hui que la base.
+  Tant que ce partage manque, l'export garde les chapitres déjà présents et rafraîchit les fiches.
+  Les chapitres du premier export ont été lus par le connecteur Notion (2026-09-14).
+- L'avertissement en tête de la page Notion n'est pas publié : il renvoie aux sections de travail.
 - La page *Règles* affiche les chapitres ; chaque carte citée mène à sa fiche.
 - On relance l'export à chaque modification des règles. La page affiche la date du dernier export.
 - Les sections « À trancher » et « Propositions » ne sont **pas** publiées : le livre ne dit que
