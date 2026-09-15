@@ -11,6 +11,7 @@ from loguru import logger
 
 from bot.intelligence.actions.handlers import enregistrer_actions
 from bot.core.music import MusicService
+from bot.discord import statut_stream
 from bot.discord.journal_feed import JournalDiscord
 
 load_dotenv()
@@ -458,11 +459,16 @@ async def main() -> None:
             _on_stream_transition(old, new)
             presence_stream.on_transition(old, new)
 
+        def _releve_du_stream(status: dict) -> None:
+            """Chaque relevé : l'état Twitch du bot, puis le salon de statut Discord."""
+            twitch_bot._stream_info = status
+            statut_stream.sur_releve(discord_bot, status)
+
         stream_watcher = StreamWatcher(
             twitch_api,
             streamer_name=_streamer_name,
             on_transition=_transition_du_stream,
-            on_poll=lambda status: setattr(twitch_bot, "_stream_info", status),
+            on_poll=_releve_du_stream,
             on_event=stream_feed.record,
         )
         # Après coup : le watcher se construit en prenant la présence en

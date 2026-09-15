@@ -35,6 +35,8 @@ _TWITCH_SEULEMENT = {
     "apex_watcher": "suit les parties pendant le live Twitch",
     "duel_runner": "les duels se paient en points de chaîne Twitch",
     "prediction_kills": "les paris engagent les points de chaîne Twitch",
+    "_stream_info": "l'état Twitch mis en cache ; Discord le lit via la référence "
+                     "croisée `_twitch_bot._stream_info`, jamais comme son propre attribut",
 }
 
 

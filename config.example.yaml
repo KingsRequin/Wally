@@ -74,6 +74,10 @@ discord:
   journal_moderation:
     salon_ids: []             # à la coupure : [1416714887849185340, 1105086620237049956]
     guild_ids: []             # à la coupure : [875421531415666698]
+  statut_stream:
+    salon_id: null            # allumé à la coupure (875443145813417984)
+    nom_live: "🟢𝗲𝗻-𝘀𝘁𝗿𝗲𝗮𝗺"
+    nom_hors_live: "🔴𝗵𝗼𝗿𝘀-𝘀𝘁𝗿𝗲𝗮𝗺"
   spam_detection:
     enabled: true
     exempt_channels: []

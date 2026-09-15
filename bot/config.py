@@ -164,6 +164,18 @@ class JournalModerationConfig:
 
 
 @dataclass
+class StatutStreamConfig:
+    """Salon renommé selon que le live est en cours — repris de `wally-discord`.
+
+    `salon_id` à None → désactivé. Les noms sont ceux du salon texte existant,
+    en caractères gras Unicode : Discord ne les réécrit pas.
+    """
+    salon_id: int | None = None
+    nom_live: str = "🟢𝗲𝗻-𝘀𝘁𝗿𝗲𝗮𝗺"
+    nom_hors_live: str = "🔴𝗵𝗼𝗿𝘀-𝘀𝘁𝗿𝗲𝗮𝗺"
+
+
+@dataclass
 class VoiceConfig:
     enabled: bool = False
     stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU) | "remote_stream" (GPU distant)
@@ -239,6 +251,7 @@ class DiscordConfig:
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
     salons_temporaires: SalonsTemporairesConfig = field(default_factory=SalonsTemporairesConfig)
     journal_moderation: JournalModerationConfig = field(default_factory=JournalModerationConfig)
+    statut_stream: StatutStreamConfig = field(default_factory=StatutStreamConfig)
 
 
 @dataclass
@@ -799,6 +812,7 @@ class Config:
             spam_raw = discord_raw.pop("spam_detection", {})
             salons_raw = discord_raw.pop("salons_temporaires", None) or {}
             journal_raw = discord_raw.pop("journal_moderation", None) or {}
+            statut_raw = discord_raw.pop("statut_stream", None) or {}
             llm_config = cls._build_llm_config(raw)
             # Build OpenAIConfig from raw or synthesize from llm config
             openai_raw = raw.get("openai")
@@ -822,6 +836,7 @@ class Config:
                     spam_detection=SpamDetectionConfig(**spam_raw),
                     salons_temporaires=SalonsTemporairesConfig(**salons_raw),
                     journal_moderation=JournalModerationConfig(**journal_raw),
+                    statut_stream=StatutStreamConfig(**statut_raw),
                 ),
                 twitch=TwitchConfig(
                     **twitch_raw,
