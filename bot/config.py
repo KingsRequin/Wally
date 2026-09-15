@@ -137,6 +137,11 @@ class SpamDetectionConfig:
     exempt_channels: list[int] = field(default_factory=list)
 
 
+def _listes_nulles_en_vides(section: dict, champs: tuple[str, ...]) -> dict:
+    """Copie de `section` où chaque champ liste écrit `null` devient `[]`."""
+    return {**section, **{c: [] for c in champs if c in section and section[c] is None}}
+
+
 @dataclass
 class SalonsTemporairesConfig:
     """Salon « créateur » : y entrer ouvre un salon vocal perso, supprimé vide.
@@ -823,10 +828,15 @@ class Config:
             cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
-            salons_raw = discord_raw.pop("salons_temporaires", None) or {}
-            journal_raw = discord_raw.pop("journal_moderation", None) or {}
+            # `clé: null` en YAML n'est pas couvert par le `default_factory` :
+            # une liste nulle rendait `x not in None` → TypeError à la lecture.
+            salons_raw = _listes_nulles_en_vides(
+                discord_raw.pop("salons_temporaires", None) or {}, ("noms",))
+            journal_raw = _listes_nulles_en_vides(
+                discord_raw.pop("journal_moderation", None) or {}, ("salon_ids", "guild_ids"))
             statut_raw = discord_raw.pop("statut_stream", None) or {}
-            bienvenue_raw = discord_raw.pop("bienvenue", None) or {}
+            bienvenue_raw = _listes_nulles_en_vides(
+                discord_raw.pop("bienvenue", None) or {}, ("guild_ids", "messages", "gifs"))
             llm_config = cls._build_llm_config(raw)
             # Build OpenAIConfig from raw or synthesize from llm config
             openai_raw = raw.get("openai")

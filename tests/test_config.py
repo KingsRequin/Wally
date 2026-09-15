@@ -219,3 +219,22 @@ def test_la_section_music_ne_contient_QUE_du_secret_venu_de_l_env():
     from bot.config import MusicConfig
 
     assert {f.name for f in fields(MusicConfig)} == {"extension_token"}
+
+
+def test_listes_nulles_des_sections_discord_portees_deviennent_vides(tmp_path):
+    """`guild_ids: null` en YAML donnait `x not in None` → TypeError à la
+    lecture (journal de modération, bienvenue)."""
+    raw = yaml.safe_load(yaml.dump(MINIMAL_CONFIG))
+    raw["discord"]["salons_temporaires"] = {"salon_createur_id": None, "noms": None}
+    raw["discord"]["journal_moderation"] = {"salon_ids": None, "guild_ids": None}
+    raw["discord"]["bienvenue"] = {"guild_ids": None, "messages": None, "gifs": None}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(raw))
+    config = Config.load(str(cfg_file))
+    d = config.discord
+    assert d.salons_temporaires.noms == []
+    assert d.journal_moderation.salon_ids == []
+    assert d.journal_moderation.guild_ids == []
+    assert d.bienvenue.guild_ids == []
+    assert d.bienvenue.messages == []
+    assert d.bienvenue.gifs == []

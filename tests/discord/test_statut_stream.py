@@ -15,8 +15,10 @@ def _nettoyer_taches_en_cours():
     laissée en vol par un test (ou son salon_id=10 partagé) polluerait le
     suivant."""
     ss._renames_en_cours.clear()
+    ss._derniers_avertissements.clear()
     yield
     ss._renames_en_cours.clear()
+    ss._derniers_avertissements.clear()
 
 
 def _bot(nom_actuel, *, salon_id=10, pret=True):
@@ -105,3 +107,53 @@ async def test_relance_une_fois_le_renommage_termine():
     ss.sur_releve(bot, {"live": True})
     await _laisser_tourner()
     assert salon.edit.await_count == 2
+
+
+async def test_echec_repete_averti_au_plus_une_fois_par_heure(monkeypatch):
+    """Une permission retirée fait échouer CHAQUE relevé : sans plafond, 60
+    WARNING identiques par heure."""
+    instant = [1000.0]
+    monkeypatch.setattr(ss, "_horloge", lambda: instant[0])
+    bot, salon = _bot("🔴off")
+    salon.edit.side_effect = RuntimeError("Missing Permissions")
+    dits: list[str] = []
+    jeton = ss.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
+        for decalage in (0, 60, 1800, 3599):
+            instant[0] = 1000.0 + decalage
+            ss.sur_releve(bot, {"live": True})
+            await _laisser_tourner()
+        assert len(dits) == 1
+        instant[0] = 1000.0 + 3600
+        ss.sur_releve(bot, {"live": True})
+        await _laisser_tourner()
+        assert len(dits) == 2
+        # Un échec DIFFÉRENT est dit tout de suite.
+        salon.edit.side_effect = RuntimeError("autre chose")
+        instant[0] += 60
+        ss.sur_releve(bot, {"live": True})
+        await _laisser_tourner()
+        assert len(dits) == 3
+    finally:
+        ss.logger.remove(jeton)
+    assert salon.edit.await_count == 6
+
+
+async def test_un_succes_efface_la_memoire_des_echecs(monkeypatch):
+    monkeypatch.setattr(ss, "_horloge", lambda: 1000.0)
+    bot, salon = _bot("🔴off")
+    dits: list[str] = []
+    jeton = ss.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
+        salon.edit.side_effect = RuntimeError("429")
+        ss.sur_releve(bot, {"live": True})
+        await _laisser_tourner()
+        salon.edit.side_effect = None
+        ss.sur_releve(bot, {"live": True})
+        await _laisser_tourner()
+        salon.edit.side_effect = RuntimeError("429")
+        ss.sur_releve(bot, {"live": True})
+        await _laisser_tourner()
+    finally:
+        ss.logger.remove(jeton)
+    assert len(dits) == 2
