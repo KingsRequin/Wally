@@ -279,7 +279,9 @@ bot/
 │   │                            #   providers (Azure TTS), quota, style, tools,
 │   │                            #   channel_memory, readiness, request, feed (SSE debug)
 │   ├── catchup.py · channel_health.py · guild_sync.py · presence.py
-│   └── emote_describer.py · message_split.py
+│   ├── salons_temporaires.py · journal_moderation.py · statut_stream.py · bienvenue.py
+│   │                            # ex-bot Node `wally-discord` (cf. « Serveur communautaire »)
+│   └── emote_describer.py · message_split.py · fiches.py (Components V2)
 ├── twitch/
 │   ├── bot.py · handlers.py · api.py · token_manager.py
 │   ├── commands/                # code.py · mood.py
@@ -564,6 +566,34 @@ redemptions (403 sinon). `twitch/recompenses.py` centralise création et mise à
 
 **Emotes** : les emotes globales ÉCRASENT celles de la chaîne dans un tri par fréquence ; une emote
 de sub utilisée sans droit sort en TEXTE BRUT.
+
+---
+
+## Serveur communautaire — ce que faisait `wally-discord`
+
+Le bot Node `wally-discord` utilisait **le même token** que Wally (deux sessions gateway pour une
+identité) et effaçait les slash commands globales à chaque démarrage. Fusionné le 2026-09-15
+(`docs/superpowers/specs/2026-09-15-fusion-wally-discord-design.md`) ; le Node est arrêté. Quatre
+modules, chacun sous `discord:` dans la config, chacun désactivable (`null` / liste vide) :
+
+- **`salons_temporaires.py`** : entrer dans le salon créateur ouvre un salon vocal perso, supprimé
+  vide. Le registre `salons_vocaux_temporaires` est la SEULE autorisation de supprimer : un salon
+  vocal ordinaire vide n'est jamais touché. ⚠️ Appelé depuis `WallyDiscord.on_voice_state_update`,
+  jamais par `@bot.event` — un second handler du même nom REMPLACE le premier (accueil vocal perdu).
+  Ménage au boot : une ligne n'est retirée que sur `NotFound` (ou 403 + serveur quitté), jamais
+  sur un simple absent du cache (panne Discord).
+- **`journal_moderation.py`** : fiches Components V2 (supprimé, modifié, suppression en masse,
+  vocal créé/supprimé) vers PLUSIEURS salons (`salon_ids`, deux serveurs). Les pièces jointes d'un
+  message supprimé sont re-téléversées (`to_file(use_cached=True)` : le `proxy_url` survit un
+  moment à la suppression) — sauf depuis un salon NSFW ; les spoilers restent spoilers.
+  ⚠️ `#logs` (`1105086620237049956`) est DANS le serveur observé : les salons de logs et leurs fils
+  sont exclus, sinon supprimer une carte la republie. ⚠️ Plafond V2 de 4000 caractères, prouvé par
+  des tests de pire cas.
+- **`statut_stream.py`** : renomme le salon selon le live, branché sur `on_poll` (pas
+  `on_transition`, muet au premier relevé). Discord : 2 renommages / 10 min → un seul en vol.
+- **`bienvenue.py`** : fiche V2 (message, GIF, fact traduite). MyMemory répond **200** quand son
+  quota est épuisé, avec l'avertissement à la place de la traduction : le corps se lit.
+  La fiche est consignée dans `self_trace` AVANT la perception cognitive de l'arrivée.
 
 ---
 
