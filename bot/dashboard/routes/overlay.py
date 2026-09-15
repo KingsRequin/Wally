@@ -65,7 +65,21 @@ _OVERLAY_FILES = (
     "vendor/canvas-confetti.js",
     "vendor/spin-wheel.js",
 )
+# 🚨 Les modules PARTAGÉS avec le site public, que l'overlay importe depuis
+# `/partage/`. Hors de l'empreinte, OBS ne se rechargeait pas quand ils
+# changeaient : le 2026-09-15, la carte du TCG entière avait été reprise (et
+# Wally savait montrer « Lilio en slip »), mais l'overlay tournait encore sur
+# l'ancien composant, qui ignorait la version ultime — l'outil répondait « ok »
+# et l'écran montrait Lilio habillé.
+_PARTAGE_DIR = Path(__file__).resolve().parents[3] / "public-ui" / "partage"
+_PARTAGE_FILES = ("tcg-carte.js", "tcg-carte.css", "dom.js")
 _version_cache: dict = {"stamp": None, "value": "0"}
+
+
+def _fichiers_overlay() -> list[Path]:
+    """Tout ce que la page de l'overlay charge, `static/` et `partage/`."""
+    return ([_STATIC_DIR / nom for nom in _OVERLAY_FILES]
+            + [_PARTAGE_DIR / nom for nom in _PARTAGE_FILES])
 
 # Les `<script src="/static/….js">` et les `<link href="/static/….css">` de la
 # page. Volontairement limité au code et au style : la vidéo de l'avatar pèse
@@ -96,19 +110,20 @@ def overlay_version() -> str:
     # bibliothèques de `vendor/` n'ait pas été déployée pour que la version
     # reste figée sur sa valeur en cache — donc plus aucune détection de mise à
     # jour, silencieusement, pour tous les autres fichiers.
-    def _stamp(name: str):
+    def _stamp(chemin: Path):
         try:
-            return (_STATIC_DIR / name).stat().st_mtime_ns
+            return chemin.stat().st_mtime_ns
         except OSError:
             return None
 
-    stamp = tuple(_stamp(name) for name in _OVERLAY_FILES)
+    fichiers = _fichiers_overlay()
+    stamp = tuple(_stamp(chemin) for chemin in fichiers)
     if stamp == _version_cache["stamp"]:
         return _version_cache["value"]
     digest = hashlib.sha1()
-    for name in _OVERLAY_FILES:
+    for chemin in fichiers:
         try:
-            digest.update((_STATIC_DIR / name).read_bytes())
+            digest.update(chemin.read_bytes())
         except OSError:
             pass
     _version_cache.update(stamp=stamp, value=digest.hexdigest()[:10])

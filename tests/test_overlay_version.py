@@ -188,3 +188,31 @@ def test_AUCUN_script_de_la_page_n_echappe_a_l_empreinte():
     charges = set(re.findall(r'(?:src|href)="/static/([^"?]+\.(?:js|css))"', html))
     oublies = sorted(charges - set(_OVERLAY_FILES))
     assert not oublies, f"chargés par la page mais hors de l'empreinte : {oublies}"
+
+
+def test_un_module_partage_modifie_recharge_l_overlay(tmp_path, monkeypatch):
+    """L'overlay importe la carte du TCG depuis `/partage/`. Hors de
+    l'empreinte, OBS gardait l'ancien composant après une reprise du rendu
+    (2026-09-15 : Lilio restait habillé alors que l'outil répondait « ok »)."""
+    import bot.dashboard.routes.overlay as mod
+
+    partage = tmp_path / "partage"
+    partage.mkdir()
+    carte = partage / "tcg-carte.js"
+    carte.write_text("// v1")
+    monkeypatch.setattr(mod, "_STATIC_DIR", tmp_path / "static")
+    monkeypatch.setattr(mod, "_PARTAGE_DIR", partage)
+    mod._version_cache.update(stamp=None, value="0")
+
+    v1 = mod.overlay_version()
+    carte.write_text("// v2")
+    assert mod.overlay_version() != v1
+
+
+def test_les_modules_partages_de_l_overlay_existent():
+    """Un nom faux dans la liste passerait inaperçu : un fichier absent compte
+    comme vide, et l'empreinte ne bougerait plus jamais pour lui."""
+    import bot.dashboard.routes.overlay as mod
+
+    for nom in mod._PARTAGE_FILES:
+        assert (mod._PARTAGE_DIR / nom).is_file(), nom
