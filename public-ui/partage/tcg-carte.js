@@ -456,7 +456,12 @@ export function carteHero(carte, options = {}) {
 
   const nom = h('span', { class: `chero-nom${nomFoil ? ' chero-nom--foil' : ''}`, text: c.nom });
   const nomBoite = h('div', { class: 'chero-nom-boite', 'data-z': '60', 'data-grossit': '1.02' }, nom);
+  // Le cadre est un nœud À PART et non la bordure de la fiche : la fiche
+  // déborde de 64 px sous sa découpe (cf. `.chero-fiche`), sa bordure et son
+  // ombre seraient tracées au bord du débord, hors de vue.
+  const ficheBord = h('div', { class: 'chero-fiche-bord', 'aria-hidden': 'true' });
   const fiche = h('div', { class: 'chero-fiche', 'data-z': '60' },
+    ficheBord,
     // 🚨 Une carte pas encore écrite le dit UNE fois : répéter une absence ne
     // la rend pas plus claire, elle la rend illisible.
     h('div', { class: 'chero-fiche-top' },
@@ -902,7 +907,7 @@ export function carteHero(carte, options = {}) {
     netteteHero();
     if (holo) holo.style.opacity = String(OPACITE_HOLO);
     vernis.style.opacity = String(OPACITE_VERNIS);
-    fiche.style.boxShadow = '0 16px 30px rgba(0,0,0,.55), 0 3px 0 rgba(18,16,12,.5)';
+    ficheBord.style.boxShadow = '0 16px 30px rgba(0,0,0,.55), 0 3px 0 rgba(18,16,12,.5)';
     nom.style.animation = 'chero-float 3.2s ease-in-out infinite';
     if (c.debordement) {
       libre.style.visibility = 'visible';
@@ -933,7 +938,7 @@ export function carteHero(carte, options = {}) {
     if (holo) holo.style.opacity = '0';
     setTimeout(netteteHero, 60);
     vernis.style.opacity = '0';
-    fiche.style.boxShadow = 'none';
+    ficheBord.style.boxShadow = 'none';
     Object.values(bords).forEach((el) => { el.style.opacity = '.25'; });
     nom.style.animation = 'none';
     // 🚨 Les jumeaux 2D ne reviennent PAS ici : le héros libre met 440 ms à se

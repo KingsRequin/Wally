@@ -512,39 +512,61 @@
 }
 
 .chero-fiche {
-  background: #f7ecd9;
-  border: 1.5px solid #12100c;
-  padding: 9px 11px 10px;
-  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s, box-shadow .45s ease .15s;
+  position: relative;
+  overflow: hidden;
+  /* VERRE DÉPOLI (design du 2026-09-15) : l'illustration se devine, floutée,
+   * sous le texte et les stats. */
+  background: rgba(10, 8, 12, .5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+  /* 🚨 La fiche DÉBORDE de 64 px à droite et en bas, et la découpe les rend :
+   * près du bord de sa boîte, le flou n'a plus d'image à mélanger. Le débord
+   * pousse ce bord-là hors de la découpe. Repris tel quel du design. */
+  padding: 10.5px 76.5px 75.5px 12.5px;
+  margin: 0 -64px -64px 0;
+  clip-path: inset(0 64px 64px 0);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
+}
+
+.chero-fiche-bord {
+  position: absolute;
+  left: 0; top: 0; right: 64px; bottom: 64px;
+  border: 1.5px solid rgba(247, 236, 217, .42);
+  pointer-events: none;
+  transition: box-shadow .45s ease .15s;
 }
 
 .chero-fiche-top {
+  position: relative;
   display: flex;
   justify-content: space-between;
   gap: 8px;
   font: 700 9px/1 var(--chero-mono);
   letter-spacing: .16em;
-  color: #a3532a;
+  color: #e1a947;
   margin-bottom: 6px;
 }
 
-.chero-fiche-top .chero-ult { color: #12100c; }
+.chero-fiche-top .chero-ult { color: #f7ecd9; }
 
 .chero-desc {
+  position: relative;
   margin: 0 0 7px;
   font: 500 12px/1.4 var(--chero-sans);
-  color: #12100c;
+  color: #f7ecd9;
   text-wrap: pretty;
 }
 
 .chero-ambiance {
+  position: relative;
   margin: 0 0 9px;
   font: italic 400 10.5px/1.4 var(--chero-sans);
-  color: #6b5a4e;
+  color: rgba(247, 236, 217, .66);
   text-wrap: pretty;
 }
 
 .chero-stats {
+  position: relative;
   display: flex;
   gap: 6px;
 }
@@ -562,16 +584,16 @@
 .chero-stat-aura { background: #4c1d95; }
 
 /* Après les trois règles de couleur et non avant : à spécificité égale, c'est
- * la POSITION dans le fichier qui décide. Le neutre est ENCRE : les pastilles
- * sont posées sur la fiche, qui est crème. */
+ * la POSITION dans le fichier qui décide. Le neutre est CLAIR : les pastilles
+ * sont posées sur le verre, qui est sombre. */
 .chero-desc--vide {
-  color: rgba(18, 16, 12, .5);
+  color: rgba(247, 236, 217, .66);
   font-style: italic;
 }
 
 .chero-stat--vide {
-  background: rgba(18, 16, 12, .1);
-  color: rgba(18, 16, 12, .45);
+  background: rgba(247, 236, 217, .12);
+  color: rgba(247, 236, 217, .5);
 }
 
 /* ── Le vernis ───────────────────────────────────────────────────────────
