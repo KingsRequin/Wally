@@ -149,10 +149,51 @@ async def test_menage_au_boot():
     assert db.ids == {2}
 
 
+async def test_menage_au_boot_une_panne_sur_un_salon_n_arrete_pas_les_autres():
+    casse = _salon(1, membres=[])
+    casse.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "interdit"))
+    vide = _salon(2, membres=[])
+    db = FauxDb({1, 2})
+    bot = _bot(db)
+    bot.salons = {1: casse, 2: vide}
+
+    await st.menage_au_boot(bot)
+
+    casse.delete.assert_awaited_once()
+    vide.delete.assert_awaited_once()
+    # Le salon en échec n'a pas pu être retiré du registre (l'exception
+    # a coupé `_supprimer` avant l'écriture), l'autre si.
+    assert db.ids == {1}
+
+
 async def test_une_panne_ne_remonte_jamais():
     guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(side_effect=RuntimeError("boom")))
-    await st.sur_changement_vocal(_bot(FauxDb()), SimpleNamespace(id=1, bot=False, display_name="A"),
+    db = FauxDb()
+    await st.sur_changement_vocal(_bot(db), _Membre(id=1, bot=False, display_name="A"),
                                   _etat(None), _etat(_salon(CREATEUR, guild=guild)))
+    # La panne doit avoir été atteinte (pas masquée plus tôt) et avalée.
+    guild.create_voice_channel.assert_awaited_once()
+    assert db.ids == set()
+
+
+async def test_enregistrement_db_echoue_supprime_le_salon_cree():
+    """`create_voice_channel` réussit mais `salon_temporaire_ajouter` casse :
+    sans nettoyage, le salon existe côté Discord mais jamais dans le
+    registre — orphelin pour toujours (ni `_supprimer_si_gere` ni
+    `menage_au_boot` ne le verraient)."""
+    nouveau = _salon(777)
+    guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(return_value=nouveau))
+    membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A")
+
+    class DbCasse(FauxDb):
+        async def salon_temporaire_ajouter(self, channel_id, guild_id):
+            raise RuntimeError("db hs")
+
+    db = DbCasse()
+    await st.sur_changement_vocal(_bot(db), membre, _etat(None),
+                                  _etat(_salon(CREATEUR, guild=guild)))
+    nouveau.delete.assert_awaited_once()
+    membre.move_to.assert_not_awaited()
 
 
 async def test_l_accueil_vocal_est_toujours_appele(monkeypatch):

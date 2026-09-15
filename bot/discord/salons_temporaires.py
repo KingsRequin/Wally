@@ -51,7 +51,14 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
         overwrites={member: discord.PermissionOverwrite(manage_channels=True, manage_roles=True)},
         reason="Salon vocal temporaire",
     )
-    await bot.db.salon_temporaire_ajouter(salon.id, createur.guild.id)
+    try:
+        await bot.db.salon_temporaire_ajouter(salon.id, createur.guild.id)
+    except Exception as e:  # noqa: BLE001 — sans ce retrait, le salon reste ORPHELIN : absent
+        # du registre, ni `_supprimer_si_gere` ni `menage_au_boot` ne le verront jamais.
+        logger.warning("salons temporaires : enregistrement en base échoué, salon « {n} » ({c}) retiré : {e!r}",
+                       n=salon.name, c=salon.id, e=e)
+        await _supprimer(bot, salon)
+        raise
     try:
         await member.move_to(salon)
     except discord.HTTPException as e:
@@ -84,7 +91,12 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
     if bot.config.discord.salons_temporaires.salon_createur_id is None:
         return
     try:
-        for channel_id in await bot.db.salons_temporaires():
+        ids = await bot.db.salons_temporaires()
+    except Exception as e:  # noqa: BLE001 — le ménage ne bloque pas le démarrage
+        logger.warning("salons temporaires : ménage au boot interrompu : {e!r}", e=e)
+        return
+    for channel_id in ids:
+        try:
             # `bot.get_channel` rend un type large (salon texte, catégorie,
             # DM…) ; seuls les salons vocaux nous intéressent ici, et le
             # registre ne contient jamais autre chose.
@@ -95,5 +107,5 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
             elif not salon.members:
                 await _supprimer(bot, salon)
                 logger.info("salons temporaires : « {n} » vide au boot, supprimé", n=salon.name)
-    except Exception as e:  # noqa: BLE001 — le ménage ne bloque pas le démarrage
-        logger.warning("salons temporaires : ménage au boot interrompu : {e!r}", e=e)
+        except Exception as e:  # noqa: BLE001 — un salon en échec ne doit pas arrêter le ménage des autres
+            logger.warning("salons temporaires : {c} : ménage échoué : {e!r}", c=channel_id, e=e)
