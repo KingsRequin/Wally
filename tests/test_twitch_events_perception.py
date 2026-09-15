@@ -186,11 +186,7 @@ async def test_le_cooldown_natif_est_une_information_pas_une_panne():
     payload = _raid_payload()
     payload.data.raider.id = "999"
 
-    # Isole le WARNING du contexte du raideur (hors sujet ici, cf.
-    # `_contexte_raideur`) de celui du shoutout, seul ce que ce test vérifie.
-    with patch("bot.twitch.events.social._contexte_raideur",
-               new=AsyncMock(return_value="")), \
-         patch("bot.twitch.events.social.note_act") as note_act_mock, \
+    with patch("bot.twitch.events.social.note_act") as note_act_mock, \
          patch("bot.twitch.events.social.logger") as logger_mock:
         await _declenche_et_attend_shoutout(bot, payload)
 

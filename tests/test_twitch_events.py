@@ -16,6 +16,16 @@ def make_bot(event_cfg=None):
     bot.prompts.build_system_prompt = MagicMock(return_value="sys")
     bot.llm.complete = AsyncMock(return_value="réponse")
     bot.twitch_api.send_automatic = AsyncMock()
+    # Réponse RÉALISTE de `TwitchAPI.get_channel_info` : l'API a répondu, elle ne
+    # connaît rien de cette chaîne (`{}`, pas `None` — `None` voudrait dire
+    # qu'elle n'a pas répondu du tout). Sans ce mock explicite, `await` sur
+    # l'attribut auto-généré d'un MagicMock lève, et CHAQUE test de raid loggue
+    # un WARNING de `_contexte_raideur` qu'il n'a rien demandé.
+    bot.twitch_api.get_channel_info = AsyncMock(return_value={})
+    # Éteint par défaut : seuls les tests du shoutout automatique du raid
+    # l'activent explicitement. Un MagicMock nu est toujours truthy — sans ce
+    # réglage, chaque test de raid déclenchait implicitement le shoutout.
+    bot.config.twitch.shoutout_raid = False
 
     default_cfg = {
         "follow": MagicMock(active=True, message="follow {username}"),
