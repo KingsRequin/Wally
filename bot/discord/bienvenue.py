@@ -33,6 +33,27 @@ FACT_INDISPONIBLE = "Impossible de récupérer une fact."
 TRADUCTION_INDISPONIBLE = "Traduction indisponible."
 
 
+def _motif_traduction_invalide(data: dict[str, Any]) -> str | None:
+    """MyMemory répond parfois 200 avec une erreur DANS LE CORPS : quota
+    gratuit épuisé (`quotaFinished`), `responseStatus` interne différent de
+    200 (int OU string selon les cas), ou un `translatedText` qui est en
+    réalité un message d'avertissement (`MYMEMORY WARNING…`) ou vide. Aucune
+    exception réseau ne le signale — seul le contenu trahit l'échec. Rend le
+    motif (pour le WARNING) si la traduction est inutilisable, sinon None.
+    """
+    if data.get("quotaFinished"):
+        return "quota MyMemory épuisé (quotaFinished=true)"
+    statut = data.get("responseStatus")
+    if statut is not None and str(statut) != "200":
+        return f"responseStatus={statut!s}"
+    traduction = (data.get("responseData") or {}).get("translatedText") or ""
+    if not traduction:
+        return "translatedText vide"
+    if traduction.startswith("MYMEMORY WARNING"):
+        return f"translatedText={traduction}"
+    return None
+
+
 async def _recuperer_fact(client: httpx.AsyncClient) -> tuple[str, str]:
     try:
         r = await client.get(_FACT_URL, timeout=_TIMEOUT)
@@ -44,10 +65,15 @@ async def _recuperer_fact(client: httpx.AsyncClient) -> tuple[str, str]:
     try:
         r = await client.get(_TRADUCTION_URL, params={"q": fact, "langpair": "en|fr"}, timeout=_TIMEOUT)
         r.raise_for_status()
-        return fact, r.json()["responseData"]["translatedText"]
+        data = r.json()
     except Exception as e:  # noqa: BLE001 — repli affiché dans la fiche
         logger.warning("bienvenue : traduction indisponible : {e!r}", e=e)
         return fact, TRADUCTION_INDISPONIBLE
+    motif = _motif_traduction_invalide(data)
+    if motif:
+        logger.warning("bienvenue : traduction indisponible : {motif}", motif=motif)
+        return fact, TRADUCTION_INDISPONIBLE
+    return fact, data["responseData"]["translatedText"]
 
 
 def _borner_externe(texte: str, limite: int = _MAX_TEXTE_EXTERNE) -> str:
@@ -63,11 +89,17 @@ def _borner_externe(texte: str, limite: int = _MAX_TEXTE_EXTERNE) -> str:
 
 
 async def accueillir(bot: "WallyDiscord", member: Any) -> None:
-    """Poste la fiche de bienvenue. Ne lève jamais."""
-    cfg = bot.config.discord.bienvenue
-    if member.bot or member.guild.id not in cfg.guild_ids:
-        return
+    """Poste la fiche de bienvenue. Ne lève jamais.
+
+    Tout — y compris la lecture de `cfg` et le garde bot/guild — vit DANS le
+    try : lire un attribut absent sur un `member` incomplet ne doit pas
+    laisser passer une exception, la garantie « ne lève jamais » doit tenir
+    de bout en bout.
+    """
     try:
+        cfg = bot.config.discord.bienvenue
+        if member.bot or member.guild.id not in cfg.guild_ids:
+            return  # bot, ou serveur hors de la liste activée : rien à faire
         # `Any` : `get_channel` rend un type large (salon texte, catégorie,
         # DM…) — le salon d'accueil est configuré par l'owner comme un salon
         # textuel.

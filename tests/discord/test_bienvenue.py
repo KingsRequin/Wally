@@ -102,7 +102,26 @@ async def test_aucun_salon_disponible_avertit_et_ne_publie_rien(monkeypatch):
     membre = _membre()
     membre.guild.system_channel = None
 
-    await bv.accueillir(bot, membre)
+    dits: list[str] = []
+    jeton = bv.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
+        await bv.accueillir(bot, membre)
+    finally:
+        bv.logger.remove(jeton)
+
+    salon.send.assert_not_awaited()
+    assert any(str(COMMU) in d for d in dits)
+
+
+async def test_membre_sans_guild_ne_leve_pas(monkeypatch):
+    """Un `member` incomplet (attribut `.guild` absent) est avalé, pas levé —
+    tout, y compris le garde bot/guild, vit dans le try de `accueillir`."""
+    bot, salon = _bot()
+    monkeypatch.setattr(bv, "note_act", lambda *_a, **_k: None)
+    membre = SimpleNamespace(id=1, bot=False, name="alice", mention="<@1>",
+                             display_avatar=SimpleNamespace(url="https://cdn/a.png"))
+
+    await bv.accueillir(bot, membre)  # ne doit pas lever
 
     salon.send.assert_not_awaited()
 
@@ -136,3 +155,49 @@ async def test_traduction_seule_en_panne():
         return httpx.Response(500)
     async with httpx.AsyncClient(transport=httpx.MockTransport(reponse)) as client:
         assert await bv._recuperer_fact(client) == ("Cats sleep.", bv.TRADUCTION_INDISPONIBLE)
+
+
+def _reponse_traduction(fact_body, *, translated="", statut=200, quota_finished=False):
+    def reponse(request):
+        if "uselessfacts" in str(request.url):
+            return httpx.Response(200, json=fact_body)
+        corps = {"responseData": {"translatedText": translated}, "responseStatus": statut}
+        if quota_finished:
+            corps["quotaFinished"] = True
+        return httpx.Response(200, json=corps)
+    return reponse
+
+
+async def test_traduction_quota_epuise_bascule_en_repli():
+    """MyMemory rend un 200 HTTP même quota épuisé — l'échec est DANS le corps."""
+    handler = _reponse_traduction(
+        {"text": "Cats sleep."},
+        translated="MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY",
+        statut=200,
+        quota_finished=True,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await bv._recuperer_fact(client) == ("Cats sleep.", bv.TRADUCTION_INDISPONIBLE)
+
+
+async def test_traduction_responsestatus_403_dans_un_corps_200_bascule_en_repli():
+    handler = _reponse_traduction(
+        {"text": "Cats sleep."}, translated="PLEASE SELECT TWO DISTINCT LANGUAGES", statut=403,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await bv._recuperer_fact(client) == ("Cats sleep.", bv.TRADUCTION_INDISPONIBLE)
+
+
+async def test_traduction_responsestatus_en_chaine_egalement_detecte():
+    """`responseStatus` peut être une chaîne (« 403 ») plutôt qu'un entier."""
+    handler = _reponse_traduction(
+        {"text": "Cats sleep."}, translated="PLEASE SELECT TWO DISTINCT LANGUAGES", statut="403",
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await bv._recuperer_fact(client) == ("Cats sleep.", bv.TRADUCTION_INDISPONIBLE)
+
+
+async def test_traduction_normale_est_bien_rendue():
+    handler = _reponse_traduction({"text": "Cats sleep."}, translated="Les chats dorment.", statut=200)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        assert await bv._recuperer_fact(client) == ("Cats sleep.", "Les chats dorment.")

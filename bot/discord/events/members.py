@@ -20,7 +20,13 @@ def register(bot: "WallyDiscord") -> None:
 
         # La fiche d'abord : elle est consignée dans self_trace, et la
         # cognition doit la voir quand elle décide si elle accueille à son tour.
-        await bienvenue.accueillir(bot, member)
+        # Défense en profondeur : `accueillir` ne lève jamais en théorie (son
+        # propre try/except), mais la perception cognitive ne doit JAMAIS
+        # dépendre de cette garantie pour continuer.
+        try:
+            await bienvenue.accueillir(bot, member)
+        except Exception as e:  # noqa: BLE001 — la perception cognitive doit continuer
+            logger.warning("bienvenue : accueillir a levé : {e!r}", e=e)
         await _member_join_context(bot, member)
 
     @bot.event
