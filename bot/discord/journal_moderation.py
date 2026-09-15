@@ -27,12 +27,19 @@ fermé), il en faut un NEUF à chaque `send()`.
 Deux gardes de contenu sur les pièces jointes : celles d'un salon NSFW ne
 sont JAMAIS republiées (le salon de logs n'a pas le même public), seulement
 listées ; celles postées sous spoiler repartent sous spoiler.
+
+La carte d'un message SUPPRIMÉ part en tâche de fond : elle attend deux
+secondes avant de lire le journal d'audit du serveur (Discord n'y écrit pas à
+l'instant de la suppression), et cette attente ne doit retarder qu'elle —
+jamais les autres événements du bot.
 """
 from __future__ import annotations
 
+import asyncio
 import difflib
 import io
 import re
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -57,6 +64,25 @@ _PREFIXE_SPOILER = "SPOILER_"  # la convention de nom de Discord pour une pièce
 # serveur — un nom hors de cet alphabet rend un `attachment://` mort.
 _CARACTERES_SURS = re.compile(r"[^A-Za-z0-9_.-]")
 
+_DELAI_AUDIT = 2.0             # Discord n'écrit pas dans l'audit à l'instant du geste
+_FENETRE_AUDIT = 10.0          # au-delà, une entrée n'est plus « la nôtre » par sa seule fraîcheur
+_ENTREES_AUDIT_LUES = 10       # les dernières entrées lues à chaque recoupement
+_MAX_COMPTEURS_AUDIT = 50      # compteurs mémorisés PAR SERVEUR (borne de la mémoire)
+_GHOST_PING_SECONDES = 300.0   # au-delà, un message mentionnant n'est plus un ghost ping
+_MAX_MENTIONS = 400            # budget du bloc « Mentionnait »
+
+#: Le dernier `extra.count` vu pour chaque entrée d'audit, par serveur :
+#: `{guild_id: {entry_id: count}}`. En RAM seulement — le perdre au
+#: redémarrage coûte au pire une fausse négative (« l'auteur ou un bot » là
+#: où un modo avait supprimé). Borné par serveur, les plus anciennes entrées
+#: évincées les premières : sans borne, un serveur actif ferait croître ce
+#: dictionnaire pour la durée de vie du process.
+_compteurs_audit: dict[int, OrderedDict[int, int]] = {}
+
+#: Les serveurs dont le journal d'audit nous est refusé et qui ont déjà été
+#: signalés : un WARNING par suppression noierait les logs.
+_audit_refuse: set[int] = set()
+
 
 class _PieceRecuperee(NamedTuple):
     """Les octets d'une pièce jointe téléchargée UNE fois, avant reconditionnement par salon."""
@@ -76,6 +102,19 @@ class _Telechargement(NamedTuple):
 _SANS_PIECE = _Telechargement([], [], [], [])
 
 
+def _epoch(dt: datetime) -> int:
+    """L'epoch Unix d'un datetime CONSCIENT du fuseau.
+
+    `dt` DOIT porter son `tzinfo` — sinon `ValueError` : un datetime naïf ne
+    dit pas à quel fuseau se réfère l'epoch calculé, et mieux vaut lever que
+    publier une heure fausse en silence. `bot/core/temps.py::maintenant()` et
+    les horodatages `created_at` / `edited_at` de discord.py le sont déjà.
+    """
+    if dt.tzinfo is None:
+        raise ValueError("un horodatage Discord exige un datetime conscient du fuseau (tzinfo posé)")
+    return int(dt.timestamp())
+
+
 def horodatage(dt: datetime) -> str:
     """Horodatage Discord natif : absolu puis relatif, dans le fuseau du LECTEUR.
 
@@ -93,10 +132,18 @@ def horodatage(dt: datetime) -> str:
     `bot/core/temps.py::maintenant()` et les horodatages `created_at` /
     `edited_at` de discord.py le sont déjà.
     """
-    if dt.tzinfo is None:
-        raise ValueError("horodatage() exige un datetime conscient du fuseau (tzinfo posé)")
-    epoch = int(dt.timestamp())
+    epoch = _epoch(dt)
     return f"<t:{epoch}:f> (<t:{epoch}:R>)"
+
+
+def _relatif(dt: datetime) -> str:
+    """Horodatage Discord RELATIF seul : « il y a 3 minutes ».
+
+    L'âge d'un message supprimé se lit d'un coup d'œil sous cette forme, là
+    où la date complète de `horodatage()` ferait doublon avec l'heure de
+    suppression affichée juste à côté.
+    """
+    return f"<t:{_epoch(dt)}:R>"
 
 
 def pied_utilisateur(user: Any) -> str:
@@ -541,7 +588,145 @@ async def publier_partout(salons: list[Any], construire: Callable[[_Telechargeme
                            c=getattr(salon, "id", "?"), e=e)
 
 
-async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
+class Recoupement(NamedTuple):
+    """Ce qu'a rendu la lecture du journal d'audit.
+
+    `lisible` sépare « le journal dit qu'il n'y a rien » de « on n'a pas pu
+    le lire » : l'appelant se tait dans le second cas au lieu d'affirmer une
+    absence qu'il n'a pas constatée.
+    """
+    entree: Any | None
+    lisible: bool
+
+
+async def entree_audit(guild: Any, action: Any, *, cible_id: int, salon_id: int | None = None,
+                       fenetre: float = _FENETRE_AUDIT,
+                       horloge: Callable[[], datetime] = maintenant) -> Recoupement:
+    """Recoupe un geste de modération avec le journal d'audit du serveur.
+
+    Discord ne relie AUCUNE entrée d'audit à l'objet touché (message, membre) :
+    la seule méthode est de lire les dernières entrées de `action` et de
+    retenir la plus récente qui vise `cible_id` (et `salon_id`, quand l'action
+    en porte un) assez fraîchement pour être la nôtre. Deux critères, l'un OU
+    l'autre :
+
+    - l'entrée a été créée il y a moins de `fenetre` secondes ;
+    - son `extra.count` a AUGMENTÉ depuis la dernière lecture. Discord
+      REGROUPE en effet les suppressions de messages : un même modo qui
+      supprime un deuxième message du même auteur dans le même salon n'ouvre
+      pas de nouvelle entrée, il incrémente le compteur de la précédente —
+      sans cette comparaison, la deuxième suppression paraîtrait non tracée
+      dès que l'entrée a dépassé `fenetre`. Les actions sans compteur (kick,
+      ban, modification de membre) ne jouent donc que sur la fraîcheur.
+
+    Générique par construction : `action` et `cible_id` suffisent, `salon_id`
+    ne filtre que si on le passe. L'appelant décide du délai d'attente avant
+    l'appel — il n'est pas le même pour une suppression de message et pour un
+    départ de membre.
+
+    Ne lève JAMAIS. Journal illisible (permission « Voir les logs du serveur »
+    manquante, serveur hors cache, API en panne) → `lisible=False`, et un seul
+    WARNING par serveur pour la permission : un par geste noierait les logs.
+    """
+    if guild is None:
+        return Recoupement(None, False)
+    entrees: list[Any] = []
+    try:
+        async for entree in guild.audit_logs(limit=_ENTREES_AUDIT_LUES, action=action):
+            entrees.append(entree)
+    except discord.Forbidden as e:
+        if guild.id not in _audit_refuse:
+            _audit_refuse.add(guild.id)
+            logger.warning("journal de modération : journal d'audit refusé sur le serveur {g} "
+                           "(permission « Voir les logs du serveur » manquante ?) — plus "
+                           "d'avertissement pour ce serveur : {e!r}", g=guild.id, e=e)
+        return Recoupement(None, False)
+    except Exception as e:  # noqa: BLE001 — l'audit est un CONFORT, la carte part sans lui
+        logger.warning("journal de modération : journal d'audit illisible sur le serveur {g} : {e!r}",
+                       g=getattr(guild, "id", "?"), e=e)
+        return Recoupement(None, False)
+
+    memoire = _compteurs_audit.setdefault(guild.id, OrderedDict())
+    instant = horloge()
+    retenue: Any | None = None
+    for entree in entrees:
+        extra = getattr(entree, "extra", None)
+        compte = getattr(extra, "count", None)
+        connu = memoire.get(entree.id)
+        if isinstance(compte, int):
+            memoire[entree.id] = compte
+            memoire.move_to_end(entree.id)   # vu le plus récemment : évincé en dernier
+        # La boucle continue APRÈS une correspondance : les compteurs des
+        # entrées suivantes doivent rester à jour, sinon la prochaine
+        # suppression les croira toutes incrémentées.
+        if retenue is not None or getattr(entree.target, "id", None) != cible_id:
+            continue
+        if salon_id is not None and getattr(getattr(extra, "channel", None), "id", None) != salon_id:
+            continue
+        fraiche = (instant - entree.created_at).total_seconds() < fenetre
+        incremente = isinstance(compte, int) and connu is not None and compte > connu
+        if fraiche or incremente:
+            retenue = entree
+    while len(memoire) > _MAX_COMPTEURS_AUDIT:
+        memoire.popitem(last=False)
+    return Recoupement(retenue, True)
+
+
+def _ligne_supprime_par(recoupement: Recoupement) -> str:
+    """Le fragment « · **Supprimé par** … » de la carte, ou "" si on ne sait rien.
+
+    Journal illisible : aucune ligne — affirmer quoi que ce soit serait
+    inventer. Lisible mais sans entrée : Discord ne journalise JAMAIS la
+    suppression par l'auteur lui-même ni par un bot (discord-api-docs #656,
+    #1611), et c'est en soi l'information.
+    """
+    if not recoupement.lisible:
+        return ""
+    if recoupement.entree is None:
+        return " · **Supprimé par** l'auteur ou un bot (Discord ne le trace pas)"
+    modo = getattr(recoupement.entree, "user", None)
+    if modo is None:
+        return ""   # entrée trouvée mais son auteur n'est plus résolvable : on ne nomme personne
+    return f" · **Supprimé par** <@{modo.id}>"
+
+
+def _mentions_rendues(msg: Any) -> str:
+    """Les mentions d'un message supprimé, rendues sans notifier personne.
+
+    `raw_mentions` / `raw_role_mentions` donnent les ids même quand le membre
+    ou le rôle n'est plus résolvable en cache. `<@id>` et `<@&id>` s'affichent
+    en clair chez le lecteur, et l'envoi passe déjà en `AllowedMentions.none()` :
+    personne n'est notifié une seconde fois. `@everyone` / `@here` n'ont pas
+    de forme d'id — ils partent en TEXTE, `@` neutralisé, parce qu'un
+    `@everyone` à vif republié dans le salon de logs est exactement ce que
+    l'échappement de ce module existe pour éviter.
+    """
+    rendues = [f"<@{uid}>" for uid in msg.raw_mentions]
+    rendues += [f"<@&{rid}>" for rid in msg.raw_role_mentions]
+    if msg.mention_everyone:
+        # Le drapeau ne dit pas LEQUEL des deux ; le contenu, lui, le dit.
+        contenu = msg.content or ""
+        ici = "@here" in contenu and "@everyone" not in contenu
+        rendues.append(_echapper("@here" if ici else "@everyone"))
+    return _borner(" ".join(rendues), _MAX_MENTIONS)
+
+
+async def message_supprime(bot: "WallyDiscord", payload: Any, *,
+                           dormir: Callable[[float], Any] = asyncio.sleep,
+                           horloge: Callable[[], datetime] = maintenant) -> None:
+    """`on_raw_message_delete` : la carte d'un message supprimé.
+
+    Message en CACHE : la carte est construite et envoyée par une TÂCHE DE
+    FOND, parce qu'elle attend `_DELAI_AUDIT` avant de lire le journal d'audit
+    du serveur — Discord n'y écrit pas à l'instant de la suppression. Cette
+    attente ne doit retarder qu'elle, jamais l'événement suivant.
+
+    Hors cache, il n'y a ni auteur ni contenu, donc rien à recouper : la carte
+    part tout de suite, et sans ligne « Supprimé par ».
+
+    `dormir` et `horloge` sont les deux seams des tests — aucune suite ne doit
+    attendre deux secondes par suppression.
+    """
     try:
         cfg = bot.config.discord.journal_moderation
         msg = payload.cached_message
@@ -553,38 +738,78 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
         salons = salons_cibles(bot, payload.guild_id, payload.channel_id, source)
         if not salons:
             return
-        if msg is not None:
-            auteur = msg.author
-            meta_auteur = f"<@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)})"
-            vignette = url_avatar(auteur)
-            contenu = (msg.content or "").strip()
-            # Round 2 #B : un contenu supprimé peut porter une fence non
-            # fermée, un `||spoiler||` ou toute autre construction Markdown —
-            # échappée AVANT citation (même ordre que le diff d'édition),
-            # sinon elle déforme ou MASQUE la fiche elle-même, pas seulement
-            # le message d'origine.
-            bloc_contenu = _citer(discord.utils.escape_markdown(contenu)) if contenu else "*aucun texte*"
-            pieces = list(msg.attachments)
-            pied = pied_utilisateur(auteur)
-        else:
-            meta_auteur = "inconnu"
-            vignette = None
-            bloc_contenu = "*contenu non disponible*"
-            pieces = []
-            pied = None
-        meta = (f"**Auteur** {meta_auteur} · **Salon** {_mention_salon(payload.channel_id, source)} · "
-               f"**Message** {payload.message_id} · **Supprimé** {horodatage(maintenant())}")
-        tele = await _telecharger_pieces(salons, pieces, nsfw=_salon_nsfw(source))
+        if msg is None:
+            await _carte_hors_cache(payload, source, salons, horloge)
+            return
+        # Import tardif : `bot.discord.handlers` importe la moitié du bot et
+        # ce module-ci est chargé par les événements — au niveau module, les
+        # deux se mordraient la queue.
+        from bot.discord.handlers import _fire
+        _fire(_carte_suppression(bot, payload, msg, source, salons, dormir=dormir, horloge=horloge))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("journal de modération : suppression non journalisée : {e!r}", e=e)
+
+
+async def _carte_hors_cache(payload: Any, source: Any, salons: list[Any],
+                            horloge: Callable[[], datetime]) -> None:
+    """Le message n'était pas en cache : ni auteur, ni contenu, ni âge.
+
+    Il n'y a donc rien à recouper avec le journal d'audit (la cible d'une
+    entrée est un AUTEUR, pas un message), et aucune raison d'attendre.
+    """
+    meta = (f"**Auteur** inconnu · **Salon** {_mention_salon(payload.channel_id, source)} · "
+            f"**Message** {payload.message_id} · **Supprimé** {horodatage(horloge())}")
+    vue = fiche("🗑️ Message supprimé", [meta, "*contenu non disponible*"], accent=ACCENT_ALERTE)
+    await publier_partout(salons, lambda _t: vue)
+
+
+async def _carte_suppression(bot: "WallyDiscord", payload: Any, msg: Any, source: Any,
+                             salons: list[Any], *, dormir: Callable[[float], Any],
+                             horloge: Callable[[], datetime]) -> None:
+    """La carte d'un message en cache, recoupement d'audit et ghost ping compris.
+
+    Les pièces jointes sont retéléchargées AVANT l'attente : leur `proxy_url`
+    est périssable, là où une entrée d'audit, elle, ne s'efface pas.
+
+    Détachée de son gestionnaire d'événement (`_fire`), donc seule à pouvoir
+    signaler son propre échec : elle ne lève jamais.
+    """
+    try:
+        auteur = msg.author
+        tele = await _telecharger_pieces(salons, list(msg.attachments), nsfw=_salon_nsfw(source))
+        await dormir(_DELAI_AUDIT)
+        recoupement = await entree_audit(bot.get_guild(payload.guild_id),
+                                         discord.AuditLogAction.message_delete,
+                                         cible_id=auteur.id, salon_id=payload.channel_id,
+                                         horloge=horloge)
+        contenu = (msg.content or "").strip()
+        # Round 2 #B : un contenu supprimé peut porter une fence non fermée,
+        # un `||spoiler||` ou toute autre construction Markdown — échappée
+        # AVANT citation (même ordre que le diff d'édition), sinon elle déforme
+        # ou MASQUE la fiche elle-même, pas seulement le message d'origine.
+        bloc_contenu = _citer(discord.utils.escape_markdown(contenu)) if contenu else "*aucun texte*"
+        meta = (f"**Auteur** <@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)}) · "
+                f"**Salon** {_mention_salon(payload.channel_id, source)} · "
+                f"**Message** {payload.message_id} · **Posté** {_relatif(msg.created_at)} · "
+                f"**Supprimé** {horodatage(horloge())}{_ligne_supprime_par(recoupement)}")
+        mentions = _mentions_rendues(msg)
+        # Ghost ping : mentionner puis effacer dans la foulée, pour que la
+        # notification reste et pas le message. Passé cinq minutes, c'est une
+        # suppression ordinaire d'un message qui mentionnait quelqu'un.
+        ghost = bool(mentions) and (horloge() - msg.created_at).total_seconds() < _GHOST_PING_SECONDES
+        titre = "👻 Ghost ping supprimé" if ghost else "🗑️ Message supprimé"
 
         def construire(t: _Telechargement) -> discord.ui.LayoutView:
             corps = [meta, bloc_contenu]
+            if ghost:
+                corps.append(f"**Mentionnait** {mentions}")
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
-            return fiche("🗑️ Message supprimé", corps, accent=ACCENT_ALERTE, vignette=vignette,
-                         medias=t.medias, fichiers=t.autres, pied=pied)
+            return fiche(titre, corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
+                         medias=t.medias, fichiers=t.autres, pied=pied_utilisateur(auteur))
 
         await publier_partout(salons, construire, tele)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — tâche détachée : personne derrière pour rattraper
         logger.warning("journal de modération : suppression non journalisée : {e!r}", e=e)
 
 

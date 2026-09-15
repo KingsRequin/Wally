@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import io
 import re
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import discord
+from loguru import logger
 
+from bot.core.temps import maintenant
 from bot.discord import journal_moderation as jm
 
 LOGS, LOGS2, COMMU = 70, 71, 9
@@ -18,12 +21,16 @@ def _salon_logs(sid, *, limite=LIMITE_TAILLE):
     return SimpleNamespace(id=sid, guild=SimpleNamespace(filesize_limit=limite), send=AsyncMock())
 
 
-def _bot(salon_ids=(LOGS,), guild_ids=(COMMU,), *, inclure_bots=False):
+def _bot(salon_ids=(LOGS,), guild_ids=(COMMU,), *, inclure_bots=False, audit=None):
     salons = {sid: _salon_logs(sid) for sid in salon_ids}
     salons[5] = SimpleNamespace(id=5, name="discussions")
     cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids), inclure_bots=inclure_bots)
     bot = SimpleNamespace(config=SimpleNamespace(discord=SimpleNamespace(journal_moderation=cfg)))
     bot.get_channel = lambda cid: salons.get(cid)
+    # Sans `audit`, le serveur reste introuvable : rien à recouper, la carte
+    # part sans ligne « Supprimé par ». Les tests du recoupement passent un
+    # `_FauxAudit`, qui porte `audit_logs` comme une vraie `discord.Guild`.
+    bot.get_guild = lambda gid: audit if gid in guild_ids else None
     logs = salons[salon_ids[0]] if salon_ids else _salon_logs(LOGS)
     return bot, logs
 
@@ -34,6 +41,7 @@ def _bot_multi(salon_ids, *, manquant=(), limite=LIMITE_TAILLE, guild_ids=(COMMU
     cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids), inclure_bots=inclure_bots)
     bot = SimpleNamespace(config=SimpleNamespace(discord=SimpleNamespace(journal_moderation=cfg)))
     bot.get_channel = lambda cid: salons.get(cid)
+    bot.get_guild = lambda gid: None
     return bot, salons
 
 
@@ -46,15 +54,43 @@ def _piece(id, nom, *, content_type="image/png", size=1000, echoue=None):
 
 
 def _message(contenu, *, bot_auteur=False, guild=COMMU, pieces=(), auteur_id=1, msg_id=1, channel_id=5,
-             auteur_nom="alice"):
+             auteur_nom="alice", age=0.0, mentions=(), roles_mentionnes=(), everyone=False):
     auteur = SimpleNamespace(id=auteur_id, bot=bot_auteur, name=auteur_nom,
                              display_avatar=SimpleNamespace(url="https://cdn/avatar.png"))
     return SimpleNamespace(
         id=msg_id, content=contenu, guild=SimpleNamespace(id=guild),
         channel=SimpleNamespace(id=channel_id, name="discussions"),
         author=auteur, attachments=list(pieces),
+        created_at=maintenant() - timedelta(seconds=age),
+        raw_mentions=list(mentions), raw_role_mentions=list(roles_mentionnes),
+        mention_everyone=everyone,
         jump_url=f"https://discord.com/channels/{guild}/{channel_id}/{msg_id}",
     )
+
+
+async def _fond() -> None:
+    """Attend les tâches de fond lancées par le journal (`_fire`).
+
+    La carte d'une suppression en cache part en tâche de fond : sans cette
+    attente, les tests asserteraient sur un `send` qui n'a pas encore eu lieu.
+    """
+    from bot.discord.handlers import _bg_tasks
+    for _ in range(5):
+        taches = list(_bg_tasks)
+        if not taches:
+            return
+        await asyncio.gather(*taches)
+        await asyncio.sleep(0)
+
+
+async def _sans_sommeil(_secondes: float) -> None:
+    """Le sommeil de 2 s du recoupement d'audit, ramené à zéro pour les tests."""
+
+
+async def _supprimer(bot, payload, **kw) -> None:
+    """Joue une suppression ET la tâche de fond qui construit sa carte."""
+    await jm.message_supprime(bot, payload, dormir=_sans_sommeil, **kw)
+    await _fond()
 
 
 def _vue(logs, appel=0):
@@ -89,7 +125,7 @@ async def test_suppression_en_cache_image_et_video_journalisee_sans_mention():
     msg = _message("salut @everyone", pieces=[image, video])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     kwargs = logs.send.await_args.kwargs
     assert kwargs["allowed_mentions"].everyone is False
@@ -108,7 +144,7 @@ async def test_piece_indisponible_listee_message_quand_meme_publie():
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     logs.send.assert_awaited_once()
     texte = "\n".join(_textes(_vue(logs)))
@@ -122,7 +158,7 @@ async def test_piece_trop_lourde_pas_de_telechargement_tente():
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     piece.to_file.assert_not_awaited()
     texte = "\n".join(_textes(_vue(logs)))
@@ -136,7 +172,7 @@ async def test_deux_pieces_meme_nom_deux_references_distinctes():
     msg = _message("texte", pieces=[a, b])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     noms = _medias(_vue(logs))
     assert len(noms) == 2
@@ -147,7 +183,7 @@ async def test_suppression_hors_cache():
     bot, logs = _bot()
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     texte = "\n".join(_textes(_vue(logs)))
     assert "contenu non disponible" in texte
@@ -157,13 +193,13 @@ async def test_suppression_hors_cache():
 async def test_guild_hors_liste_ignoree():
     bot, logs = _bot()
     payload = SimpleNamespace(guild_id=123, channel_id=5, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     logs.send.assert_not_awaited()
 
 
 async def test_desactive():
     bot, logs = _bot(salon_ids=[])
-    await jm.message_supprime(bot, SimpleNamespace(guild_id=COMMU, channel_id=5,
+    await _supprimer(bot, SimpleNamespace(guild_id=COMMU, channel_id=5,
                                                    message_id=1, cached_message=None))
     logs.send.assert_not_awaited()
 
@@ -195,7 +231,7 @@ async def test_budget_4000_respecte_texte_multiligne_suppression():
     contenu = "a\n" * 1500
     msg = _message(contenu)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     total = sum(len(t) for t in _textes(_vue(logs)))
     assert total <= 4000
 
@@ -242,7 +278,7 @@ async def test_budget_4000_pire_cas_suppression_texte_et_pieces_non_recuperees()
               for i in range(15)]
     msg = _message(contenu, pieces=pieces)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     blocs = _textes(_vue(logs))
     total = sum(len(t) for t in blocs)
     assert total <= 4000
@@ -321,7 +357,7 @@ async def test_nom_auteur_avec_underscores_echappe_dans_la_meta():
     bot, logs = _bot()
     msg = _message("texte", auteur_nom="a_b_c")
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     assert "a\\_b\\_c" in texte
 
@@ -341,7 +377,7 @@ async def test_salon_introuvable_avertit_avec_son_id():
     jeton = jm.logger.add(lambda m: dits.append(str(m)), level="WARNING")
     try:
         payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
-        await jm.message_supprime(bot, payload)
+        await _supprimer(bot, payload)
     finally:
         jm.logger.remove(jeton)
     assert any("999" in d for d in dits)
@@ -360,7 +396,7 @@ async def test_budget_telechargement_cumule_pour_tout_le_message():
     msg = _message("texte", pieces=[a, b])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     a.to_file.assert_awaited_once()
     b.to_file.assert_not_awaited()
@@ -377,7 +413,7 @@ async def test_trois_pieces_collision_de_renommage_toutes_distinctes():
     msg = _message("texte", pieces=[a, b, c])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     noms = _medias(_vue(logs))
     assert len(noms) == 3
@@ -390,7 +426,7 @@ async def test_nom_non_ascii_assaini_pour_attachment_uri():
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     noms = _medias(_vue(logs))
     assert len(noms) == 1
@@ -518,7 +554,7 @@ async def test_publication_sur_plusieurs_salons_fichiers_distincts():
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     salons[LOGS].send.assert_awaited_once()
     salons[LOGS2].send.assert_awaited_once()
@@ -531,7 +567,7 @@ async def test_publication_sur_plusieurs_salons_fichiers_distincts():
 async def test_un_salon_manquant_n_empeche_pas_l_autre():
     bot, salons = _bot_multi([LOGS, LOGS2], manquant=[LOGS])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     salons[LOGS2].send.assert_awaited_once()
 
 
@@ -539,7 +575,7 @@ async def test_un_salon_en_echec_n_empeche_pas_l_autre():
     bot, salons = _bot_multi([LOGS, LOGS2])
     salons[LOGS].send.side_effect = discord.HTTPException(SimpleNamespace(status=403, reason="x"), "Forbidden")
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     salons[LOGS2].send.assert_awaited_once()
 
 
@@ -548,7 +584,7 @@ async def test_liste_salon_ids_vide_aucun_telechargement():
     piece = _piece(1, "photo.png")
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     piece.to_file.assert_not_awaited()
 
 
@@ -559,7 +595,7 @@ async def test_budget_telechargement_prend_la_plus_petite_limite():
     msg = _message("texte", pieces=[piece])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     piece.to_file.assert_not_awaited()
     texte = "\n".join(_textes(salons[LOGS].send.await_args.kwargs["view"]))
@@ -600,7 +636,7 @@ async def test_suppression_dans_un_salon_de_logs_non_republiee():
     """Supprimer une fiche du journal la republiait aussitôt, à l'infini."""
     bot, salons = _bot_multi([LOGS, LOGS2])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=LOGS, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     salons[LOGS].send.assert_not_awaited()
     salons[LOGS2].send.assert_not_awaited()
 
@@ -626,7 +662,7 @@ async def test_edition_dans_un_salon_de_logs_non_republiee():
 
 async def test_nom_du_salon_a_cote_de_la_mention_suppression_et_masse():
     bot, logs = _bot()
-    await jm.message_supprime(bot, SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+    await _supprimer(bot, SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
                                                    cached_message=None))
     await jm.messages_supprimes_en_masse(bot, SimpleNamespace(guild_id=COMMU, channel_id=5,
                                                               message_ids={1}, cached_messages=[]))
@@ -644,7 +680,7 @@ async def test_nom_du_salon_a_cote_de_la_mention_edition_echappe():
 
 async def test_salon_inconnu_mention_suivie_de_l_id():
     bot, logs = _bot()
-    await jm.message_supprime(bot, SimpleNamespace(guild_id=COMMU, channel_id=404, message_id=1,
+    await _supprimer(bot, SimpleNamespace(guild_id=COMMU, channel_id=404, message_id=1,
                                                    cached_message=None))
     assert "<#404> (404)" in "\n".join(_textes(_vue(logs)))
 
@@ -660,7 +696,7 @@ async def test_pieces_d_un_salon_nsfw_listees_jamais_republiees():
     msg.channel = SimpleNamespace(id=6, name="nsfw", is_nsfw=lambda: True)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=6, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     piece.to_file.assert_not_awaited()
     kwargs = logs.send.await_args.kwargs
@@ -686,7 +722,7 @@ async def test_piece_sous_spoiler_republiee_sous_spoiler():
     msg = _message("texte", pieces=[image])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     assert image.to_file.await_args.kwargs["spoiler"] is True
     kwargs = logs.send.await_args.kwargs
@@ -704,7 +740,7 @@ async def test_fichier_sous_spoiler_composant_file_marque():
     msg = _message("texte", pieces=[video])
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
 
     kwargs = logs.send.await_args.kwargs
     composant = next(c for c in kwargs["view"].walk_children() if isinstance(c, discord.ui.File))
@@ -728,7 +764,7 @@ async def test_fichiers_refuses_fiche_renvoyee_sans_pieces():
     dits: list[str] = []
     jeton = jm.logger.add(lambda m: dits.append(str(m)), level="WARNING")
     try:
-        await jm.message_supprime(bot, payload)
+        await _supprimer(bot, payload)
     finally:
         jm.logger.remove(jeton)
 
@@ -750,7 +786,7 @@ async def test_suppression_dans_un_fil_d_un_salon_de_logs_non_republiee():
     obtenir = bot.get_channel
     bot.get_channel = lambda cid: fil if cid == 800 else obtenir(cid)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=800, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     salons[LOGS].send.assert_not_awaited()
     salons[LOGS2].send.assert_not_awaited()
 
@@ -800,7 +836,7 @@ async def test_horodatage_present_dans_toutes_les_cartes():
     bot, logs = _bot()
     msg = _message("texte")
     payload_suppr = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload_suppr)
+    await _supprimer(bot, payload_suppr)
     await jm.message_modifie(bot, _message("a"), _message("b"))
     payload_masse = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1}, cached_messages=[])
     await jm.messages_supprimes_en_masse(bot, payload_masse)
@@ -822,7 +858,7 @@ async def test_pied_id_utilisateur_suppression():
     bot, logs = _bot()
     msg = _message("texte", auteur_id=123456789012345678)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     assert "-# ID `123456789012345678`" in texte
 
@@ -831,7 +867,7 @@ async def test_pied_id_utilisateur_absent_hors_cache():
     """Sans auteur connu (hors cache), pas d'id à mettre en pied."""
     bot, logs = _bot()
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     assert "ID `" not in texte
 
@@ -1265,7 +1301,7 @@ async def test_suppression_message_de_bot_ignoree_par_defaut():
     bot, logs = _bot()
     msg = _message("texte", bot_auteur=True)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     logs.send.assert_not_awaited()
 
 
@@ -1273,7 +1309,7 @@ async def test_suppression_message_de_bot_journalisee_si_inclure_bots():
     bot, logs = _bot(inclure_bots=True)
     msg = _message("texte", bot_auteur=True)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     logs.send.assert_awaited_once()
 
 
@@ -1320,7 +1356,7 @@ async def test_suppression_contenu_dangereux_echappe():
     bot, logs = _bot()
     msg = _message(_CONTENU_DANGEREUX)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     attendu = discord.utils.escape_markdown(_CONTENU_DANGEREUX)
     for ligne in attendu.splitlines():
@@ -1348,7 +1384,427 @@ async def test_suppression_contenu_echappe_une_seule_fois():
     bot, logs = _bot()
     msg = _message("bonjour @tout le monde")
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
-    await jm.message_supprime(bot, payload)
+    await _supprimer(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     assert "@\u200btout" in texte
     assert "@\u200b\u200btout" not in texte
+
+
+# ---------------------------------------------------------------------------
+# T2 #1 — qui a supprimé (recoupement avec le journal d'audit)
+
+
+class _FauxAudit:
+    """Un serveur factice dont on lit le journal d'audit.
+
+    Porte `audit_logs(limit=…, action=…)` comme une vraie `discord.Guild` :
+    un itérateur asynchrone, qui lève `discord.Forbidden` à la première
+    itération quand la permission manque (c'est là que discord.py lève, pas à
+    l'appel).
+    """
+
+    def __init__(self, entrees=(), *, refuse=False, id=COMMU):
+        self.id = id
+        self.entrees = list(entrees)
+        self.refuse = refuse
+        self.appels = []
+
+    def audit_logs(self, *, limit, action):
+        self.appels.append((limit, action))
+        entrees, refuse = self.entrees[:limit], self.refuse
+
+        async def _iterer():
+            if refuse:
+                raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "audit")
+            for entree in entrees:
+                yield entree
+
+        return _iterer()
+
+
+def _entree(*, id=1, modo_id=999, cible_id=1, salon_id=5, age=0.0, compte=None, extra=True):
+    """Une entrée d'audit factice ; `extra=False` pour une action qui n'en a pas (T4)."""
+    return SimpleNamespace(
+        id=id, user=SimpleNamespace(id=modo_id), target=SimpleNamespace(id=cible_id),
+        extra=SimpleNamespace(channel=SimpleNamespace(id=salon_id), count=compte) if extra else None,
+        created_at=maintenant() - timedelta(seconds=age),
+    )
+
+
+def _etat_audit_neuf():
+    """Les compteurs et les serveurs déjà signalés vivent en RAM, par module."""
+    jm._compteurs_audit.clear()
+    jm._audit_refuse.clear()
+
+
+async def test_suppression_par_un_modo_nomme_le_modo():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(modo_id=999, cible_id=1, salon_id=5, age=1.0)])
+    bot, logs = _bot(audit=audit)
+    msg = _message("texte", auteur_id=1)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "**Supprimé par** <@999>" in texte
+    assert audit.appels == [(10, discord.AuditLogAction.message_delete)]
+
+
+async def test_suppression_sans_entree_correspondante_dit_l_auteur_ou_un_bot():
+    """Discord ne journalise JAMAIS la suppression par l'auteur ni par un bot."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "**Supprimé par** l'auteur ou un bot (Discord ne le trace pas)" in texte
+
+
+async def test_entree_d_un_autre_salon_ignoree():
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([_entree(cible_id=1, salon_id=4242, age=1.0)]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte", auteur_id=1))
+
+    await _supprimer(bot, payload)
+
+    assert "l'auteur ou un bot" in "\n".join(_textes(_vue(logs)))
+
+
+async def test_entree_visant_un_autre_auteur_ignoree():
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([_entree(cible_id=777, salon_id=5, age=1.0)]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte", auteur_id=1))
+
+    await _supprimer(bot, payload)
+
+    assert "l'auteur ou un bot" in "\n".join(_textes(_vue(logs)))
+
+
+async def test_entree_ancienne_retenue_si_le_compteur_a_augmente():
+    """Discord REGROUPE : la 2e suppression du même modo incrémente `extra.count`
+    sans ouvrir de nouvelle entrée — sans cette comparaison, elle passerait
+    pour non tracée dès que l'entrée a plus de 10 s."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(id=7, modo_id=999, age=300.0, compte=1)])
+    bot, logs = _bot(audit=audit)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("un"))
+    await _supprimer(bot, payload)
+    assert "l'auteur ou un bot" in "\n".join(_textes(_vue(logs, 0)))
+
+    audit.entrees = [_entree(id=7, modo_id=999, age=300.0, compte=2)]
+    await _supprimer(bot, payload)
+
+    assert "**Supprimé par** <@999>" in "\n".join(_textes(_vue(logs, 1)))
+
+
+async def test_entree_ancienne_et_compteur_inchange_non_retenue():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(id=7, modo_id=999, age=300.0, compte=1)])
+    bot, logs = _bot(audit=audit)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("un"))
+
+    await _supprimer(bot, payload)
+    await _supprimer(bot, payload)
+
+    for appel in (0, 1):
+        assert "l'auteur ou un bot" in "\n".join(_textes(_vue(logs, appel)))
+
+
+async def test_entree_fraiche_retenue_meme_sans_compteur_memorise():
+    """Premier passage : rien en mémoire, c'est la fraîcheur qui décide."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([_entree(modo_id=999, age=9.0, compte=4)]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("un"))
+
+    await _supprimer(bot, payload)
+
+    assert "**Supprimé par** <@999>" in "\n".join(_textes(_vue(logs)))
+
+
+async def test_audit_refuse_carte_publiee_sans_la_ligne():
+    """Permission manquante : on ne sait RIEN, donc on n'affirme rien."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit(refuse=True))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+
+    await _supprimer(bot, payload)
+
+    logs.send.assert_awaited_once()
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "Supprimé par" not in texte
+    assert "🗑️ Message supprimé" in texte
+
+
+async def test_audit_refuse_un_seul_avertissement_par_serveur():
+    """Un WARNING par suppression noierait le journal ; un par serveur suffit."""
+    _etat_audit_neuf()
+    bot, _logs = _bot(audit=_FauxAudit(refuse=True))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+    messages = []
+    sink = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+    try:
+        await _supprimer(bot, payload)
+        await _supprimer(bot, payload)
+        await _supprimer(bot, payload)
+    finally:
+        logger.remove(sink)
+
+    assert len([m for m in messages if "journal d'audit" in m]) == 1
+
+
+async def test_suppression_hors_cache_ne_lit_pas_le_journal_d_audit():
+    """Sans message en cache, pas d'auteur : rien à recouper."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(age=1.0)])
+    bot, logs = _bot(audit=audit)
+
+    await _supprimer(bot, SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                                          cached_message=None))
+
+    logs.send.assert_awaited_once()
+    assert audit.appels == []
+    assert "Supprimé par" not in "\n".join(_textes(_vue(logs)))
+
+
+async def test_deux_secondes_avant_la_lecture_du_journal_d_audit():
+    """Discord n'écrit pas dans l'audit à l'instant de la suppression."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(age=1.0)])
+    bot, _logs = _bot(audit=audit)
+    sommeils = []
+
+    async def _dormir(secondes):
+        sommeils.append((secondes, list(audit.appels)))
+
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+    await jm.message_supprime(bot, payload, dormir=_dormir)
+    await _fond()
+
+    assert sommeils == [(2.0, [])]      # le sommeil précède la lecture
+    assert audit.appels
+
+
+async def test_la_carte_en_cache_ne_retarde_pas_l_evenement():
+    """§3 : le délai ne retarde que CETTE carte, jamais les autres événements."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+
+    await jm.message_supprime(bot, payload, dormir=_sans_sommeil)
+    logs.send.assert_not_awaited()      # la carte est encore en tâche de fond
+
+    await _fond()
+    logs.send.assert_awaited_once()
+
+
+async def test_compteurs_audit_bornes_par_serveur():
+    """La mémoire des compteurs ne grandit pas indéfiniment."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([])
+    bot, _logs = _bot(audit=audit)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+    for i in range(jm._MAX_COMPTEURS_AUDIT + 20):
+        audit.entrees = [_entree(id=1000 + i, age=1.0, compte=1)]
+        await _supprimer(bot, payload)
+
+    memoire = jm._compteurs_audit[COMMU]
+    assert len(memoire) == jm._MAX_COMPTEURS_AUDIT
+    assert 1000 not in memoire                    # les plus vieux sont évincés
+    assert 1000 + jm._MAX_COMPTEURS_AUDIT + 19 in memoire
+
+
+async def test_compteurs_audit_separes_par_serveur():
+    """Deux serveurs peuvent porter la même entrée d'audit `id`."""
+    _etat_audit_neuf()
+    autre = 4242
+    audit_a = _FauxAudit([_entree(id=7, age=300.0, compte=1)], id=COMMU)
+    audit_b = _FauxAudit([_entree(id=7, age=300.0, compte=1)], id=autre)
+    bot, _logs = _bot(guild_ids=(COMMU, autre), audit=audit_a)
+    bot.get_guild = lambda gid: audit_a if gid == COMMU else audit_b
+    for guild_id in (COMMU, autre):
+        await _supprimer(bot, SimpleNamespace(guild_id=guild_id, channel_id=5, message_id=1,
+                                              cached_message=_message("texte")))
+
+    assert jm._compteurs_audit[COMMU] == {7: 1}
+    assert jm._compteurs_audit[autre] == {7: 1}
+
+
+async def test_entree_audit_sans_extra_ne_leve_pas():
+    """Les actions que T4 recoupera (kick, ban) n'ont ni salon ni compteur."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(id=3, modo_id=55, cible_id=1, age=1.0, extra=False)])
+
+    recoupement = await jm.entree_audit(audit, discord.AuditLogAction.kick, cible_id=1)
+
+    assert recoupement.lisible is True
+    assert recoupement.entree.user.id == 55
+
+
+async def test_entree_trouvee_sans_auteur_resolvable_ne_nomme_personne():
+    """`AuditLogEntry.user` est optionnel : un compte supprimé n'y résout plus."""
+    _etat_audit_neuf()
+    entree = _entree(age=1.0)
+    entree.user = None
+    bot, logs = _bot(audit=_FauxAudit([entree]))
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("texte"))
+
+    await _supprimer(bot, payload)
+
+    assert "Supprimé par" not in "\n".join(_textes(_vue(logs)))
+
+
+async def test_entree_audit_serveur_inconnu_illisible():
+    """Serveur hors cache : on ne sait pas, donc la carte n'affirmera rien."""
+    _etat_audit_neuf()
+    recoupement = await jm.entree_audit(None, discord.AuditLogAction.message_delete, cible_id=1)
+    assert recoupement == jm.Recoupement(None, False)
+
+
+# ---------------------------------------------------------------------------
+# T2 #2 — ghost ping
+
+
+async def test_ghost_ping_titre_et_bloc_mentionnait():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("salut toi", age=30.0, mentions=[123])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "👻 Ghost ping supprimé" in texte
+    assert "**Mentionnait** <@123>" in texte
+    assert logs.send.await_args.kwargs["allowed_mentions"].users is False
+
+
+async def test_ghost_ping_roles_et_everyone_rendus():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("@everyone dehors", age=1.0, mentions=[1], roles_mentionnes=[55], everyone=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "<@1>" in texte and "<@&55>" in texte
+    # `@everyone` part en TEXTE, `@` neutralisé : pas de seconde notification.
+    assert "@\u200beveryone" in texte
+    assert "**Mentionnait** " in texte
+
+
+async def test_ghost_ping_here_rendu_quand_c_est_here():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("@here les gens", age=1.0, everyone=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "@\u200bhere" in texte
+    assert "everyone" not in texte
+
+
+async def test_message_ancien_avec_mention_reste_une_suppression_ordinaire():
+    """Plus de 5 minutes après publication : ce n'est plus un ghost ping."""
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("salut", age=301.0, mentions=[123])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🗑️ Message supprimé" in texte
+    assert "Ghost ping" not in texte
+    assert "Mentionnait" not in texte
+
+
+async def test_ghost_ping_borne_a_cinq_minutes_pile():
+    """La borne se lit sur une horloge injectée, pas sur celle de la machine."""
+    _etat_audit_neuf()
+    from datetime import datetime, timezone
+    t0 = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
+    bot, logs = _bot()
+    for decalage, attendu in ((299.0, True), (300.0, False)):
+        msg = _message("salut", mentions=[123])
+        msg.created_at = t0 - timedelta(seconds=decalage)
+        payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+        await _supprimer(bot, payload, horloge=lambda: t0)
+
+    assert ("Ghost ping" in "\n".join(_textes(_vue(logs, 0)))) is True
+    assert ("Ghost ping" in "\n".join(_textes(_vue(logs, 1)))) is False
+
+
+async def test_message_recent_sans_mention_reste_une_suppression_ordinaire():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                              cached_message=_message("salut", age=1.0))
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🗑️ Message supprimé" in texte
+    assert "Mentionnait" not in texte
+
+
+async def test_age_du_message_affiche_sur_toute_suppression_en_cache():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("salut", age=120.0)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    epoch = int(msg.created_at.timestamp())
+    assert f"**Posté** <t:{epoch}:R>" in texte
+
+
+async def test_age_absent_hors_cache():
+    """Sans message en cache, l'âge n'est pas connu : pas de ligne inventée."""
+    _etat_audit_neuf()
+    bot, logs = _bot()
+
+    await _supprimer(bot, SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                                          cached_message=None))
+
+    assert "Posté" not in "\n".join(_textes(_vue(logs)))
+
+
+async def test_budget_4000_pire_cas_ghost_ping():
+    """Texte maximal, cent mentions, pièces non récupérées : la fiche tient."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([_entree(modo_id=999, age=1.0)]))
+    pieces = [_piece(i, f"fichier_{i}_{'x' * 80}.bin", content_type="application/zip", echoue=RuntimeError("nope"))
+              for i in range(10)]
+    msg = _message("mot " * 2000, age=1.0, pieces=pieces,
+                   mentions=list(range(100000000000000000, 100000000000000100)),
+                   roles_mentionnes=list(range(200000000000000000, 200000000000000100)),
+                   everyone=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    textes = _textes(_vue(logs))
+    assert sum(len(t) for t in textes) <= 4000
+    corps = "\n".join(textes)
+    assert "…" in corps                       # la troncature a bien eu lieu
+    assert "👻 Ghost ping supprimé" in corps

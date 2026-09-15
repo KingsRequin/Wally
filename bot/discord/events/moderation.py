@@ -8,6 +8,10 @@ Le contenu n'est connu que si le message était en cache (`cached_message`).
 `on_raw_bulk_message_delete` couvre les purges et les suppressions
 d'historique d'un ban : sans lui, un pan entier de messages disparaît sans
 laisser de trace dans le journal.
+
+`message_supprime` rend la main tout de suite : la carte d'un message en
+cache part en tâche de fond, le temps d'attendre que Discord écrive dans son
+journal d'audit. Ce gestionnaire n'attend donc jamais ces deux secondes.
 """
 from __future__ import annotations
 
