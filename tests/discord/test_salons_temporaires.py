@@ -37,9 +37,11 @@ class FauxDb:
 
 def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
     cfg = SimpleNamespace(salon_createur_id=createur, noms=list(noms))
+    journal = SimpleNamespace(salon_id=None, guild_ids=[])
     bot = SimpleNamespace(
         db=db,
-        config=SimpleNamespace(discord=SimpleNamespace(salons_temporaires=cfg)),
+        config=SimpleNamespace(discord=SimpleNamespace(salons_temporaires=cfg,
+                                                        journal_moderation=journal)),
         salons={},
     )
     bot.get_channel = lambda cid: bot.salons.get(cid)
@@ -61,7 +63,7 @@ async def test_entrer_dans_le_createur_cree_enregistre_et_deplace():
     nouveau = _salon(777, guild=SimpleNamespace(id=9))
     guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(return_value=nouveau))
     createur = _salon(CREATEUR, guild=guild)
-    membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A")
+    membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A", name="A")
     db = FauxDb()
 
     await st.sur_changement_vocal(_bot(db), membre, _etat(None), _etat(createur))

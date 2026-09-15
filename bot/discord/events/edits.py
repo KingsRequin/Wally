@@ -51,6 +51,11 @@ def register(bot: "WallyDiscord") -> None:
     @bot.event
     async def on_message_edit(before: discord.Message, after: discord.Message) -> None:
         try:
+            # Modération d'abord : elle couvre les serveurs que la perception
+            # ignore, et le filtre `ignored_guilds` ci-dessous la couperait.
+            from bot.discord import journal_moderation
+            await journal_moderation.message_modifie(bot, before, after)
+
             # `on_message_edit` et non `on_raw_message_edit` : le second couvre
             # les messages hors cache, mais il ne porte PAS l'avant — or c'est
             # la comparaison des deux contenus qui écarte les embeds. Le cas qui

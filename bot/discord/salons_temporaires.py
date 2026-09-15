@@ -81,6 +81,8 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
         return
     logger.info("Salon vocal temporaire « {n} » ({c}) créé pour {m}",
                 n=salon.name, c=salon.id, m=member.display_name)
+    from bot.discord.journal_moderation import vocal_cree
+    await vocal_cree(bot, member, salon)
 
 
 async def _supprimer_si_gere(bot: "WallyDiscord", salon: Any) -> None:
@@ -88,6 +90,8 @@ async def _supprimer_si_gere(bot: "WallyDiscord", salon: Any) -> None:
         return
     await _supprimer(bot, salon)
     logger.info("Salon vocal temporaire « {n} » ({c}) supprimé (vide)", n=salon.name, c=salon.id)
+    from bot.discord.journal_moderation import vocal_supprime
+    await vocal_supprime(bot, salon)
 
 
 async def _supprimer(bot: "WallyDiscord", salon: Any) -> None:

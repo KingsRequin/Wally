@@ -150,6 +150,18 @@ class SalonsTemporairesConfig:
 
 
 @dataclass
+class JournalModerationConfig:
+    """Embeds « message supprimé / modifié, salon vocal créé / supprimé ».
+
+    `guild_ids` : les serveurs OBSERVÉS (pas celui du salon de logs). Sans cette
+    liste, Wally journaliserait les suppressions de tous les serveurs où il est.
+    `salon_id` à None → désactivé.
+    """
+    salon_id: int | None = None
+    guild_ids: list[int] = field(default_factory=list)
+
+
+@dataclass
 class VoiceConfig:
     enabled: bool = False
     stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU) | "remote_stream" (GPU distant)
@@ -224,6 +236,7 @@ class DiscordConfig:
     clips_channel_id: int | None = None
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
     salons_temporaires: SalonsTemporairesConfig = field(default_factory=SalonsTemporairesConfig)
+    journal_moderation: JournalModerationConfig = field(default_factory=JournalModerationConfig)
 
 
 @dataclass
@@ -783,6 +796,7 @@ class Config:
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
             salons_raw = discord_raw.pop("salons_temporaires", None) or {}
+            journal_raw = discord_raw.pop("journal_moderation", None) or {}
             llm_config = cls._build_llm_config(raw)
             # Build OpenAIConfig from raw or synthesize from llm config
             openai_raw = raw.get("openai")
@@ -805,6 +819,7 @@ class Config:
                     **discord_raw,
                     spam_detection=SpamDetectionConfig(**spam_raw),
                     salons_temporaires=SalonsTemporairesConfig(**salons_raw),
+                    journal_moderation=JournalModerationConfig(**journal_raw),
                 ),
                 twitch=TwitchConfig(
                     **twitch_raw,

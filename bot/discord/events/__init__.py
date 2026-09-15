@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bot.discord.events import edits, members, reactions, typing
+from bot.discord.events import edits, members, moderation, reactions, typing
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -15,3 +15,4 @@ def register_events(bot: "WallyDiscord") -> None:
     members.register(bot)
     edits.register(bot)
     typing.register(bot)
+    moderation.register(bot)
