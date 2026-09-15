@@ -178,12 +178,16 @@ de membre (ou d'un test `on_member_join` simulé si aucune arrivée).
 
 | Phase | Contenu | Fichiers |
 |---|---|---|
-| 1a | Config (4 dataclasses + yaml, tout à `null`) + table + mixin | `config.py`, `config.yaml`, `db/database.py`, `db/mixins/salons.py` (+ son rattachement à `Database`) |
-| 1b | `salons_temporaires` + branchement | `discord/salons_temporaires.py`, `discord/bot.py` |
-| 2 | `journal_moderation` + `events/moderation.py` + appel dans `edits.py` + `statut_stream` + `main.py` | 5 |
-| 3 | `bienvenue` + `members.py` ; coupure §4 ; doc `CLAUDE.md` | ≤ 5 |
+| 1 | Salons temporaires : config + table/mixin + module + branchement | 8 (dont 3 de colle) |
+| 2 | Journal de modération + `events/moderation.py` + appels dans `edits.py` et `salons_temporaires.py` | 7 |
+| 3 | Statut du stream + `main.py` | 5 |
+| 4 | Bienvenue + `members.py` | 5 |
+| 5 | Coupure §4 + doc | config + docs |
 
-Les fichiers de test ne comptent pas dans le plafond de 5 ; chaque phase livre les siens.
+Un champ de config ne peut pas précéder son lecteur (`tests/test_config_sans_bouton_mort.py`) :
+la config de chaque fonction arrive donc avec elle, pas dans une phase à part. Le plafond de
+5 fichiers est dépassé en phases 1 et 2 par les fichiers de colle (`config.yaml`,
+`config.example.yaml`, `__init__.py`). Les tests ne comptent pas.
 
 La phase 1 n'est **pas activée en prod** avant la coupure : `salon_createur_id` reste `null`
 dans `config.yaml` tant que le Node tourne (double création), et prend sa valeur au moment du §4.
