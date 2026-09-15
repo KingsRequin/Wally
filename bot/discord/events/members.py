@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
+from bot.discord import bienvenue
+
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
@@ -16,6 +18,9 @@ def register(bot: "WallyDiscord") -> None:
         # Perception cognitive (#A2) : un nouveau venu doit atteindre le cerveau.
         from bot.discord.handlers import _member_join_context
 
+        # La fiche d'abord : elle est consignée dans self_trace, et la
+        # cognition doit la voir quand elle décide si elle accueille à son tour.
+        await bienvenue.accueillir(bot, member)
         await _member_join_context(bot, member)
 
     @bot.event

@@ -61,6 +61,11 @@ bot:
   update_image: ''                   # ex: ghcr.io/ton-user/wally-ai:latest (vide = polling désactivé)
 discord:
   anger_trigger_threshold: 3
+  bienvenue:
+    salon_id: null            # à la coupure : 875421532351000627
+    guild_ids: []             # à la coupure : [875421531415666698]
+    messages: []              # à la coupure : messages du Node
+    gifs: []                  # à la coupure : gifs du Node
   channel_blacklist: []              # IDs de salons où Wally n'intervient jamais
   channel_filter_mode: blacklist
   channel_whitelist: []

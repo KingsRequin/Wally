@@ -176,6 +176,18 @@ class StatutStreamConfig:
 
 
 @dataclass
+class BienvenueConfig:
+    """Fiche d'accueil d'un nouveau membre — repris de `wally-discord`.
+
+    `guild_ids` vide → désactivé. `salon_id` à None → salon système du serveur.
+    """
+    salon_id: int | None = None
+    guild_ids: list[int] = field(default_factory=list)
+    messages: list[str] = field(default_factory=list)
+    gifs: list[str] = field(default_factory=list)
+
+
+@dataclass
 class VoiceConfig:
     enabled: bool = False
     stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU) | "remote_stream" (GPU distant)
@@ -252,6 +264,7 @@ class DiscordConfig:
     salons_temporaires: SalonsTemporairesConfig = field(default_factory=SalonsTemporairesConfig)
     journal_moderation: JournalModerationConfig = field(default_factory=JournalModerationConfig)
     statut_stream: StatutStreamConfig = field(default_factory=StatutStreamConfig)
+    bienvenue: BienvenueConfig = field(default_factory=BienvenueConfig)
 
 
 @dataclass
@@ -813,6 +826,7 @@ class Config:
             salons_raw = discord_raw.pop("salons_temporaires", None) or {}
             journal_raw = discord_raw.pop("journal_moderation", None) or {}
             statut_raw = discord_raw.pop("statut_stream", None) or {}
+            bienvenue_raw = discord_raw.pop("bienvenue", None) or {}
             llm_config = cls._build_llm_config(raw)
             # Build OpenAIConfig from raw or synthesize from llm config
             openai_raw = raw.get("openai")
@@ -837,6 +851,7 @@ class Config:
                     salons_temporaires=SalonsTemporairesConfig(**salons_raw),
                     journal_moderation=JournalModerationConfig(**journal_raw),
                     statut_stream=StatutStreamConfig(**statut_raw),
+                    bienvenue=BienvenueConfig(**bienvenue_raw),
                 ),
                 twitch=TwitchConfig(
                     **twitch_raw,
