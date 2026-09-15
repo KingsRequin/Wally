@@ -217,8 +217,18 @@ async def test_budget_4000_pire_cas_edition_texte_et_pieces_non_recuperees():
                      echoue=discord.NotFound(SimpleNamespace(status=404, reason="x"), "gone"))
               for i in range(15)]
     await jm.message_modifie(bot, _message(avant, pieces=pieces), _message(apres, pieces=[]))
-    total = sum(len(t) for t in _textes(_vue(logs)))
+    blocs = _textes(_vue(logs))
+    total = sum(len(t) for t in blocs)
     assert total <= 4000
+    # Preuve que les plafonds ont bien été ATTEINTS, pas simplement respectés
+    # sur une entrée qui n'y touchait jamais : chaque bloc concurrent doit
+    # porter la marque de sa troncature.
+    bloc_avant = next(b for b in blocs if b.startswith("**Avant**"))
+    bloc_apres = next(b for b in blocs if b.startswith("**Après**"))
+    bloc_non_recup = next(b for b in blocs if "non récupérées" in b)
+    assert bloc_avant.endswith("…")
+    assert bloc_apres.endswith("…")
+    assert bloc_non_recup.endswith("…")
 
 
 async def test_budget_4000_pire_cas_suppression_texte_et_pieces_non_recuperees():
@@ -233,8 +243,13 @@ async def test_budget_4000_pire_cas_suppression_texte_et_pieces_non_recuperees()
     msg = _message(contenu, pieces=pieces)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
     await jm.message_supprime(bot, payload)
-    total = sum(len(t) for t in _textes(_vue(logs)))
+    blocs = _textes(_vue(logs))
+    total = sum(len(t) for t in blocs)
     assert total <= 4000
+    bloc_contenu = next(b for b in blocs if b.startswith("> "))
+    bloc_non_recup = next(b for b in blocs if "non récupérées" in b)
+    assert bloc_contenu.endswith("…")
+    assert bloc_non_recup.endswith("…")
 
 
 async def test_budget_4000_pire_cas_suppression_en_masse():
@@ -245,17 +260,33 @@ async def test_budget_4000_pire_cas_suppression_en_masse():
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5,
                               message_ids={m.id for m in msgs}, cached_messages=msgs)
     await jm.messages_supprimes_en_masse(bot, payload)
-    total = sum(len(t) for t in _textes(_vue(logs)))
+    blocs = _textes(_vue(logs))
+    total = sum(len(t) for t in blocs)
     assert total <= 4000
+    assert re.search(r"… et \d+ autres?", "\n".join(blocs))
 
 
 def test_borner_ne_coupe_jamais_un_arobase_isole():
     """`_echapper` neutralise un `@` avec un zero-width space qui le SUIT :
     couper pile entre les deux ressusciterait une mention réelle."""
-    texte = "x" * 10 + "@" + "​" + "y" * 10
+    texte = "x" * 10 + "@" + "\u200b" + "y" * 10
     resultat = jm._borner(texte, 12)   # la coupure tombe pile après le `@`
     assert not resultat.endswith("@…")
     assert not resultat[:-1].endswith("@")
+
+
+def test_borner_lignes_singulier_pour_une_seule_ligne_restante():
+    """« … et 1 autres » est un mauvais français : le singulier s'impose."""
+    lignes = ["a" * 50, "b" * 50]
+    resultat = jm._borner_lignes(lignes, 65)   # seule la 1re ligne tient
+    assert resultat.endswith("… et 1 autre")
+    assert "1 autres" not in resultat
+
+
+def test_borner_lignes_pluriel_pour_plusieurs_lignes_restantes():
+    lignes = ["a" * 50, "b" * 50, "c" * 50]
+    resultat = jm._borner_lignes(lignes, 65)   # seule la 1re ligne tient, 2 restent
+    assert resultat.endswith("… et 2 autres")
 
 
 async def test_suppression_en_masse_liste_bornee_par_lignes_entieres():

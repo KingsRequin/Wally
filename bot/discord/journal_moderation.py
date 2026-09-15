@@ -73,13 +73,17 @@ def _borner(texte: str, limite: int) -> str:
     return tronque + "…"
 
 
+def _recap(n: int) -> str:
+    return f"… et {n} autre" if n == 1 else f"… et {n} autres"
+
+
 def _borner_lignes(lignes: list[str], limite: int) -> str:
     """Borne une liste de lignes par lignes ENTIÈRES.
 
     `_borner` coupe au caractère près : sur `**auteur** : extrait`, la
     coupure peut tomber au milieu du marqueur `**`, laissant tout le RESTE du
     message en gras. Les lignes qui ne tiennent plus deviennent une seule
-    ligne récapitulative « … et N autres ».
+    ligne récapitulative « … et N autre(s) ».
     """
     texte = "\n".join(lignes)
     if len(texte) <= limite:
@@ -88,7 +92,7 @@ def _borner_lignes(lignes: list[str], limite: int) -> str:
     longueur = 0
     for i, ligne in enumerate(lignes):
         reste = len(lignes) - i
-        recap = f"… et {reste} autres"
+        recap = _recap(reste)
         # Marge pour la ligne récapitulative SI cette ligne ne complète pas
         # la liste — la toute dernière ligne n'a besoin d'aucune marge.
         marge = len(recap) + 1 if reste > 1 else 0
