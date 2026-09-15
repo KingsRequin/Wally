@@ -1,5 +1,5 @@
 {
- "exporte_le": "2026-09-14",
+ "exporte_le": "2026-09-15",
  "chapitres": [
   {
    "titre": "1. Le jeu en bref",
@@ -1482,7 +1482,7 @@
        "g": true
       },
       {
-       "t": " qui vaut pour tout le monde et pour toute la partie. Le tirage peut aussi ne rien donner. Par exemple :"
+       "t": " qui vaut pour tout le monde et pour toute la partie. Le tirage peut aussi ne rien donner. Les effets possibles :"
       }
      ]
     },
@@ -1526,6 +1526,56 @@
       ],
       [
        {
+        "t": "pioche doublée : jusqu'à 4 cartes par tour ;"
+       }
+      ],
+      [
+       {
+        "t": "les soins sont divisés par deux ;"
+       }
+      ],
+      [
+       {
+        "t": "tous les passifs sont visibles par tout le monde ;"
+       }
+      ],
+      [
+       {
+        "t": "on joue dans le sens inverse des aiguilles d'une montre ;"
+       }
+      ],
+      [
+       {
+        "t": "chaque joueur commence avec sa réserve d'énergie pleine ;"
+       }
+      ],
+      [
+       {
+        "t": "aucune carte ne peut être posée face cachée ;"
+       }
+      ],
+      [
+       {
+        "t": "impossible d'esquiver ;"
+       }
+      ],
+      [
+       {
+        "t": "aucune Aura ;"
+       }
+      ],
+      [
+       {
+        "t": "les dégâts de zone sont doublés ;"
+       }
+      ],
+      [
+       {
+        "t": "les Ultimes coûtent moitié moins cher ;"
+       }
+      ],
+      [
+       {
         "t": "rien."
        }
       ]
@@ -1561,7 +1611,7 @@
        "g": true
       },
       {
-       "t": ", et à ses adversaires seulement si l'effet les implique. Ses effets peuvent retourner la partie. Par exemple :"
+       "t": ", et à ses adversaires seulement si l'effet les implique. Ses effets peuvent retourner la partie. Les effets possibles :"
       }
      ]
     },
@@ -1576,6 +1626,61 @@
       [
        {
         "t": "ses passifs sont réinitialisés : les cartes de sa zone des passifs partent à la défausse ;"
+       }
+      ],
+      [
+       {
+        "t": "il échange un héros sur la table avec un adversaire ;"
+       }
+      ],
+      [
+       {
+        "t": "la partie se termine dans deux tours, et le joueur dont les héros ont le moins de PV cumulés perd ;"
+       }
+      ],
+      [
+       {
+        "t": "fatigue : tous ses héros perdent des PV ;"
+       }
+      ],
+      [
+       {
+        "t": "second souffle : tous ses héros regagnent des PV ;"
+       }
+      ],
+      [
+       {
+        "t": "sa main est défaussée, et il repioche 5 cartes ;"
+       }
+      ],
+      [
+       {
+        "t": "il prend une carte au hasard dans la main d'un adversaire ;"
+       }
+      ],
+      [
+       {
+        "t": "sa réserve d'énergie est vidée ;"
+       }
+      ],
+      [
+       {
+        "t": "sa réserve d'énergie est remplie ;"
+       }
+      ],
+      [
+       {
+        "t": "avant le mélange, il reprend en main une carte de sa défausse, au choix ;"
+       }
+      ],
+      [
+       {
+        "t": "un de ses héros morts revient avec la moitié de ses PV ;"
+       }
+      ],
+      [
+       {
+        "t": "sa main est visible par tous jusqu'à son prochain tour ;"
        }
       ],
       [
@@ -1598,14 +1703,26 @@
      "items": [
       [
        {
-        "t": "Le gagnant d'une partie gagne des "
+        "t": "Le gagnant d'une partie gagne "
        },
        {
-        "t": "jetons",
+        "t": "un jeton",
         "g": true
        },
        {
-        "t": "."
+        "t": ". En 2 contre 2, chaque gagnant gagne le sien."
+       }
+      ],
+      [
+       {
+        "t": "Les jetons "
+       },
+       {
+        "t": "se gardent",
+        "g": true
+       },
+       {
+        "t": " d'une partie à l'autre."
        }
       ],
       [
@@ -1617,7 +1734,7 @@
         "g": true
        },
        {
-        "t": " dont le tirage ne plaît pas."
+        "t": " dont le tirage ne plaît pas. Chaque relance coûte un jeton."
        }
       ],
       [
@@ -1629,7 +1746,7 @@
         "g": true
        },
        {
-        "t": ", en dépensant un jeton."
+        "t": "."
        }
       ],
       [
@@ -1641,7 +1758,14 @@
         "g": true
        },
        {
-        "t": "."
+        "t": ", et "
+       },
+       {
+        "t": "une seule fois par deck vidé",
+        "g": true
+       },
+       {
+        "t": " : un joueur qui vide son deck deux fois peut relancer les deux fois."
        }
       ]
      ]
