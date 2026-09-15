@@ -418,6 +418,10 @@ async def test_edition_meme_texte_mais_piece_retiree_publiee_avec_la_piece():
     await jm.message_modifie(bot, _message("lien", pieces=[photo]), _message("lien", pieces=[]))
     logs.send.assert_awaited_once()
     assert _medias(_vue(logs)) == ["photo.png"]
+    blocs = _textes(_vue(logs))
+    # Le texte n'a pas bougé : aucun bloc de contenu — ni diff ni Avant/Après,
+    # ce serait un « changement » affiché sur du texte identique.
+    assert not any("Modification" in b or "Avant" in b or "Après" in b for b in blocs)
 
 
 async def test_edition_par_un_bot_ignoree():
@@ -860,16 +864,81 @@ async def test_edition_reecriture_totale_retombe_sur_avant_apres():
 
 async def test_edition_diff_echappe_le_markdown_avant_les_marqueurs():
     """Un `*` posé par l'utilisateur ne doit pas se combiner avec nos propres
-    marqueurs `~~`/`**` — le contenu source est markdown-échappé D'ABORD."""
+    marqueurs `~~`/`**` — le contenu source est markdown-échappé D'ABORD, et
+    un espace de largeur nulle (round 1 #2) sépare le marqueur du délimiteur
+    échappé qui le touche."""
     bot, logs = _bot()
     await jm.message_modifie(bot, _message("salut *ami*"), _message("salut *pote*"))
     texte = "\n".join(_textes(_vue(logs)))
-    assert "~~\\*ami\\*~~" in texte
-    assert "**\\*pote\\***" in texte
+    zwsp = "\u200b"
+    assert f"~~\\*ami\\*{zwsp}~~" in texte
+    assert f"**\\*pote\\*{zwsp}**" in texte
 
 
 def test_diff_mots_reste_inchange_hors_diff():
     assert jm._diff_mots("bonjour le monde", "bonjour le monde") == "bonjour le monde"
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — #2 : délimiteur Markdown échappé au bord d'un mot marqué
+
+
+def test_diff_mots_jamais_de_run_de_trois_etoiles_ou_tildes():
+    """Un délimiteur Markdown échappé (`\\*`, `\\~`) sur le bord d'un mot
+    marqué colle à notre propre marqueur et forme un run de 3+ caractères
+    identiques que Discord peut relire comme un AUTRE marqueur — un espace
+    de largeur nulle doit l'empêcher, des deux côtés selon le besoin, sans
+    rien changer pour un mot ordinaire."""
+    # Reproduction exacte round 1 : ajouter le token `**` (échappé en `\*\*`)
+    # donnait `texte**\*\***`.
+    ajout = jm._diff_mots("texte", "texte \\*\\*")
+    assert not re.search(r"\*{3,}", ajout)
+    # Reproduction exacte round 1 : un `~~` échappé (`\~\~`) qui change de mot
+    # donnait `~~\~\~~~`.
+    changement = jm._diff_mots("bonjour \\~\\~ monde", "bonjour change monde")
+    assert not re.search(r"~{3,}", changement)
+    # Un mot ordinaire, sans délimiteur sur son bord, n'est pas touché.
+    assert jm._diff_mots("bonjour ancien monde", "bonjour nouveau monde") == \
+        "bonjour ~~ancien~~ **nouveau** monde"
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — #3 : pire cas budget sur le chemin DIFF (pas le repli)
+
+
+async def test_budget_4000_pire_cas_diff_edition_alternee():
+    """400 mots, la moitié changée un mot sur deux (ratio pile à 0.5, donc le
+    chemin DIFF — pas le repli Avant/Après testé par les autres pire cas) :
+    les marqueurs `~~`/`**` gonflent largement le texte au-delà du budget
+    d'un bloc — la troncature doit quand même tenir le total sous 4000."""
+    bot, logs = _bot()
+    mots_avant = [f"motoriginal{i:03d}" for i in range(400)]
+    mots_apres = [f"motoriginal{i:03d}" if i % 2 == 0 else f"motchange{i:03d}" for i in range(400)]
+    avant, apres = " ".join(mots_avant), " ".join(mots_apres)
+    await jm.message_modifie(bot, _message(avant), _message(apres))
+    blocs = _textes(_vue(logs))
+    total = sum(len(t) for t in blocs)
+    assert total <= 4000
+    bloc_diff = next(b for b in blocs if b.startswith("**Modification**"))
+    assert bloc_diff.endswith("…")
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 — #4 : le repli Avant/Après échappe le markdown, comme le diff
+
+
+async def test_edition_avant_apres_echappe_le_markdown():
+    """Réécriture de plus de la moitié du texte (repli Avant/Après) : un
+    `**gras**` brut posé par l'auteur doit ressortir échappé, exactement
+    comme sur le chemin diff — jamais rendu tel quel (gras Discord), et
+    jamais échappé DEUX fois (pas de double zero-width space après un `@`)."""
+    bot, logs = _bot()
+    await jm.message_modifie(bot, _message("un deux trois **gras**"),
+                             _message("quatre cinq six **gras**"))
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "**Avant**" in texte and "**Après**" in texte   # bien le repli, pas le diff
+    assert "\\*\\*gras\\*\\*" in texte
+    assert "**gras**" not in texte
 
 
 # ---------------------------------------------------------------------------

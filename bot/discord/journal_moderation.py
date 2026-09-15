@@ -175,11 +175,6 @@ def _citer(texte: str, *, limite: int = _MAX_CITATION) -> str:
     return _borner(cite, limite)
 
 
-def _bloc_cite(titre: str, texte: str) -> str:
-    corps = _citer(texte) if texte.strip() else "*aucun texte*"
-    return f"**{titre}**\n{corps}"
-
-
 def _mots(texte: str) -> list[str]:
     """Tokenise en alternance mot / espace(s).
 
@@ -188,6 +183,24 @@ def _mots(texte: str) -> list[str]:
     au mot près.
     """
     return re.findall(r"\S+|\s+", texte)
+
+
+# Un délimiteur Markdown à VIF sur le bord d'un mot marqué (`~~mot~~` / `**mot**`)
+# colle à notre propre marqueur et forme un run de 3+ caractères identiques que
+# Discord (ou un lecteur humain) peut relire comme un AUTRE marqueur — même si
+# ce délimiteur est lui-même échappé (`\*`) : le backslash n'échappe QUE le
+# caractère qui le suit, pas ceux que NOUS lui accolons.
+_DELIMITEURS_MARQUAGE = set("*~_|`")
+
+
+def _marque(mot: str, marqueur: str) -> str:
+    """Encadre `mot` du `marqueur` (`~~`/`**`), en glissant un espace de
+    largeur nulle entre le marqueur et `mot` si le bord touché est un
+    délimiteur Markdown — sinon aucun changement.
+    """
+    debut = "\u200b" if mot[0] in _DELIMITEURS_MARQUAGE else ""
+    fin = "\u200b" if mot[-1] in _DELIMITEURS_MARQUAGE else ""
+    return f"{marqueur}{debut}{mot}{fin}{marqueur}"
 
 
 def _diff_mots(avant: str, apres: str) -> str | None:
@@ -218,9 +231,9 @@ def _diff_mots(avant: str, apres: str) -> str | None:
             continue
         supprime = "".join(mots_avant[i1:i2]).strip()
         ajoute = "".join(mots_apres[j1:j2]).strip()
-        piece = f"~~{supprime}~~" if supprime else ""
+        piece = _marque(supprime, "~~") if supprime else ""
         if ajoute:
-            piece += (" " if piece else "") + f"**{ajoute}**"
+            piece += (" " if piece else "") + _marque(ajoute, "**")
         if piece:
             if marque_precedent:
                 morceaux.append(" ")
@@ -232,17 +245,19 @@ def _diff_mots(avant: str, apres: str) -> str | None:
 def _citer_deja_echappe(texte: str, *, limite: int = _MAX_CITATION) -> str:
     """Comme `_citer`, sans rééchapper.
 
-    Réservé au diff d'édition : son texte est déjà markdown/`@`-échappé
-    AVANT que les marqueurs `~~`/`**` n'y soient posés (cf. `_diff_mots`) —
-    rééchapper ici doublerait le zero-width space posé après chaque `@`.
+    Réservé aux blocs dont le texte est déjà markdown/`@`-échappé AVANT
+    d'arriver ici — le diff d'édition (marqueurs `~~`/`**` posés par
+    `_diff_mots`) et son repli Avant/Après, échappés du MÊME geste par
+    l'appelant. Rééchapper ici doublerait le zero-width space posé après
+    chaque `@`.
     """
     cite = "\n".join(f"> {ligne}" for ligne in texte.splitlines())
     return _borner(cite, limite)
 
 
-def _bloc_modification(diff_texte: str) -> str:
-    corps = _citer_deja_echappe(diff_texte) if diff_texte.strip() else "*aucun texte*"
-    return f"**Modification**\n{corps}"
+def _bloc_deja_echappe(titre: str, texte: str) -> str:
+    corps = _citer_deja_echappe(texte) if texte.strip() else "*aucun texte*"
+    return f"**{titre}**\n{corps}"
 
 
 def _bloc_non_recuperees(ratees: list[tuple[str, str]]) -> str:
@@ -510,16 +525,26 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
                f"[aller au message]({after.jump_url})")
         tele = await _telecharger_pieces(salons, retirees, nsfw=_salon_nsfw(after.channel))
         # Échappés AVANT le diff : les marqueurs `~~`/`**` posés par `_diff_mots`
-        # doivent rester les SEULS actifs (cf. sa docstring).
+        # doivent rester les SEULS actifs (cf. sa docstring). Le repli
+        # Avant/Après réutilise le MÊME texte échappé — les deux chemins
+        # doivent rendre le markdown de l'auteur de façon identique.
         avant_echappe = _echapper(discord.utils.escape_markdown(avant))
         apres_echappe = _echapper(discord.utils.escape_markdown(apres))
-        diff = _diff_mots(avant_echappe, apres_echappe)
+        # Seul le texte a pu ne PAS bouger (une pièce jointe retirée, texte
+        # identique) : aucun bloc de contenu dans ce cas, ni diff ni
+        # Avant/Après — sinon la fiche affiche un « changement » sur du texte
+        # inchangé.
+        texte_identique = avant_echappe == apres_echappe
+        diff = None if texte_identique else _diff_mots(avant_echappe, apres_echappe)
 
         def construire(t: _Telechargement) -> discord.ui.LayoutView:
-            if diff is None:
-                corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
-            else:
-                corps = [meta, _bloc_modification(diff)]
+            corps = [meta]
+            if not texte_identique:
+                if diff is None:
+                    corps.append(_bloc_deja_echappe("Avant", avant_echappe))
+                    corps.append(_bloc_deja_echappe("Après", apres_echappe))
+                else:
+                    corps.append(_bloc_deja_echappe("Modification", diff))
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
             return fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
