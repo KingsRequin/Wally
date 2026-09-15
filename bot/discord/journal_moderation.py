@@ -23,18 +23,23 @@ un envoi en échec ne prive pas les autres. Les pièces jointes sont
 téléchargées UNE fois (octets bruts) puis reconditionnées en `discord.File`
 frais par salon — un `File` est consommé par un envoi (son tampon est lu puis
 fermé), il en faut un NEUF à chaque `send()`.
+
+Deux gardes de contenu sur les pièces jointes : celles d'un salon NSFW ne
+sont JAMAIS republiées (le salon de logs n'a pas le même public), seulement
+listées ; celles postées sous spoiler repartent sous spoiler.
 """
 from __future__ import annotations
 
 import io
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import discord
 from loguru import logger
 
 from bot.core.temps import maintenant
-from bot.discord.fiches import ACCENT_ALERTE, fiche, url_avatar
+from bot.discord.fiches import ACCENT_ALERTE, Piece, borner, fiche, url_avatar
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -44,6 +49,7 @@ _MAX_CITATION = 1500           # budget V2 total (4000) réparti entre les blocs
 _MAX_NON_RECUPEREES = 500      # budget de la liste des pièces non récupérées
 _MAX_EXTRAIT = 120             # extrait par message d'une suppression en masse
 _MAX_PIECES = 10                # plafond d'upload Discord pour un message
+_PREFIXE_SPOILER = "SPOILER_"  # la convention de nom de Discord pour une pièce sous spoiler
 
 # `discord.File.uri` l'exige (doc) : Discord traite le reste EN SILENCE côté
 # serveur — un nom hors de cet alphabet rend un `attachment://` mort.
@@ -52,9 +58,20 @@ _CARACTERES_SURS = re.compile(r"[^A-Za-z0-9_.-]")
 
 class _PieceRecuperee(NamedTuple):
     """Les octets d'une pièce jointe téléchargée UNE fois, avant reconditionnement par salon."""
-    nom: str
+    nom: str          # nom ENVOYÉ (assaini, préfixé `SPOILER_` si spoiler)
+    origine: str      # nom d'origine, pour la liste des pièces non publiées
     donnees: bytes
-    image: bool
+    spoiler: bool
+
+
+class _Telechargement(NamedTuple):
+    recuperees: list[_PieceRecuperee]
+    medias: list[Piece]                  # images → galerie
+    autres: list[Piece]                  # le reste → composant `File`
+    ratees: list[tuple[str, str]]        # (nom, motif)
+
+
+_SANS_PIECE = _Telechargement([], [], [], [])
 
 
 def _echapper(texte: str) -> str:
@@ -62,15 +79,13 @@ def _echapper(texte: str) -> str:
 
 
 def _borner(texte: str, limite: int) -> str:
-    if len(texte) <= limite:
-        return texte
-    tronque = texte[: limite - 1]
+    borne = borner(texte, limite)
     # `_echapper` neutralise un `@` avec un zero-width space qui le SUIT :
     # couper pile entre les deux laisserait un `@` isolé, à nouveau ACTIF
     # (mention réelle) alors que le but de l'échappement était de l'éteindre.
-    if tronque.endswith("@"):
-        tronque = tronque[:-1]
-    return tronque + "…"
+    if borne != texte and borne[:-1].endswith("@"):
+        borne = borne[:-2] + "…"
+    return borne
 
 
 def _recap(n: int) -> str:
@@ -128,6 +143,36 @@ def _bloc_non_recuperees(ratees: list[tuple[str, str]]) -> str:
     return _borner(f"**Pièces jointes non récupérées**\n{lignes}", _MAX_NON_RECUPEREES)
 
 
+def _mention_salon(salon_id: int, salon: Any) -> str:
+    """`<#id>` suivi du nom lisible du salon.
+
+    Les salons de logs vivent parfois sur un AUTRE serveur que le salon
+    observé : là, `<#id>` seul s'affiche « salon inconnu ». Le nom (échappé)
+    le rend lisible partout ; à défaut de nom, l'id.
+    """
+    nom = getattr(salon, "name", None)
+    if isinstance(nom, str) and nom:
+        return f"<#{salon_id}> (#{discord.utils.escape_markdown(nom)})"
+    return f"<#{salon_id}> ({salon_id})"
+
+
+def _salon_nsfw(salon: Any) -> bool:
+    """Le drapeau NSFW du salon d'origine ; inconnu → non NSFW.
+
+    Un fil hérite du drapeau de son parent : `Thread.is_nsfw()` le lit déjà
+    sur le parent dans discord.py.
+    """
+    est_nsfw = getattr(salon, "is_nsfw", None)
+    return bool(est_nsfw()) if callable(est_nsfw) else False
+
+
+def _est_spoiler(piece: Any) -> bool:
+    est_spoiler = getattr(piece, "is_spoiler", None)
+    if callable(est_spoiler) and est_spoiler():
+        return True
+    return str(piece.filename).startswith(_PREFIXE_SPOILER)
+
+
 def _assainir(nom: str) -> str:
     """ASCII alphanumérique + `_-.` uniquement, extension préservée, jamais vide."""
     base, point, ext = nom.rpartition(".")
@@ -154,15 +199,22 @@ def _nom_disponible(nom: str, pris: set[str]) -> str:
     return f"{n}_{nom}"
 
 
-def _salons_cibles(bot: "WallyDiscord", guild_id: int | None) -> list[Any]:
+def _salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: int | None) -> list[Any]:
     """Résout les salons de logs CONFIGURÉS, ou [] si rien à publier.
 
     `salon_ids` vide → désactivé ; guild hors `guild_ids` → rien. Un salon
     introuvable ne bloque pas les autres : WARNING nommant son id, la
     résolution continue sur le reste.
+
+    Un événement né DANS un salon de logs ne se journalise pas : un salon de
+    logs peut vivre dans un serveur observé, et supprimer une fiche (ou
+    purger le salon) la republiait aussitôt dans chaque salon de logs — une
+    fiche qu'on ne pouvait plus jamais effacer.
     """
     cfg = bot.config.discord.journal_moderation
     if not cfg.salon_ids or guild_id not in cfg.guild_ids:
+        return []
+    if salon_source_id is not None and salon_source_id in cfg.salon_ids:
         return []
     salons: list[Any] = []
     for salon_id in cfg.salon_ids:
@@ -177,9 +229,7 @@ def _salons_cibles(bot: "WallyDiscord", guild_id: int | None) -> list[Any]:
     return salons
 
 
-async def _telecharger_pieces(
-    salons: list[Any], pieces: list[Any],
-) -> tuple[list[_PieceRecuperee], list[str], list[str], list[tuple[str, str]]]:
+async def _telecharger_pieces(salons: list[Any], pieces: list[Any], *, nsfw: bool) -> _Telechargement:
     """Retélécharge au plus 10 pièces jointes, UNE fois pour tous les salons.
 
     Le plafond de poids utilise la PLUS PETITE limite d'upload parmi les
@@ -188,57 +238,87 @@ async def _telecharger_pieces(
     message (pas testé fichier par fichier) : dix pièces chacune sous la
     limite peuvent quand même représenter dix fois la limite en mémoire.
 
-    Rend `(pieces_recuperees, refs_medias, refs_fichiers, non_recuperees)`.
-    Les images vont en galerie (`refs_medias`), le reste en composant `File`
-    (`refs_fichiers`) — en Components V2, une pièce jointe que rien ne
-    référence n'apparaît pas du tout.
+    Les images vont en galerie (`medias`), le reste en composant `File`
+    (`autres`) — en Components V2, une pièce jointe que rien ne référence
+    n'apparaît pas du tout.
+
+    `nsfw` : rien n'est téléchargé, tout est listé « salon NSFW ». Une pièce
+    sous spoiler repart sous spoiler (nom `SPOILER_` ET composant marqué).
     """
+    if nsfw:
+        return _Telechargement([], [], [], [(p.filename, "salon NSFW") for p in pieces])
     limites = [
         lim for lim in (getattr(getattr(s, "guild", None), "filesize_limit", None) for s in salons)
         if lim is not None
     ]
     restant = min(limites) if limites else None
-    recuperees: list[_PieceRecuperee] = []
-    medias: list[str] = []
-    autres: list[str] = []
-    ratees: list[tuple[str, str]] = []
+    tele = _Telechargement([], [], [], [])
     pris: set[str] = set()
     for index, piece in enumerate(pieces):
         if index >= _MAX_PIECES:
-            ratees.append((piece.filename, "au-delà de 10"))
+            tele.ratees.append((piece.filename, "au-delà de 10"))
             continue
         if restant is not None and piece.size > restant:
-            ratees.append((piece.filename, "trop lourde"))
+            tele.ratees.append((piece.filename, "trop lourde"))
             continue
+        spoiler = _est_spoiler(piece)
         try:
-            fichier = await piece.to_file(use_cached=True)
+            fichier = await piece.to_file(use_cached=True, spoiler=spoiler)
         except Exception as e:  # noqa: BLE001 — attendu : Discord a déjà purgé la pièce
             logger.info("journal de modération : pièce {n} indisponible : {e!r}", n=piece.filename, e=e)
-            ratees.append((piece.filename, "plus disponible"))
+            tele.ratees.append((piece.filename, "plus disponible"))
             continue
         donnees = fichier.fp.read()
         if restant is not None:
             restant -= piece.size
-        nom = _nom_disponible(_assainir(fichier.filename), pris)
-        pris.add(nom)
+        # Le préfixe est retiré AVANT l'assainissement et le dédoublonnage,
+        # puis reposé : un `1_SPOILER_x.png` ne serait plus un spoiler.
+        base = _nom_disponible(_assainir(fichier.filename.removeprefix(_PREFIXE_SPOILER)), pris)
+        pris.add(base)
+        nom = f"{_PREFIXE_SPOILER}{base}" if spoiler else base
+        tele.recuperees.append(_PieceRecuperee(nom=nom, origine=piece.filename,
+                                               donnees=donnees, spoiler=spoiler))
+        ref = Piece(f"attachment://{nom}", spoiler=spoiler)
         image = (piece.content_type or "").startswith("image/")
-        recuperees.append(_PieceRecuperee(nom=nom, donnees=donnees, image=image))
-        ref = f"attachment://{nom}"
-        (medias if image else autres).append(ref)
-    return recuperees, medias, autres, ratees
+        (tele.medias if image else tele.autres).append(ref)
+    return tele
 
 
 def _fichiers_frais(pieces: list[_PieceRecuperee]) -> list[discord.File]:
     """Un `discord.File` neuf par pièce : un `File` déjà envoyé est consommé."""
-    return [discord.File(io.BytesIO(p.donnees), filename=p.nom) for p in pieces]
+    return [discord.File(io.BytesIO(p.donnees), filename=p.nom, spoiler=p.spoiler) for p in pieces]
 
 
-async def _publier_partout(salons: list[Any], vue: discord.ui.LayoutView,
-                           pieces: list[_PieceRecuperee]) -> None:
+def _sans_fichiers(tele: _Telechargement) -> _Telechargement:
+    """La même fiche, pièces récupérées déplacées dans la liste des non publiées."""
+    refusees = [(p.origine, "envoi des fichiers refusé") for p in tele.recuperees]
+    return _Telechargement([], [], [], tele.ratees + refusees)
+
+
+async def _publier_partout(salons: list[Any], construire: Callable[[_Telechargement], discord.ui.LayoutView],
+                           tele: _Telechargement = _SANS_PIECE) -> None:
+    vue = construire(tele)
     for salon in salons:
         try:
-            await salon.send(view=vue, files=_fichiers_frais(pieces),
+            await salon.send(view=vue, files=_fichiers_frais(tele.recuperees),
                              allowed_mentions=discord.AllowedMentions.none())
+        except discord.Forbidden as e:
+            if not tele.recuperees:
+                logger.warning("journal de modération : envoi refusé dans {c} : {e!r}",
+                               c=getattr(salon, "id", "?"), e=e)
+                continue
+            # Le cas courant : le salon accepte le texte mais pas les pièces
+            # jointes. Sans ce repli, chaque suppression avec image perdait sa
+            # fiche entière dans ce salon, à chaque fois.
+            logger.warning("journal de modération : {c} refuse les fichiers (permission « Joindre des "
+                           "fichiers » manquante ?), fiche renvoyée sans pièces : {e!r}",
+                           c=getattr(salon, "id", "?"), e=e)
+            try:
+                await salon.send(view=construire(_sans_fichiers(tele)),
+                                 allowed_mentions=discord.AllowedMentions.none())
+            except Exception as e2:  # noqa: BLE001 — un salon en échec ne prive pas les autres
+                logger.warning("journal de modération : envoi sans pièces impossible dans {c} : {e!r}",
+                               c=getattr(salon, "id", "?"), e=e2)
         except Exception as e:  # noqa: BLE001 — un salon en échec ne prive pas les autres
             logger.warning("journal de modération : envoi impossible dans {c} : {e!r}",
                            c=getattr(salon, "id", "?"), e=e)
@@ -246,11 +326,13 @@ async def _publier_partout(salons: list[Any], vue: discord.ui.LayoutView,
 
 async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
     try:
-        salons = _salons_cibles(bot, payload.guild_id)
+        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id)
         if not salons:
             return
         msg = payload.cached_message
+        source: Any = bot.get_channel(payload.channel_id)
         if msg is not None:
+            source = source or msg.channel
             auteur = msg.author
             meta_auteur = f"<@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)})"
             vignette = url_avatar(auteur)
@@ -262,16 +344,19 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
             vignette = None
             bloc_contenu = "*contenu non disponible*"
             pieces = []
-        meta = (f"**Auteur** {meta_auteur} · **Salon** <#{payload.channel_id}> · "
+        meta = (f"**Auteur** {meta_auteur} · **Salon** {_mention_salon(payload.channel_id, source)} · "
                f"**Message** {payload.message_id}")
-        recuperees, medias, autres, ratees = await _telecharger_pieces(salons, pieces)
-        corps = [meta, bloc_contenu]
-        if ratees:
-            corps.append(_bloc_non_recuperees(ratees))
+        tele = await _telecharger_pieces(salons, pieces, nsfw=_salon_nsfw(source))
         heure = maintenant().strftime("%Hh%M")
-        vue = fiche("🗑️ Message supprimé", corps, accent=ACCENT_ALERTE, vignette=vignette,
-                   medias=medias, fichiers=autres, pied=f"Supprimé à {heure}")
-        await _publier_partout(salons, vue, recuperees)
+
+        def construire(t: _Telechargement) -> discord.ui.LayoutView:
+            corps = [meta, bloc_contenu]
+            if t.ratees:
+                corps.append(_bloc_non_recuperees(t.ratees))
+            return fiche("🗑️ Message supprimé", corps, accent=ACCENT_ALERTE, vignette=vignette,
+                         medias=t.medias, fichiers=t.autres, pied=f"Supprimé à {heure}")
+
+        await _publier_partout(salons, construire, tele)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression non journalisée : {e!r}", e=e)
 
@@ -286,20 +371,23 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
         if avant == apres and not retirees:
             return          # embed de lien, épinglage : rien n'a bougé
         guild_id = after.guild.id if after.guild is not None else None
-        salons = _salons_cibles(bot, guild_id)
+        salons = _salons_cibles(bot, guild_id, after.channel.id)
         if not salons:
             return
         auteur = after.author
         meta = (f"**Auteur** <@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)}) · "
-               f"**Salon** <#{after.channel.id}> · "
+               f"**Salon** {_mention_salon(after.channel.id, after.channel)} · "
                f"**Message** {after.id} · [aller au message]({after.jump_url})")
-        recuperees, medias, autres, ratees = await _telecharger_pieces(salons, retirees)
-        corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
-        if ratees:
-            corps.append(_bloc_non_recuperees(ratees))
-        vue = fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
-                   medias=medias, fichiers=autres)
-        await _publier_partout(salons, vue, recuperees)
+        tele = await _telecharger_pieces(salons, retirees, nsfw=_salon_nsfw(after.channel))
+
+        def construire(t: _Telechargement) -> discord.ui.LayoutView:
+            corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
+            if t.ratees:
+                corps.append(_bloc_non_recuperees(t.ratees))
+            return fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
+                         medias=t.medias, fichiers=t.autres)
+
+        await _publier_partout(salons, construire, tele)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : modification non journalisée : {e!r}", e=e)
 
@@ -313,10 +401,12 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
     cache (`cached_messages`), bornée pour tenir dans le budget V2.
     """
     try:
-        salons = _salons_cibles(bot, payload.guild_id)
+        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id)
         if not salons:
             return
-        meta = f"**Salon** <#{payload.channel_id}> · **Messages** {len(payload.message_ids)}"
+        source = bot.get_channel(payload.channel_id)
+        meta = (f"**Salon** {_mention_salon(payload.channel_id, source)} · "
+                f"**Messages** {len(payload.message_ids)}")
         lignes = []
         for msg in payload.cached_messages:
             auteur = discord.utils.escape_markdown(getattr(msg.author, "name", "inconnu"))
@@ -327,30 +417,30 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
         if lignes:
             corps.append(_borner_lignes(lignes, _MAX_CITATION))
         vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
-        await _publier_partout(salons, vue, [])
+        await _publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression en masse non journalisée : {e!r}", e=e)
 
 
 async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
     try:
-        cibles = _salons_cibles(bot, salon.guild.id)
+        cibles = _salons_cibles(bot, salon.guild.id, None)
         if not cibles:
             return
         meta = f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id}"
         vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL)
-        await _publier_partout(cibles, vue, [])
+        await _publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001 — jamais lever, appelé depuis salons_temporaires
         logger.warning("journal de modération : création vocale non journalisée : {e!r}", e=e)
 
 
 async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
     try:
-        cibles = _salons_cibles(bot, salon.guild.id)
+        cibles = _salons_cibles(bot, salon.guild.id, None)
         if not cibles:
             return
         meta = f"**Salon** {salon.name} · **ID** {salon.id}"
         vue = fiche("🔇 Canal vocal supprimé", [meta], accent=_COULEUR_VOCAL)
-        await _publier_partout(cibles, vue, [])
+        await _publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression vocale non journalisée : {e!r}", e=e)

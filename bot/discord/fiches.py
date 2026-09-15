@@ -13,6 +13,7 @@ AVANT d'arriver ici.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 import discord
 
@@ -30,10 +31,35 @@ ACCENTS_EMOTION = {
 }
 
 
+class Piece(NamedTuple):
+    """Une référence de `medias` / `fichiers` qui porte son drapeau spoiler.
+
+    Une simple chaîne reste acceptée partout : elle vaut `Piece(url)`.
+    """
+    url: str
+    spoiler: bool = False
+
+
+def borner(texte: str, limite: int) -> str:
+    """Tronque `texte` à `limite` caractères AU PLUS, « … » compris.
+
+    Le tronc commun des bornages de corps venus de l'extérieur (cf. le
+    plafond de 4000 ci-dessus). Chaque appelant garde son étape propre —
+    échappement Markdown, `@` neutralisés — autour de cet appel.
+    """
+    if len(texte) <= limite:
+        return texte
+    return texte[: limite - 1] + "…"
+
+
+def _piece(ref: str | Piece) -> Piece:
+    return ref if isinstance(ref, Piece) else Piece(ref)
+
+
 def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
           vignette: str | None = None, pied: str | None = None,
-          medias: Sequence[str] = (),
-          fichiers: Sequence[str] = ()) -> discord.ui.LayoutView:
+          medias: Sequence[str | Piece] = (),
+          fichiers: Sequence[str | Piece] = ()) -> discord.ui.LayoutView:
     """Une fiche à un seul conteneur.
 
     `corps` est une liste de BLOCS : chacun devient un `TextDisplay`, séparés
@@ -50,6 +76,10 @@ def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
     (galerie d'images) ou par `fichiers` (composant `File`, pour ce qu'une
     galerie ne montre pas : vidéos, archives). `Thumbnail` et galerie ne
     prennent que des images — la doc Discord l'écrit pour la vignette.
+
+    Une entrée `Piece(url, spoiler=True)` pose l'image ou le fichier SOUS
+    SPOILER : le drapeau vit dans le composant, pas seulement dans le nom
+    du fichier envoyé.
     """
     blocs = [b for b in corps if b]
     contenu: list[discord.ui.Item] = []
@@ -65,11 +95,11 @@ def fiche(titre: str, corps: Sequence[str], *, accent: int = ACCENT_NEUTRE,
         contenu.append(discord.ui.TextDisplay(bloc))
     if medias:
         galerie: discord.ui.MediaGallery = discord.ui.MediaGallery()
-        for media in medias:
-            galerie.add_item(media=media)
+        for media in map(_piece, medias):
+            galerie.add_item(media=media.url, spoiler=media.spoiler)
         contenu.append(galerie)
-    for chemin in fichiers:
-        contenu.append(discord.ui.File(chemin))
+    for fichier in map(_piece, fichiers):
+        contenu.append(discord.ui.File(fichier.url, spoiler=fichier.spoiler))
     if pied:
         contenu.append(discord.ui.TextDisplay(f"-# {pied}"))
 

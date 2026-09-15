@@ -19,7 +19,7 @@ import httpx
 from loguru import logger
 
 from bot.core.self_trace import note_act
-from bot.discord.fiches import fiche, url_avatar
+from bot.discord.fiches import borner, fiche, url_avatar
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -83,9 +83,7 @@ def _borner_externe(texte: str, limite: int = _MAX_TEXTE_EXTERNE) -> str:
     deux (un `\\` isolé en fin de bloc) : `escape_markdown` ne fait qu'AJOUTER
     des caractères, il ne peut pas en joindre deux entre eux.
     """
-    coupe = len(texte) > limite
-    echappe = discord.utils.escape_markdown(texte[:limite])
-    return f"{echappe}…" if coupe else echappe
+    return discord.utils.escape_markdown(borner(texte, limite))
 
 
 async def accueillir(bot: "WallyDiscord", member: Any) -> None:

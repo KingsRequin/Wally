@@ -569,3 +569,151 @@ async def test_edits_journalise_meme_dans_une_guild_ignoree(monkeypatch):
     await handlers["on_message_edit"](_message("a"), _message("b"))
     await asyncio.sleep(0)     # laisse la tâche schedulée par `_fire` s'exécuter
     assert appels == ["b"]
+
+
+# ---------------------------------------------------------------------------
+# Revue finale — un événement né dans un salon de logs ne se journalise pas
+
+
+async def test_suppression_dans_un_salon_de_logs_non_republiee():
+    """Supprimer une fiche du journal la republiait aussitôt, à l'infini."""
+    bot, salons = _bot_multi([LOGS, LOGS2])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=LOGS, message_id=1, cached_message=None)
+    await jm.message_supprime(bot, payload)
+    salons[LOGS].send.assert_not_awaited()
+    salons[LOGS2].send.assert_not_awaited()
+
+
+async def test_purge_d_un_salon_de_logs_non_republiee():
+    bot, salons = _bot_multi([LOGS, LOGS2])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=LOGS2, message_ids={1, 2}, cached_messages=[])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    salons[LOGS].send.assert_not_awaited()
+    salons[LOGS2].send.assert_not_awaited()
+
+
+async def test_edition_dans_un_salon_de_logs_non_republiee():
+    bot, salons = _bot_multi([LOGS, LOGS2])
+    await jm.message_modifie(bot, _message("a", channel_id=LOGS), _message("b", channel_id=LOGS))
+    salons[LOGS].send.assert_not_awaited()
+    salons[LOGS2].send.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Revue finale — le salon d'origine est lisible depuis un autre serveur
+
+
+async def test_nom_du_salon_a_cote_de_la_mention_suppression_et_masse():
+    bot, logs = _bot()
+    await jm.message_supprime(bot, SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
+                                                   cached_message=None))
+    await jm.messages_supprimes_en_masse(bot, SimpleNamespace(guild_id=COMMU, channel_id=5,
+                                                              message_ids={1}, cached_messages=[]))
+    assert "<#5> (#discussions)" in "\n".join(_textes(_vue(logs, 0)))
+    assert "<#5> (#discussions)" in "\n".join(_textes(_vue(logs, 1)))
+
+
+async def test_nom_du_salon_a_cote_de_la_mention_edition_echappe():
+    bot, logs = _bot()
+    avant, apres = _message("a"), _message("b")
+    apres.channel = SimpleNamespace(id=5, name="le_salon")
+    await jm.message_modifie(bot, avant, apres)
+    assert "<#5> (#le\\_salon)" in "\n".join(_textes(_vue(logs)))
+
+
+async def test_salon_inconnu_mention_suivie_de_l_id():
+    bot, logs = _bot()
+    await jm.message_supprime(bot, SimpleNamespace(guild_id=COMMU, channel_id=404, message_id=1,
+                                                   cached_message=None))
+    assert "<#404> (404)" in "\n".join(_textes(_vue(logs)))
+
+
+# ---------------------------------------------------------------------------
+# Revue finale — NSFW jamais republié, spoiler republié sous spoiler
+
+
+async def test_pieces_d_un_salon_nsfw_listees_jamais_republiees():
+    bot, logs = _bot()
+    piece = _piece(1, "photo.png")
+    msg = _message("texte", pieces=[piece])
+    msg.channel = SimpleNamespace(id=6, name="nsfw", is_nsfw=lambda: True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=6, message_id=1, cached_message=msg)
+
+    await jm.message_supprime(bot, payload)
+
+    piece.to_file.assert_not_awaited()
+    kwargs = logs.send.await_args.kwargs
+    assert kwargs["files"] == []
+    assert _medias(kwargs["view"]) == []
+    texte = "\n".join(_textes(kwargs["view"]))
+    assert "photo.png (salon NSFW)" in texte
+
+
+async def test_pieces_retirees_d_une_edition_en_salon_nsfw_non_republiees():
+    bot, logs = _bot()
+    photo = _piece(1, "photo.png")
+    avant, apres = _message("lien", pieces=[photo]), _message("lien", pieces=[])
+    apres.channel = SimpleNamespace(id=6, name="nsfw", is_nsfw=lambda: True)
+    await jm.message_modifie(bot, avant, apres)
+    photo.to_file.assert_not_awaited()
+    assert "salon NSFW" in "\n".join(_textes(_vue(logs)))
+
+
+async def test_piece_sous_spoiler_republiee_sous_spoiler():
+    bot, logs = _bot()
+    image = _piece(1, "SPOILER_photo.png")
+    msg = _message("texte", pieces=[image])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await jm.message_supprime(bot, payload)
+
+    assert image.to_file.await_args.kwargs["spoiler"] is True
+    kwargs = logs.send.await_args.kwargs
+    fichier = kwargs["files"][0]
+    assert fichier.spoiler is True
+    galerie = next(c for c in kwargs["view"].walk_children() if isinstance(c, discord.ui.MediaGallery))
+    assert galerie.items[0].spoiler is True
+    assert galerie.items[0].media.url == f"attachment://{fichier.filename}"
+
+
+async def test_fichier_sous_spoiler_composant_file_marque():
+    bot, logs = _bot()
+    video = _piece(1, "clip.mp4", content_type="video/mp4")
+    video.is_spoiler = lambda: True      # drapeau Discord, sans préfixe dans le nom
+    msg = _message("texte", pieces=[video])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await jm.message_supprime(bot, payload)
+
+    kwargs = logs.send.await_args.kwargs
+    composant = next(c for c in kwargs["view"].walk_children() if isinstance(c, discord.ui.File))
+    assert composant.spoiler is True
+    assert composant.url == f"attachment://{kwargs['files'][0].filename}"
+    assert kwargs["files"][0].spoiler is True
+
+
+# ---------------------------------------------------------------------------
+# Revue finale — fichiers refusés : fiche renvoyée en texte seul
+
+
+async def test_fichiers_refuses_fiche_renvoyee_sans_pieces():
+    bot, logs = _bot()
+    refus = discord.Forbidden(SimpleNamespace(status=403, reason="x"), "Missing Permissions")
+    logs.send.side_effect = [refus, None]
+    piece = _piece(1, "photo.png")
+    msg = _message("texte", pieces=[piece])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    dits: list[str] = []
+    jeton = jm.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
+        await jm.message_supprime(bot, payload)
+    finally:
+        jm.logger.remove(jeton)
+
+    assert logs.send.await_count == 2
+    reprise = logs.send.await_args_list[1].kwargs
+    assert "files" not in reprise or not reprise["files"]
+    assert _medias(reprise["view"]) == []
+    assert "photo.png (envoi des fichiers refusé)" in "\n".join(_textes(reprise["view"]))
+    assert any("Joindre des fichiers" in d for d in dits)
