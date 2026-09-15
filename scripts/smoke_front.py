@@ -568,13 +568,17 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
           window.__ordre.push([Math.round(performance.now() - window.__t0),
                                bord, libre, bas]);
         }
-        if (performance.now() - window.__t0 < 900) requestAnimationFrame(lu);
+        // 1300 ms : le headless trame SANS GPU, et la carte d'Azraël (contour
+        // doré en drop-shadow depuis le design du 2026-09-15) n'y tient que
+        // ~22 images/s. En 900 ms le relevé tombait sous son minimum
+        // d'échantillons sans qu'aucun croisement n'ait été vu.
+        if (performance.now() - window.__t0 < 1300) requestAnimationFrame(lu);
       };
       window.__t0 = performance.now(); lu();
     }""")
     page.mouse.move(boite["x"] + boite["width"] * 0.5,
                     boite["y"] + boite["height"] * 0.3)
-    page.wait_for_timeout(1200)
+    page.wait_for_timeout(1600)
     releve = page.evaluate("() => window.__ordre")
 
     # 🚨 DEUX invariants, relevés image par image pendant toute la transition.

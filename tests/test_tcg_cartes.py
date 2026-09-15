@@ -11,7 +11,7 @@ from bot.core import tcg_cartes
 def test_les_cartes_terminees_sont_la():
     assert set(tcg_cartes.CARTES) == {
         "azrael", "claker", "rhae", "lilith", "kingsrequin", "wally",
-        "meliodas"}
+        "meliodas", "kassandre", "lilio"}
 
 
 def test_toute_carte_declare_ses_illustrations_sans_extension():
@@ -360,8 +360,8 @@ def test_le_prestige_suit_l_holo_et_non_le_palier():
     Claker (`ame`), et c'est justement la régression qu'on ne verrait pas.
     """
     ordre = [c.cle for c in tcg_cartes.par_prestige()]
-    assert ordre == ["azrael", "rhae", "wally", "kingsrequin", "claker",
-                     "lilith", "meliodas"], ordre
+    assert ordre == ["azrael", "rhae", "wally", "kingsrequin", "lilio",
+                     "claker", "lilith", "kassandre", "meliodas"], ordre
 
 
 def test_a_rang_egal_l_ordre_du_fichier_departage():

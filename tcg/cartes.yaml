@@ -234,6 +234,77 @@
   holographique: true
   bordure_doree: true
 
+- cle: kassandre
+  nom: KASSANDRE
+  legende: KASSANDRE · INDÉFINIE
+  classe: INDÉFINIE
+  ultime: INDÉFINI
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
+  fond: /assets/tcg-kassandre-fond
+  hero: /assets/tcg-kassandre-hero
+  hero_cote: 14%
+  hero_haut: 11%
+  hero_3d: /assets/tcg-kassandre-hero-3d
+  hero_3d_cote: 4%
+  hero_3d_haut: -4%
+  hero_echelle: 1.1
+  # La nappe de soucoupes, cadrage arrêté par l'owner : large (90 %), centrée,
+  # remontée de 20 % — elles tiennent le ciel au-dessus du cadre.
+  ovni: /assets/tcg-kassandre-ovni
+  ovni_cote: 50%
+  ovni_haut: -20%
+  ovni_largeur: 90%
+  ovni_opacite: 1
+  alias: [kassandre, kassandra, cassandre]
+  # Les ovnis doivent se VOIR bouger : la nappe ne prend que 0,55× dans la
+  # carte, un facteur global plus bas la rendait immobile à l'œil.
+  parallaxe: 1.3
+  intensite: 0.8
+
+- cle: lilio
+  nom: LILIO
+  legende: LILIO · INDÉFINIE · CLIC = ULT
+  classe: INDÉFINIE
+  ultime: INDÉFINI
+  description: INDÉFINI
+  ambiance: INDÉFINI
+  cout: 0
+  atk: 0
+  pv: 0
+  aura: 0
+  fond: /assets/tcg-lilio-fond
+  hero: /assets/tcg-lilio-hero
+  hero_cote: -20%
+  hero_haut: 5%
+  hero_3d: /assets/tcg-lilio-hero-3d
+  hero_3d_cote: -10%
+  hero_3d_haut: 5%
+  hero_echelle: 1.14
+  # L'ULTIME au clic : Lilio en slip, sur son propre fond. Plus court et plus
+  # large d'épaules, il a son cadrage à lui.
+  hero_ult: /assets/tcg-lilio-hero-slip
+  hero_3d_ult: /assets/tcg-lilio-hero-slip
+  fond_ult: /assets/tcg-lilio-slip-fond
+  hero_ult_cote: -20%
+  hero_ult_haut: 5%
+  hero_3d_ult_cote: -25%
+  hero_3d_ult_haut: 10%
+  hero_ult_echelle: 1.14
+  # Sous la moitié de la carte, le héros déplié reste dans le cadre, à 18 px
+  # du bord : ses pieds ne ressortent pas.
+  pieds_ligne: 50
+  pieds_marge: 18
+  alias: [lilio]
+  parallaxe: 1
+  intensite: 0.85
+  holographique: true
+  holo_zone: bords
+
 - cle: meliodas
   nom: MÉLIODAS
   legende: MÉLIODAS · INDÉFINIE

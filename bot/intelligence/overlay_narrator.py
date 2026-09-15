@@ -478,6 +478,13 @@ OVERLAY_TOOL_SPEC: dict = {
                     "un tirage : n'invente jamais de carte, et ne promets pas "
                     "d'en montrer une que l'outil vient de refuser."
                 )},
+                "ultime": {"type": "boolean", "description": (
+                    "Pour carte : vrai pour montrer la version ULTIME de la "
+                    "carte au lieu de sa version normale — par exemple « Lilio "
+                    "en slip ». `personne` garde le nom seul (« lilio »). "
+                    "Seules certaines cartes en ont une : sinon l'outil te le "
+                    "dit, et la carte n'est pas affichée."
+                )},
                 "count": {"type": "integer", "description": "Nombre de dés à lancer, pour dice (1 par défaut, 4 max)."},
                 "cells": {
                     "type": "array", "items": {"type": "string"},
@@ -2012,6 +2019,12 @@ class OverlayNarrator:
                 return self._refuser(
                     "cette carte n'existe pas dans la collection.")
             params = carte_en_json(fiche)
+            # L'ultime n'est demandé qu'à une carte qui en a un : le refus
+            # honnête est posé plus haut, par l'outil. Le front démarre alors
+            # sur le second visuel. ⚠️ `versionUltime` et pas `ultime`, qui
+            # porte déjà le NOM de l'Ultime dans la fiche.
+            if extra.get("ultime") is True and fiche.hero_ult:
+                params["versionUltime"] = True
 
         elif widget == "uptime":
             label = self._uptime_label()

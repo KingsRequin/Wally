@@ -228,3 +228,41 @@ def test_le_bus_recoit_le_cadrage_du_calque_de_survol():
     narrateur.show_widget("carte", "", carte="rhae")
     assert publie["hero3d"].startswith("/assets/tcg-rhae-hero-3d?v=")
     assert publie["hero3dCote"] == "-26%"
+
+
+# ── La version ultime (2026-09-15) ────────────────────────────────────────
+# « Montre Lilio en slip » : l'owner veut que Wally sache afficher le second
+# visuel d'une carte, pas seulement le premier.
+
+def test_l_ultime_part_au_widget_pour_une_carte_qui_en_a_un(bot_overlay):
+    bot, recu = bot_overlay
+    reponse = json.loads(run_overlay_tool(
+        bot, {"widget": "carte", "personne": "lilio", "ultime": True}))
+    assert reponse["status"] == "ok"
+    assert recu["carte"] == "lilio"
+    assert recu["ultime"] is True
+
+
+def test_l_ultime_est_refuse_a_une_carte_qui_n_en_a_pas(bot_overlay):
+    """Sans refus, Wally annoncerait « la voilà en slip » sur une carte
+    normale. Le refus nomme celles qui en ont une."""
+    bot, recu = bot_overlay
+    reponse = json.loads(run_overlay_tool(
+        bot, {"widget": "carte", "personne": "lilith", "ultime": True}))
+    assert reponse["status"] == "rejected"
+    assert "LILIO" in reponse["message"]
+    assert not recu
+
+
+def test_le_bus_fait_naitre_la_carte_sur_son_ultime():
+    """Le drapeau ne s'appelle PAS `ultime` sur le bus : ce champ porte déjà
+    le nom de l'Ultime (« REWORK »), et le front le lirait comme vrai partout."""
+    narrateur, publie = _narrateur_qui_publie()
+    narrateur.show_widget("carte", "", carte="lilio", ultime=True)
+    assert publie["versionUltime"] is True
+    assert publie["ultime"] == "INDÉFINI"
+    assert publie["heroUlt"].startswith("/assets/tcg-lilio-hero-slip?v=")
+
+    narrateur, publie = _narrateur_qui_publie()
+    narrateur.show_widget("carte", "", carte="lilio")
+    assert "versionUltime" not in publie

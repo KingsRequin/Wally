@@ -607,11 +607,22 @@ def run_overlay_tool(bot, args: dict, requester: str = "") -> str:
             return json.dumps({"status": "rejected", "message": (
                 "Aucune carte n'est terminée pour l'instant."
             )})
+        # La version ULTIME (Lilio en slip) : refusée franchement à une carte
+        # qui n'en a pas, sinon Wally annoncerait un visuel qui n'existe pas.
+        ultime = extra.pop("ultime", None) is True
+        if ultime and not carte.hero_ult:
+            avec = [c.nom for c in tcg_cartes.CARTES.values() if c.hero_ult]
+            return json.dumps({"status": "rejected", "message": (
+                f"La carte de {carte.nom} n'a pas de version ultime. Celles qui "
+                f"en ont une : {', '.join(avec) or 'aucune'}."
+            )})
+        if ultime:
+            extra["ultime"] = True
         # La CLÉ seule : `show_widget` relit la fiche dans le registre. Y
         # pousser les vingt-six champs ne servait à rien — son filtre par
         # liste blanche les jetait, et la carte partait vide à l'écran.
         extra["carte"] = carte.cle
-        nom_carte = carte.nom
+        nom_carte = f"{carte.nom} (version ultime)" if ultime else carte.nom
     extra.pop("sollicite", None)   # le drapeau vient d'ici, jamais du modèle
     try:
         shown = narrator.show_widget(

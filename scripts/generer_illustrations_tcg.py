@@ -186,9 +186,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         with zipfile.ZipFile(archive) as z:
             z.extractall(tmp)
-        assets = pathlib.Path(tmp) / "assets"
-        if not assets.is_dir():
-            raise SystemExit(f"{archive.name} n'a pas de dossier `assets/`")
+        # Deux rangements selon l'export : le projet entier (`assets/`) ou le
+        # lot des héros seul (`export/png-heros/`, zip du 2026-09-15).
+        dossiers = [pathlib.Path(tmp) / d for d in ("assets", "export/png-heros")]
+        assets = next((d for d in dossiers if d.is_dir()), None)
+        if assets is None:
+            raise SystemExit(f"{archive.name} n'a ni `assets/` ni `export/png-heros/`")
 
         for nom, base, part, echelle in PLAN:
             # Un fond se reconnaît à son nom : c'est le seul endroit du plan

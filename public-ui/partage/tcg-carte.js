@@ -346,7 +346,10 @@ export function carteHero(carte, options = {}) {
   if (c.holographique) cuireVoronoi();
 
   // L'état de l'ultime : `vrai` quand la carte montre son second visuel.
-  let ult = false;
+  // `versionUltime` la fait NAÎTRE dessus — c'est Wally qui montre « Lilio en
+  // slip » sur l'overlay, où personne ne peut cliquer. ⚠️ Pas `ultime` : ce
+  // champ-là porte déjà le NOM de l'Ultime (« REWORK »).
+  let ult = Boolean(c.versionUltime && c.heroUlt);
   const visuel = () => ({
     hero: (ult && c.heroUlt) || c.hero,
     heroCote: (ult ? c.heroUltCote : null) ?? c.heroCote,
@@ -395,7 +398,8 @@ export function carteHero(carte, options = {}) {
     h('div', { class: 'chero-vignette' }),
     holoSurface ? holo : null);
 
-  const clip = h('div', { class: 'chero-clip' }, img(c.hero, c.nom, chargement));
+  const visuelDepart = visuel();
+  const clip = h('div', { class: 'chero-clip' }, img(visuelDepart.hero, c.nom, chargement));
   // L'avant-plan (les pieds de Claker) : la couche qui passe DEVANT le héros.
   const apClip = c.avantPlan
     ? h('div', { class: 'chero-ap-clip' }, img(c.avantPlan, '', chargement))
@@ -438,7 +442,7 @@ export function carteHero(carte, options = {}) {
   // `eager` sur le calque de survol : quand c'est une SECONDE illustration, la
   // charger paresseusement ferait apparaître un trou à l'ouverture.
   const libre = h('div', { class: 'chero-libre', 'aria-hidden': 'true' },
-    img(c.hero3d || c.hero, '', 'eager'));
+    img(visuelDepart.hero3d, '', 'eager'));
   const apLibre = c.avantPlan
     ? h('div', { class: 'chero-ap-libre', 'aria-hidden': 'true' }, img(c.avantPlan, '', 'eager'))
     : null;
@@ -759,9 +763,12 @@ export function carteHero(carte, options = {}) {
     // dépli le plafond (100) ne mord plus, et les tailles ne changent pas.
     const zColonne = Number(bas.dataset.z) * cascade(Number(bas.dataset.z), av)
       + Number(fiche.dataset.z) * cascade(Number(fiche.dataset.z), av);
-    const zHero = Math.min(80 * av, zColonne);
+    // Le demi-pixel de marge absorbe les arrondis au dixième des transforms
+    // écrits : à égalité, c'est l'ordre du document qui décide.
+    const plafond = Math.max(0, zColonne - 0.5);
+    const zHero = Math.min(80 * av, plafond);
     const zOvni = Math.min(52 * av, zHero);
-    const zAvant = Math.min(88 * av, zColonne);
+    const zAvant = Math.min(88 * av, plafond);
     // Les ovnis sont LOIN : 0,28× au repos là où le héros prend 1,6×. Dépliée,
     // la carte les fait RESSORTIR (0,62× et +8 %), sans rattraper le héros.
     const ov = 0.28 + 0.34 * av;
