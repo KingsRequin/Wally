@@ -207,7 +207,7 @@ def verifier_overlay(nav, rap: Rapport, captures: pathlib.Path | None) -> None:
     page.wait_for_timeout(900)
     t2 = page.evaluate(
         "() => getComputedStyle(document.querySelector('.tcg-carte-scene .chero-carte')).transform")
-    rap.dire(persp == "1100px", "carte overlay : la 3D se pose", str(persp))
+    rap.dire(persp == "4000px", "carte overlay : la 3D se pose", str(persp))
     rap.dire(t1.startswith("matrix3d"), "carte overlay : elle est inclinée", t1[:50])
     rap.dire(t1 != t2, "carte overlay : et elle TOURNE toute seule",
              f"immobile en {t1[:34]}")

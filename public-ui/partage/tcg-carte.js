@@ -1033,7 +1033,11 @@ export function carteHero(carte, options = {}) {
     if (survol) sortir(); else entrer();
   };
 
-  const surImageLibre = () => { netteteHero(); ajusterPieds(); };
+  // 🚨 Le cache de la découpe est vidé au chargement : une image qui arrive
+  // change la HAUTEUR du calque sans changer ses transforms. Après l'échange
+  // de l'ultime, la découpe restait calée sur Lilio habillé, et les jambes du
+  // slip sortaient sous la carte.
+  const surImageLibre = () => { cleDecoupe = ''; netteteHero(); ajusterPieds(); };
   const ecouteurs = [];
   const ecouter = (cible, type, fn, opts) => {
     cible.addEventListener(type, fn, opts);
