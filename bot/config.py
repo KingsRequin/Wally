@@ -301,6 +301,13 @@ class TwitchConfig:
     # différents sur chaque chaîne invitée, et rebuild pour un pseudo serait
     # absurde. Le défaut permet à un config.yaml antérieur de rester valide.
     ignored_users: list[str] = field(default_factory=list)
+    # Le shoutout Twitch officiel du raideur, tout seul, sans qu'on le lui
+    # demande. `event_eventsub_notification_raid` (`twitch/events/social.py`)
+    # le lit — INDÉPENDAMMENT de `twitch_events.raid.active`, qui ne gouverne
+    # que le message de remerciement. Twitch impose lui-même la cadence (2 min
+    # entre deux shoutouts, 60 min sur la même chaîne) : un refus de cadence
+    # est donc NORMAL, pas une panne à corriger ici.
+    shoutout_raid: bool = True
     # Délai au-delà duquel Wally prévient qu'il arrive, faute de « Wally écrit… »
     # sur Twitch. Mesuré sur 1 407 réponses de juillet-août 2026 : 5 s couvre
     # 12,6 % d'entre elles — une sur huit, et surtout toutes celles de 7 à 12 s,

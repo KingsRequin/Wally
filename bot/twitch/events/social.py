@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 # Imported at module level so tests can patch bot.twitch.events.social.handle_message
 from bot.twitch.handlers import handle_message, _fire
 from bot.twitch.events.redemptions import handle_redemption
+from bot.core.self_trace import note_act
+from bot.tools.follow_tool import api_twitch
 
 
 def _check_peak(bot, emotion: str, old_val: float, delta: float, username: str = "", event_name: str = ""):
@@ -132,6 +134,47 @@ async def _contexte_raideur(bot: "WallyTwitch", raider_id: str) -> str:
         # une citation, pas comme une consigne.
         morceaux.append(f'sous le titre « {titre[:120]} »')
     return ", ".join(morceaux)
+
+
+async def _shoutout_officiel_raid(bot: "WallyTwitch", raider_id: str, raider_name: str) -> None:
+    """Le shoutout Twitch officiel du raideur, sans qu'on le lui demande.
+
+    Lancé en tâche de fond (`_fire`) depuis `event_eventsub_notification_raid` :
+    ne doit RIEN retarder — ni le contexte du raideur, ni le flux passif — et
+    ne lève JAMAIS, un geste automatique ne casse pas le handler qui l'a
+    déclenché.
+
+    Le classement INFO/WARNING s'appuie sur le STATUT HTTP rendu par
+    `TwitchAPI.shoutout_statut`, jamais sur le texte français du motif : Twitch
+    impose lui-même la cadence (2 min entre deux shoutouts, 60 min sur la même
+    chaîne), et ce refus-là est une INFORMATION, pas une panne.
+    """
+    api = api_twitch(bot)
+    if api is None:
+        logger.warning(
+            "Shoutout automatique du raid de {r} impossible : API Twitch indisponible",
+            r=raider_name,
+        )
+        return
+    try:
+        statut, motif = await api.shoutout_statut(raider_id)
+    except Exception as exc:  # noqa: BLE001 — un geste automatique ne casse jamais le handler
+        logger.warning("Shoutout automatique du raid de {r} en échec : {e!r}", r=raider_name, e=exc)
+        return
+    if statut == 204:
+        # Un geste PUBLIC de plus, donc un geste qu'il doit se rappeler avoir
+        # fait : sans ça il redemande un shoutout deux minutes après et se
+        # prend la cadence sans comprendre.
+        note_act(f"tu as fait le shoutout Twitch officiel de {raider_name}, "
+                 "qui vient de raider la chaîne")
+        logger.info("Shoutout automatique du raid de {r} publié", r=raider_name)
+        return
+    if statut in (429, 400):
+        logger.info("Shoutout automatique du raid de {r} pas publié : {m}",
+                    r=raider_name, m=motif)
+        return
+    logger.warning("Shoutout automatique du raid de {r} refusé : {m}",
+                   r=raider_name, m=motif)
 
 
 def _bits_joy(amount: int) -> float:
@@ -353,11 +396,17 @@ def register_events(bot: "WallyTwitch") -> None:
         # ce qu'elle rapporte va d'abord dans le flux passif : c'est ce qui
         # permet à Wally d'en parler DE LUI-MÊME, y compris quand le message
         # automatique est coupé — ce qui est le réglage d'aujourd'hui.
-        contexte = await _contexte_raideur(bot, str(getattr(payload.data.raider, "id", "") or ""))
+        raider_id = str(getattr(payload.data.raider, "id", "") or "")
+        contexte = await _contexte_raideur(bot, raider_id)
         trace = f"raid de {payload.data.raider.name} avec {viewers} spectateurs"
         if contexte:
             trace += f" — {contexte}"
         _feed(bot, trace, kind="raid")
+        # Le shoutout officiel, lui, ne dépend PAS de `twitch_events.raid.active`
+        # (qui ne gouverne que le message de remerciement) — en tâche de fond
+        # pour ne retarder ni le contexte du raideur ni le flux passif.
+        if bot.config.twitch.shoutout_raid and raider_id:
+            _fire(_shoutout_officiel_raid(bot, raider_id, payload.data.raider.name))
         # Note: twitchio v2 uses .reciever (typo in library — missing second 'e')
         channel_name = payload.data.reciever.name
         if not cfg or not cfg.active:

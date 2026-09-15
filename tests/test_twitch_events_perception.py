@@ -112,3 +112,147 @@ async def test_le_message_automatique_part_toujours_quand_il_est_actif():
         await handlers["event_eventsub_notification_raid"](_raid_payload())
 
     envoi.assert_awaited_once()
+
+
+# ── shoutout automatique du raideur ─────────────────────────────────────────
+# Lancé en tâche de fond via `_fire` : ces tests le remplacent par un mouchard
+# qui capture la coroutine SANS la lancer, puis l'attendent explicitement —
+# ça prouve à la fois ce qu'elle fait ET qu'elle ne bloque pas le handler.
+
+async def _declenche_et_attend_shoutout(bot, payload):
+    """Enregistre les handlers, déclenche le raid, attend le geste de fond
+    (s'il a été lancé) pour pouvoir l'asserter."""
+    handlers = _handlers(bot)
+    captured: dict = {}
+    with patch("bot.twitch.events.social._fire",
+               lambda coro: captured.__setitem__("coro", coro)):
+        await handlers["event_eventsub_notification_raid"](payload)
+    if "coro" in captured:
+        await captured["coro"]
+
+
+@pytest.mark.asyncio
+async def test_le_raid_declenche_le_shoutout_avec_l_id_du_raideur_meme_sans_message_auto():
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = True
+    bot.twitch_api.shoutout_statut = AsyncMock(return_value=(204, ""))
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    await _declenche_et_attend_shoutout(bot, payload)
+
+    bot.twitch_api.shoutout_statut.assert_awaited_once_with("999")
+
+
+@pytest.mark.asyncio
+async def test_shoutout_raid_desactive_n_appelle_pas_l_api():
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = False
+    bot.twitch_api.shoutout_statut = AsyncMock(return_value=(204, ""))
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    await _declenche_et_attend_shoutout(bot, payload)
+
+    bot.twitch_api.shoutout_statut.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_shoutout_publie_se_rappelle_via_note_act():
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = True
+    bot.twitch_api.shoutout_statut = AsyncMock(return_value=(204, ""))
+    payload = _raid_payload(raider="sharpylle")
+    payload.data.raider.id = "999"
+
+    with patch("bot.twitch.events.social.note_act") as note_act_mock:
+        await _declenche_et_attend_shoutout(bot, payload)
+
+    note_act_mock.assert_called_once()
+    assert "sharpylle" in note_act_mock.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_le_cooldown_natif_est_une_information_pas_une_panne():
+    """429/400 = Twitch fait son travail, pas Wally qui a raté le sien."""
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = True
+    bot.twitch_api.shoutout_statut = AsyncMock(
+        return_value=(429, "c'est trop tôt."))
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    # Isole le WARNING du contexte du raideur (hors sujet ici, cf.
+    # `_contexte_raideur`) de celui du shoutout, seul ce que ce test vérifie.
+    with patch("bot.twitch.events.social._contexte_raideur",
+               new=AsyncMock(return_value="")), \
+         patch("bot.twitch.events.social.note_act") as note_act_mock, \
+         patch("bot.twitch.events.social.logger") as logger_mock:
+        await _declenche_et_attend_shoutout(bot, payload)
+
+    note_act_mock.assert_not_called()
+    logger_mock.info.assert_called()
+    logger_mock.warning.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_un_403_est_une_vraie_panne_en_warning():
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = True
+    bot.twitch_api.shoutout_statut = AsyncMock(
+        return_value=(403, "je ne suis pas modérateur de la chaîne, je ne peux pas faire de shoutout."))
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    with patch("bot.twitch.events.social.note_act") as note_act_mock, \
+         patch("bot.twitch.events.social.logger") as logger_mock:
+        await _declenche_et_attend_shoutout(bot, payload)
+
+    note_act_mock.assert_not_called()
+    logger_mock.warning.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_une_exception_de_l_api_ne_remonte_pas_et_le_flux_passif_a_tourne():
+    """Le geste automatique ne casse jamais le handler qui l'a déclenché."""
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    feed = MagicMock()
+    bot.stream_feed = feed
+    bot.config.twitch.shoutout_raid = True
+    bot.twitch_api.shoutout_statut = AsyncMock(side_effect=RuntimeError("boom"))
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    await _declenche_et_attend_shoutout(bot, payload)   # ne doit pas lever
+
+    assert feed.record.called, "le flux passif doit avoir tourné malgré l'échec du shoutout"
+
+
+@pytest.mark.asyncio
+async def test_le_shoutout_ne_bloque_pas_le_handler_du_raid():
+    """Une API qui attend un `asyncio.Event` jamais libéré n'empêche pas le
+    handler de finir : `_fire` (réel, pas simulé ici) part en tâche de fond."""
+    import asyncio
+
+    bot = make_bot({"raid": MagicMock(active=False, message="")})
+    bot.stream_feed = MagicMock()
+    bot.config.twitch.shoutout_raid = True
+    jamais_libere = asyncio.Event()
+
+    async def _bloque(*_a, **_kw):
+        await jamais_libere.wait()
+        return (204, "")
+
+    bot.twitch_api.shoutout_statut = AsyncMock(side_effect=_bloque)
+    handlers = _handlers(bot)
+    payload = _raid_payload()
+    payload.data.raider.id = "999"
+
+    await asyncio.wait_for(
+        handlers["event_eventsub_notification_raid"](payload), timeout=1,
+    )

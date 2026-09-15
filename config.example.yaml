@@ -305,6 +305,7 @@ theme:
 twitch:
   cooldown_seconds: 10
   guest_channels: []
+  shoutout_raid: true
 twitch_events:
   bits:
     active: false

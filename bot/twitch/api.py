@@ -422,20 +422,14 @@ class TwitchAPI:
                            m=int(self.ANNONCE_RETRY_S // 60), t=text[:80])
         return await self.send_message(text=text, broadcaster_id=broadcaster_id)
 
-    async def send_shoutout(self, to_broadcaster_id: str) -> str:
-        """POST /helix/chat/shoutouts — la carte cliquable de la chaîne visée.
+    @staticmethod
+    def _motif_shoutout(statut: int) -> str:
+        """Traduit le statut HTTP d'un shoutout en motif lisible pour le chat.
 
-        Rend `""` quand c'est publié, sinon le motif à donner au chat : le
-        cooldown natif de Twitch est une INFORMATION, pas une panne, et le
-        distinguer d'une erreur évite d'annoncer un shoutout qui n'a pas eu lieu.
+        Fonction pure, sans requête : `shoutout_statut` s'en sert pour rendre
+        statut ET motif en un seul appel Helix, et `send_shoutout` la réutilise
+        pour ne garder qu'une seule traduction française.
         """
-        statut = await self._poster_204(
-            self.SHOUTOUTS_URL,
-            {"from_broadcaster_id": self._broadcaster_id,
-             "to_broadcaster_id": to_broadcaster_id,
-             "moderator_id": self._bot_id},
-            quoi="shoutout",
-        )
         if statut == 204:
             return ""
         # Twitch impose les deux cadences lui-même — rien à concevoir pour s'en
@@ -449,6 +443,35 @@ class TwitchAPI:
         if statut == 400:
             return "cette chaîne n'existe pas, ou c'est la nôtre."
         return "le shoutout n'est pas parti, Twitch n'a pas répondu."
+
+    async def shoutout_statut(self, to_broadcaster_id: str) -> tuple[int, str]:
+        """POST /helix/chat/shoutouts — statut HTTP ET motif, en UN appel.
+
+        `send_shoutout` ne rend que le motif ; le raid automatique
+        (`twitch/events/social.py`) a lui besoin du STATUT pour distinguer une
+        information Twitch (429 cadence, 400 chaîne invalide) d'une vraie panne
+        (401/403, pas de réponse) — sans comparer le texte français. Un second
+        appel dupliquerait la requête Helix et compterait double sur la cadence
+        que Twitch impose lui-même.
+        """
+        statut = await self._poster_204(
+            self.SHOUTOUTS_URL,
+            {"from_broadcaster_id": self._broadcaster_id,
+             "to_broadcaster_id": to_broadcaster_id,
+             "moderator_id": self._bot_id},
+            quoi="shoutout",
+        )
+        return statut, self._motif_shoutout(statut)
+
+    async def send_shoutout(self, to_broadcaster_id: str) -> str:
+        """POST /helix/chat/shoutouts — la carte cliquable de la chaîne visée.
+
+        Rend `""` quand c'est publié, sinon le motif à donner au chat : le
+        cooldown natif de Twitch est une INFORMATION, pas une panne, et le
+        distinguer d'une erreur évite d'annoncer un shoutout qui n'a pas eu lieu.
+        """
+        _, motif = await self.shoutout_statut(to_broadcaster_id)
+        return motif
 
     async def get_broadcaster_id(self, login: str) -> Optional[str]:
         """GET /helix/users?login={login}. Retourne l'ID ou None si introuvable.
