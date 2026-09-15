@@ -30,9 +30,11 @@ listées ; celles postées sous spoiler repartent sous spoiler.
 """
 from __future__ import annotations
 
+import difflib
 import io
 import re
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import discord
@@ -72,6 +74,46 @@ class _Telechargement(NamedTuple):
 
 
 _SANS_PIECE = _Telechargement([], [], [], [])
+
+
+def horodatage(dt: datetime) -> str:
+    """Horodatage Discord natif : absolu puis relatif, dans le fuseau du LECTEUR.
+
+    `<t:unix:f>` (date et heure complètes) suivi de `<t:unix:R>` (« il y a
+    2 minutes ») entre parenthèses — Discord les rend dans le fuseau de
+    chaque personne qui lit le salon, là où un `strftime` figeait l'heure de
+    Wally (Europe/Paris) pour tout le monde. Fabrique partagée par toutes
+    les cartes du tronc commun (T1-T4) : suppression, édition, suppression
+    en masse, salon vocal créé/supprimé, à venir membres et mouvements
+    vocaux.
+
+    `dt` DOIT être conscient du fuseau (`tzinfo` posé) — sinon `ValueError` :
+    un datetime naïf ne dit pas à quel fuseau se réfère l'epoch calculé,
+    mieux vaut lever que publier une heure fausse en silence.
+    `bot/core/temps.py::maintenant()` et les horodatages `created_at` /
+    `edited_at` de discord.py le sont déjà.
+    """
+    if dt.tzinfo is None:
+        raise ValueError("horodatage() exige un datetime conscient du fuseau (tzinfo posé)")
+    epoch = int(dt.timestamp())
+    return f"<t:{epoch}:f> (<t:{epoch}:R>)"
+
+
+def pied_utilisateur(user: Any) -> str:
+    """Le pied de fiche « id utilisateur », en code inline copiable au clic.
+
+    Remplace l'ancien pied « Supprimé à HHhMM » : une fiche qui vise un
+    utilisateur précis (auteur d'un message, créateur d'un salon vocal) porte
+    désormais son id BRUT en pied — les backticks en font un bloc de code que
+    Discord laisse copier d'un clic, utile pour recouper avec `/ban`, une
+    recherche mémoire, etc. Fabrique partagée avec T2-T4 : toute carte future
+    qui vise un utilisateur unique s'en sert au lieu de réinventer le format.
+
+    Pas de fiche pour un événement sans utilisateur SEUL et identifié
+    (suppression en masse, salon vocal supprimé) : mieux vaut l'absence de
+    pied qu'un id inventé.
+    """
+    return f"ID `{user.id}`"
 
 
 def _echapper(texte: str) -> str:
@@ -138,6 +180,71 @@ def _bloc_cite(titre: str, texte: str) -> str:
     return f"**{titre}**\n{corps}"
 
 
+def _mots(texte: str) -> list[str]:
+    """Tokenise en alternance mot / espace(s).
+
+    La diff ne touche alors QUE les mots : les passages inchangés gardent
+    leurs espaces et retours à la ligne d'origine, au lieu d'être reconstruits
+    au mot près.
+    """
+    return re.findall(r"\S+|\s+", texte)
+
+
+def _diff_mots(avant: str, apres: str) -> str | None:
+    """Diff mot à mot : supprimé en `~~barré~~`, ajouté en `**gras**`, le
+    reste tel quel. `avant`/`apres` doivent déjà être markdown- (et `@`-)
+    échappés par l'appelant : poser les marqueurs sur du markdown non échappé
+    romprait la mise en forme de Wally, pas celle de l'auteur du message.
+
+    Rend `None` si l'édition réécrit plus de la MOITIÉ du texte — mesuré sur
+    les MOTS seuls, les espaces étant exclus du ratio (des espaces identiques
+    matcheraient presque toujours et gonfleraient artificiellement la
+    similarité). L'appelant retombe alors sur des blocs Avant/Après complets,
+    plus lisibles qu'un diff qui barre/regraisse la quasi-totalité du texte.
+    """
+    mots_avant, mots_apres = _mots(avant), _mots(apres)
+    reels_avant = [m for m in mots_avant if m.strip()]
+    reels_apres = [m for m in mots_apres if m.strip()]
+    ratio = difflib.SequenceMatcher(None, reels_avant, reels_apres, autojunk=False).ratio()
+    if ratio < 0.5:
+        return None
+    sm = difflib.SequenceMatcher(None, mots_avant, mots_apres, autojunk=False)
+    morceaux: list[str] = []
+    marque_precedent = False
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            morceaux.append("".join(mots_apres[j1:j2]))
+            marque_precedent = False
+            continue
+        supprime = "".join(mots_avant[i1:i2]).strip()
+        ajoute = "".join(mots_apres[j1:j2]).strip()
+        piece = f"~~{supprime}~~" if supprime else ""
+        if ajoute:
+            piece += (" " if piece else "") + f"**{ajoute}**"
+        if piece:
+            if marque_precedent:
+                morceaux.append(" ")
+            morceaux.append(piece)
+            marque_precedent = True
+    return "".join(morceaux).strip()
+
+
+def _citer_deja_echappe(texte: str, *, limite: int = _MAX_CITATION) -> str:
+    """Comme `_citer`, sans rééchapper.
+
+    Réservé au diff d'édition : son texte est déjà markdown/`@`-échappé
+    AVANT que les marqueurs `~~`/`**` n'y soient posés (cf. `_diff_mots`) —
+    rééchapper ici doublerait le zero-width space posé après chaque `@`.
+    """
+    cite = "\n".join(f"> {ligne}" for ligne in texte.splitlines())
+    return _borner(cite, limite)
+
+
+def _bloc_modification(diff_texte: str) -> str:
+    corps = _citer_deja_echappe(diff_texte) if diff_texte.strip() else "*aucun texte*"
+    return f"**Modification**\n{corps}"
+
+
 def _bloc_non_recuperees(ratees: list[tuple[str, str]]) -> str:
     lignes = "\n".join(f"- {nom} ({motif})" for nom, motif in ratees)
     return _borner(f"**Pièces jointes non récupérées**\n{lignes}", _MAX_NON_RECUPEREES)
@@ -199,9 +306,13 @@ def _nom_disponible(nom: str, pris: set[str]) -> str:
     return f"{n}_{nom}"
 
 
-def _salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: int | None,
-                   salon_source: Any = None) -> list[Any]:
+def salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: int | None,
+                  salon_source: Any = None) -> list[Any]:
     """Résout les salons de logs CONFIGURÉS, ou [] si rien à publier.
+
+    Brique PUBLIQUE partagée par tout le tronc commun du journal (T1-T4) :
+    `bot/discord/journal_vocal.py` et `bot/discord/journal_membres.py`
+    l'importent au lieu de réimplémenter la résolution des salons.
 
     `salon_ids` vide → désactivé ; guild hors `guild_ids` → rien. Un salon
     introuvable ne bloque pas les autres : WARNING nommant son id, la
@@ -299,8 +410,16 @@ def _sans_fichiers(tele: _Telechargement) -> _Telechargement:
     return _Telechargement([], [], [], tele.ratees + refusees)
 
 
-async def _publier_partout(salons: list[Any], construire: Callable[[_Telechargement], discord.ui.LayoutView],
-                           tele: _Telechargement = _SANS_PIECE) -> None:
+async def publier_partout(salons: list[Any], construire: Callable[[_Telechargement], discord.ui.LayoutView],
+                          tele: _Telechargement = _SANS_PIECE) -> None:
+    """Envoie la vue construite par `construire` sur chaque salon, sans jamais lever.
+
+    Brique PUBLIQUE partagée par tout le tronc commun du journal (T1-T4) :
+    `bot/discord/journal_vocal.py` et `bot/discord/journal_membres.py`
+    l'importent pour leurs propres cartes au lieu de réimplémenter l'envoi
+    multi-salons. Un salon en échec (permissions, pièces refusées) ne prive
+    jamais les autres — cf. le détail des replis ci-dessous.
+    """
     vue = construire(tele)
     for salon in salons:
         try:
@@ -330,11 +449,14 @@ async def _publier_partout(salons: list[Any], construire: Callable[[_Telechargem
 
 async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
     try:
+        cfg = bot.config.discord.journal_moderation
         msg = payload.cached_message
+        if msg is not None and msg.author.bot and not cfg.inclure_bots:
+            return
         source: Any = bot.get_channel(payload.channel_id)
         if source is None and msg is not None:
             source = msg.channel
-        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id, source)
+        salons = salons_cibles(bot, payload.guild_id, payload.channel_id, source)
         if not salons:
             return
         if msg is not None:
@@ -344,31 +466,33 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
             contenu = (msg.content or "").strip()
             bloc_contenu = _citer(contenu) if contenu else "*aucun texte*"
             pieces = list(msg.attachments)
+            pied = pied_utilisateur(auteur)
         else:
             meta_auteur = "inconnu"
             vignette = None
             bloc_contenu = "*contenu non disponible*"
             pieces = []
+            pied = None
         meta = (f"**Auteur** {meta_auteur} · **Salon** {_mention_salon(payload.channel_id, source)} · "
-               f"**Message** {payload.message_id}")
+               f"**Message** {payload.message_id} · **Supprimé** {horodatage(maintenant())}")
         tele = await _telecharger_pieces(salons, pieces, nsfw=_salon_nsfw(source))
-        heure = maintenant().strftime("%Hh%M")
 
         def construire(t: _Telechargement) -> discord.ui.LayoutView:
             corps = [meta, bloc_contenu]
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
             return fiche("🗑️ Message supprimé", corps, accent=ACCENT_ALERTE, vignette=vignette,
-                         medias=t.medias, fichiers=t.autres, pied=f"Supprimé à {heure}")
+                         medias=t.medias, fichiers=t.autres, pied=pied)
 
-        await _publier_partout(salons, construire, tele)
+        await publier_partout(salons, construire, tele)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression non journalisée : {e!r}", e=e)
 
 
 async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
     try:
-        if after.author.bot:
+        cfg = bot.config.discord.journal_moderation
+        if after.author.bot and not cfg.inclure_bots:
             return
         avant, apres = before.content or "", after.content or ""
         apres_ids = {p.id for p in after.attachments}
@@ -376,23 +500,32 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
         if avant == apres and not retirees:
             return          # embed de lien, épinglage : rien n'a bougé
         guild_id = after.guild.id if after.guild is not None else None
-        salons = _salons_cibles(bot, guild_id, after.channel.id, after.channel)
+        salons = salons_cibles(bot, guild_id, after.channel.id, after.channel)
         if not salons:
             return
         auteur = after.author
         meta = (f"**Auteur** <@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)}) · "
                f"**Salon** {_mention_salon(after.channel.id, after.channel)} · "
-               f"**Message** {after.id} · [aller au message]({after.jump_url})")
+               f"**Message** {after.id} · **Modifié** {horodatage(maintenant())} · "
+               f"[aller au message]({after.jump_url})")
         tele = await _telecharger_pieces(salons, retirees, nsfw=_salon_nsfw(after.channel))
+        # Échappés AVANT le diff : les marqueurs `~~`/`**` posés par `_diff_mots`
+        # doivent rester les SEULS actifs (cf. sa docstring).
+        avant_echappe = _echapper(discord.utils.escape_markdown(avant))
+        apres_echappe = _echapper(discord.utils.escape_markdown(apres))
+        diff = _diff_mots(avant_echappe, apres_echappe)
 
         def construire(t: _Telechargement) -> discord.ui.LayoutView:
-            corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
+            if diff is None:
+                corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
+            else:
+                corps = [meta, _bloc_modification(diff)]
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
             return fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
-                         medias=t.medias, fichiers=t.autres)
+                         medias=t.medias, fichiers=t.autres, pied=pied_utilisateur(auteur))
 
-        await _publier_partout(salons, construire, tele)
+        await publier_partout(salons, construire, tele)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : modification non journalisée : {e!r}", e=e)
 
@@ -406,14 +539,19 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
     cache (`cached_messages`), bornée pour tenir dans le budget V2.
     """
     try:
+        cfg = bot.config.discord.journal_moderation
         source = bot.get_channel(payload.channel_id)
-        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id, source)
+        salons = salons_cibles(bot, payload.guild_id, payload.channel_id, source)
         if not salons:
             return
         meta = (f"**Salon** {_mention_salon(payload.channel_id, source)} · "
-                f"**Messages** {len(payload.message_ids)}")
+                f"**Messages** {len(payload.message_ids)} · **Supprimé** {horodatage(maintenant())}")
         lignes = []
         for msg in payload.cached_messages:
+            # Le TOTAL ci-dessus compte tout `message_ids` (bots compris) ;
+            # seule la ligne de détail d'un bot est retirée par défaut.
+            if getattr(msg.author, "bot", False) and not cfg.inclure_bots:
+                continue
             auteur = discord.utils.escape_markdown(getattr(msg.author, "name", "inconnu"))
             contenu = _echapper((msg.content or "").strip())
             extrait = _borner(contenu, _MAX_EXTRAIT) if contenu else "*aucun texte*"
@@ -422,30 +560,31 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
         if lignes:
             corps.append(_borner_lignes(lignes, _MAX_CITATION))
         vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
-        await _publier_partout(salons, lambda _t: vue)
+        await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression en masse non journalisée : {e!r}", e=e)
 
 
 async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
     try:
-        cibles = _salons_cibles(bot, salon.guild.id, None)
+        cibles = salons_cibles(bot, salon.guild.id, None)
         if not cibles:
             return
-        meta = f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id}"
-        vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL)
-        await _publier_partout(cibles, lambda _t: vue)
+        meta = (f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id} · "
+               f"**Créé** {horodatage(maintenant())}")
+        vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL, pied=pied_utilisateur(member))
+        await publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001 — jamais lever, appelé depuis salons_temporaires
         logger.warning("journal de modération : création vocale non journalisée : {e!r}", e=e)
 
 
 async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
     try:
-        cibles = _salons_cibles(bot, salon.guild.id, None)
+        cibles = salons_cibles(bot, salon.guild.id, None)
         if not cibles:
             return
-        meta = f"**Salon** {salon.name} · **ID** {salon.id}"
+        meta = f"**Salon** {salon.name} · **ID** {salon.id} · **Supprimé** {horodatage(maintenant())}"
         vue = fiche("🔇 Canal vocal supprimé", [meta], accent=_COULEUR_VOCAL)
-        await _publier_partout(cibles, lambda _t: vue)
+        await publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression vocale non journalisée : {e!r}", e=e)

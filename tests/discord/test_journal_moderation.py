@@ -18,20 +18,20 @@ def _salon_logs(sid, *, limite=LIMITE_TAILLE):
     return SimpleNamespace(id=sid, guild=SimpleNamespace(filesize_limit=limite), send=AsyncMock())
 
 
-def _bot(salon_ids=(LOGS,), guild_ids=(COMMU,)):
+def _bot(salon_ids=(LOGS,), guild_ids=(COMMU,), *, inclure_bots=False):
     salons = {sid: _salon_logs(sid) for sid in salon_ids}
     salons[5] = SimpleNamespace(id=5, name="discussions")
-    cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids))
+    cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids), inclure_bots=inclure_bots)
     bot = SimpleNamespace(config=SimpleNamespace(discord=SimpleNamespace(journal_moderation=cfg)))
     bot.get_channel = lambda cid: salons.get(cid)
     logs = salons[salon_ids[0]] if salon_ids else _salon_logs(LOGS)
     return bot, logs
 
 
-def _bot_multi(salon_ids, *, manquant=(), limite=LIMITE_TAILLE, guild_ids=(COMMU,)):
+def _bot_multi(salon_ids, *, manquant=(), limite=LIMITE_TAILLE, guild_ids=(COMMU,), inclure_bots=False):
     salons = {sid: _salon_logs(sid, limite=limite) for sid in salon_ids if sid not in manquant}
     salons[5] = SimpleNamespace(id=5, name="discussions")
-    cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids))
+    cfg = SimpleNamespace(salon_ids=list(salon_ids), guild_ids=list(guild_ids), inclure_bots=inclure_bots)
     bot = SimpleNamespace(config=SimpleNamespace(discord=SimpleNamespace(journal_moderation=cfg)))
     bot.get_channel = lambda cid: salons.get(cid)
     return bot, salons
@@ -392,11 +392,17 @@ async def test_nom_non_ascii_assaini_pour_attachment_uri():
 
 
 async def test_edition_texte_change_avant_apres():
+    """Un seul mot change : le diff met en évidence CE mot, pas tout le
+    message — `**Modification**` plutôt que deux blocs Avant/Après."""
     bot, logs = _bot()
     await jm.message_modifie(bot, _message("ancien texte"), _message("nouveau texte"))
     texte = "\n".join(_textes(_vue(logs)))
-    assert "> ancien texte" in texte
-    assert "> nouveau texte" in texte
+    assert "**Modification**" in texte
+    assert "~~ancien~~" in texte
+    assert "**nouveau**" in texte
+    assert "texte" in texte
+    assert "**Avant**" not in texte
+    assert "**Après**" not in texte
 
 
 async def test_edition_sans_changement_de_texte_ni_piece_ignoree():
@@ -749,3 +755,166 @@ async def test_fil_d_un_salon_ordinaire_toujours_journalise():
     apres.channel = SimpleNamespace(id=800, name="fil", parent_id=5)
     await jm.message_modifie(bot, avant, apres)
     salons[LOGS].send.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# T1 #5 — horodatage Discord natif
+
+
+def test_horodatage_absolu_et_relatif():
+    from datetime import datetime, timezone
+    dt = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
+    epoch = int(dt.timestamp())
+    assert jm.horodatage(dt) == f"<t:{epoch}:f> (<t:{epoch}:R>)"
+
+
+def test_horodatage_exige_un_datetime_conscient_du_fuseau():
+    from datetime import datetime
+    naif = datetime(2026, 9, 15, 12, 0, 0)
+    try:
+        jm.horodatage(naif)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("horodatage() aurait dû lever sur un datetime naïf")
+
+
+async def test_horodatage_present_dans_toutes_les_cartes():
+    """§2 de la spec : la fabrique d'horodatage sert TOUTES les cartes du
+    tronc commun — suppression, édition, masse, vocal créé/supprimé."""
+    bot, logs = _bot()
+    msg = _message("texte")
+    payload_suppr = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload_suppr)
+    await jm.message_modifie(bot, _message("a"), _message("b"))
+    payload_masse = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1}, cached_messages=[])
+    await jm.messages_supprimes_en_masse(bot, payload_masse)
+    salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+    await jm.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+    await jm.vocal_supprime(bot, salon)
+
+    assert logs.send.await_count == 5
+    for appel in range(5):
+        texte = "\n".join(_textes(_vue(logs, appel)))
+        assert re.search(r"<t:\d+:f> \(<t:\d+:R>\)", texte), f"appel {appel} sans horodatage natif"
+
+
+# ---------------------------------------------------------------------------
+# T1 #7 — id de l'utilisateur en pied, copiable
+
+
+async def test_pied_id_utilisateur_suppression():
+    bot, logs = _bot()
+    msg = _message("texte", auteur_id=123456789012345678)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "-# ID `123456789012345678`" in texte
+
+
+async def test_pied_id_utilisateur_absent_hors_cache():
+    """Sans auteur connu (hors cache), pas d'id à mettre en pied."""
+    bot, logs = _bot()
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
+    await jm.message_supprime(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "ID `" not in texte
+
+
+async def test_pied_id_utilisateur_edition():
+    bot, logs = _bot()
+    await jm.message_modifie(bot, _message("a", auteur_id=42), _message("b", auteur_id=42))
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "-# ID `42`" in texte
+
+
+async def test_pied_id_utilisateur_vocal_cree():
+    bot, logs = _bot()
+    salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+    await jm.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "-# ID `42`" in texte
+
+
+def test_pied_utilisateur_format_copiable():
+    utilisateur = SimpleNamespace(id=987654321)
+    assert jm.pied_utilisateur(utilisateur) == "ID `987654321`"
+
+
+# ---------------------------------------------------------------------------
+# T1 #6 — diff d'édition : seuls les passages changés mis en évidence
+
+
+async def test_edition_reecriture_totale_retombe_sur_avant_apres():
+    """Plus de la moitié du texte change : le diff serait illisible, on
+    retombe sur les blocs Avant/Après complets."""
+    bot, logs = _bot()
+    await jm.message_modifie(bot, _message("un deux trois"), _message("quatre cinq six"))
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "**Avant**" in texte
+    assert "**Après**" in texte
+    assert "> un deux trois" in texte
+    assert "> quatre cinq six" in texte
+    assert "**Modification**" not in texte
+
+
+async def test_edition_diff_echappe_le_markdown_avant_les_marqueurs():
+    """Un `*` posé par l'utilisateur ne doit pas se combiner avec nos propres
+    marqueurs `~~`/`**` — le contenu source est markdown-échappé D'ABORD."""
+    bot, logs = _bot()
+    await jm.message_modifie(bot, _message("salut *ami*"), _message("salut *pote*"))
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "~~\\*ami\\*~~" in texte
+    assert "**\\*pote\\***" in texte
+
+
+def test_diff_mots_reste_inchange_hors_diff():
+    assert jm._diff_mots("bonjour le monde", "bonjour le monde") == "bonjour le monde"
+
+
+# ---------------------------------------------------------------------------
+# T1 #4 — messages de bots exclus par défaut
+
+
+async def test_suppression_message_de_bot_ignoree_par_defaut():
+    bot, logs = _bot()
+    msg = _message("texte", bot_auteur=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    logs.send.assert_not_awaited()
+
+
+async def test_suppression_message_de_bot_journalisee_si_inclure_bots():
+    bot, logs = _bot(inclure_bots=True)
+    msg = _message("texte", bot_auteur=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    logs.send.assert_awaited_once()
+
+
+async def test_edition_message_de_bot_journalisee_si_inclure_bots():
+    bot, logs = _bot(inclure_bots=True)
+    await jm.message_modifie(bot, _message("a", bot_auteur=True), _message("b", bot_auteur=True))
+    logs.send.assert_awaited_once()
+
+
+async def test_suppression_en_masse_lignes_de_bots_retirees_mais_total_intact():
+    bot, logs = _bot()
+    humain = _message("bonjour", auteur_id=1, msg_id=1, auteur_nom="alice", bot_auteur=False)
+    bot_msg = _message("je suis un bot", auteur_id=2, msg_id=2, auteur_nom="wally", bot_auteur=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1, 2},
+                              cached_messages=[humain, bot_msg])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "**Messages** 2" in texte    # le TOTAL compte le bot
+    assert "alice" in texte
+    assert "wally" not in texte         # sa ligne est retirée du détail
+
+
+async def test_suppression_en_masse_lignes_de_bots_incluses_si_inclure_bots():
+    bot, logs = _bot(inclure_bots=True)
+    bot_msg = _message("je suis un bot", auteur_id=2, msg_id=2, auteur_nom="wally", bot_auteur=True)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={2}, cached_messages=[bot_msg])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "wally" in texte

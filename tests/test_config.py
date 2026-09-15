@@ -238,3 +238,20 @@ def test_listes_nulles_des_sections_discord_portees_deviennent_vides(tmp_path):
     assert d.bienvenue.guild_ids == []
     assert d.bienvenue.messages == []
     assert d.bienvenue.gifs == []
+
+
+def test_journal_moderation_inclure_bots_defaut_false(tmp_path):
+    """Défaut : les messages de bots (Wally compris) n'entrent pas dans le journal."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
+    config = Config.load(str(cfg_file))
+    assert config.discord.journal_moderation.inclure_bots is False
+
+
+def test_journal_moderation_inclure_bots_lu_depuis_le_yaml(tmp_path):
+    raw = yaml.safe_load(yaml.dump(MINIMAL_CONFIG))
+    raw["discord"]["journal_moderation"] = {"inclure_bots": True}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(raw))
+    config = Config.load(str(cfg_file))
+    assert config.discord.journal_moderation.inclure_bots is True

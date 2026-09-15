@@ -163,9 +163,15 @@ class JournalModerationConfig:
     où il est. `salon_ids` vide → désactivé ; plusieurs entrées publient la
     MÊME fiche sur chaque salon (plusieurs serveurs de l'owner, chacun sa
     copie du journal).
+
+    `inclure_bots` : `False` par défaut — un message supprimé/modifié d'un
+    bot (Wally lui-même compris, il porte le même drapeau `bot`) ne publie
+    aucune fiche ; en suppression en masse, sa ligne est retirée du détail
+    mais reste comptée dans le total.
     """
     salon_ids: list[int] = field(default_factory=list)
     guild_ids: list[int] = field(default_factory=list)
+    inclure_bots: bool = False
 
 
 @dataclass
