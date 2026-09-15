@@ -72,7 +72,7 @@ discord:
     salon_createur_id: null   # allumé à la coupure du bot Node (1105088949887696988)
     noms: []                  # remplis à la coupure (199 noms du Node)
   journal_moderation:
-    salon_id: null            # allumé à la coupure (1416714887849185340)
+    salon_ids: []             # à la coupure : [1416714887849185340, 1105086620237049956]
     guild_ids: []             # à la coupure : [875421531415666698]
   spam_detection:
     enabled: true

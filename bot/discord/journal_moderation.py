@@ -1,9 +1,10 @@
 """Journal de modération — repris du bot Node `wally-discord`.
 
 Une fiche Components V2 par geste dans le salon de logs : message supprimé,
-message modifié, salon vocal temporaire créé ou supprimé. C'est un outil de
-MODÉRATION, pas de la perception : il couvre aussi les messages de bots et les
-serveurs que la perception de Wally ignore (`ignored_guilds`).
+message modifié, suppression en masse, salon vocal temporaire créé ou
+supprimé. C'est un outil de MODÉRATION, pas de la perception : il couvre
+aussi les messages de bots et les serveurs que la perception de Wally ignore
+(`ignored_guilds`).
 
 Le dépôt n'a plus aucun `discord.Embed` (chantier Components V2 clos le
 2026-09-04) : le tronc commun est `bot/discord/fiches.py`.
@@ -15,10 +16,19 @@ Les pièces jointes d'un message supprimé (ou retirées d'une édition) sont
 retéléchargées via `Attachment.to_file(use_cached=True)` : ce chemin passe par
 le `proxy_url`, encore servi un court moment après la suppression, là où l'URL
 d'origine est déjà morte.
+
+Publié sur PLUSIEURS salons de logs (`salon_ids`), potentiellement sur des
+serveurs différents. Chaque salon est indépendant : un salon introuvable ou
+un envoi en échec ne prive pas les autres. Les pièces jointes sont
+téléchargées UNE fois (octets bruts) puis reconditionnées en `discord.File`
+frais par salon — un `File` est consommé par un envoi (son tampon est lu puis
+fermé), il en faut un NEUF à chaque `send()`.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import io
+import re
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import discord
 from loguru import logger
@@ -31,19 +41,43 @@ if TYPE_CHECKING:
 
 _COULEUR_VOCAL = 0x3498DB      # pas dans fiches.py : propre au journal
 _MAX_CITATION = 1500           # budget V2 total (4000) réparti entre les blocs cités
+_MAX_NON_RECUPEREES = 500      # budget de la liste des pièces non récupérées
+_MAX_EXTRAIT = 120             # extrait par message d'une suppression en masse
 _MAX_PIECES = 10                # plafond d'upload Discord pour un message
+
+# `discord.File.uri` l'exige (doc) : Discord traite le reste EN SILENCE côté
+# serveur — un nom hors de cet alphabet rend un `attachment://` mort.
+_CARACTERES_SURS = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+class _PieceRecuperee(NamedTuple):
+    """Les octets d'une pièce jointe téléchargée UNE fois, avant reconditionnement par salon."""
+    nom: str
+    donnees: bytes
+    image: bool
 
 
 def _echapper(texte: str) -> str:
     return texte.replace("@", "@\u200b")
 
 
-def _citer(texte: str) -> str:
-    """Cite un texte ligne par ligne (`> `), borné et `@` neutralisés."""
+def _borner(texte: str, limite: int) -> str:
+    if len(texte) <= limite:
+        return texte
+    return texte[: limite - 1] + "…"
+
+
+def _citer(texte: str, *, limite: int = _MAX_CITATION) -> str:
+    """Cite un texte ligne par ligne (`> `), `@` neutralisés.
+
+    Le budget se borne APRÈS citation : sur un texte à nombreuses lignes
+    courtes, le préfixe `> ` peut presque doubler la taille — border le texte
+    d'origine laissait passer un bloc deux fois plus gros que prévu (message
+    Discord refusé, entrée de journal perdue).
+    """
     texte = _echapper(texte)
-    if len(texte) > _MAX_CITATION:
-        texte = texte[:_MAX_CITATION] + "…"
-    return "\n".join(f"> {ligne}" for ligne in texte.splitlines())
+    cite = "\n".join(f"> {ligne}" for ligne in texte.splitlines())
+    return _borner(cite, limite)
 
 
 def _bloc_cite(titre: str, texte: str) -> str:
@@ -53,47 +87,89 @@ def _bloc_cite(titre: str, texte: str) -> str:
 
 def _bloc_non_recuperees(ratees: list[tuple[str, str]]) -> str:
     lignes = "\n".join(f"- {nom} ({motif})" for nom, motif in ratees)
-    return f"**Pièces jointes non récupérées**\n{lignes}"
+    return _borner(f"**Pièces jointes non récupérées**\n{lignes}", _MAX_NON_RECUPEREES)
 
 
-def _salon_cible(bot: "WallyDiscord", guild_id: int | None) -> Any:
-    """Résout le salon de logs, ou None si rien à publier.
+def _assainir(nom: str) -> str:
+    """ASCII alphanumérique + `_-.` uniquement, extension préservée, jamais vide."""
+    base, point, ext = nom.rpartition(".")
+    if not point:
+        base, ext = nom, ""
+    base_saine = _CARACTERES_SURS.sub("_", base) or "fichier"
+    ext_saine = _CARACTERES_SURS.sub("_", ext)
+    return f"{base_saine}.{ext_saine}" if ext_saine else base_saine
 
-    Centralise les garde-fous inchangés depuis la version embeds : `salon_id`
-    None → rien ; guild hors `guild_ids` → rien ; salon introuvable → WARNING.
+
+def _nom_disponible(nom: str, pris: set[str]) -> str:
+    """Rend `nom` s'il est libre, sinon le préfixe d'un index jusqu'à l'être.
+
+    La boucle teste contre `pris` (tous les noms déjà attribués), pas contre
+    un dict par nom D'ORIGINE : un renommage précédent (`1_photo.png`) peut
+    lui-même être le nom BRUT d'une pièce suivante, et doit donc être vu par
+    la vérification de collision.
+    """
+    if nom not in pris:
+        return nom
+    n = 1
+    while f"{n}_{nom}" in pris:
+        n += 1
+    return f"{n}_{nom}"
+
+
+def _salons_cibles(bot: "WallyDiscord", guild_id: int | None) -> list[Any]:
+    """Résout les salons de logs CONFIGURÉS, ou [] si rien à publier.
+
+    `salon_ids` vide → désactivé ; guild hors `guild_ids` → rien. Un salon
+    introuvable ne bloque pas les autres : WARNING nommant son id, la
+    résolution continue sur le reste.
     """
     cfg = bot.config.discord.journal_moderation
-    if cfg.salon_id is None or guild_id not in cfg.guild_ids:
-        return None
-    # `bot.get_channel` rend un type large (salon texte, catégorie, DM…) ; le
-    # salon de logs est configuré par l'owner comme un salon textuel.
-    salon: Any = bot.get_channel(cfg.salon_id)
-    if salon is None:
-        logger.warning("journal de modération : salon {c} introuvable", c=cfg.salon_id)
-    return salon
+    if not cfg.salon_ids or guild_id not in cfg.guild_ids:
+        return []
+    salons: list[Any] = []
+    for salon_id in cfg.salon_ids:
+        # `bot.get_channel` rend un type large (salon texte, catégorie, DM…) ;
+        # les salons de logs sont configurés par l'owner comme des salons
+        # textuels.
+        salon: Any = bot.get_channel(salon_id)
+        if salon is None:
+            logger.warning("journal de modération : salon {c} introuvable", c=salon_id)
+            continue
+        salons.append(salon)
+    return salons
 
 
 async def _telecharger_pieces(
-    salon: Any, pieces: list[Any],
-) -> tuple[list[discord.File], list[str], list[str], list[tuple[str, str]]]:
-    """Retélécharge au plus 10 pièces jointes pour les rattacher au log.
+    salons: list[Any], pieces: list[Any],
+) -> tuple[list[_PieceRecuperee], list[str], list[str], list[tuple[str, str]]]:
+    """Retélécharge au plus 10 pièces jointes, UNE fois pour tous les salons.
 
-    Rend `(fichiers_discord, refs_medias, refs_fichiers, non_recuperees)`. Les
-    images vont en galerie (`refs_medias`), le reste en composant `File`
+    Le plafond de poids utilise la PLUS PETITE limite d'upload parmi les
+    salons joignables : le même jeu de fichiers part partout, donc toutes les
+    destinations doivent l'accepter. Le budget est CUMULÉ sur tout le
+    message (pas testé fichier par fichier) : dix pièces chacune sous la
+    limite peuvent quand même représenter dix fois la limite en mémoire.
+
+    Rend `(pieces_recuperees, refs_medias, refs_fichiers, non_recuperees)`.
+    Les images vont en galerie (`refs_medias`), le reste en composant `File`
     (`refs_fichiers`) — en Components V2, une pièce jointe que rien ne
     référence n'apparaît pas du tout.
     """
-    fichiers: list[discord.File] = []
+    limites = [
+        lim for lim in (getattr(getattr(s, "guild", None), "filesize_limit", None) for s in salons)
+        if lim is not None
+    ]
+    restant = min(limites) if limites else None
+    recuperees: list[_PieceRecuperee] = []
     medias: list[str] = []
     autres: list[str] = []
     ratees: list[tuple[str, str]] = []
-    limite = getattr(getattr(salon, "guild", None), "filesize_limit", None)
-    noms_utilises: dict[str, int] = {}
+    pris: set[str] = set()
     for index, piece in enumerate(pieces):
         if index >= _MAX_PIECES:
             ratees.append((piece.filename, "au-delà de 10"))
             continue
-        if limite is not None and piece.size > limite:
+        if restant is not None and piece.size > restant:
             ratees.append((piece.filename, "trop lourde"))
             continue
         try:
@@ -102,34 +178,38 @@ async def _telecharger_pieces(
             logger.info("journal de modération : pièce {n} indisponible : {e!r}", n=piece.filename, e=e)
             ratees.append((piece.filename, "plus disponible"))
             continue
-        nom = fichier.filename
-        if nom in noms_utilises:
-            noms_utilises[nom] += 1
-            nom = f"{noms_utilises[nom]}_{nom}"
-            fichier.filename = nom
-        else:
-            noms_utilises[nom] = 0
-        fichiers.append(fichier)
+        donnees = fichier.fp.read()
+        if restant is not None:
+            restant -= piece.size
+        nom = _nom_disponible(_assainir(fichier.filename), pris)
+        pris.add(nom)
+        image = (piece.content_type or "").startswith("image/")
+        recuperees.append(_PieceRecuperee(nom=nom, donnees=donnees, image=image))
         ref = f"attachment://{nom}"
-        if (piece.content_type or "").startswith("image/"):
-            medias.append(ref)
-        else:
-            autres.append(ref)
-    return fichiers, medias, autres, ratees
+        (medias if image else autres).append(ref)
+    return recuperees, medias, autres, ratees
 
 
-async def _envoyer(salon: Any, vue: discord.ui.LayoutView, fichiers: list[discord.File]) -> None:
-    try:
-        await salon.send(view=vue, files=fichiers, allowed_mentions=discord.AllowedMentions.none())
-    except Exception as e:  # noqa: BLE001 — un journal ne casse pas ce qu'il observe
-        logger.warning("journal de modération : envoi impossible dans {c} : {e!r}",
-                       c=getattr(salon, "id", "?"), e=e)
+def _fichiers_frais(pieces: list[_PieceRecuperee]) -> list[discord.File]:
+    """Un `discord.File` neuf par pièce : un `File` déjà envoyé est consommé."""
+    return [discord.File(io.BytesIO(p.donnees), filename=p.nom) for p in pieces]
+
+
+async def _publier_partout(salons: list[Any], vue: discord.ui.LayoutView,
+                           pieces: list[_PieceRecuperee]) -> None:
+    for salon in salons:
+        try:
+            await salon.send(view=vue, files=_fichiers_frais(pieces),
+                             allowed_mentions=discord.AllowedMentions.none())
+        except Exception as e:  # noqa: BLE001 — un salon en échec ne prive pas les autres
+            logger.warning("journal de modération : envoi impossible dans {c} : {e!r}",
+                           c=getattr(salon, "id", "?"), e=e)
 
 
 async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
     try:
-        salon = _salon_cible(bot, payload.guild_id)
-        if salon is None:
+        salons = _salons_cibles(bot, payload.guild_id)
+        if not salons:
             return
         msg = payload.cached_message
         if msg is not None:
@@ -146,14 +226,14 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
             pieces = []
         meta = (f"**Auteur** {meta_auteur} · **Salon** <#{payload.channel_id}> · "
                f"**Message** {payload.message_id}")
-        fichiers, medias, autres, ratees = await _telecharger_pieces(salon, pieces)
+        recuperees, medias, autres, ratees = await _telecharger_pieces(salons, pieces)
         corps = [meta, bloc_contenu]
         if ratees:
             corps.append(_bloc_non_recuperees(ratees))
         heure = maintenant().strftime("%Hh%M")
         vue = fiche("🗑️ Message supprimé", corps, accent=ACCENT_ALERTE, vignette=vignette,
                    medias=medias, fichiers=autres, pied=f"Supprimé à {heure}")
-        await _envoyer(salon, vue, fichiers)
+        await _publier_partout(salons, vue, recuperees)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression non journalisée : {e!r}", e=e)
 
@@ -168,36 +248,70 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
         if avant == apres and not retirees:
             return          # embed de lien, épinglage : rien n'a bougé
         guild_id = after.guild.id if after.guild is not None else None
-        salon = _salon_cible(bot, guild_id)
-        if salon is None:
+        salons = _salons_cibles(bot, guild_id)
+        if not salons:
             return
         auteur = after.author
         meta = (f"**Auteur** <@{auteur.id}> ({auteur.name}) · **Salon** <#{after.channel.id}> · "
                f"**Message** {after.id} · [aller au message]({after.jump_url})")
-        fichiers, medias, autres, ratees = await _telecharger_pieces(salon, retirees)
+        recuperees, medias, autres, ratees = await _telecharger_pieces(salons, retirees)
         corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
         if ratees:
             corps.append(_bloc_non_recuperees(ratees))
         vue = fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
                    medias=medias, fichiers=autres)
-        await _envoyer(salon, vue, fichiers)
+        await _publier_partout(salons, vue, recuperees)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : modification non journalisée : {e!r}", e=e)
 
 
+async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None:
+    """Purge ou historique effacé par un ban : `on_raw_bulk_message_delete`.
+
+    Pas de téléchargement de pièces jointes ici — un pan entier d'historique
+    d'un coup, ce n'est plus une pièce à récupérer mais un événement à
+    signaler. La liste des auteurs/extraits ne porte que les messages en
+    cache (`cached_messages`), bornée pour tenir dans le budget V2.
+    """
+    try:
+        salons = _salons_cibles(bot, payload.guild_id)
+        if not salons:
+            return
+        meta = f"**Salon** <#{payload.channel_id}> · **Messages** {len(payload.message_ids)}"
+        lignes = []
+        for msg in payload.cached_messages:
+            auteur = getattr(msg.author, "name", "inconnu")
+            contenu = _echapper((msg.content or "").strip())
+            extrait = _borner(contenu, _MAX_EXTRAIT) if contenu else "*aucun texte*"
+            lignes.append(f"**{auteur}** : {extrait}")
+        corps = [meta]
+        if lignes:
+            corps.append(_borner("\n".join(lignes), _MAX_CITATION))
+        vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
+        await _publier_partout(salons, vue, [])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("journal de modération : suppression en masse non journalisée : {e!r}", e=e)
+
+
 async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
-    cible = _salon_cible(bot, salon.guild.id)
-    if cible is None:
-        return
-    meta = f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id}"
-    vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL)
-    await _envoyer(cible, vue, [])
+    try:
+        cibles = _salons_cibles(bot, salon.guild.id)
+        if not cibles:
+            return
+        meta = f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id}"
+        vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL)
+        await _publier_partout(cibles, vue, [])
+    except Exception as e:  # noqa: BLE001 — jamais lever, appelé depuis salons_temporaires
+        logger.warning("journal de modération : création vocale non journalisée : {e!r}", e=e)
 
 
 async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
-    cible = _salon_cible(bot, salon.guild.id)
-    if cible is None:
-        return
-    meta = f"**Salon** {salon.name} · **ID** {salon.id}"
-    vue = fiche("🔇 Canal vocal supprimé", [meta], accent=_COULEUR_VOCAL)
-    await _envoyer(cible, vue, [])
+    try:
+        cibles = _salons_cibles(bot, salon.guild.id)
+        if not cibles:
+            return
+        meta = f"**Salon** {salon.name} · **ID** {salon.id}"
+        vue = fiche("🔇 Canal vocal supprimé", [meta], accent=_COULEUR_VOCAL)
+        await _publier_partout(cibles, vue, [])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("journal de modération : suppression vocale non journalisée : {e!r}", e=e)

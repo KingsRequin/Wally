@@ -1267,7 +1267,7 @@ wally = yaml.safe_load(open("/opt/stacks/wally-ai/config.yaml"))
 d = wally["discord"]
 d["salons_temporaires"] = {"salon_createur_id": int(node["channels"]["autoVoice"]),
                            "noms": node["channels"]["randomNames"]}
-d["journal_moderation"] = {"salon_id": int(node["channels"]["logs"]),
+d["journal_moderation"] = {"salon_ids": [int(node["channels"]["logs"]), 1105086620237049956],
                            "guild_ids": [875421531415666698]}
 d["statut_stream"] = {"salon_id": int(node["channels"]["twitchStatus"]),
                       "nom_live": node["twitch"]["liveStatusName"],

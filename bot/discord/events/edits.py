@@ -53,8 +53,12 @@ def register(bot: "WallyDiscord") -> None:
         try:
             # Modération d'abord : elle couvre les serveurs que la perception
             # ignore, et le filtre `ignored_guilds` ci-dessous la couperait.
+            # SCHEDULÉ (`_fire`), pas attendu : le journal télécharge des
+            # pièces jointes et publie sur plusieurs salons, la perception ne
+            # doit pas attendre ce détour avant de percevoir la correction.
             from bot.discord import journal_moderation
-            await journal_moderation.message_modifie(bot, before, after)
+            from bot.discord.handlers import _fire
+            _fire(journal_moderation.message_modifie(bot, before, after))
 
             # `on_message_edit` et non `on_raw_message_edit` : le second couvre
             # les messages hors cache, mais il ne porte PAS l'avant — or c'est

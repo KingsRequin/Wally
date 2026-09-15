@@ -151,13 +151,15 @@ class SalonsTemporairesConfig:
 
 @dataclass
 class JournalModerationConfig:
-    """Embeds « message supprimé / modifié, salon vocal créé / supprimé ».
+    """Fiches « message supprimé / modifié, salon vocal créé / supprimé ».
 
-    `guild_ids` : les serveurs OBSERVÉS (pas celui du salon de logs). Sans cette
-    liste, Wally journaliserait les suppressions de tous les serveurs où il est.
-    `salon_id` à None → désactivé.
+    `guild_ids` : les serveurs OBSERVÉS (pas ceux des salons de logs). Sans
+    cette liste, Wally journaliserait les suppressions de tous les serveurs
+    où il est. `salon_ids` vide → désactivé ; plusieurs entrées publient la
+    MÊME fiche sur chaque salon (plusieurs serveurs de l'owner, chacun sa
+    copie du journal).
     """
-    salon_id: int | None = None
+    salon_ids: list[int] = field(default_factory=list)
     guild_ids: list[int] = field(default_factory=list)
 
 

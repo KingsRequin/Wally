@@ -37,7 +37,7 @@ class FauxDb:
 
 def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
     cfg = SimpleNamespace(salon_createur_id=createur, noms=list(noms))
-    journal = SimpleNamespace(salon_id=None, guild_ids=[])
+    journal = SimpleNamespace(salon_ids=[], guild_ids=[])
     bot = SimpleNamespace(
         db=db,
         config=SimpleNamespace(discord=SimpleNamespace(salons_temporaires=cfg,
