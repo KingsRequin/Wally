@@ -1084,6 +1084,13 @@ _PAIRES_PROPRIETE_DIFF = [
     ("rep rep rep", "rep rep"),
     ("un\n", "un\n\ndeux trois"),
     ("**\n|\tb\n\nb", "\n~~| \nb\n\nb"),  # deux suppressions dès le début, un saut de ligne inchangé entre
+    ("un deux", "un nouveau\nbloc deux"),               # insertion sur deux lignes
+    ("un vieux\nbloc deux", "un deux"),                 # suppression sur deux lignes
+    ("un a\n\nb deux", "un c\n\nd deux"),             # remplacement qui enjambe une ligne vide
+    ("x a \n b y", "x y"),                               # espaces autour du saut, dans l'îlot
+    ("x y", "x a\r\nb y"),                              # CRLF
+    ("x \\ y", "x y"),                                   # backslash supprimé : `\\~~` reste un vrai marqueur
+    ("x a\u2028b y z", "x y z"),                          # séparateur de ligne Unicode
     ("", ""),
     ("   ", "  "),
     ("", "mot"),                   # repli attendu : aucun mot commun
@@ -1091,15 +1098,23 @@ _PAIRES_PROPRIETE_DIFF = [
 ]
 
 
+# Ce que `str.splitlines()` (donc la citation `> `) coupe comme fin de ligne.
+_SAUT = r"[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]"
+_ILOT = re.compile(r"~~.+?~~(?:(?=\s*" + _SAUT + r")\s+~~.+?~~)*")
+
+
 def _retirer_suppressions(diff: str) -> str:
-    """Retire chaque `~~…~~` AVEC l'unique espace qui lui appartient.
+    """Retire chaque îlot `~~…~~` AVEC l'unique espace qui lui appartient.
 
     Un mot supprimé n'a aucune place dans le texte APRÈS : pour rester lisible,
     il apporte son propre séparateur — l'espace qui le précède, ou celui qui le
     suit quand il ouvre le message. Tout autre caractère vient de l'APRÈS.
+    Une suppression sur plusieurs lignes est UN îlot de plusieurs segments
+    `~~…~~`, séparés par des espaces qui contiennent un saut de ligne ; deux
+    îlots distincts ne sont jamais séparés que par un espace simple.
     """
     morceaux, curseur = [], 0
-    for m in re.finditer(r"~~(.+?)~~", diff, flags=re.S):
+    for m in _ILOT.finditer(diff):
         debut, fin = m.span()
         if debut == 0:
             if diff[fin:fin + 1] == " ":
@@ -1114,6 +1129,20 @@ def _retirer_suppressions(diff: str) -> str:
     return "".join(morceaux)
 
 
+def _marqueurs_equilibres_par_ligne(texte: str) -> bool:
+    """Chaque ligne porte un nombre PAIR de `**` et de `~~` actifs, et aucun
+    `*`/`~` isolé. Les séquences échappées sont consommées d'abord : `\\~~`
+    est un backslash échappé suivi d'un VRAI `~~`.
+    """
+    for ligne in texte.splitlines():
+        jetons = [j for j in re.findall(r"\\.|\*\*|~~|[*~]", ligne) if j[0] != "\\"]
+        if any(len(j) == 1 for j in jetons):
+            return False
+        if jetons.count("**") % 2 or jetons.count("~~") % 2:
+            return False
+    return True
+
+
 def _sans_marqueurs(texte: str) -> str:
     texte = re.sub(r"\*\*(.+?)\*\*", r"\1", texte, flags=re.S)
     texte = re.sub(r"~~(.+?)~~", r"\1", texte, flags=re.S)
@@ -1125,13 +1154,16 @@ def test_diff_mots_propriete_aller_retour_espaces_jamais_perdus():
 
     1. aucun run `[*~]{3,}` ;
     2. aucun contenu de marqueur qui commence ou finit par un espace ;
-    3. suppressions retirées (avec leur séparateur), marqueurs et ZWSP ôtés :
-       on retrouve l'APRÈS EXACTEMENT, espaces compris ;
+    3. suppressions retirées (îlot entier + son séparateur), marqueurs et ZWSP
+       ôtés : on retrouve l'APRÈS EXACTEMENT, espaces compris ;
     4. ajouts retirés, marqueurs et ZWSP ôtés : on retrouve les MOTS de
        l'AVANT, dans l'ordre et jamais collés. Pas l'égalité exacte : les
        espaces visibles sont ceux de l'APRÈS (un changement d'espaces seuls
        n'a aucun marqueur, et le séparateur d'un ajout reste hors du gras),
-       donc l'espacement de l'AVANT n'est pas reconstructible.
+       donc l'espacement de l'AVANT n'est pas reconstructible ;
+    5. aucun marqueur n'enjambe une fin de ligne — ni dans le diff, ni une
+       fois cité ligne par ligne (`> `) : Discord ne porte pas le gras ni le
+       barré d'une ligne à l'autre, le marqueur s'afficherait en clair.
 
     Le ZWSP est ôté des DEUX côtés : `_echapper` en pose un après chaque `@`.
     """
@@ -1149,10 +1181,41 @@ def test_diff_mots_propriete_aller_retour_espaces_jamais_perdus():
         for contenu in contenus:
             nu = contenu.replace(_ZWSP, "")
             assert nu == nu.strip(), cas
+            assert contenu.splitlines() == [contenu], cas
+        assert _marqueurs_equilibres_par_ligne(resultat), cas
+        assert _marqueurs_equilibres_par_ligne(jm._citer_deja_echappe(resultat)), cas
         assert _sans_marqueurs(_retirer_suppressions(resultat)) == apres.replace(_ZWSP, ""), cas
         sans_ajouts = re.sub(r"\*\*(.+?)\*\*", "", resultat, flags=re.S)
         assert _sans_marqueurs(sans_ajouts).split() == avant.replace(_ZWSP, "").split(), cas
-    assert diffs >= 30
+    assert diffs >= 36
+
+
+def test_diff_mots_insertion_sur_deux_lignes_marquee_ligne_par_ligne():
+    assert jm._diff_mots("un deux", "un nouveau\nbloc deux") == "un **nouveau**\n**bloc** deux"
+
+
+def test_diff_mots_suppression_sur_deux_lignes_marquee_ligne_par_ligne():
+    assert jm._diff_mots("un vieux\nbloc deux", "un deux") == "un ~~vieux~~\n~~bloc~~ deux"
+
+
+def test_diff_mots_remplacement_qui_enjambe_une_ligne_vide():
+    """La ligne vide ne porte aucun marqueur, les espaces autour du saut
+    restent dehors."""
+    assert jm._diff_mots("un a \n\n b deux", "un c\n\nd deux") == \
+        "un ~~a~~ \n\n ~~b~~ **c**\n\n**d** deux"
+
+
+def test_citation_du_diff_tronque_ne_laisse_aucun_marqueur_ouvert():
+    """Le budget coupe au caractère près : une coupure DANS un `**…**` ou un
+    `~~…~~` laissait sur la dernière ligne un marqueur ouvert, affiché en
+    clair. Toutes les positions de coupure sont essayées."""
+    diff = jm._diff_mots("motoriginal000 motoriginal001 motoriginal002 ancien",
+                         "motoriginal000 motoriginal001 motoriginal002 nouveau")
+    assert diff is not None
+    for limite in range(10, len(diff) + 3):
+        cite = jm._citer_deja_echappe(diff, limite=limite)
+        assert len(cite) <= limite, (limite, cite)
+        assert _marqueurs_equilibres_par_ligne(cite), (limite, cite)
 
 
 # ---------------------------------------------------------------------------

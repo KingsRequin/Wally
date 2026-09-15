@@ -216,14 +216,29 @@ def _decouper_espaces(texte: str) -> tuple[str, str, str]:
 _DELIMITEURS_MARQUAGE = set("*~_|`")
 
 
-def _marque(mot: str, marqueur: str) -> str:
-    """Encadre `mot` du `marqueur` (`~~`/`**`), en glissant un espace de
-    largeur nulle entre le marqueur et `mot` si le bord touché est un
-    délimiteur Markdown — sinon aucun changement.
+# Tout ce que `str.splitlines()` coupe, avec les espaces qui l'entourent : la
+# citation `> ` découpe le bloc par CES fins de ligne-là, et Discord ne porte ni
+# le gras ni le barré d'une ligne citée à la suivante.
+_SAUT_DE_LIGNE = re.compile(r"(\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]\s*)")
+
+
+def _marque(texte: str, marqueur: str) -> str:
+    """Encadre `texte` (sans espace de bord) du `marqueur` (`~~`/`**`).
+
+    Ligne par ligne : chaque segment reçoit sa propre paire de marqueurs, les
+    sauts de ligne et les espaces qui les bordent restent dehors — un `**`
+    ouvert sur une ligne et fermé sur la suivante s'afficherait en clair une
+    fois le bloc cité. Les lignes vides, avalées par le séparateur, ne portent
+    aucun marqueur. Sur chaque segment, un espace de largeur nulle s'intercale
+    entre le marqueur et un bord qui est un délimiteur Markdown.
     """
-    debut = "\u200b" if mot[0] in _DELIMITEURS_MARQUAGE else ""
-    fin = "\u200b" if mot[-1] in _DELIMITEURS_MARQUAGE else ""
-    return f"{marqueur}{debut}{mot}{fin}{marqueur}"
+    morceaux = _SAUT_DE_LIGNE.split(texte)
+    for i in range(0, len(morceaux), 2):  # indices pairs : les segments
+        segment = morceaux[i]
+        debut = "\u200b" if segment[0] in _DELIMITEURS_MARQUAGE else ""
+        fin = "\u200b" if segment[-1] in _DELIMITEURS_MARQUAGE else ""
+        morceaux[i] = f"{marqueur}{debut}{segment}{fin}{marqueur}"
+    return "".join(morceaux)
 
 
 def _diff_mots(avant: str, apres: str) -> str | None:
@@ -296,7 +311,27 @@ def _citer_deja_echappe(texte: str, *, limite: int = _MAX_CITATION) -> str:
     chaque `@`.
     """
     cite = "\n".join(f"> {ligne}" for ligne in texte.splitlines())
-    return _borner(cite, limite)
+    borne = _borner(cite, limite)
+    if borne == cite:
+        return borne
+    # La coupure au caractère près peut tomber DANS un marqueur du diff : un
+    # `*`/`~` isolé ou un `**`/`~~` resté ouvert s'afficherait en clair sur la
+    # dernière ligne. On recule jusqu'avant ce marqueur. Une séquence échappée
+    # (`\*`, mais aussi `\\` suivi d'un vrai marqueur) est consommée d'abord,
+    # et les marqueurs du diff ne s'imbriquent jamais : un seul reste ouvert.
+    debut_ligne = borne.rfind("\n") + 1
+    ligne = borne[debut_ligne:-1]
+    ouvert: re.Match[str] | None = None
+    for jeton in re.finditer(r"\\.|\*\*|~~|[*~]$", ligne):
+        if jeton.group()[0] == "\\":
+            continue
+        if ouvert is None:
+            ouvert = jeton
+        elif jeton.group() == ouvert.group():
+            ouvert = None
+    if ouvert is not None:
+        ligne = ligne[:ouvert.start()]
+    return f"{borne[:debut_ligne]}{ligne}…"
 
 
 def _bloc_deja_echappe(titre: str, texte: str) -> str:
