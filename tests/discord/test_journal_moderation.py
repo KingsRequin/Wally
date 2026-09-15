@@ -918,28 +918,11 @@ def test_diff_mots_jamais_de_run_de_trois_etoiles_ou_tildes():
 # interne d'un mot marqué (`_marque` de round 1 ne suffisait pas)
 
 
-def test_joindre_protege_les_deux_bords_dun_delimiteur():
-    """`_joindre` : si le bord droit de `gauche` ET le bord gauche de
-    `droite` sont chacun un délimiteur Markdown, un espace de largeur nulle
-    les sépare — sinon simple concaténation. C'est la fonction responsable
-    de la protection à la JONCTURE (round 2), distincte de `_marque` qui ne
-    protège que l'intérieur d'un mot déjà marqué (round 1)."""
-    assert jm._joindre("salut \\*", "**nouveau**") == "salut \\*\u200b**nouveau**"
-    assert jm._joindre("salut \\~", "~~mot~~") == "salut \\~\u200b~~mot~~"
-    assert jm._joindre("salut", "**mot**") == "salut**mot**"        # bord gauche pas un délimiteur
-    # Un contenu échappé commence TOUJOURS par un backslash (jamais un
-    # délimiteur nu) : rien à protéger côté droit sans marqueur en face.
-    assert jm._joindre("~~mot~~", "\\~ fin") == "~~mot~~\\~ fin"
-    assert jm._joindre("**mot**", "") == "**mot**"                  # rien à droite : inchangé
-    assert jm._joindre("", "**mot**") == "**mot**"                  # rien à gauche : inchangé
-
-
 def test_diff_mots_repro_round2_equal_se_termine_par_delimiteur_echappe():
     """Repro EXACTE round 2 #A : un chunk `equal` qui finit par un
     délimiteur échappé (`\\*`), suivi d'un mot AJOUTÉ qui n'existe que côté
     `apres` — le tokenizer perd l'espace séparateur (rien à quoi l'aligner
-    côté `avant`) et `marque_precedent` vient d'être remis à False par le
-    chunk `equal` : sans jonction protégée, ça donnait
+    côté `avant`) juste après un chunk `equal` : sans séparation, ça donnait
     `'salut \\***nouveau**'` (run de 3 étoiles)."""
     avant = jm._echapper(discord.utils.escape_markdown("salut *"))
     apres = jm._echapper(discord.utils.escape_markdown("salut * nouveau"))
@@ -1035,6 +1018,141 @@ def test_diff_mots_espace_jamais_a_linterieur_dun_marqueur():
         assert marques, (avant, apres, resultat)
         for contenu in marques:
             assert contenu == contenu.strip(), (avant, apres, resultat)
+
+
+# ---------------------------------------------------------------------------
+# Fix round 4 — un changement d'espaces seuls ne colle plus deux mots
+
+
+def _echappe(texte: str) -> str:
+    """Le même échappement que `message_modifie` avant d'appeler le diff."""
+    return jm._echapper(discord.utils.escape_markdown(texte))
+
+
+def test_diff_mots_repro_round4_double_espace_reduit():
+    assert jm._diff_mots(_echappe("hello  world"), _echappe("hello world")) == "hello world"
+
+
+def test_diff_mots_repro_round4_triple_espace_reduit():
+    assert jm._diff_mots(_echappe("mot1   mot2"), _echappe("mot1 mot2")) == "mot1 mot2"
+
+
+def test_diff_mots_repro_round4_tabulation_devenue_espaces():
+    assert jm._diff_mots(_echappe("mot1\tmot2"), _echappe("mot1  mot2")) == "mot1  mot2"
+
+
+def test_diff_mots_repro_round4_saut_de_ligne_retire():
+    assert jm._diff_mots(_echappe("un\n\ndeux"), _echappe("un\ndeux")) == "un\ndeux"
+
+
+_ZWSP = "\u200b"
+
+# Paires brutes, échappées comme par l'appelant. Espaces multiples, tabulations,
+# sauts de ligne, bords du message, délimiteurs Markdown en bordure, mots
+# répétés, côtés vides — et quelques paires qui prennent le repli (None).
+_PAIRES_PROPRIETE_DIFF = [
+    ("hello  world", "hello world"),
+    ("mot1   mot2", "mot1 mot2"),
+    ("mot1\tmot2", "mot1  mot2"),
+    ("un\n\ndeux", "un\ndeux"),
+    ("a b c", "a  b\tc"),
+    ("a b c d", "a\nb\nc\nd"),
+    ("  début milieu fin", "début milieu fin"),
+    ("début milieu fin", "début milieu fin  "),
+    ("\tun deux trois\n", "un deux trois quatre"),
+    ("un deux trois", "  un deux trois quatre\n"),
+    (" lead mid tail ", "\nlead  mid\ttail\n"),
+    ("un deux trois quatre", "un trois quatre"),
+    ("un deux trois quatre", "un deux\n\ntrois quatre cinq"),
+    ("un  deux  trois quatre", "un deux trois  cinq  quatre"),
+    ("un ancien\ndeux", "un nouveau\n deux"),
+    ("ancien mot suite", "nouveau mot suite"),
+    ("mot suite ancien", "mot suite nouveau"),
+    ("a old b", "a  b"),
+    ("*gras* et suite", "*gras* et la suite"),
+    ("début ~~barré~~ fin", "début fin"),
+    ("_a_ b c", "b c _a_"),
+    ("* x y", "x y *"),
+    ("mot ~", "~ mot"),
+    ("a | b", "a | b |"),
+    ("`code` ici", "`code` ici là"),
+    ("salut *", "salut * nouveau"),
+    ("salut ~~ mot", "salut ~~"),
+    ("salut @tout le monde", "salut @tout  le monde !"),
+    ("x x x x", "x x y x x"),
+    ("le le le chat", "le le chat"),
+    ("rep rep rep", "rep rep"),
+    ("un\n", "un\n\ndeux trois"),
+    ("**\n|\tb\n\nb", "\n~~| \nb\n\nb"),  # deux suppressions dès le début, un saut de ligne inchangé entre
+    ("", ""),
+    ("   ", "  "),
+    ("", "mot"),                   # repli attendu : aucun mot commun
+    ("mot", ""),                   # repli attendu
+]
+
+
+def _retirer_suppressions(diff: str) -> str:
+    """Retire chaque `~~…~~` AVEC l'unique espace qui lui appartient.
+
+    Un mot supprimé n'a aucune place dans le texte APRÈS : pour rester lisible,
+    il apporte son propre séparateur — l'espace qui le précède, ou celui qui le
+    suit quand il ouvre le message. Tout autre caractère vient de l'APRÈS.
+    """
+    morceaux, curseur = [], 0
+    for m in re.finditer(r"~~(.+?)~~", diff, flags=re.S):
+        debut, fin = m.span()
+        if debut == 0:
+            if diff[fin:fin + 1] == " ":
+                fin += 1
+        else:
+            assert diff[debut - 1] == " ", diff
+            debut -= 1
+        assert debut >= curseur, diff
+        morceaux.append(diff[curseur:debut])
+        curseur = fin
+    morceaux.append(diff[curseur:])
+    return "".join(morceaux)
+
+
+def _sans_marqueurs(texte: str) -> str:
+    texte = re.sub(r"\*\*(.+?)\*\*", r"\1", texte, flags=re.S)
+    texte = re.sub(r"~~(.+?)~~", r"\1", texte, flags=re.S)
+    return texte.replace(_ZWSP, "")
+
+
+def test_diff_mots_propriete_aller_retour_espaces_jamais_perdus():
+    """Sur chaque paire (repli exclu) :
+
+    1. aucun run `[*~]{3,}` ;
+    2. aucun contenu de marqueur qui commence ou finit par un espace ;
+    3. suppressions retirées (avec leur séparateur), marqueurs et ZWSP ôtés :
+       on retrouve l'APRÈS EXACTEMENT, espaces compris ;
+    4. ajouts retirés, marqueurs et ZWSP ôtés : on retrouve les MOTS de
+       l'AVANT, dans l'ordre et jamais collés. Pas l'égalité exacte : les
+       espaces visibles sont ceux de l'APRÈS (un changement d'espaces seuls
+       n'a aucun marqueur, et le séparateur d'un ajout reste hors du gras),
+       donc l'espacement de l'AVANT n'est pas reconstructible.
+
+    Le ZWSP est ôté des DEUX côtés : `_echapper` en pose un après chaque `@`.
+    """
+    diffs = 0
+    for avant_brut, apres_brut in _PAIRES_PROPRIETE_DIFF:
+        avant, apres = _echappe(avant_brut), _echappe(apres_brut)
+        resultat = jm._diff_mots(avant, apres)
+        cas = (avant_brut, apres_brut, resultat)
+        if resultat is None:
+            continue
+        diffs += 1
+        assert not re.search(r"[*~]{3,}", resultat), cas
+        contenus = (re.findall(r"\*\*(.+?)\*\*", resultat, flags=re.S)
+                    + re.findall(r"~~(.+?)~~", resultat, flags=re.S))
+        for contenu in contenus:
+            nu = contenu.replace(_ZWSP, "")
+            assert nu == nu.strip(), cas
+        assert _sans_marqueurs(_retirer_suppressions(resultat)) == apres.replace(_ZWSP, ""), cas
+        sans_ajouts = re.sub(r"\*\*(.+?)\*\*", "", resultat, flags=re.S)
+        assert _sans_marqueurs(sans_ajouts).split() == avant.replace(_ZWSP, "").split(), cas
+    assert diffs >= 30
 
 
 # ---------------------------------------------------------------------------

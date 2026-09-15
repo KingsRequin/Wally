@@ -195,13 +195,10 @@ def _mots(texte: str) -> list[str]:
 def _decouper_espaces(texte: str) -> tuple[str, str, str]:
     """Sépare `texte` en (espaces de tête, cœur, espaces de queue).
 
-    Round 3 : un chunk d'insertion/suppression peut porter, à l'intérieur de
-    son propre empan de tokens, l'espace qui le séparait du mot voisin —
-    précisément quand ce mot n'existe que d'un seul côté (rien à quoi
-    l'aligner de l'autre : bord du texte, ou insertion/suppression isolée).
-    Le séparer du cœur permet de le REPOSER hors du marqueur au lieu de le
-    perdre par un `.strip()` sec. Cœur vide (texte fait QUE d'espaces) →
-    tout part dans `tete`, `queue` reste vide.
+    Sert à l'empan APRÈS d'un changement : ses espaces de bord restent hors du
+    gras (un espace À L'INTÉRIEUR de `**…**` casse le rendu Discord) sans être
+    perdus. Cœur vide (texte fait QUE d'espaces) → tout part dans `tete`,
+    `queue` reste vide.
     """
     coeur = texte.strip()
     if not coeur:
@@ -229,29 +226,6 @@ def _marque(mot: str, marqueur: str) -> str:
     return f"{marqueur}{debut}{mot}{fin}{marqueur}"
 
 
-def _joindre(gauche: str, droite: str) -> str:
-    """Concatène deux fragments du diff en protégeant leur JONCTURE.
-
-    Si le dernier caractère de `gauche` ET le premier de `droite` sont tous
-    deux des délimiteurs Markdown, un espace de largeur nulle les sépare —
-    sinon simple concaténation.
-
-    Round 2 #A : un chunk `equal` qui se termine par un délimiteur échappé
-    directement suivi d'un mot AJOUTÉ/SUPPRIMÉ collait ce délimiteur à notre
-    propre marqueur (`'salut \\***nouveau**'`, un run de 3 étoiles) — le
-    tokenizer perd l'espace qui les séparait dans le texte d'origine dès que
-    ce mot n'existe QUE d'un côté (rien à quoi aligner l'espace de l'autre).
-    `_marque` (ci-dessus) ne protège que l'intérieur d'UN mot marqué ; cette
-    fonction protège la jonction, quels que soient les deux fragments
-    qu'elle assemble.
-    """
-    if not gauche or not droite:
-        return gauche + droite
-    if gauche[-1] in _DELIMITEURS_MARQUAGE and droite[0] in _DELIMITEURS_MARQUAGE:
-        return gauche + "\u200b" + droite
-    return gauche + droite
-
-
 def _diff_mots(avant: str, apres: str) -> str | None:
     """Diff mot à mot : supprimé en `~~barré~~`, ajouté en `**gras**`, le
     reste tel quel. `avant`/`apres` doivent déjà être markdown- (et `@`-)
@@ -263,6 +237,13 @@ def _diff_mots(avant: str, apres: str) -> str | None:
     matcheraient presque toujours et gonfleraient artificiellement la
     similarité). L'appelant retombe alors sur des blocs Avant/Après complets,
     plus lisibles qu'un diff qui barre/regraisse la quasi-totalité du texte.
+
+    Le rendu est le texte APRÈS, caractère pour caractère (espaces, tabulations
+    et retours à la ligne compris), où les ajouts sont mis en gras et où chaque
+    suppression est glissée comme un îlot `~~…~~` porteur de SON séparateur :
+    un espace qui le précède, ou qui le suit s'il ouvre le message. Retirer ces
+    îlots rend donc exactement l'APRÈS. Un changement d'espaces seuls ne porte
+    aucun marqueur : on n'en garde que l'espacement APRÈS.
     """
     mots_avant, mots_apres = _mots(avant), _mots(apres)
     reels_avant = [m for m in mots_avant if m.strip()]
@@ -272,37 +253,37 @@ def _diff_mots(avant: str, apres: str) -> str | None:
         return None
     sm = difflib.SequenceMatcher(None, mots_avant, mots_apres, autojunk=False)
     resultat = ""
-    marque_precedent = False
+    # Fin de l'îlot qui ouvre le message, séparateur compris : un îlot suivant
+    # ne remonte jamais en deçà, sinon les deux se disputeraient le même espace.
+    plancher = 0
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        empan_apres = "".join(mots_apres[j1:j2])
         if tag == "equal":
-            resultat = _joindre(resultat, "".join(mots_apres[j1:j2]))
-            marque_precedent = False
+            resultat += empan_apres
             continue
-        tete_s, supprime, queue_s = _decouper_espaces("".join(mots_avant[i1:i2]))
-        tete_a, ajoute, queue_a = _decouper_espaces("".join(mots_apres[j1:j2]))
-        if supprime and ajoute:
-            # L'espace d'ORIGINE entre le mot supprimé et le mot ajouté,
-            # porté par le côté qui l'a (avant en priorité, sinon apres) —
-            # jamais les deux à la fois (même espace, vu des deux côtés).
-            # Aucun des deux n'en a (remplacement simple, un seul mot pour
-            # l'autre) : un espace explicite reste la règle de lisibilité.
-            jonction = queue_s or tete_a or " "
-            piece = f"{tete_s}{_marque(supprime, '~~')}{jonction}{_marque(ajoute, '**')}{queue_a}"
-        elif supprime:
-            piece = f"{tete_s}{_marque(supprime, '~~')}{queue_s}"
-        elif ajoute:
-            piece = f"{tete_a}{_marque(ajoute, '**')}{queue_a}"
-        else:
-            piece = ""
-        if not piece:
-            continue
-        # Un espace RÉEL déjà porté par le morceau (bord de texte, cf.
-        # `_decouper_espaces`) sépare déjà : ne pas en rajouter un synthétique.
-        if marque_precedent and not piece[:1].isspace():
-            resultat += " "  # deux morceaux marqués ADJACENTS (rien entre) : espace VISIBLE
-        resultat = _joindre(resultat, piece)
-        marque_precedent = True
-    return resultat.strip()
+        supprime = "".join(mots_avant[i1:i2]).strip()
+        if supprime:
+            # L'îlot se pose AVANT les espaces qui terminent déjà le rendu :
+            # à sa gauche un mot, un marqueur ou le séparateur d'un îlot (ou
+            # rien), à sa droite un espace (ou la suite de l'empan, qui
+            # commence forcément par un espace — les tokens alternent mot /
+            # espaces). Il ne touche ainsi jamais un autre caractère visible,
+            # donc ni mot collé ni run `[*~]{3,}`.
+            corps = resultat[:max(len(resultat.rstrip()), plancher)]
+            barre = _marque(supprime, "~~")
+            if corps:
+                resultat = f"{corps} {barre}{resultat[len(corps):]}"
+            else:
+                # Rien à gauche : le séparateur passe à droite. Il y a
+                # toujours une suite — sans aucun mot APRÈS, le ratio vaut 0
+                # et on est déjà reparti sur le repli.
+                resultat = f"{barre} {resultat}"
+                plancher = len(barre) + 1
+        tete, ajoute, queue = _decouper_espaces(empan_apres)
+        # Cœur vide (changement d'espaces seuls, ou suppression pure) :
+        # l'espacement APRÈS passe tel quel, sans marqueur.
+        resultat += f"{tete}{_marque(ajoute, '**')}{queue}" if ajoute else empan_apres
+    return resultat
 
 
 def _citer_deja_echappe(texte: str, *, limite: int = _MAX_CITATION) -> str:
