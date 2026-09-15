@@ -45,8 +45,9 @@ def _piece(id, nom, *, content_type="image/png", size=1000, echoue=None):
     return SimpleNamespace(id=id, filename=nom, content_type=content_type, size=size, to_file=to_file)
 
 
-def _message(contenu, *, bot_auteur=False, guild=COMMU, pieces=(), auteur_id=1, msg_id=1, channel_id=5):
-    auteur = SimpleNamespace(id=auteur_id, bot=bot_auteur, name="alice",
+def _message(contenu, *, bot_auteur=False, guild=COMMU, pieces=(), auteur_id=1, msg_id=1, channel_id=5,
+             auteur_nom="alice"):
+    auteur = SimpleNamespace(id=auteur_id, bot=bot_auteur, name=auteur_nom,
                              display_avatar=SimpleNamespace(url="https://cdn/avatar.png"))
     return SimpleNamespace(
         id=msg_id, content=contenu, guild=SimpleNamespace(id=guild),
@@ -197,6 +198,111 @@ async def test_budget_4000_respecte_texte_multiligne_suppression():
     await jm.message_supprime(bot, payload)
     total = sum(len(t) for t in _textes(_vue(logs)))
     assert total <= 4000
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 — pires cas CONSTRUITS (pas mesurés à la main) : chaque bloc au
+# plafond EN MÊME TEMPS (texte multiligne max + liste de pièces non
+# récupérées à son maximum), plutôt qu'un seul bloc isolé.
+
+
+async def test_budget_4000_pire_cas_edition_texte_et_pieces_non_recuperees():
+    """Avant ET après au plafond de citation, PLUS 15 pièces retirées (plus
+    que `_MAX_PIECES`, mélange « plus disponible » / « au-delà de 10 »), avec
+    des noms longs — le pire cas mesuré par le reviewer (~3654 caractères)."""
+    bot, logs = _bot()
+    avant, apres = "a\n" * 2000, "b\n" * 2000
+    nom_long = "x" * 80 + ".png"
+    pieces = [_piece(i, nom_long,
+                     echoue=discord.NotFound(SimpleNamespace(status=404, reason="x"), "gone"))
+              for i in range(15)]
+    await jm.message_modifie(bot, _message(avant, pieces=pieces), _message(apres, pieces=[]))
+    total = sum(len(t) for t in _textes(_vue(logs)))
+    assert total <= 4000
+
+
+async def test_budget_4000_pire_cas_suppression_texte_et_pieces_non_recuperees():
+    """Contenu au plafond de citation PLUS 15 pièces non récupérables à noms
+    longs — pire cas mesuré par le reviewer (~2115 caractères)."""
+    bot, logs = _bot()
+    contenu = "a\n" * 2000
+    nom_long = "y" * 80 + ".png"
+    pieces = [_piece(i, nom_long,
+                     echoue=discord.NotFound(SimpleNamespace(status=404, reason="x"), "gone"))
+              for i in range(15)]
+    msg = _message(contenu, pieces=pieces)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    total = sum(len(t) for t in _textes(_vue(logs)))
+    assert total <= 4000
+
+
+async def test_budget_4000_pire_cas_suppression_en_masse():
+    """Beaucoup de messages en cache, auteurs et contenus longs — pire cas
+    mesuré par le reviewer (~1558 caractères)."""
+    bot, logs = _bot()
+    msgs = [_message("x" * 500, auteur_id=i, msg_id=i, auteur_nom="a" * 40) for i in range(100)]
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5,
+                              message_ids={m.id for m in msgs}, cached_messages=msgs)
+    await jm.messages_supprimes_en_masse(bot, payload)
+    total = sum(len(t) for t in _textes(_vue(logs)))
+    assert total <= 4000
+
+
+def test_borner_ne_coupe_jamais_un_arobase_isole():
+    """`_echapper` neutralise un `@` avec un zero-width space qui le SUIT :
+    couper pile entre les deux ressusciterait une mention réelle."""
+    texte = "x" * 10 + "@" + "​" + "y" * 10
+    resultat = jm._borner(texte, 12)   # la coupure tombe pile après le `@`
+    assert not resultat.endswith("@…")
+    assert not resultat[:-1].endswith("@")
+
+
+async def test_suppression_en_masse_liste_bornee_par_lignes_entieres():
+    """`_borner` coupait au caractère près : une ligne `**auteur**` tronquée
+    en plein milieu du marqueur mettait tout le RESTE du message en gras."""
+    bot, logs = _bot()
+    msgs = [_message("x" * 100, auteur_id=i, msg_id=i) for i in range(80)]
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5,
+                              message_ids={m.id for m in msgs}, cached_messages=msgs)
+
+    await jm.messages_supprimes_en_masse(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    for ligne in texte.splitlines():
+        if "…" not in ligne:
+            assert ligne.count("**") % 2 == 0   # jamais un marqueur `**` coupé en deux
+    assert "… et" in texte and "autres" in texte
+
+
+async def test_nom_auteur_avec_underscores_echappe_dans_la_meta():
+    bot, logs = _bot()
+    msg = _message("texte", auteur_nom="a_b_c")
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "a\\_b\\_c" in texte
+
+
+async def test_nom_auteur_avec_underscores_echappe_en_masse():
+    bot, logs = _bot()
+    msg = _message("texte", auteur_nom="a_b_c")
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={msg.id}, cached_messages=[msg])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "a\\_b\\_c" in texte
+
+
+async def test_salon_introuvable_avertit_avec_son_id():
+    bot, _salons = _bot_multi([999], manquant=[999])
+    dits: list[str] = []
+    jeton = jm.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    try:
+        payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
+        await jm.message_supprime(bot, payload)
+    finally:
+        jm.logger.remove(jeton)
+    assert any("999" in d for d in dits)
 
 
 # ---------------------------------------------------------------------------

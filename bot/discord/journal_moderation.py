@@ -64,7 +64,41 @@ def _echapper(texte: str) -> str:
 def _borner(texte: str, limite: int) -> str:
     if len(texte) <= limite:
         return texte
-    return texte[: limite - 1] + "…"
+    tronque = texte[: limite - 1]
+    # `_echapper` neutralise un `@` avec un zero-width space qui le SUIT :
+    # couper pile entre les deux laisserait un `@` isolé, à nouveau ACTIF
+    # (mention réelle) alors que le but de l'échappement était de l'éteindre.
+    if tronque.endswith("@"):
+        tronque = tronque[:-1]
+    return tronque + "…"
+
+
+def _borner_lignes(lignes: list[str], limite: int) -> str:
+    """Borne une liste de lignes par lignes ENTIÈRES.
+
+    `_borner` coupe au caractère près : sur `**auteur** : extrait`, la
+    coupure peut tomber au milieu du marqueur `**`, laissant tout le RESTE du
+    message en gras. Les lignes qui ne tiennent plus deviennent une seule
+    ligne récapitulative « … et N autres ».
+    """
+    texte = "\n".join(lignes)
+    if len(texte) <= limite:
+        return texte
+    gardees: list[str] = []
+    longueur = 0
+    for i, ligne in enumerate(lignes):
+        reste = len(lignes) - i
+        recap = f"… et {reste} autres"
+        # Marge pour la ligne récapitulative SI cette ligne ne complète pas
+        # la liste — la toute dernière ligne n'a besoin d'aucune marge.
+        marge = len(recap) + 1 if reste > 1 else 0
+        ajout = len(ligne) + (1 if gardees else 0)
+        if longueur + ajout + marge > limite:
+            gardees.append(recap)
+            return "\n".join(gardees)
+        gardees.append(ligne)
+        longueur += ajout
+    return "\n".join(gardees)
 
 
 def _citer(texte: str, *, limite: int = _MAX_CITATION) -> str:
@@ -214,7 +248,7 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
         msg = payload.cached_message
         if msg is not None:
             auteur = msg.author
-            meta_auteur = f"<@{auteur.id}> ({auteur.name})"
+            meta_auteur = f"<@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)})"
             vignette = url_avatar(auteur)
             contenu = (msg.content or "").strip()
             bloc_contenu = _citer(contenu) if contenu else "*aucun texte*"
@@ -252,7 +286,8 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
         if not salons:
             return
         auteur = after.author
-        meta = (f"**Auteur** <@{auteur.id}> ({auteur.name}) · **Salon** <#{after.channel.id}> · "
+        meta = (f"**Auteur** <@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)}) · "
+               f"**Salon** <#{after.channel.id}> · "
                f"**Message** {after.id} · [aller au message]({after.jump_url})")
         recuperees, medias, autres, ratees = await _telecharger_pieces(salons, retirees)
         corps = [meta, _bloc_cite("Avant", avant), _bloc_cite("Après", apres)]
@@ -280,13 +315,13 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
         meta = f"**Salon** <#{payload.channel_id}> · **Messages** {len(payload.message_ids)}"
         lignes = []
         for msg in payload.cached_messages:
-            auteur = getattr(msg.author, "name", "inconnu")
+            auteur = discord.utils.escape_markdown(getattr(msg.author, "name", "inconnu"))
             contenu = _echapper((msg.content or "").strip())
             extrait = _borner(contenu, _MAX_EXTRAIT) if contenu else "*aucun texte*"
             lignes.append(f"**{auteur}** : {extrait}")
         corps = [meta]
         if lignes:
-            corps.append(_borner("\n".join(lignes), _MAX_CITATION))
+            corps.append(_borner_lignes(lignes, _MAX_CITATION))
         vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
         await _publier_partout(salons, vue, [])
     except Exception as e:  # noqa: BLE001
