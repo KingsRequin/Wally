@@ -1,4 +1,6 @@
 """Tests pour bot/discord/voice/service.py — join/leave/speak + anti-larsen."""
+import asyncio
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -50,6 +52,14 @@ async def test_leave_disconnects():
     with patch("bot.discord.voice.service.voice_recv") as mock_vr:
         mock_vr.VoiceRecvClient = MagicMock()
         await svc.join(channel)
+
+    # join() détache des tâches de fond (préchauffage STT, salutation) : les
+    # laisser tourner avant leave() reproduit les vraies conditions de prod, où
+    # les I/O Discord réelles leur donnent toujours l'occasion de démarrer.
+    # Sans ce `gather`, leave() les annule avant leur premier `await`, ce qui
+    # abandonne la coroutine AsyncMock du préchauffage sans jamais l'attendre
+    # (RuntimeWarning « coroutine ... was never awaited » à la fermeture du GC).
+    await asyncio.gather(*svc._detached, return_exceptions=True)
 
     await svc.leave()
     assert svc.is_connected is False

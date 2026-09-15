@@ -22,11 +22,13 @@ from bot.db.schema_v2 import create_v2_tables
 _JOUR = 86400.0
 
 
-async def _base(tmp_path) -> Database:
+@pytest.fixture
+async def db(tmp_path) -> Database:
     chemin = str(tmp_path / "rss.db")
-    db = await Database.create(chemin)
+    d = await Database.create(chemin)
     await create_v2_tables(chemin)
-    return db
+    yield d
+    await d.close()
 
 
 async def _article(db, guid, titre, *, role="knowledge", published_ts=None):
@@ -38,9 +40,8 @@ async def _article(db, guid, titre, *, role="knowledge", published_ts=None):
 
 
 @pytest.mark.asyncio
-async def test_un_article_vieux_lu_hier_nest_pas_frais(tmp_path):
+async def test_un_article_vieux_lu_hier_nest_pas_frais(db):
     """Le cas réel : publié il y a 60 jours, récupéré à l'instant."""
-    db = await _base(tmp_path)
     maintenant = time.time()
     await _article(db, "vieux", "Ancien patch note", published_ts=maintenant - 60 * _JOUR)
     await _article(db, "recent", "Dernier patch note", published_ts=maintenant - 2 * _JOUR)
@@ -58,9 +59,8 @@ async def test_un_article_vieux_lu_hier_nest_pas_frais(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_sans_date_de_publication_on_retombe_sur_la_lecture(tmp_path):
+async def test_sans_date_de_publication_on_retombe_sur_la_lecture(db):
     """Tous les flux ne datent pas leurs entrées : ne rien exclure à tort."""
-    db = await _base(tmp_path)
     await _article(db, "sansdate", "Patch note sans date", published_ts=None)
 
     trouves = await db.rss_search_knowledge(
@@ -70,10 +70,9 @@ async def test_sans_date_de_publication_on_retombe_sur_la_lecture(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_une_amorce_de_pensee_vieille_nest_pas_proposee(tmp_path):
+async def test_une_amorce_de_pensee_vieille_nest_pas_proposee(db):
     """Même défaut côté `stimulus` : penser à une actu de dix-neuf mois comme si
     elle venait de paraître."""
-    db = await _base(tmp_path)
     await _article(db, "s_vieux", "Actu de l'an dernier", role="stimulus",
                    published_ts=time.time() - 400 * _JOUR)
 

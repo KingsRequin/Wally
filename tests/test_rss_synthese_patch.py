@@ -23,11 +23,13 @@ from bot.db.schema_v2 import create_v2_tables
 _JOUR = 86400.0
 
 
-async def _base(tmp_path) -> Database:
+@pytest.fixture
+async def db(tmp_path) -> Database:
     chemin = str(tmp_path / "rss.db")
-    db = await Database.create(chemin)
+    d = await Database.create(chemin)
     await create_v2_tables(chemin)
-    return db
+    yield d
+    await d.close()
 
 
 async def _section(db, guid, titre, *, jours):
@@ -39,8 +41,7 @@ async def _section(db, guid, titre, *, jours):
 
 
 @pytest.mark.asyncio
-async def test_la_synthese_du_dernier_patch_est_toujours_remontee(tmp_path):
-    db = await _base(tmp_path)
+async def test_la_synthese_du_dernier_patch_est_toujours_remontee(db):
     # Le patch récent et ses sections de détail, plus sa synthèse.
     await _section(db, "s1", "Marked Patch Notes — LOBA", jours=6)
     await _section(db, "s2", "Marked Patch Notes — WEAPONS", jours=6)
@@ -58,9 +59,8 @@ async def test_la_synthese_du_dernier_patch_est_toujours_remontee(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_la_synthese_nest_pas_dupliquee(tmp_path):
+async def test_la_synthese_nest_pas_dupliquee(db):
     """Si la pertinence l'a déjà remontée, ne pas la compter deux fois."""
-    db = await _base(tmp_path)
     await _section(db, "s1", "Marked Patch Notes — INTRO", jours=6)
 
     trouves = await db.rss_search_knowledge_avec_synthese(
@@ -71,7 +71,7 @@ async def test_la_synthese_nest_pas_dupliquee(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_la_synthese_la_plus_recente_gagne(tmp_path):
+async def test_la_synthese_la_plus_recente_gagne(db):
     """Deux patchs dans la fenêtre : c'est la synthèse du plus récent qui compte.
 
     La requête doit MATCHER : la synthèse complète un recall, elle ne le
@@ -81,7 +81,6 @@ async def test_la_synthese_la_plus_recente_gagne(tmp_path):
     « je mange une pizza ». Ce bruit permanent est ce que l'owner a fini par
     voir : un patch de trois semaines présenté comme l'actualité.
     """
-    db = await _base(tmp_path)
     await _section(db, "vieux", "Overclocked Patch Notes — INTRO", jours=48)
     await _section(db, "recent", "Marked Patch Notes — INTRO", jours=6)
     await _section(db, "detail", "Marked Patch Notes — WEAPONS", jours=6)
@@ -94,8 +93,7 @@ async def test_la_synthese_la_plus_recente_gagne(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_sans_synthese_en_base_rien_ne_casse(tmp_path):
-    db = await _base(tmp_path)
+async def test_sans_synthese_en_base_rien_ne_casse(db):
     await _section(db, "s1", "Marked Patch Notes — LOBA", jours=6)
 
     trouves = await db.rss_search_knowledge_avec_synthese(
@@ -105,9 +103,8 @@ async def test_sans_synthese_en_base_rien_ne_casse(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_une_synthese_hors_fenetre_nest_pas_remontee(tmp_path):
+async def test_une_synthese_hors_fenetre_nest_pas_remontee(db):
     """La garantie ne doit pas contourner le filtre de fraîcheur."""
-    db = await _base(tmp_path)
     await _section(db, "s1", "Marked Patch Notes — LOBA", jours=6)
     await _section(db, "vieux", "Saison 20 Patch Notes — INTRO", jours=200)
 
@@ -128,8 +125,7 @@ async def test_une_synthese_hors_fenetre_nest_pas_remontee(tmp_path):
 # saison portent une section INTRO ; les mises à jour intermédiaires — donc
 # les PLUS RÉCENTES — n'en ont pas, et ne pouvaient jamais être remontées.
 @pytest.mark.asyncio
-async def test_la_synthese_suit_le_dernier_patch_meme_sans_section_INTRO(tmp_path):
-    db = await _base(tmp_path)
+async def test_la_synthese_suit_le_dernier_patch_meme_sans_section_INTRO(db):
     # Le gros patch de saison, trois semaines plus tôt : il a son INTRO.
     await _section(db, "111#0", "Marked Patch Notes — INTRO", jours=23)
     await _section(db, "111#1", "Marked Patch Notes — LOBA", jours=23)
@@ -146,9 +142,8 @@ async def test_la_synthese_suit_le_dernier_patch_meme_sans_section_INTRO(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_quand_le_dernier_patch_A_une_intro_c_est_elle_qu_on_prend(tmp_path):
+async def test_quand_le_dernier_patch_A_une_intro_c_est_elle_qu_on_prend(db):
     """La vue d'ensemble reste préférée — dans le bon patch, cette fois."""
-    db = await _base(tmp_path)
     await _section(db, "333#0", "Nouveau patch — WEAPONS", jours=1)
     await _section(db, "333#1", "Nouveau patch — INTRO", jours=1)
     await _section(db, "333#2", "Nouveau patch — Map Rotations", jours=1)
@@ -159,13 +154,12 @@ async def test_quand_le_dernier_patch_A_une_intro_c_est_elle_qu_on_prend(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_un_flux_sans_sections_rend_quand_meme_son_dernier_article(tmp_path):
+async def test_un_flux_sans_sections_rend_quand_meme_son_dernier_article(db):
     """Un guid sans « # » n'est pas un patch découpé — on ne rend pas None.
 
     Tous les flux `knowledge` ne viennent pas de Steam. Grouper par gid ne doit
     pas faire disparaître la synthèse là où il n'y a rien à grouper.
     """
-    db = await _base(tmp_path)
     await _section(db, "https://exemple/vieux", "Vieil article", jours=30)
     await _section(db, "https://exemple/neuf", "Article du jour", jours=1)
 
