@@ -190,10 +190,14 @@ async def test_enregistrement_db_echoue_supprime_le_salon_cree():
             raise RuntimeError("db hs")
 
     db = DbCasse()
+    # La ligne n'a jamais été écrite : le nettoyage ne doit PAS rappeler la
+    # base (une seconde panne y masquerait la cause réelle déjà journalisée).
+    db.salon_temporaire_retirer = AsyncMock()
     await st.sur_changement_vocal(_bot(db), membre, _etat(None),
                                   _etat(_salon(CREATEUR, guild=guild)))
     nouveau.delete.assert_awaited_once()
     membre.move_to.assert_not_awaited()
+    db.salon_temporaire_retirer.assert_not_awaited()
 
 
 async def test_l_accueil_vocal_est_toujours_appele(monkeypatch):

@@ -57,8 +57,20 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
         # du registre, ni `_supprimer_si_gere` ni `menage_au_boot` ne le verront jamais.
         logger.warning("salons temporaires : enregistrement en base échoué, salon « {n} » ({c}) retiré : {e!r}",
                        n=salon.name, c=salon.id, e=e)
-        await _supprimer(bot, salon)
-        raise
+        # Suppression Discord DIRECTE, pas `_supprimer` : la ligne n'a jamais été
+        # écrite (la base est justement ce qui vient d'échouer) — la rappeler ici
+        # risquerait de masquer la cause déjà journalisée derrière une seconde
+        # panne base. `return`, pas `raise` : la panne est déjà journalisée
+        # ci-dessus, un second warning générique dans `sur_changement_vocal`
+        # serait redondant.
+        try:
+            await salon.delete(reason="Salon vocal temporaire : enregistrement en base échoué")
+        except discord.NotFound:
+            logger.info("salons temporaires : {c} déjà supprimé", c=salon.id)
+        except Exception as e2:  # noqa: BLE001 — suppression best-effort après une panne déjà journalisée
+            logger.warning("salons temporaires : suppression de {c} après panne base a échoué : {e!r}",
+                           c=salon.id, e=e2)
+        return
     try:
         await member.move_to(salon)
     except discord.HTTPException as e:
