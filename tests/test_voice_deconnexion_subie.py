@@ -84,6 +84,10 @@ async def test_le_bot_deconnecte_par_discord_reste_rattrapable(monkeypatch):
     bot = WallyDiscord.__new__(WallyDiscord)
     bot.voice_service = svc
     bot._connection = MagicMock()
+    # Salons temporaires désactivés (comportement par défaut) : sur_changement_vocal
+    # lit `bot.config` avant même de regarder le vocal de Wally.
+    bot.config = SimpleNamespace(discord=SimpleNamespace(
+        salons_temporaires=SimpleNamespace(salon_createur_id=None)))
     me = SimpleNamespace(id=7)
     # `user` est une property de discord.py : monkeypatch la restaure en sortie,
     # sinon tous les tests suivants hériteraient de ce faux bot.

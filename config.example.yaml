@@ -68,6 +68,9 @@ discord:
   ignored_guilds: []
   always_trigger_channels: []        # IDs de salons où chaque message est un trigger
   per_guild_channel_whitelist: {}    # { "guild_id": [channel_id, ...] }
+  salons_temporaires:
+    salon_createur_id: null   # allumé à la coupure du bot Node (1105088949887696988)
+    noms: []                  # remplis à la coupure (199 noms du Node)
   spam_detection:
     enabled: true
     exempt_channels: []

@@ -675,6 +675,8 @@ class WallyDiscord(commands.Bot):
         # réaction) et on replanifie leur dépouillement.
         from bot.discord.handlers import _fire
         _fire(self.sondages.reprendre())
+        from bot.discord.salons_temporaires import menage_au_boot
+        _fire(menage_au_boot(self))
         from bot.discord.channel_health import report_dead_channels
         try:
             await report_dead_channels(self)
@@ -712,7 +714,11 @@ class WallyDiscord(commands.Bot):
             logger.warning("on_guild_emojis_update a échoué: {e!r}", e=e)
 
     async def on_voice_state_update(self, member, before, after) -> None:
-        """Salue les nouveaux arrivants dans le salon vocal où Wally est déjà présent."""
+        """Salons temporaires, puis accueil des arrivants dans le salon vocal de Wally."""
+        # Salons temporaires d'abord : ils ne dépendent pas du vocal de Wally,
+        # et le `return` ci-dessous les couperait dès qu'il n'est pas connecté.
+        from bot.discord.salons_temporaires import sur_changement_vocal
+        await sur_changement_vocal(self, member, before, after)
         vs = getattr(self, "voice_service", None)
         if vs is None or not vs.is_connected:
             return

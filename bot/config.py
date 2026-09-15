@@ -138,6 +138,18 @@ class SpamDetectionConfig:
 
 
 @dataclass
+class SalonsTemporairesConfig:
+    """Salon « créateur » : y entrer ouvre un salon vocal perso, supprimé vide.
+
+    Repris du bot Node `wally-discord`. `salon_createur_id` à None → désactivé,
+    ce qui est le bon défaut : deux bots sur le même salon créateur ouvriraient
+    chacun un salon pour la même entrée.
+    """
+    salon_createur_id: int | None = None
+    noms: list[str] = field(default_factory=list)
+
+
+@dataclass
 class VoiceConfig:
     enabled: bool = False
     stt_provider: str = "azure"  # "azure" | "faster_whisper" (STT local CPU) | "remote_stream" (GPU distant)
@@ -211,6 +223,7 @@ class DiscordConfig:
     # clips dans un salon qu'on n'a pas désigné serait du bruit chez les autres.
     clips_channel_id: int | None = None
     spam_detection: SpamDetectionConfig = field(default_factory=SpamDetectionConfig)
+    salons_temporaires: SalonsTemporairesConfig = field(default_factory=SalonsTemporairesConfig)
 
 
 @dataclass
@@ -769,6 +782,7 @@ class Config:
             cognitive_loop_cfg = raw.get("cognitive_loop", {})
             discord_raw = dict(raw.get("discord", {}))
             spam_raw = discord_raw.pop("spam_detection", {})
+            salons_raw = discord_raw.pop("salons_temporaires", None) or {}
             llm_config = cls._build_llm_config(raw)
             # Build OpenAIConfig from raw or synthesize from llm config
             openai_raw = raw.get("openai")
@@ -787,7 +801,11 @@ class Config:
                 bot=BotConfig(**raw["bot"]),
                 openai=openai_config,
                 llm=llm_config,
-                discord=DiscordConfig(**discord_raw, spam_detection=SpamDetectionConfig(**spam_raw)),
+                discord=DiscordConfig(
+                    **discord_raw,
+                    spam_detection=SpamDetectionConfig(**spam_raw),
+                    salons_temporaires=SalonsTemporairesConfig(**salons_raw),
+                ),
                 twitch=TwitchConfig(
                     **twitch_raw,
                     annonces_auto=AnnoncesAutoConfig(**annonces_raw),

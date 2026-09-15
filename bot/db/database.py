@@ -20,6 +20,7 @@ from bot.db.mixins import (
     ApexMixin,
     StateMixin,
     TcgMixin,
+    SalonsMixin,
 )
 
 SCHEMA = """
@@ -471,6 +472,14 @@ CREATE TABLE IF NOT EXISTS apex_stat_points (
 CREATE INDEX IF NOT EXISTS idx_apex_points_lookup
     ON apex_stat_points (uid, notion, recorded_at);
 
+-- Salons vocaux créés par Wally (salon « créateur »), supprimés quand ils se
+-- vident. Ids en TEXT : un snowflake ne survit pas à un REAL.
+CREATE TABLE IF NOT EXISTS salons_vocaux_temporaires (
+    channel_id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
 """
 
 
@@ -527,6 +536,7 @@ class Database(
     ApexMixin,
     StateMixin,
     TcgMixin,
+    SalonsMixin,
 ):
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn
