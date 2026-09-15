@@ -275,6 +275,17 @@ def test_borner_ne_coupe_jamais_un_arobase_isole():
     assert not resultat[:-1].endswith("@")
 
 
+def test_borner_ne_coupe_jamais_un_backslash_isole():
+    """Round 2 #B : `escape_markdown` protège un délimiteur avec un
+    backslash qui le PRÉCÈDE — couper pile juste après ce backslash le
+    laisserait seul devant l'ellipse, sans rien à échapper (même geste que
+    ci-dessus, pour un backslash mort plutôt qu'une mention ressuscitée)."""
+    texte = "x" * 10 + "\\" + "*" + "y" * 10
+    resultat = jm._borner(texte, 12)   # la coupure tombe pile après le backslash
+    assert not resultat.endswith("\\…")
+    assert not resultat[:-1].endswith("\\")
+
+
 def test_borner_lignes_singulier_pour_une_seule_ligne_restante():
     """« … et 1 autres » est un mauvais français : le singulier s'impose."""
     lignes = ["a" * 50, "b" * 50]
@@ -903,6 +914,77 @@ def test_diff_mots_jamais_de_run_de_trois_etoiles_ou_tildes():
 
 
 # ---------------------------------------------------------------------------
+# Fix round 2 — #A : la JONCTURE entre deux fragments, pas seulement le bord
+# interne d'un mot marqué (`_marque` de round 1 ne suffisait pas)
+
+
+def test_joindre_protege_les_deux_bords_dun_delimiteur():
+    """`_joindre` : si le bord droit de `gauche` ET le bord gauche de
+    `droite` sont chacun un délimiteur Markdown, un espace de largeur nulle
+    les sépare — sinon simple concaténation. C'est la fonction responsable
+    de la protection à la JONCTURE (round 2), distincte de `_marque` qui ne
+    protège que l'intérieur d'un mot déjà marqué (round 1)."""
+    assert jm._joindre("salut \\*", "**nouveau**") == "salut \\*\u200b**nouveau**"
+    assert jm._joindre("salut \\~", "~~mot~~") == "salut \\~\u200b~~mot~~"
+    assert jm._joindre("salut", "**mot**") == "salut**mot**"        # bord gauche pas un délimiteur
+    # Un contenu échappé commence TOUJOURS par un backslash (jamais un
+    # délimiteur nu) : rien à protéger côté droit sans marqueur en face.
+    assert jm._joindre("~~mot~~", "\\~ fin") == "~~mot~~\\~ fin"
+    assert jm._joindre("**mot**", "") == "**mot**"                  # rien à droite : inchangé
+    assert jm._joindre("", "**mot**") == "**mot**"                  # rien à gauche : inchangé
+
+
+def test_diff_mots_repro_round2_equal_se_termine_par_delimiteur_echappe():
+    """Repro EXACTE round 2 #A : un chunk `equal` qui finit par un
+    délimiteur échappé (`\\*`), suivi d'un mot AJOUTÉ qui n'existe que côté
+    `apres` — le tokenizer perd l'espace séparateur (rien à quoi l'aligner
+    côté `avant`) et `marque_precedent` vient d'être remis à False par le
+    chunk `equal` : sans jonction protégée, ça donnait
+    `'salut \\***nouveau**'` (run de 3 étoiles)."""
+    avant = jm._echapper(discord.utils.escape_markdown("salut *"))
+    apres = jm._echapper(discord.utils.escape_markdown("salut * nouveau"))
+    resultat = jm._diff_mots(avant, apres)
+    assert resultat is not None
+    assert not re.search(r"\*{3,}", resultat)
+
+
+def test_diff_mots_repro_round2_suppression_en_fin_de_message_tilde():
+    """Même défaut avec des tildes, suppression en fin de message (§A)."""
+    avant = jm._echapper(discord.utils.escape_markdown("salut ~~ mot"))
+    apres = jm._echapper(discord.utils.escape_markdown("salut ~~"))
+    resultat = jm._diff_mots(avant, apres)
+    assert resultat is not None
+    assert not re.search(r"~{3,}", resultat)
+
+
+_ADVERSAIRES_DIFF_JONCTURE = [
+    ("salut *", "salut * nouveau"),                          # insertion en FIN, avant finit par *
+    ("bonjour ~~ monde", "bonjour change monde"),             # changement au MILIEU, mot = ~~
+    ("* debut", "nouveau debut"),                             # changement au DÉBUT, avant commence par *
+    ("mot_", "mot_ nouveau"),                                 # insertion en FIN, avant finit par _
+    ("texte |", "texte | ajout"),                             # insertion en FIN, avant finit par |
+    ("fin `", "fin ` ajout"),                                 # insertion en FIN, avant finit par `
+    ("bonjour ~ monde ancien", "bonjour ~ monde nouveau"),    # changement en FIN
+    ("* mot milieu fin", "changé mot milieu fin"),            # changement au DÉBUT
+    ("debut milieu~ fin", "debut change fin"),                # changement au MILIEU, mot finit par ~
+    ("a b c *", "a b c"),                                     # suppression pure en FIN, avant finit par *
+]
+
+
+def test_diff_mots_proprietes_adversariales_jamais_de_run_ni_de_marqueur_colle():
+    """Propriété round 2 #A : sur un lot de paires adversariales (texte qui
+    commence/finit par un délimiteur, changement au début/milieu/fin), le
+    diff ne produit JAMAIS de run de 3+ `*`/`~`, ni un marqueur `**`/`~~`
+    collé (sans ZWSP) à un délimiteur échappé venu d'un AUTRE fragment."""
+    for avant_brut, apres_brut in _ADVERSAIRES_DIFF_JONCTURE:
+        avant = jm._echapper(discord.utils.escape_markdown(avant_brut))
+        apres = jm._echapper(discord.utils.escape_markdown(apres_brut))
+        resultat = jm._diff_mots(avant, apres)
+        assert resultat is not None, (avant_brut, apres_brut)
+        assert not re.search(r"[*~]{3,}", resultat), (avant_brut, apres_brut, resultat)
+
+
+# ---------------------------------------------------------------------------
 # Fix round 1 — #3 : pire cas budget sur le chemin DIFF (pas le repli)
 
 
@@ -987,3 +1069,52 @@ async def test_suppression_en_masse_lignes_de_bots_incluses_si_inclure_bots():
     await jm.messages_supprimes_en_masse(bot, payload)
     texte = "\n".join(_textes(_vue(logs)))
     assert "wally" in texte
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 — #B : suppression/masse échappent le markdown du contenu,
+# comme le fait déjà le chemin diff d'édition
+
+
+_CONTENU_DANGEREUX = "```non fermé\n||secret|| # titre"
+
+
+async def test_suppression_contenu_dangereux_echappe():
+    """Une fence non fermée DÉFORME le reste de la fiche, un `||spoiler||`
+    MASQUE le contenu au modérateur — les deux doivent ressortir échappés,
+    comme le contenu Avant/Après d'une édition."""
+    bot, logs = _bot()
+    msg = _message(_CONTENU_DANGEREUX)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    attendu = discord.utils.escape_markdown(_CONTENU_DANGEREUX)
+    for ligne in attendu.splitlines():
+        assert ligne in texte
+    assert "```non fermé" not in texte     # jamais la fence BRUTE
+    assert "||secret||" not in texte       # jamais le spoiler BRUT
+
+
+async def test_suppression_en_masse_contenu_dangereux_echappe():
+    bot, logs = _bot()
+    msg = _message(_CONTENU_DANGEREUX, auteur_id=1, msg_id=1)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1}, cached_messages=[msg])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    attendu = discord.utils.escape_markdown(_CONTENU_DANGEREUX)
+    for ligne in attendu.splitlines():
+        assert ligne in texte
+    assert "```non fermé" not in texte
+    assert "||secret||" not in texte
+
+
+async def test_suppression_contenu_echappe_une_seule_fois():
+    """`_citer` échappe déjà `@` — l'appelant qui échappe le markdown AVANT
+    ne doit pas faire doubler le zero-width space posé après un `@`."""
+    bot, logs = _bot()
+    msg = _message("bonjour @tout le monde")
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+    await jm.message_supprime(bot, payload)
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "@\u200btout" in texte
+    assert "@\u200b\u200btout" not in texte

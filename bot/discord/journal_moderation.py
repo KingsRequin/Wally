@@ -122,10 +122,17 @@ def _echapper(texte: str) -> str:
 
 def _borner(texte: str, limite: int) -> str:
     borne = borner(texte, limite)
+    tronque = borne != texte
     # `_echapper` neutralise un `@` avec un zero-width space qui le SUIT :
     # couper pile entre les deux laisserait un `@` isolé, à nouveau ACTIF
     # (mention réelle) alors que le but de l'échappement était de l'éteindre.
-    if borne != texte and borne[:-1].endswith("@"):
+    if tronque and borne[:-1].endswith("@"):
+        borne = borne[:-2] + "…"
+    # `escape_markdown` protège un délimiteur avec un `\` qui le PRÉCÈDE :
+    # couper pile juste après ce backslash le laisserait seul devant
+    # l'ellipse, sans rien à échapper — même geste que ci-dessus, pour un
+    # backslash mort plutôt qu'une mention ressuscitée.
+    elif tronque and borne[:-1].endswith("\\"):
         borne = borne[:-2] + "…"
     return borne
 
@@ -203,6 +210,29 @@ def _marque(mot: str, marqueur: str) -> str:
     return f"{marqueur}{debut}{mot}{fin}{marqueur}"
 
 
+def _joindre(gauche: str, droite: str) -> str:
+    """Concatene deux fragments du diff en protegeant leur JONCTURE.
+
+    Si le dernier caractere de `gauche` ET le premier de `droite` sont tous
+    deux des delimiteurs Markdown, un espace de largeur nulle les separe --
+    sinon simple concatenation.
+
+    Round 2 #A : un chunk `equal` qui se termine par un delimiteur echappe
+    directement suivi d'un mot AJOUTE/SUPPRIME collait ce delimiteur a notre
+    propre marqueur (`'salut \\***nouveau**'`, un run de 3 etoiles) -- le
+    tokenizer perd l'espace qui les separait dans le texte d'origine des que
+    ce mot n'existe QUE d'un cote (rien a quoi aligner l'espace de l'autre).
+    `_marque` (ci-dessus) ne protege que l'interieur d'UN mot marque ; cette
+    fonction protege la jonction, quels que soient les deux fragments
+    qu'elle assemble.
+    """
+    if not gauche or not droite:
+        return gauche + droite
+    if gauche[-1] in _DELIMITEURS_MARQUAGE and droite[0] in _DELIMITEURS_MARQUAGE:
+        return gauche + "\u200b" + droite
+    return gauche + droite
+
+
 def _diff_mots(avant: str, apres: str) -> str | None:
     """Diff mot à mot : supprimé en `~~barré~~`, ajouté en `**gras**`, le
     reste tel quel. `avant`/`apres` doivent déjà être markdown- (et `@`-)
@@ -222,11 +252,11 @@ def _diff_mots(avant: str, apres: str) -> str | None:
     if ratio < 0.5:
         return None
     sm = difflib.SequenceMatcher(None, mots_avant, mots_apres, autojunk=False)
-    morceaux: list[str] = []
+    resultat = ""
     marque_precedent = False
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag == "equal":
-            morceaux.append("".join(mots_apres[j1:j2]))
+            resultat = _joindre(resultat, "".join(mots_apres[j1:j2]))
             marque_precedent = False
             continue
         supprime = "".join(mots_avant[i1:i2]).strip()
@@ -234,12 +264,13 @@ def _diff_mots(avant: str, apres: str) -> str | None:
         piece = _marque(supprime, "~~") if supprime else ""
         if ajoute:
             piece += (" " if piece else "") + _marque(ajoute, "**")
-        if piece:
-            if marque_precedent:
-                morceaux.append(" ")
-            morceaux.append(piece)
-            marque_precedent = True
-    return "".join(morceaux).strip()
+        if not piece:
+            continue
+        if marque_precedent:
+            resultat += " "  # deux morceaux marqués ADJACENTS (rien entre) : espace VISIBLE
+        resultat = _joindre(resultat, piece)
+        marque_precedent = True
+    return resultat.strip()
 
 
 def _citer_deja_echappe(texte: str, *, limite: int = _MAX_CITATION) -> str:
@@ -479,7 +510,12 @@ async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
             meta_auteur = f"<@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)})"
             vignette = url_avatar(auteur)
             contenu = (msg.content or "").strip()
-            bloc_contenu = _citer(contenu) if contenu else "*aucun texte*"
+            # Round 2 #B : un contenu supprimé peut porter une fence non
+            # fermée, un `||spoiler||` ou toute autre construction Markdown —
+            # échappée AVANT citation (même ordre que le diff d'édition),
+            # sinon elle déforme ou MASQUE la fiche elle-même, pas seulement
+            # le message d'origine.
+            bloc_contenu = _citer(discord.utils.escape_markdown(contenu)) if contenu else "*aucun texte*"
             pieces = list(msg.attachments)
             pied = pied_utilisateur(auteur)
         else:
@@ -578,7 +614,10 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
             if getattr(msg.author, "bot", False) and not cfg.inclure_bots:
                 continue
             auteur = discord.utils.escape_markdown(getattr(msg.author, "name", "inconnu"))
-            contenu = _echapper((msg.content or "").strip())
+            # Round 2 #B : même ordre d'échappement que le contenu d'une
+            # suppression simple (escape_markdown PUIS `_echapper`) — sinon
+            # une fence ou un `||spoiler||` déforme la liste elle-même.
+            contenu = _echapper(discord.utils.escape_markdown((msg.content or "").strip()))
             extrait = _borner(contenu, _MAX_EXTRAIT) if contenu else "*aucun texte*"
             lignes.append(f"**{auteur}** : {extrait}")
         corps = [meta]
