@@ -39,3 +39,8 @@ class SalonsMixin:
     async def salons_temporaires(self) -> set[int]:
         rows = await self.fetch_all("SELECT channel_id FROM salons_vocaux_temporaires")
         return {int(r["channel_id"]) for r in rows}
+
+    async def salons_temporaires_avec_guild(self) -> dict[int, int]:
+        """`{channel_id: guild_id}` — le ménage au boot a besoin du serveur."""
+        rows = await self.fetch_all("SELECT channel_id, guild_id FROM salons_vocaux_temporaires")
+        return {int(r["channel_id"]): int(r["guild_id"]) for r in rows}

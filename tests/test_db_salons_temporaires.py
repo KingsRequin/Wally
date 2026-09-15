@@ -12,5 +12,6 @@ async def test_registre_des_salons_temporaires(tmp_path):
         await db.salon_temporaire_retirer(111)
         await db.salon_temporaire_retirer(333)      # absent : sans erreur
         assert await db.salons_temporaires() == {222}
+        assert await db.salons_temporaires_avec_guild() == {222: 9}
     finally:
         await db.close()

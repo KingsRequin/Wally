@@ -148,18 +148,18 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
     if bot.config.discord.salons_temporaires.salon_createur_id is None:
         return
     try:
-        ids = await bot.db.salons_temporaires()
+        registre = await bot.db.salons_temporaires_avec_guild()
     except Exception as e:  # noqa: BLE001 — le ménage ne bloque pas le démarrage
         logger.warning("salons temporaires : ménage au boot interrompu : {e!r}", e=e)
         return
-    for channel_id in ids:
+    for channel_id, guild_id in registre.items():
         try:
             # `bot.get_channel` rend un type large (salon texte, catégorie,
             # DM…) ; seuls les salons vocaux nous intéressent ici, et le
             # registre ne contient jamais autre chose.
             salon: Any = bot.get_channel(channel_id)
             if salon is None:
-                await _verifier_hors_cache(bot, channel_id)
+                await _verifier_hors_cache(bot, channel_id, guild_id)
             elif not salon.members:
                 if await _supprimer(bot, salon):
                     logger.info("salons temporaires : « {n} » vide au boot, supprimé", n=salon.name)
@@ -167,20 +167,30 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
             logger.warning("salons temporaires : {c} : ménage échoué : {e!r}", c=channel_id, e=e)
 
 
-async def _verifier_hors_cache(bot: "WallyDiscord", channel_id: int) -> None:
+async def _verifier_hors_cache(bot: "WallyDiscord", channel_id: int, guild_id: int) -> None:
     """Un salon absent du cache n'est PAS forcément disparu.
 
     Pendant une panne ou une reconnexion, un serveur indisponible n'a aucun
     salon en cache : retirer la ligne sur ce seul indice rendait ORPHELIN un
-    salon bien réel, que plus rien ne supprimerait jamais. Seul un `NotFound`
-    de l'API prouve la disparition ; tout le reste garde la ligne pour le
-    prochain boot.
+    salon bien réel, que plus rien ne supprimerait jamais. Deux preuves de
+    disparition seulement : un `NotFound` de l'API, ou un `Forbidden` alors
+    que Wally n'est plus du tout dans le serveur (expulsé : l'API répond 403
+    « Missing Access », jamais 404, et la ligne resterait pour toujours).
+    Tout le reste garde la ligne pour le prochain boot.
     """
     try:
         await bot.fetch_channel(channel_id)
     except discord.NotFound:
         await bot.db.salon_temporaire_retirer(channel_id)
         logger.info("salons temporaires : {c} disparu pendant l'arrêt, ligne retirée", c=channel_id)
+        return
+    except discord.Forbidden as e:
+        if bot.get_guild(guild_id) is None:
+            await bot.db.salon_temporaire_retirer(channel_id)
+            logger.info("salons temporaires : {c} inaccessible, Wally n'est plus dans le serveur {g}, "
+                        "ligne retirée", c=channel_id, g=guild_id)
+            return
+        logger.info("salons temporaires : {c} invérifiable au boot ({e!r}), ligne gardée", c=channel_id, e=e)
         return
     except Exception as e:  # noqa: BLE001 — invérifiable : la ligne reste, retentée au prochain boot
         logger.info("salons temporaires : {c} invérifiable au boot ({e!r}), ligne gardée", c=channel_id, e=e)

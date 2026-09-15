@@ -717,3 +717,35 @@ async def test_fichiers_refuses_fiche_renvoyee_sans_pieces():
     assert _medias(reprise["view"]) == []
     assert "photo.png (envoi des fichiers refusé)" in "\n".join(_textes(reprise["view"]))
     assert any("Joindre des fichiers" in d for d in dits)
+
+
+# ---------------------------------------------------------------------------
+# Suivi — un fil ouvert sous un salon de logs compte pour ce salon
+
+
+async def test_suppression_dans_un_fil_d_un_salon_de_logs_non_republiee():
+    bot, salons = _bot_multi([LOGS, LOGS2])
+    fil = SimpleNamespace(id=800, name="discussion-fiche", parent_id=LOGS)
+    obtenir = bot.get_channel
+    bot.get_channel = lambda cid: fil if cid == 800 else obtenir(cid)
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=800, message_id=1, cached_message=None)
+    await jm.message_supprime(bot, payload)
+    salons[LOGS].send.assert_not_awaited()
+    salons[LOGS2].send.assert_not_awaited()
+
+
+async def test_edition_dans_un_fil_d_un_salon_de_logs_non_republiee():
+    bot, salons = _bot_multi([LOGS, LOGS2])
+    avant, apres = _message("a", channel_id=800), _message("b", channel_id=800)
+    apres.channel = SimpleNamespace(id=800, name="discussion-fiche", parent_id=LOGS2)
+    await jm.message_modifie(bot, avant, apres)
+    salons[LOGS].send.assert_not_awaited()
+    salons[LOGS2].send.assert_not_awaited()
+
+
+async def test_fil_d_un_salon_ordinaire_toujours_journalise():
+    bot, salons = _bot_multi([LOGS])
+    avant, apres = _message("a", channel_id=800), _message("b", channel_id=800)
+    apres.channel = SimpleNamespace(id=800, name="fil", parent_id=5)
+    await jm.message_modifie(bot, avant, apres)
+    salons[LOGS].send.assert_awaited_once()

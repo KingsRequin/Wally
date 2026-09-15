@@ -199,7 +199,8 @@ def _nom_disponible(nom: str, pris: set[str]) -> str:
     return f"{n}_{nom}"
 
 
-def _salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: int | None) -> list[Any]:
+def _salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: int | None,
+                   salon_source: Any = None) -> list[Any]:
     """Résout les salons de logs CONFIGURÉS, ou [] si rien à publier.
 
     `salon_ids` vide → désactivé ; guild hors `guild_ids` → rien. Un salon
@@ -209,12 +210,15 @@ def _salons_cibles(bot: "WallyDiscord", guild_id: int | None, salon_source_id: i
     Un événement né DANS un salon de logs ne se journalise pas : un salon de
     logs peut vivre dans un serveur observé, et supprimer une fiche (ou
     purger le salon) la republiait aussitôt dans chaque salon de logs — une
-    fiche qu'on ne pouvait plus jamais effacer.
+    fiche qu'on ne pouvait plus jamais effacer. Un FIL ouvert sous un salon
+    de logs compte pour ce salon : son id propre n'est pas dans `salon_ids`,
+    celui de son parent (`salon_source.parent_id`) si.
     """
     cfg = bot.config.discord.journal_moderation
     if not cfg.salon_ids or guild_id not in cfg.guild_ids:
         return []
-    if salon_source_id is not None and salon_source_id in cfg.salon_ids:
+    parent_id = getattr(salon_source, "parent_id", None)
+    if any(i is not None and i in cfg.salon_ids for i in (salon_source_id, parent_id)):
         return []
     salons: list[Any] = []
     for salon_id in cfg.salon_ids:
@@ -326,13 +330,14 @@ async def _publier_partout(salons: list[Any], construire: Callable[[_Telechargem
 
 async def message_supprime(bot: "WallyDiscord", payload: Any) -> None:
     try:
-        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id)
-        if not salons:
-            return
         msg = payload.cached_message
         source: Any = bot.get_channel(payload.channel_id)
+        if source is None and msg is not None:
+            source = msg.channel
+        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id, source)
+        if not salons:
+            return
         if msg is not None:
-            source = source or msg.channel
             auteur = msg.author
             meta_auteur = f"<@{auteur.id}> ({discord.utils.escape_markdown(auteur.name)})"
             vignette = url_avatar(auteur)
@@ -371,7 +376,7 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
         if avant == apres and not retirees:
             return          # embed de lien, épinglage : rien n'a bougé
         guild_id = after.guild.id if after.guild is not None else None
-        salons = _salons_cibles(bot, guild_id, after.channel.id)
+        salons = _salons_cibles(bot, guild_id, after.channel.id, after.channel)
         if not salons:
             return
         auteur = after.author
@@ -401,10 +406,10 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
     cache (`cached_messages`), bornée pour tenir dans le budget V2.
     """
     try:
-        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id)
+        source = bot.get_channel(payload.channel_id)
+        salons = _salons_cibles(bot, payload.guild_id, payload.channel_id, source)
         if not salons:
             return
-        source = bot.get_channel(payload.channel_id)
         meta = (f"**Salon** {_mention_salon(payload.channel_id, source)} · "
                 f"**Messages** {len(payload.message_ids)}")
         lignes = []

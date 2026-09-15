@@ -23,6 +23,8 @@ class _Membre(SimpleNamespace):
 
 
 class FauxDb:
+    """Registre factice ; chaque salon y appartient au serveur 9."""
+
     def __init__(self, ids=()):
         self.ids = set(ids)
 
@@ -35,6 +37,9 @@ class FauxDb:
     async def salons_temporaires(self):
         return set(self.ids)
 
+    async def salons_temporaires_avec_guild(self):
+        return {cid: 9 for cid in self.ids}
+
 
 def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
     cfg = SimpleNamespace(salon_createur_id=createur, noms=list(noms))
@@ -46,6 +51,8 @@ def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
         salons={},
     )
     bot.get_channel = lambda cid: bot.salons.get(cid)
+    bot.guildes = {9: SimpleNamespace(id=9)}
+    bot.get_guild = lambda gid: bot.guildes.get(gid)
     # Par défaut, un salon absent du cache est vraiment disparu côté API.
     bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel"))
     return bot
@@ -176,6 +183,25 @@ async def test_menage_au_boot_salon_hors_cache_mais_existant_garde_la_ligne():
     db = FauxDb({3})
     bot = _bot(db)
     bot.fetch_channel = AsyncMock(return_value=_salon(3))
+    await st.menage_au_boot(bot)
+    assert db.ids == {3}
+
+
+async def test_menage_au_boot_expulse_du_serveur_retire_la_ligne():
+    """Expulsé du serveur, l'API répond 403 et non 404 : sans ce cas, la
+    ligne restait pour toujours."""
+    db = FauxDb({3})
+    bot = _bot(db)
+    bot.guildes = {}
+    bot.fetch_channel = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access"))
+    await st.menage_au_boot(bot)
+    assert db.ids == set()
+
+
+async def test_menage_au_boot_interdit_mais_toujours_dans_le_serveur_garde_la_ligne():
+    db = FauxDb({3})
+    bot = _bot(db)
+    bot.fetch_channel = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access"))
     await st.menage_au_boot(bot)
     assert db.ids == {3}
 
