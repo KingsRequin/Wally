@@ -985,6 +985,59 @@ def test_diff_mots_proprietes_adversariales_jamais_de_run_ni_de_marqueur_colle()
 
 
 # ---------------------------------------------------------------------------
+# Fix round 3 — l'espace d'ORIGINE reste hors des marqueurs, jamais perdu
+
+
+def test_diff_mots_insertion_au_debut_espace_hors_marqueur():
+    """`.strip()` mangeait l'espace qui séparait le mot ajouté du voisin —
+    `'nouveau mot'` devenait `'**nouveau**mot'` (collé), pas
+    `'**nouveau** mot'`."""
+    assert jm._diff_mots("mot", "nouveau mot") == "**nouveau** mot"
+
+
+def test_diff_mots_insertion_a_la_fin_espace_hors_marqueur():
+    assert jm._diff_mots("mot", "mot nouveau") == "mot **nouveau**"
+
+
+def test_diff_mots_suppression_au_debut_espace_hors_marqueur():
+    assert jm._diff_mots("ancien mot", "mot") == "~~ancien~~ mot"
+
+
+def test_diff_mots_suppression_a_la_fin_espace_hors_marqueur():
+    assert jm._diff_mots("mot ancien", "mot") == "mot ~~ancien~~"
+
+
+def test_diff_mots_changement_au_milieu_espace_hors_marqueur():
+    """Un remplacement simple, au milieu, n'a pas d'espace d'origine à
+    récupérer des deux côtés : l'espace explicite entre les deux marqueurs
+    reste la règle (déjà couvert ailleurs, réaffirmé ici pour le lot des 5
+    scénarios round 3)."""
+    assert jm._diff_mots("bonjour ancien monde", "bonjour nouveau monde") == \
+        "bonjour ~~ancien~~ **nouveau** monde"
+
+
+def test_diff_mots_espace_jamais_a_linterieur_dun_marqueur():
+    """Un espace À L'INTÉRIEUR d'un marqueur (`** nouveau**`, `~~ancien ~~`)
+    ne se rend pas en gras/barré sur Discord — sur les 5 scénarios round 3,
+    le contenu capturé par chaque paire `**...**`/`~~...~~` ne commence ni
+    ne finit par un espace."""
+    cas = [
+        ("mot", "nouveau mot"),
+        ("mot", "mot nouveau"),
+        ("ancien mot", "mot"),
+        ("mot ancien", "mot"),
+        ("bonjour ancien monde", "bonjour nouveau monde"),
+    ]
+    for avant, apres in cas:
+        resultat = jm._diff_mots(avant, apres)
+        assert resultat is not None, (avant, apres)
+        marques = re.findall(r"\*\*(.+?)\*\*", resultat) + re.findall(r"~~(.+?)~~", resultat)
+        assert marques, (avant, apres, resultat)
+        for contenu in marques:
+            assert contenu == contenu.strip(), (avant, apres, resultat)
+
+
+# ---------------------------------------------------------------------------
 # Fix round 1 — #3 : pire cas budget sur le chemin DIFF (pas le repli)
 
 

@@ -192,6 +192,25 @@ def _mots(texte: str) -> list[str]:
     return re.findall(r"\S+|\s+", texte)
 
 
+def _decouper_espaces(texte: str) -> tuple[str, str, str]:
+    """Sépare `texte` en (espaces de tête, cœur, espaces de queue).
+
+    Round 3 : un chunk d'insertion/suppression peut porter, à l'intérieur de
+    son propre empan de tokens, l'espace qui le séparait du mot voisin —
+    précisément quand ce mot n'existe que d'un seul côté (rien à quoi
+    l'aligner de l'autre : bord du texte, ou insertion/suppression isolée).
+    Le séparer du cœur permet de le REPOSER hors du marqueur au lieu de le
+    perdre par un `.strip()` sec. Cœur vide (texte fait QUE d'espaces) →
+    tout part dans `tete`, `queue` reste vide.
+    """
+    coeur = texte.strip()
+    if not coeur:
+        return texte, "", ""
+    tete = texte[: len(texte) - len(texte.lstrip())]
+    queue = texte[len(texte.rstrip()):]
+    return tete, coeur, queue
+
+
 # Un délimiteur Markdown à VIF sur le bord d'un mot marqué (`~~mot~~` / `**mot**`)
 # colle à notre propre marqueur et forme un run de 3+ caractères identiques que
 # Discord (ou un lecteur humain) peut relire comme un AUTRE marqueur — même si
@@ -211,19 +230,19 @@ def _marque(mot: str, marqueur: str) -> str:
 
 
 def _joindre(gauche: str, droite: str) -> str:
-    """Concatene deux fragments du diff en protegeant leur JONCTURE.
+    """Concatène deux fragments du diff en protégeant leur JONCTURE.
 
-    Si le dernier caractere de `gauche` ET le premier de `droite` sont tous
-    deux des delimiteurs Markdown, un espace de largeur nulle les separe --
-    sinon simple concatenation.
+    Si le dernier caractère de `gauche` ET le premier de `droite` sont tous
+    deux des délimiteurs Markdown, un espace de largeur nulle les sépare —
+    sinon simple concaténation.
 
-    Round 2 #A : un chunk `equal` qui se termine par un delimiteur echappe
-    directement suivi d'un mot AJOUTE/SUPPRIME collait ce delimiteur a notre
-    propre marqueur (`'salut \\***nouveau**'`, un run de 3 etoiles) -- le
-    tokenizer perd l'espace qui les separait dans le texte d'origine des que
-    ce mot n'existe QUE d'un cote (rien a quoi aligner l'espace de l'autre).
-    `_marque` (ci-dessus) ne protege que l'interieur d'UN mot marque ; cette
-    fonction protege la jonction, quels que soient les deux fragments
+    Round 2 #A : un chunk `equal` qui se termine par un délimiteur échappé
+    directement suivi d'un mot AJOUTÉ/SUPPRIMÉ collait ce délimiteur à notre
+    propre marqueur (`'salut \\***nouveau**'`, un run de 3 étoiles) — le
+    tokenizer perd l'espace qui les séparait dans le texte d'origine dès que
+    ce mot n'existe QUE d'un côté (rien à quoi aligner l'espace de l'autre).
+    `_marque` (ci-dessus) ne protège que l'intérieur d'UN mot marqué ; cette
+    fonction protège la jonction, quels que soient les deux fragments
     qu'elle assemble.
     """
     if not gauche or not droite:
@@ -259,14 +278,27 @@ def _diff_mots(avant: str, apres: str) -> str | None:
             resultat = _joindre(resultat, "".join(mots_apres[j1:j2]))
             marque_precedent = False
             continue
-        supprime = "".join(mots_avant[i1:i2]).strip()
-        ajoute = "".join(mots_apres[j1:j2]).strip()
-        piece = _marque(supprime, "~~") if supprime else ""
-        if ajoute:
-            piece += (" " if piece else "") + _marque(ajoute, "**")
+        tete_s, supprime, queue_s = _decouper_espaces("".join(mots_avant[i1:i2]))
+        tete_a, ajoute, queue_a = _decouper_espaces("".join(mots_apres[j1:j2]))
+        if supprime and ajoute:
+            # L'espace d'ORIGINE entre le mot supprimé et le mot ajouté,
+            # porté par le côté qui l'a (avant en priorité, sinon apres) —
+            # jamais les deux à la fois (même espace, vu des deux côtés).
+            # Aucun des deux n'en a (remplacement simple, un seul mot pour
+            # l'autre) : un espace explicite reste la règle de lisibilité.
+            jonction = queue_s or tete_a or " "
+            piece = f"{tete_s}{_marque(supprime, '~~')}{jonction}{_marque(ajoute, '**')}{queue_a}"
+        elif supprime:
+            piece = f"{tete_s}{_marque(supprime, '~~')}{queue_s}"
+        elif ajoute:
+            piece = f"{tete_a}{_marque(ajoute, '**')}{queue_a}"
+        else:
+            piece = ""
         if not piece:
             continue
-        if marque_precedent:
+        # Un espace RÉEL déjà porté par le morceau (bord de texte, cf.
+        # `_decouper_espaces`) sépare déjà : ne pas en rajouter un synthétique.
+        if marque_precedent and not piece[:1].isspace():
             resultat += " "  # deux morceaux marqués ADJACENTS (rien entre) : espace VISIBLE
         resultat = _joindre(resultat, piece)
         marque_precedent = True
