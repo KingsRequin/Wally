@@ -36,6 +36,10 @@
 # carte ; absent, la carte affiche « GRADE ? ». Écrire `rarete:` ici REFUSE le
 # fichier au boot.
 #
+# ⚖️ `faveur: true` porte ce que le design réserve encore aux paliers « ange »
+# et « archange » — le second filet du liseré et le nom en foil. L'owner a
+# choisi le 2026-09-15 de suivre le design sans remettre la rareté à l'écran.
+#
 # 🚨 `accent` N'EXISTE PLUS comme champ : la couleur DÉRIVE du coût de
 # l'ultime (`accent_du_cout` dans `bot/core/tcg_cartes.py`). En écrire une ici
 # lève au chargement. Écrite à la main, elle disait l'humeur de l'illustration
@@ -92,6 +96,8 @@
   # `normaliser()` le retire avant de comparer.
   alias: [azra]
   holographique: true
+  bordure_doree: true
+  faveur: true
 
 - cle: claker
   nom: CLAKER
@@ -112,10 +118,12 @@
   avant_plan: /assets/tcg-claker-pieds
   avant_plan_largeur: 100%
   avant_plan_bas: 15%
+  # Les pieds n'existent que carte DÉPLIÉE : au repos ils mangeaient le
+  # portrait.
+  avant_plan_survol: true
   hero_cote: 5%
   hero_haut: -8%
   hero_echelle: 1.1
-  particules: poussiere
   parallaxe: 0.9
   intensite: 0.6
 
@@ -140,10 +148,11 @@
   hero_3d_cote: -26%
   hero_3d_haut: 6%
   alias: [rhae, rhae_, rhae__, rhae___]
-  particules: poussiere
   parallaxe: 1.1
   intensite: 0.8
   holographique: true
+  bordure_doree: true
+  faveur: true
 
 - cle: lilith
   nom: LILITH
@@ -167,7 +176,6 @@
   # libre, et les jambes ont l'air coupées net.
   hero_haut: 5%
   hero_echelle: 1.08
-  particules: poussiere
   intensite: 0.75
 
 - cle: kingsrequin
@@ -192,14 +200,12 @@
   hero_3d_cote: -5%
   hero_echelle: 1.08
   alias: [kingsrequin, requin, kingrequin]
-  particules: poussiere
   parallaxe: 1.2
   intensite: 0.8
   holographique: true
   # Son fond est un bleu saturé : un chatoiement de surface y rendrait un voile
   # blanc. Il court donc dans le liseré.
   holo_zone: bords
-  bulles: true
 
 - cle: wally
   nom: WALLY
@@ -226,6 +232,7 @@
   parallaxe: 1.2
   intensite: 0.9
   holographique: true
+  bordure_doree: true
 
 - cle: meliodas
   nom: MÉLIODAS
@@ -247,6 +254,4 @@
   hero_haut: 3%
   hero_3d_cote: -6%
   hero_3d_haut: 0%
-  particules: poussiere
   intensite: 0.8
-  bulles: true

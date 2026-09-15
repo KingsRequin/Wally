@@ -481,15 +481,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       return {
         perspective: getComputedStyle(c).perspective,
         transform: getComputedStyle(c.querySelector('.chero-carte')).transform,
-        cadres: +getComputedStyle(c.querySelector('.chero-cadres')).opacity,
+        reflet: +getComputedStyle(c.querySelector('.chero-reflet')).opacity,
       };
     }""")
-    rap.dire(ouverte["perspective"] == "1100px",
+    rap.dire(ouverte["perspective"] == "4000px",
              "carte TCG : la 3D est posée au survol", str(ouverte["perspective"]))
     rap.dire(ouverte["transform"].startswith("matrix3d"),
              "carte TCG : elle s'incline vraiment", ouverte["transform"][:60])
-    rap.dire(ouverte["cadres"] > 0.5,
-             "carte TCG : les cadres s'allument", str(ouverte["cadres"]))
+    rap.dire(ouverte["reflet"] > 0.5,
+             "carte TCG : le reflet des bords s'allume", str(ouverte["reflet"]))
 
 
     # 🚨 Les trois couches de matière — vitrage, vernis, foil du titre —
@@ -557,11 +557,13 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     boite = page.locator(".chero").first.bounding_box()
     page.evaluate("""() => { window.__ordre = [];
       const c = document.querySelector('.chero');
-      const zde = (s) => { const e = c.querySelector(s); if (!e) return null;
-        return +(new DOMMatrix(getComputedStyle(e).transform)).m43.toFixed(1); };
+      const mat = (s) => new DOMMatrix(getComputedStyle(c.querySelector(s)).transform);
+      const zde = (s) => +mat(s).m43.toFixed(1);
       const lu = () => {
-        const [bord, libre, bas] = ['.chero-bord', '.chero-plan[data-z="56"]',
-                                    '.chero-bas'].map(zde);
+        // La fiche monte DANS la colonne du bas : sa profondeur est la
+        // composition des deux transforms.
+        const [bord, libre] = ['.chero-bord', '.chero-libre'].map(zde);
+        const bas = +mat('.chero-bas').multiply(mat('.chero-fiche')).m43.toFixed(1);
         if (libre !== null && bas !== null && bord !== null) {
           window.__ordre.push([Math.round(performance.now() - window.__t0),
                                bord, libre, bas]);
@@ -600,9 +602,10 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const c = document.querySelector('.chero');
       const lu = () => {
         const o = (s) => { const e = c.querySelector(s); return e ? +getComputedStyle(e).opacity : 0; };
-        const p = c.querySelector('.chero-plan[data-z="56"]');
+        const p = c.querySelector('.chero-libre');
         const z = p ? new DOMMatrix(getComputedStyle(p).transform).m43 : 0;
-        window.__cal.push([+o('.chero-clip').toFixed(2), +o('.chero-libre').toFixed(2), +z.toFixed(1)]);
+        window.__cal.push([+o('.chero-clip').toFixed(2), +o('.chero-libre').toFixed(2), +z.toFixed(1),
+                           performance.now() - window.__t0]);
         if (performance.now() - window.__t0 < 1100) requestAnimationFrame(lu);
       };
       window.__t0 = performance.now(); lu();
@@ -611,7 +614,13 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
                     boite["y"] + boite["height"] * 0.3)
     page.wait_for_timeout(1400)
     calques = page.evaluate("() => window.__cal")
-    doubles = [i for i, (r, s_, z) in enumerate(calques) if r > 0.02 and s_ > 0.02 and z > 0.5]
+    # ⚖️ Le design du 2026-09-15 remet un FONDU de 0,14 s entre les deux héros
+    # (choix de l'owner). L'invariant ne vaut donc qu'une fois ce fondu joué :
+    # au-delà, deux héros à l'écran sont un défaut. Le relevé part avant le
+    # survol, d'où la marge.
+    debut = next((t for r, s_, z, t in calques if s_ > 0.02), 0)
+    doubles = [i for i, (r, s_, z, t) in enumerate(calques)
+               if r > 0.02 and s_ > 0.02 and z > 0.5 and t - debut > 200]
     rap.dire(len(calques) > 20 and not doubles,
              "carte TCG : jamais DEUX héros une fois la carte en mouvement",
              f"{len(calques)} image(s)" + (f" · {len(doubles)} en double" if doubles else ""))
@@ -622,9 +631,7 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
     # trou. Essayé le 2026-09-09, défaut réinjecté — le test restait VERT.
     # Un enregistrement d'écran ne le prouve pas davantage : il rate une image
     # de 16 ms une fois sur deux.
-    # Ce défaut-là est écarté par CONSTRUCTION, pas par ce fichier : le calque
-    # de repos n'est effacé qu'après `BASCULE_PLANS_MS * 0.8`, soit six images
-    # pour peindre le survol, et toujours avant que quoi que ce soit ne bouge.
+
 
     # Le liseré derrière le héros, le héros derrière la fiche — à CHAQUE image.
     croises = [f"t={t}ms bord={b} héros={h} fiche={f}"
@@ -634,8 +641,8 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
              f"{len(releve)} image(s) relevée(s)"
              + (f" · {len(croises)} croisement(s) : " + croises[0] if croises else ""))
 
-    # 🚨 Le héros qui déborde doit être DEVANT le liseré. Il est à Z 56, le
-    # liseré à 30 — mais son `transform` est réécrit trente fois par seconde
+    # 🚨 Le héros qui déborde doit être DEVANT le liseré. Il est à Z 80, le
+    # liseré à 44 — mais son `transform` est réécrit trente fois par seconde
     # par `incliner()`, et une transition CSS posée dessus n'atteint jamais sa
     # cible : le `translateZ` restait à ZÉRO, donc le liseré passait DEVANT.
     # Vu à l'écran sur Lilith, ses ailes derrière le cadre. Ce test compare les
@@ -645,10 +652,9 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const c = document.querySelector('.chero');
       const z = (sel) => Math.round(new DOMMatrixReadOnly(
         getComputedStyle(c.querySelector(sel)).transform).m43);
-      // Le Z du héros vit sur son PORTEUR depuis le 2026-09-09 (`.chero-plan`,
-      // animé par le CSS comme les autres couches) ; `.chero-libre` ne porte
-      // plus que le parallaxe et l'échelle.
-      return { hero: z('.chero-plan[data-z="56"]'), lisere: z('.chero-bord') };
+      // Le Z du héros est écrit sur `.chero-libre` par la même horloge que
+      // toutes les autres couches (reprise du design du 2026-09-15).
+      return { hero: z('.chero-libre'), lisere: z('.chero-bord') };
     }""")
     rap.dire(profs["hero"] > profs["lisere"],
              f"carte TCG : le héros (Z {profs['hero']}) passe devant le liseré "
@@ -661,15 +667,15 @@ def verifier_site_public(nav, rap: Rapport, captures: pathlib.Path | None) -> No
       const c = document.querySelector('.chero');
       return {
         perspective: getComputedStyle(c).perspective,
-        cadres: +getComputedStyle(c.querySelector('.chero-cadres')).opacity,
+        reflet: +getComputedStyle(c.querySelector('.chero-reflet')).opacity,
       };
     }""")
     # La 3D RETIRÉE au repos est la moitié qui compte : c'est elle qui garde
     # une grille de vingt cartes à un calque GPU au lieu de neuf par carte.
     rap.dire(fermee["perspective"] == "none",
              "carte TCG : et revient à plat en sortant", str(fermee["perspective"]))
-    rap.dire(fermee["cadres"] < 0.05,
-             "carte TCG : les cadres s'éteignent", str(fermee["cadres"]))
+    rap.dire(fermee["reflet"] < 0.05,
+             "carte TCG : le reflet s'éteint", str(fermee["reflet"]))
     rap.dire(not erreurs, "carte TCG : aucune erreur JS", " · ".join(erreurs[:2]))
 
     # Les filtres des clips. Tout se joue en JavaScript sur une liste déjà

@@ -24,9 +24,12 @@ def test_la_route_ne_fuit_aucune_cle_interne(overlay_client):
         "cle", "nom", "legende", "classe", "ultime", "description", "ambiance",
         "cout", "atk", "pv", "aura", "accent", "hero", "fond", "avantPlan",
         "hero3d", "heroCote", "heroHaut", "heroEchelle", "hero3dCote",
-        "hero3dHaut", "avantPlanLargeur", "avantPlanBas", "particules",
-        "parallaxe", "intensite", "holographique", "holoZone", "holoForce",
-        "bulles", "grade", "jouable",
+        "hero3dHaut", "avantPlanLargeur", "avantPlanBas", "avantPlanSurvol",
+        "ovni", "ovniCote", "ovniHaut", "ovniLargeur", "ovniOpacite",
+        "heroUlt", "hero3dUlt", "fondUlt", "heroUltCote", "heroUltHaut",
+        "hero3dUltCote", "hero3dUltHaut", "heroUltEchelle", "piedsLigne",
+        "piedsMarge", "parallaxe", "intensite", "holographique", "holoZone",
+        "holoForce", "bordureDoree", "faveur", "grade", "jouable",
     }
     for carte in overlay_client.get("/api/public/tcg/cartes").json()["cartes"]:
         assert set(carte) <= autorisees, set(carte) - autorisees

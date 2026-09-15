@@ -1,42 +1,24 @@
 /* public-ui/partage/tcg-carte.css — une carte de héros du TCG
  *
- * Feuille du composant `tcg-carte.js`, chargée par les pages qui en
- * affichent (la collection sur `/tcg`, la démo sur `/demo/carte-azrael`) et
- * déchargée avec elles. Elle ne vit pas dans `style.css` : ses 300 lignes ne
- * concernent que les pages du TCG.
+ * Feuille du composant `tcg-carte.js`, port de `Carte Hero.dc.html`. Chargée
+ * par les pages qui affichent des héros (la collection, la démo, l'overlay
+ * OBS) et déchargée avec elles.
  *
  * 🚨 Tout ce qui dépend de la carte passe par une custom property posée sur
  * `.chero` par le JS (`--chero-acc`, `--chero-cote`…). Aucune valeur de carte
  * n'est écrite ici : ajouter une carte ne touche jamais cette feuille.
  *
- * 🚨 Cette feuille est AUTONOME : elle ne lit aucun token d'une autre. Elle
- * lisait `var(--chero-sans)` et `var(--chero-mono)`, définis dans le `style.css` du site
- * public — que l'overlay ne charge pas. Résultat vu à l'écran : sur l'overlay,
- * toutes les polices retombaient sur le défaut du navigateur, les libellés
- * passaient sur deux lignes, et rien ne le signalait. Un module partagé ne peut
- * pas supposer les tokens d'une seule des deux surfaces qui l'utilisent.
+ * 🚨 Cette feuille est AUTONOME : elle ne lit aucun token d'une autre. L'overlay
+ * ne charge pas le `style.css` du site, et une police héritée de là retombait
+ * sur le défaut du navigateur, sans que rien ne le signale.
  *
- * ⚠️ La 3D (`perspective`, `preserve-3d`, `translateZ`, `will-change`) n'est PAS
- * déclarée ici. Le JS la pose sous le curseur et la retire au repos : vingt
- * cartes en 3D permanente font vingt calques GPU, et la page rame avant même
- * qu'on survole quoi que ce soit. Voir `set3d()` dans le module.
+ * ⚠️ La 3D (`perspective`, `preserve-3d`, `translateZ`) n'est PAS déclarée ici.
+ * Le JS la pose sous le curseur et la retire au repos.
  */
 
-/* Les TROIS polices de la carte, vendorées (`vendor/PROVENANCE.md`).
- *
- * 🚨 Elles sont déclarées ICI et pas seulement dans le `style.css` du site :
- * l'overlay OBS ne charge pas cette feuille-là. Sans ces blocs, la carte
- * s'affichait sur l'overlay avec les polices de repli du navigateur — les
- * libellés passaient sur deux lignes et rien ne le signalait.
- *
- * Le doublon de déclaration avec `style.css` ne coûte RIEN : même famille,
- * même URL, le navigateur télécharge une fois. Seuls les quatre poids que la
- * carte utilise vraiment sont ici — le reste du site charge les siens.
- *
- * Vendorées plutôt que tirées de Google Fonts : sur un stream, un réseau lent
- * au démarrage d'OBS ferait afficher le premier titre dans la police de repli,
- * et ça ne se rattrape pas. `swap` quand même — le texte reste lisible pendant
- * le chargement. */
+/* Les TROIS polices de la carte, vendorées (`vendor/PROVENANCE.md`) : sur un
+ * stream, un réseau lent au démarrage d'OBS ferait afficher le premier titre
+ * dans la police de repli, et ça ne se rattrape pas. */
 @font-face {
   font-family: 'Archivo Black';
   font-style: normal;
@@ -45,9 +27,6 @@
   src: url('/vendor/archivo-black-400.woff2') format('woff2');
 }
 
-/* 400 pour la ligne d'ambiance (en italique SYNTHÉTISÉ — Space Grotesk n'a pas
- * d'italique vraie, il n'y a donc pas de fichier à charger pour elle),
- * 500 pour la description. */
 @font-face {
   font-family: 'Space Grotesk';
   font-style: normal;
@@ -64,7 +43,6 @@
   src: url('/vendor/space-grotesk-500.woff2') format('woff2');
 }
 
-/* 500 pour la légende sous la carte, 700 pour les libellés et les stats. */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
@@ -86,66 +64,16 @@
   50%      { transform: translate3d(2px, -6px, 0) rotate(-0.4deg); }
 }
 
-@keyframes chero-pulse {
+@keyframes chero-breathe {
   0%, 100% { opacity: .55; }
   50%      { opacity: 1; }
 }
 
 /* ── L'enveloppe ──────────────────────────────────────────────────────────*/
 .chero {
-  /* Les familles sont déclarées ICI, et pas héritées : cf. l'avertissement en
-   * tête. Les noms sont ceux du thème du site, qui les charge déjà ; l'overlay
-   * les charge de son côté. */
   --chero-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   --chero-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-  /* La durée du DÉPLIAGE en 3D. 0,45 s sous le curseur : on veut que la carte
-   * réponde tout de suite au survol. L'overlay la rallonge — là, personne ne
-   * pointe la carte, elle se présente, et le dépliage est le spectacle.
-   *
-   * Les couches sont échelonnées (`--chero-etape`) : liseré, puis cadres,
-   * puis héros, puis la fiche. Mesuré avant : tout arrivait ENSEMBLE en
-   * 350 ms, ce qui se lit comme un saut et non comme un dépliage. */
-  --chero-depli: .45s;
-  --chero-etape: .05s;
-  /* La bascule d'un PLAN : le calque de survol prend la place de celui du
-   * repos. Court, et surtout SYNCHRONE des deux côtés — les deux moitiés d'une
-   * paire partagent durée et délai, sinon il y a un trou (les deux à zéro) ou
-   * un fantôme (les deux à un). 90 ms : assez pour ne pas claquer, assez peu
-   * pour tenir dans les 120 ms où `ouverture()` immobilise les couches. */
-  --chero-fondu: .09s;
-  /* Le départ COMMUN de toutes les profondeurs, une fois les plans basculés.
-   *
-   * 🚨 Toutes les couches qui montent en Z partagent ce délai ET la courbe
-   * `cubic-bezier(.2, .8, .2, 1)`. Ce n'est pas de l'uniformité pour
-   * l'uniformité : c'est la SEULE façon de garantir l'ordre des plans. Des Z
-   * proportionnels (liseré 30, héros 56, fiche 70) sur une horloge commune
-   * restent ordonnés à chaque instant — 30·f(t) < 56·f(t) < 70·f(t) — alors
-   * que des horloges décalées se croisent forcément.
-   *
-   * Mesuré le 2026-09-09 sur Azraël, à t=205 ms : le héros à Z 15,4 devant la
-   * fiche à 10,5, parce que la fiche attendait encore ses 150 ms de délai.
-   * L'owner le voyait — « le héros d'Azraël passe devant les stats ».
-   *
-   * ⚠️ L'échelonnement du dépliage (« liseré, puis cadres, puis héros, puis
-   * la fiche ») n'a PAS disparu : il vit sur les OPACITÉS, qui ne décident
-   * d'aucun recouvrement. Seule la profondeur est commune. */
-  --chero-plans: .12s;
-  /* L'ÉCHELON DES PLANS, du plus proche au plus lointain. L'avant-plan bascule
-   * en premier (délai zéro), le héros ensuite.
-   *
-   * 🚨 L'ordre n'est pas décoratif. Le calque libre du héros monte à Z 56 et
-   * celui de l'avant-plan à Z 62 : si le héros bascule le premier, il se
-   * retrouve à 56 face à un avant-plan de REPOS resté à zéro, et il lui passe
-   * DEVANT. Vu sur Claker — le héros par-dessus les pieds pendant la
-   * transition, signalé par l'owner le 2026-09-09. */
-  --chero-plan-avant: 0s;
-  --chero-plan-hero: .03s;
-  --chero-acc: #ffb02e;
-  --chero-cote: -14%;
-  --chero-haut: 4%;
-  --chero-echelle: 1.12;
-  --chero-ap-largeur: 86%;
-  --chero-ap-bas: -6%;
+  --chero-acc: #e1a947;
   position: relative;
   width: 340px;
   height: 476px;
@@ -154,15 +82,31 @@
   contain: layout style;
 }
 
+/* La zone de survol déborde un peu de la carte : le héros déplié sort par le
+ * haut, et le quitter du regard ne doit pas refermer la carte. */
+.chero-zone {
+  position: absolute;
+  left: -14px; right: -14px; top: -34px; bottom: -8px;
+}
+
 /* L'ombre portée est un DÉGRADÉ, pas un `filter: blur()` : un flou coûte une
- * tuile de rendu par carte, et c'est ce qui hachait le défilement sur
- * téléphone (cf. `project_site_refonte_braise`). */
+ * tuile de rendu par carte. */
 .chero-ombre {
   position: absolute;
   left: 14px; right: 14px; top: 30px; bottom: -14px;
   border-radius: 20px;
   background: radial-gradient(closest-side, rgba(0, 0, 0, .85), rgba(0, 0, 0, 0));
   pointer-events: none;
+}
+
+/* La mise en page agrandie (`zoom` × 1,3 réduit d'autant) : le JS la pose et
+ * la retire selon le DPR, cf. `majZoom()`. */
+.chero-zoom {
+  position: absolute;
+  left: 0; top: 0;
+  width: 340px;
+  height: 476px;
+  transform-origin: 0 0;
 }
 
 .chero-carte {
@@ -172,7 +116,7 @@
   transition: transform .16s ease-out;
 }
 
-/* ── Le fond : illustration, trame, rayons, cadres ────────────────────────*/
+/* ── Le fond : illustration, nappe lointaine, trame, vitrage ─────────────*/
 .chero-fond {
   position: absolute;
   inset: 0;
@@ -182,7 +126,7 @@
 }
 
 /* `background-image` est posé par le JS : il y écrit DEUX fois, l'AVIF et son
- * repli WebP (cf. le module). */
+ * repli WebP. */
 .chero-l1 {
   position: absolute;
   inset: -18%;
@@ -191,113 +135,22 @@
   transform: scale(1.06);
 }
 
-.chero-l2 {
+.chero-ovni {
+  position: absolute;
+  left: var(--chero-ovni-cote);
+  top: var(--chero-ovni-haut);
+  width: var(--chero-ovni-largeur);
+  opacity: var(--chero-ovni-opacite);
+  transform: translateX(-50%);
+}
+
+.chero-trame {
   position: absolute;
   inset: -12%;
   opacity: .5;
+  pointer-events: none;
   background-image: radial-gradient(rgba(18, 16, 12, .9) 42%, transparent 43%);
   background-size: 5px 5px;
-}
-
-.chero-l3 {
-  position: absolute;
-  left: 50%; top: 38%;
-  width: 190%; height: 190%;
-  opacity: .45;
-  background: repeating-conic-gradient(from 0deg at 50% 50%,
-    rgba(18, 16, 12, .85) 0deg 2.2deg, rgba(18, 16, 12, 0) 2.2deg 9deg);
-  transform: translate(-50%, -50%);
-}
-
-/* Les quatre cadres sont dans UN conteneur : c'est lui qui s'affiche et se
- * déplace, pas les quatre. Quatre transitions d'opacité et quatre transforms
- * par carte ne se voyaient pas mieux. */
-/* 🚨 PLUS de `visibility` : l'opacité seule ouvre et ferme les cadres.
- *
- * Une couche qui passe de `visibility: hidden` à `visible` n'est pas à
- * l'écran tant qu'elle n'a pas été rastérisée — c'est le mécanisme
- * démontré le 2026-09-09 sur le calque de héros de rhae, où il laissait une
- * image sans sujet. Les cadres sont dans le FOND de la carte et basculent à
- * CHAQUE ouverture ; sur mobile, où les cartes s'ouvrent et se ferment toutes
- * seules au défilement, ça fait une rastérisation du fond par carte survolée.
- *
- * `opacity: 0` suffit : un élément transparent n'est pas peint, et il ne
- * capte rien puisque `.chero` entier est en `pointer-events` neutre pour ses
- * décors. On échange une bascule de rendu contre rien. */
-.chero-cadres {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--chero-depli) ease var(--chero-etape);
-}
-
-.chero-cadres > div {
-  position: absolute;
-  border: 1.5px solid var(--chero-acc);
-}
-
-.chero-cadres > div:nth-child(1) { inset: 9%;  opacity: .55; }
-.chero-cadres > div:nth-child(2) { inset: 18%; opacity: .42; }
-.chero-cadres > div:nth-child(3) { inset: 26%; opacity: .3; }
-.chero-cadres > div:nth-child(4) { inset: 33%; opacity: .2; border-width: 1px; }
-
-/* ── Les bulles ──────────────────────────────────────────────────────────
- * Deux nappes qui montent en boucle derrière l'illustration, pour les cartes
- * aquatiques (`bulles`). Elles vivent DANS le fond, sous la vignette : par
- * dessus, elles éclairciraient le bas de la carte là où la fiche de texte a
- * besoin d'un aplat sombre.
- *
- * 🚨 La montée est une TRANSLATION d'un motif répété deux fois plus haut que
- * son cadre, pas une animation de `background-position` : le premier coûte un
- * calque composité une fois pour toutes, le second recompose le fond à chaque
- * image. La boucle est donc parfaite à −50 % — le motif s'y superpose à
- * lui-même.
- *
- * Les deux nappes ne portent PAS la même animation : 110 s pour la lointaine,
- * 60 s pour la proche. Une durée commune les ferait monter du même pas et
- * l'eau se lirait comme un seul plan. */
-@keyframes chero-bulles {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(0, -50%, 0); }
-}
-
-.chero-bulles {
-  position: absolute;
-  overflow: hidden;
-}
-
-/* Chaque nappe déborde de son cadre — c'est ce débordement que le parallaxe
- * fait glisser sans jamais découvrir de bord vide. La proche déborde plus :
- * elle se déplace 2,5 fois plus. */
-.chero-bulles--loin { inset: -10%; }
-.chero-bulles--pres { inset: -16%; }
-
-.chero-bulles > div {
-  position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 200%;
-  background-repeat: repeat;
-}
-
-.chero-bulles--loin > div {
-  animation: chero-bulles 110s linear infinite;
-  background-image:
-    radial-gradient(circle 13px at 30% 60%, rgba(214, 244, 255, .10) 55%,
-      rgba(214, 244, 255, .40) 78%, transparent 80%),
-    radial-gradient(circle 8px at 75% 25%, rgba(214, 244, 255, .12) 50%,
-      rgba(214, 244, 255, .46) 80%, transparent 82%);
-  background-size: 46% 25%, 31% 12.5%;
-}
-
-.chero-bulles--pres > div {
-  animation: chero-bulles 60s linear infinite;
-  background-image:
-    radial-gradient(circle 6px at 20% 40%, rgba(232, 250, 255, .45) 60%,
-      rgba(232, 250, 255, .8) 85%, transparent 87%),
-    radial-gradient(circle 3.5px at 65% 75%, rgba(232, 250, 255, .8) 70%,
-      transparent 75%);
-  background-size: 19% 10%, 13% 6.25%;
 }
 
 .chero-vignette {
@@ -308,140 +161,40 @@
     rgba(18, 16, 12, .55) 72%, rgba(18, 16, 12, .95) 100%);
 }
 
-.chero-halo {
-  position: absolute;
-  left: -20%; right: -20%; bottom: -30%;
-  height: 70%;
-  pointer-events: none;
-  background: radial-gradient(60% 70% at 50% 100%, var(--chero-acc) 0%, transparent 70%);
-  opacity: .7;
-}
-
 /* ── Le chatoiement holographique ────────────────────────────────────────
- * Des bandes irisées qui glissent sur la SURFACE de la carte quand on la
- * penche, comme une carte à collectionner sous une lampe. Réservé à celles
- * qui le déclarent (`holographique`).
+ * 🚨 Dans le fond, sous le héros : posé par-dessus l'illustration, il irisait
+ * le personnage lui-même. `color-dodge` et le filtre qui l'écrase vers le noir
+ * (neutre en `color-dodge`) sont la recette de `simeydotme/pokemon-cards-css`.
  *
- * 🚨 Elle est DANS le fond, sous le héros — arbitrage de l'owner du
- * 2026-09-09, à l'écran. Posée par-dessus l'illustration, elle irisait le
- * personnage lui-même : sur une vraie carte, c'est le fond imprimé qui porte
- * la pellicule, pas le sujet.
+ * 🚨 AUCUNE animation en boucle : la couche ne bouge que quand `incliner()`
+ * écrit ses variables. Au repos elle est à `opacity: 0`.
  *
- * Un essai bien plus ancien avait déjà mis la couche dans le fond et l'avait
- * ressortie : les dix modes de fusion rendaient alors la même bouillie
- * orangée sur l'explosion du fond d'Azraël. La cause n'était pas la place
- * mais le CONTENU — un dégradé translucide mélangé à un fond saturé ne peut
- * que reprendre sa teinte. Le vitrage, lui, apporte ses propres couleurs
- * pures en `plus-lighter` : il n'a rien à emprunter au fond.
- *
- * 🚨 Elle couvre le fond ENTIER. Elle s'arrêtait à `bottom: 34%`, au-dessus
- * de la fiche de texte — un vestige de l'époque où elle passait PAR-DESSUS
- * tout, où des bandes irisées sur une description l'auraient rendue
- * illisible. Depuis qu'elle vit dans le fond, la fiche est devant elle et
- * opaque : il n'y a plus rien à protéger, et la coupure se voyait. Signalée
- * par l'owner le 2026-09-09 — au PARALLAXE, le fond glisse sous la limite et
- * la ligne d'arrêt se déplace, ce qui la rend visible alors qu'elle ne l'est
- * pas sur une carte immobile.
- *
- * 🚨 AUCUNE animation en boucle. Les recettes du web animent le
- * `background-position` en `@keyframes` — sur une grille de vingt cartes,
- * c'est vingt dégradés recomposés en permanence, y compris hors écran. Ici la
- * couche ne bouge QUE quand `incliner()` écrit ses variables : sous le
- * curseur, ou pendant la chorégraphie de l'overlay. Au repos elle est à
- * `opacity: 0` et ne coûte rien. */
+ * `--chero-holo-force` (0–1, par carte) monte ensemble le grain, le contraste
+ * et la saturation. Les bornes sont ici et nulle part ailleurs. */
 .chero-holo {
   position: absolute;
   inset: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity .45s ease;
-  /* 🚨 `color-dodge`, et le filtre qui va avec, sont la recette de
-   * `simeydotme/pokemon-cards-css` — la référence du genre, lue le
-   * 2026-09-09 (`public/css/cards/base.css`, `.card__shine`). Elle tient en
-   * une idée : ÉCRASER la couche vers le noir (`brightness` bas, `contrast`
-   * haut) parce qu'en `color-dodge` le noir est NEUTRE. Ne survivent que les
-   * crêtes, qui éclaircissent. C'est ce qui fait qu'un foil se pose sur une
-   * illustration sans l'effacer.
-   *
-   * ⚠️ Le choix précédent — `plus-lighter` — venait d'un banc FAUSSÉ : il
-   * avait été mesuré quand la couche était enterrée sous le héros par la 3D,
-   * et les cinq modes essayés rendaient alors la même luminance. Un banc où
-   * toutes les options donnent le même chiffre ne compare rien. */
   mix-blend-mode: color-dodge;
   background-image:
     var(--chero-voronoi, none),
     repeating-linear-gradient(var(--chero-holo-a, 108deg),
       #ffffff 0%, #9a9a9a 7%, #3a3a3a 14%, #9a9a9a 21%, #ffffff 27%);
   background-position: 0 0, var(--chero-holo-x, 50%) var(--chero-holo-y, 50%);
-  /* La tuile est POSÉE plus grosse que le grain de 96 px retenu le matin du
-   * 2026-09-09 : la cellule passe de 8 à 13 px. Arbitrage de l'owner le soir
-   * même, sur un banc de six variantes capturées côte à côte — le grain fin ne
-   * se lisait plus une fois la couche descendue SOUS le héros, où il ne lui
-   * reste que des bandes de fond pour s'exprimer.
-   *
-   * 🚨 `--chero-holo-force` est un facteur 0–1 servi PAR CARTE, et c'est le
-   * seul écrivain de la dose. Les bornes sont ici et nulle part ailleurs :
-   * à 0 la couche est brute, à 1 elle porte la dose pleine. Une carte qui
-   * diverge écrit son facteur dans `tcg/cartes.yaml`, jamais un filtre. */
   background-size: calc(96px + 64px * var(--chero-holo-force, 1)), 260% 260%;
-  /* 🚨 `multiply` sur la PREMIÈRE couche, et l'ordre compte : les fonds se
-   * composent du bas vers le haut, et le mode écrit sur une couche la mélange
-   * au résultat de celles d'en dessous. Le vitrage multiplie donc le dégradé
-   * qui glisse — c'est exactement le partage de rôles voulu : la gravure ne
-   * bouge JAMAIS (une gravure ne se déplace pas quand on penche la carte), et
-   * c'est la lumière qui la parcourt. Les anneaux s'allument et s'éteignent
-   * au fil de l'inclinaison sans qu'aucun pixel du motif ne se déplace.
-   *
-   * `none` en repli : tant que la tuile n'est pas cuite, la couche rend le
-   * chatoiement d'avant, sans gravure. Une `var()` sans repli rendrait toute
-   * la propriété invalide et effacerait le reflet entier. */
   background-blend-mode: multiply, normal;
-  /* Le triplet de `.card__shine` chez `pokemon-cards-css`, RÉGLÉ pour notre
-   * couche. `contrast` est celui qui compte : il pousse les tons moyens vers
-   * le noir, donc vers le neutre du `color-dodge`, et ne laisse passer que
-   * les crêtes irisées.
-   *
-   * 🚨 1,4 et non les 2,75 de la référence, choisi sur un banc de quatre
-   * filtres capturés côte à côte le 2026-09-09. Leur couche est un dégradé
-   * continu qu'il faut casser pour en tirer des crêtes ; la nôtre est un
-   * vitrage DÉJÀ noir aux joints. Reprendre 2,75 l'écrasait une seconde fois
-   * et n'en laissait que quelques éclats. Une valeur se reprend avec ce qui
-   * la justifie, pas seule.
-   *
-   * 🚨 PLUS DE FLOU. Ses 6 px fondaient les bandes du dégradé les unes dans
-   * les autres, ce qui était sa raison d'être ; la lumière est désormais un
-   * dégradé de GRIS aux transitions déjà douces. Et ils moyennaient les
-   * anneaux du vitrage — larges de deux à trois pixels — en un aplat.
-   *
-   * 🚨 C'est `saturate` qui a débloqué l'effet, pas l'opacité. Mesuré le
-   * 2026-09-09 : monter `OPACITE_HOLO` de 0,80 à 1,00 ne changeait que
-   * 1,94/255 — 0,8 %, invisible. La couche est en `color-dodge` et le fond
-   * d'Azraël est une explosion orange déjà très claire : y AJOUTER de la
-   * lumière sature aussitôt et ne rend rien. Ce qui se voit sur un fond
-   * clair, c'est la TEINTE des crêtes — d'où `saturate(4)`, qui porte l'écart
-   * à 6,14/255 et fait apparaître le vert et le magenta dans le fond.
-   *
-   * Les trois paramètres montent ENSEMBLE avec `--chero-holo-force` : un seul
-   * curseur par carte, et pas trois qu'il faudrait accorder à la main. À 0,
-   * chacun vaut son neutre (1) et la couche est brute. */
   filter: brightness(calc(1 + .25 * var(--chero-holo-force, 1)))
           contrast(calc(1 + 1.2 * var(--chero-holo-force, 1)))
           saturate(calc(1 + 3 * var(--chero-holo-force, 1)));
 }
 
-/* La variante `bords` : le même dégradé, mais confiné dans l'ÉPAISSEUR du
- * liseré. Le masque est un exclusif entre deux rectangles — la boîte entière
- * moins sa boîte de contenu — et le `padding` de 15,5 px est exactement la
- * largeur du liseré (`box-shadow: inset … 15.5px` de `.chero-bord`). Changer
- * l'un sans l'autre laisse un anneau qui déborde du cadre ou qui n'y arrive
- * pas.
- *
- * Elle existe pour les fonds déjà très saturés : sur le bleu de KingsRequin,
- * une irisation de surface se lit comme un voile blanc, alors qu'un cadre qui
- * s'irise se voit tout de suite. Le flou descend à 4 px — sur une bande de
- * 15 px, 6 px de flou débordent des deux côtés et rendent le contour mou. */
+/* La variante `bords` : confinée dans l'ÉPAISSEUR du liseré (15,5 px = le
+ * `box-shadow` de `.chero-bord`). 🚨 SANS `filter` : un descendant filtré d'un
+ * contexte preserve-3d est aplati dans un plan qui coupe celui du héros. Son
+ * éclat est cuit dans la tuile `--chero-voronoi-vif`. */
 .chero-holo--bords {
-  inset: 0;
   border-radius: 6px;
   padding: 15.5px;
   -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
@@ -450,36 +203,17 @@
   mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
   mask-clip: content-box, border-box;
   mask-composite: exclude;
-  /* La gravure passe par le FOND, comme sur la surface, et à la MÊME taille
-   * de tuile — c'est le grain retenu par l'owner le 2026-09-09, d'abord vu
-   * ici puis demandé sur les deux autres cartes. La ligne reste écrite : le
-   * bloc redéclare `background-size`, elle ne s'hérite pas d'une règle sœur. */
+  background-image:
+    var(--chero-voronoi-vif, none),
+    repeating-linear-gradient(var(--chero-holo-a, 108deg),
+      #ffffff 0%, #9a9a9a 7%, #3a3a3a 14%, #9a9a9a 21%, #ffffff 27%);
   background-size: 96px, 260% 260%;
-  /* 🚨 Le liseré demande sa PROPRE dose. Le filtre de la surface, hérité tel
-   * quel, n'y laissait presque rien : le `color-dodge` a besoin d'un fond
-   * sombre pour éclaircir, et une bande de 15,5 px posée sur un cadre déjà
-   * doré n'en offre pas. Sur la surface, la retenue protège l'illustration ;
-   * ici il n'y a rien à protéger — c'est le seul endroit où la carte montre
-   * qu'elle est holographique. Banc de trois valeurs capturé le 2026-09-09. */
-  filter: brightness(2.2) contrast(1.1) saturate(1.2);
-}
-
-/* ── Les particules ──────────────────────────────────────────────────────
- * Le canvas fait la MOITIÉ de la carte en pixels et s'étire : à cette
- * échelle, une braise de deux pixels ne perd rien, et la surface à repeindre
- * est divisée par quatre. */
-.chero-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%; height: 100%;
-  border-radius: 6px;
-  pointer-events: none;
+  filter: none;
 }
 
 /* ── Le héros et l'avant-plan, en deux exemplaires ───────────────────────
- * Au repos, chaque couche est DÉTOURÉE par la carte (conteneur en
- * `overflow: hidden`). Au survol, on montre le second exemplaire, libre de
- * déborder du cadre. Un seul nœud ne peut pas faire les deux. */
+ * Au repos, chaque couche est DÉTOURÉE par la carte. Au survol, on montre le
+ * second exemplaire, libre de déborder du cadre. */
 .chero-cadrage {
   position: absolute;
   inset: 0;
@@ -492,122 +226,86 @@
   left: var(--chero-cote);
   right: var(--chero-cote);
   top: var(--chero-haut);
-  /* 🚨 AUCUNE transition : la bascule vers le calque de survol est INSTANTANÉE.
-   *
-   * Un fondu croisé entre deux calques ne conserve pas l'opacité — c'est de
-   * l'arithmétique, pas un réglage. À mi-fondu, les deux sont à 0,5 et le
-   * composé vaut 0,5 + 0,5 × 0,5 = 0,75 : le fond TRANSPARAÎT à travers le
-   * héros. Vu à l'image près le 2026-09-09 en enregistrant le rendu réel du
-   * navigateur (`Page.startScreencast`) — un héros fantôme, exactement ce que
-   * l'owner décrivait. J'ai d'abord cru à un défaut de synchronisation et
-   * passé trois corrections à accorder les durées : synchroniser un fondu
-   * croisé ne le répare pas, il le centre.
-   *
-   * La bascule est invisible parce qu'elle a lieu AVANT tout mouvement : les
-   * deux calques portent alors la même image, au même endroit, à la même
-   * échelle. Sur rhae, qui a deux illustrations distinctes, on voit un
-   * changement net — c'est assumé, un fantôme est pire. */
-  transition: none;
+  opacity: 1;
+  transition: opacity .14s linear;
 }
 
-/* Le PORTEUR DE PROFONDEUR des calques de survol. Il ne fait qu'une chose :
- * monter en Z, sur la même transition que le liseré, le coût et la fiche.
- *
- * 🚨 C'est ce qui rend l'ordre des plans INFAILLIBLE plutôt que bien réglé.
- * Le héros montait par une boucle JS et les autres par des transitions CSS ;
- * deux horloges se croisent quoi qu'on fasse, et elles se sont croisées dans
- * les deux sens (le liseré devant le héros, puis le héros devant les stats).
- * Sur une horloge unique, des Z proportionnels le restent à chaque image.
- *
- * ⚠️ `inset: 0` : les calques qu'il porte se positionnent en `left/right/top`
- * ou `left/bottom` par rapport au cadre de la carte. Un porteur qui ne le
- * couvrirait pas exactement les déplacerait. */
-.chero-plan {
+.chero-ap-clip {
+  position: absolute;
+  left: 50%;
+  bottom: var(--chero-ap-bas);
+  width: var(--chero-ap-largeur);
+  transform: translateX(-50%);
+  transition: opacity .14s linear;
+}
+
+/* Le flash blanc de l'ultime. */
+.chero-flash {
   position: absolute;
   inset: 0;
+  border-radius: 6px;
   pointer-events: none;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              var(--chero-plans);
+  opacity: 0;
+  background: radial-gradient(70% 60% at 50% 46%, #ffffff 0%, #ffffff 55%, rgba(255, 255, 255, .85) 100%);
 }
 
-/* Le calque de survol a son PROPRE cadrage : son illustration peut être une
- * autre image, plus large ou placée différemment (cf. `hero3d` dans le
- * module). Le JS y recopie le cadrage du repos quand il n'y en a qu'une. */
+/* Les calques LIBRES n'ont aucune transition sur `transform` : `incliner()`
+ * le réécrit à chaque image, une transition redémarrerait sans jamais
+ * atteindre sa cible. */
+.chero-ovni-libre {
+  position: absolute;
+  left: var(--chero-ovni-cote);
+  top: var(--chero-ovni-haut);
+  width: var(--chero-ovni-largeur);
+  margin-left: calc(var(--chero-ovni-largeur) / -2);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .14s linear, visibility .14s;
+  transform-origin: 50% 50%;
+}
+
 .chero-libre {
   position: absolute;
   left: var(--chero-3d-cote);
   right: var(--chero-3d-cote);
   top: var(--chero-3d-haut);
-  /* 🚨 0,006 et non 0 : le calque doit être RASTÉRISÉ avant qu'on en ait
-   * besoin. À zéro, le navigateur ne le peint pas — et son premier rendu
-   * coûte trois images. Sur rhae, la seule carte dont l'illustration de
-   * survol DIFFÈRE de celle du repos, ces trois images montraient une carte
-   * sans chat du tout : filmé au navigateur le 2026-09-09.
-   *
-   * Six millièmes sont invisibles à l'œil (sous le seuil de discrimination
-   * d'un écran 8 bits, qui ne peut même pas représenter 0,6 % d'un aplat)
-   * mais suffisent à ce que la couche existe pour le compositeur. C'est le
-   * seul moyen d'échanger les deux calques dans la MÊME image sans trou ni
-   * superposition — les trois autres stratégies sont listées dans le module,
-   * chacune écartée par ce qu'elle montrait à l'écran. */
-  opacity: .006;
+  visibility: hidden;
+  opacity: 0;
   pointer-events: none;
-  /* 🚨 AUCUNE transition sur `transform` ici. Elle y était, et c'était le
-   * même piège que sur le plateau : `incliner()` réécrit ce transform trente
-   * fois par seconde, la transition redémarre à chaque écriture et n'atteint
-   * jamais sa cible. Le `translateZ(56px)` restait donc à ZÉRO — et le liseré,
-   * lui à 30, passait DEVANT le héros. Vu à l'écran sur Lilith : les ailes
-   * derrière le cadre.
-   *
-   * Sous le curseur, le mode interactif la pose en JS le temps de l'entrée
-   * puis la retire, comme pour le plateau. */
-  transition: none;
+  transition: opacity .14s linear, visibility .14s;
   transform-origin: 50% 100%;
-  /* Il déborde vers le haut et les côtés, jamais vers le bas : la fiche de
-   * texte doit rester lisible sous lui. */
-  clip-path: inset(-60% -30% 0 -30%);
+  /* Il déborde vers le haut et les côtés ; en bas, juste assez pour que son
+   * ombre portée retombe sur la fiche au lieu d'être tranchée net. */
+  clip-path: inset(-60% -30% -14% -30%);
 }
 
-/* ⚠️ Ces trois règles étaient écrites DEUX FOIS à la suite, à l'identique —
- * un greffon appliqué deux fois. Sans effet visible, mais deux endroits à
- * corriger pour un seul changement, et c'est le genre de doublon qui fait
- * qu'une moitié bouge et pas l'autre. */
-.chero-ap-clip,
+.chero-libre img {
+  position: relative;
+}
+
 .chero-ap-libre {
   position: absolute;
   left: 50%;
   bottom: var(--chero-ap-bas);
   width: var(--chero-ap-largeur);
-}
-
-.chero-ap-clip {
-  transform: translateX(-50%);
-  transition: none;
-}
-
-.chero-ap-libre {
   margin-left: calc(var(--chero-ap-largeur) / -2);
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  /* Ni fondu, ni transition sur le `transform` : la profondeur vit sur le
-   * porteur `.chero-plan`, et ce qui reste ici — parallaxe et échelle — est
-   * réécrit à chaque image par `incliner()`. Une transition redémarrerait à
-   * chaque écriture sans jamais atteindre sa cible. */
-  transition: none;
+  transition: opacity .14s linear, visibility .14s;
   transform-origin: 50% 50%;
 }
 
 /* `<picture>` est `inline` par défaut : sans ça, la ligne de base ajoute
- * quelques pixels sous chaque illustration et le héros ne tombe pas où le
- * cadrage le place. */
+ * quelques pixels sous chaque illustration. */
 .chero picture,
 .chero img {
   width: 100%;
   display: block;
 }
 
-/* ── Le liseré et son reflet ─────────────────────────────────────────────
+/* ── Le liseré, sa bordure dorée et son reflet ───────────────────────────
  * La double bordure est faite d'ombres INTERNES : une vraie bordure de 15 px
  * mangerait 30 px de largeur au contenu. */
 .chero-bord {
@@ -615,15 +313,47 @@
   inset: 0;
   border-radius: 6px;
   pointer-events: none;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              var(--chero-plans);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1);
   border: 1.5px solid rgba(247, 236, 217, .85);
   box-shadow: inset 0 0 0 14px #12100c, inset 0 0 0 15.5px var(--chero-acc);
 }
 
+/* Un SECOND filet à l'intérieur du liseré sur les cartes de faveur : le
+ * liseré porte déjà l'accent, un filet de plus, lui, se compte. */
+.chero--faveur .chero-bord {
+  box-shadow: inset 0 0 0 11px #12100c, inset 0 0 0 12.5px rgba(247, 236, 217, .55),
+    inset 0 0 0 14px #12100c, inset 0 0 0 15.5px var(--chero-acc);
+}
+
+/* L'or brossé : une bande de 3 px, masquée en anneau, dont le métal glisse
+ * avec l'inclinaison comme celui du nom. */
+.chero-or {
+  position: absolute;
+  inset: -2px;
+  border-radius: 6px;
+  padding: 3px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(127, 86, 21, .75), 0 0 0 1px rgba(225, 169, 71, .7),
+    0 0 10px rgba(225, 169, 71, .25);
+  background-image:
+    repeating-linear-gradient(var(--chero-or-a, 104deg),
+      rgba(255, 255, 255, .22) 0 1px, rgba(0, 0, 0, .18) 1px 2.5px),
+    linear-gradient(var(--chero-or-a, 104deg),
+      #6d4c11 0%, #b98a2e 9%, #f4da8e 19%, #fff6e2 27%, #e1a947 38%, #7f5b1b 50%,
+      #c99a37 62%, #fff1cd 74%, #d9a63f 86%, #7a5718 100%);
+  background-blend-mode: overlay, normal;
+  background-size: auto, 100% 260%;
+  background-position: var(--chero-or-x, 50%) var(--chero-or-y, 50%), 0 var(--chero-or-y, 50%);
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  -webkit-mask-clip: content-box, border-box;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  mask-clip: content-box, border-box;
+  mask-composite: exclude;
+}
+
 /* Le reflet est fait de QUATRE bords, dont l'opacité suit la lumière selon
- * l'inclinaison. Un balayage masqué en anneau (`mask-composite`) rendait la
- * même chose, mais recomposait la carte entière à chaque image. */
+ * l'inclinaison. */
 .chero-reflet {
   position: absolute;
   inset: 0;
@@ -669,7 +399,7 @@
   inset: -2px;
   border-radius: 8px;
   border: 2px solid var(--chero-acc);
-  animation: chero-pulse 1.8s ease-in-out infinite;
+  animation: chero-breathe 1.8s ease-in-out infinite;
 }
 
 /* ── Le coût et le bandeau ULTIME ────────────────────────────────────────*/
@@ -679,8 +409,7 @@
   pointer-events: none;
   display: flex;
   align-items: stretch;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              var(--chero-plans);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
 }
 
 .chero-cout-n {
@@ -702,51 +431,8 @@
   padding: 0 8px;
 }
 
-/* ── Le vernis ───────────────────────────────────────────────────────────
- * La tache de lumière qui glisse sur le plastique quand la carte bouge.
- * Reprise de `.card__glare` chez `simeydotme/pokemon-cards-css`, qui en a
- * DEUX du même genre là où nous n'avions que le chatoiement : la pellicule
- * imprimée sous le plastique d'un côté, le reflet du plastique lui-même de
- * l'autre. C'est la seconde qui manquait pour que la carte ait l'air d'un
- * OBJET et pas d'une image.
- *
- * 🚨 Toutes les cartes l'ont, y compris les communes — une carte commune est
- * vernie elle aussi. C'est justement ce qui en fait la seule couche qui ne
- * dit rien de la rareté, donc la seule qui ne la brouille pas.
- *
- * 🚨 `overlay` et un dégradé qui va du BLANC au NOIR, pas du blanc au
- * transparent : en `overlay`, le gris moyen est le neutre. Le blanc du centre
- * éclaircit, le noir du pourtour assombrit, et c'est ce contraste qui donne
- * le bombé du plastique. Un dégradé vers le transparent ne ferait qu'un halo
- * clair posé dessus.
- *
- * 🚨 AUCUNE animation en boucle, comme le chatoiement : la couche ne bouge
- * que quand `incliner()` écrit ses deux variables, et elle est à
- * `opacity: 0` au repos. */
-.chero-vernis {
-  position: absolute;
-  inset: 0;
-  border-radius: 6px;
-  opacity: 0;
-  pointer-events: none;
-  overflow: hidden;
-  transition: opacity .45s ease;
-  mix-blend-mode: overlay;
-  background-image: radial-gradient(
-    farthest-corner circle at var(--chero-vernis-x, 50%) var(--chero-vernis-y, 50%),
-    rgba(255, 255, 255, .85) 8%,
-    rgba(255, 255, 255, .55) 22%,
-    rgba(0, 0, 0, .5) 90%);
-}
-
 /* ── Le cartouche de grade ───────────────────────────────────────────────
- * Sous le bandeau de coût, en haut à gauche : le grade de la carte (S, A, B),
- * repris de la base Notion. Il a pris la place du cartouche de rareté, retirée
- * du jeu le 2026-09-14.
- *
- * Encre sur crème, à l'inverse du bandeau de coût juste au-dessus : les deux
- * blocs se touchent, et deux cartouches de même valeur tonale se liraient
- * comme un seul objet à deux lignes. */
+ * À la place du cartouche de rareté du design (retirée le 2026-09-14). */
 .chero-grade {
   position: absolute;
   left: 18px; top: 62px;
@@ -757,14 +443,10 @@
   background: #f7ecd9;
   border: 1.5px solid #12100c;
   padding: 5px 8px 4px;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              var(--chero-plans);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
 }
 
-/* Une carte non notée le DIT, elle ne se tait pas, mais elle ne l'annonce pas
- * non plus comme une valeur : fond creusé, texte en retrait. `[data-grade]` sur
- * la racine et pas une classe sur le cartouche : c'est la carte qui a un grade,
- * pas son étiquette. */
+/* Une carte non notée le DIT, sans l'annoncer comme une valeur. */
 .chero[data-grade="aucun"] .chero-grade {
   color: rgba(247, 236, 217, .62);
   background: #12100c;
@@ -780,8 +462,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: transform var(--chero-depli) cubic-bezier(.2, .8, .2, 1)
-              var(--chero-plans);
+  /* Le nom et la fiche ont leur PROPRE profondeur, en plus de celle de la
+   * colonne : c'est le cadre que l'œil suit quand la carte se déplie. */
+  transform-style: preserve-3d;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
+}
+
+.chero-nom-boite {
+  transform-origin: 0 50%;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
 }
 
 .chero-nom {
@@ -793,61 +482,15 @@
   text-shadow: 4px 4px 0 #12100c;
 }
 
-/* Le nom GRAVÉ dans le même vitrage que le fond, sur les cartes au vitrage en
- * surface (depuis le 2026-09-14 ; avant, sur les paliers hauts de rareté). Il
- * réutilise la tuile déjà cuite pour l'holo : aucune image de plus, aucun
- * calcul de plus.
+/* Le nom en ALUMINIUM BROSSÉ irisé, sur les cartes de faveur au vitrage en
+ * surface. Trois couches : le vitrage en `color-dodge` (le foil), des
+ * striations de deux pixels (le brossé), une rampe à rupture brusque (le
+ * chrome).
  *
- * 🚨 Le repli de la `var()` est un APLAT crème, pas `none`. Avec
- * `color: transparent`, une tuile pas encore cuite — elle l'est en
- * `requestIdleCallback` — rendrait le nom de la carte INVISIBLE le temps de
- * la cuisson. Le repli le laisse dans sa couleur d'origine.
- *
- * 🚨 Le `text-shadow` reste, et c'est lui qui tient la lisibilité : le
- * vitrage est sombre aux joints, et sans l'ombre portée le titre se perdrait
- * dans l'illustration. `color: transparent` n'efface pas l'ombre, elle se
- * dessine sur le glyphe et non sur sa couleur. */
+ * 🚨 L'ombre passe par `drop-shadow` et le `text-shadow` est COUPÉ : sous
+ * `background-clip: text`, un `text-shadow` opaque se dessine PAR-DESSUS les
+ * lettres. */
 .chero-nom--foil {
-  /* ALUMINIUM BROSSÉ, et non le vitrage posé tel quel. Trois couches, chacune
-   * avec un rôle :
-   *
-   *   1. le VITRAGE, en `color-dodge` — le foil. C'est lui qui met de la
-   *      couleur dans le métal, et la même tuile que le fond : aucune image
-   *      ni calcul de plus.
-   *   2. les STRIATIONS verticales — le brossé. Deux pixels de période :
-   *      au-delà on lit des rayures, en deçà elles disparaissent au filtrage.
-   *   3. la RAMPE — le métal. Sept arrêts, et c'est la RUPTURE brusque au
-   *      milieu (`#6f757c` à 52 %) qui fait le chrome : un dégradé doux rend
-   *      du gris, pas du métal. C'est la ligne d'horizon que reflète une
-   *      surface bombée.
-   *
-   * 🚨 Premier jet, capturé le 2026-09-09 : le vitrage seul sur un aplat
-   * crème rendait un titre BEIGE et terne, plus éteint que ceux des cartes
-   * ordinaires — soit l'inverse de ce qu'un foil doit dire. Le vitrage est
-   * cuit sombre aux joints, pour être multiplié par une lumière et lu en
-   * `color-dodge` ailleurs : il ne peut pas porter seul la clarté d'un titre.
-   *
-   * 🚨 Le repli de la `var()` est `none`, et il est SANS DANGER ici : la
-   * rampe est en dessous et porte à elle seule des lettres lisibles. Le temps
-   * de la cuisson (`requestIdleCallback`), le titre est simplement du chrome
-   * sans irisation.
-   *
-   * 🚨 L'ombre passe par `drop-shadow`, et le `text-shadow` hérité est COUPÉ.
-   * Ce n'est pas un détail de goût, c'est l'ordre de peinture : sous
-   * `background-clip: text`, les glyphes visibles sont le FOND de l'élément,
-   * peint AVANT les ombres de texte. Un `text-shadow` opaque décalé de 4 px
-   * se dessine donc PAR-DESSUS les lettres — sur une graisse comme Archivo
-   * Black il en recouvre l'essentiel, et le titre se lit noir avec un liseré
-   * métallique. Signalé par l'owner le 2026-09-09 ; mes propres captures
-   * étaient trop petites pour que je le voie.
-   *
-   * `drop-shadow` prend l'alpha du rendu FINI et se dessine derrière lui :
-   * même ombre dure (0 de flou), au bon étage.
-   *
-   * 🚨 Le métal GLISSE à l'inclinaison, comme le chatoiement : c'est ce qui
-   * fait la différence entre du métal et un dégradé gris. `incliner()` écrit
-   * les trois variables dans la MÊME image que le reste — pas de boucle
-   * propre, pas de second réveil par frame. */
   text-shadow: none;
   filter: drop-shadow(4px 4px 0 #12100c);
   background-image:
@@ -858,11 +501,6 @@
       #fdfdfd 0%, #cfd2d6 22%, #ffffff 40%,
       #6f757c 52%, #b9bec4 58%, #ffffff 76%, #d7dade 100%);
   background-blend-mode: color-dodge, overlay, normal;
-  /* 🚨 La rampe fait 260 % de la hauteur du titre, et c'est ce qui lui donne
-   * de la MARGE POUR GLISSER. À 100 %, `background-position` n'a nulle part
-   * où aller : les sept arrêts restent cloués, et le titre est un métal
-   * peint. Les striations, elles, ne bougent pas — une brosse est dans la
-   * matière, elle ne se déplace pas avec la lumière. */
   background-size: 96px, auto, 100% 260%;
   background-position:
     var(--chero-foil-x, 50%) var(--chero-foil-y, 50%),
@@ -877,6 +515,7 @@
   background: #f7ecd9;
   border: 1.5px solid #12100c;
   padding: 9px 11px 10px;
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s, box-shadow .45s ease .15s;
 }
 
 .chero-fiche-top {
@@ -922,21 +561,9 @@
 .chero-stat-pv   { background: #166534; }
 .chero-stat-aura { background: #4c1d95; }
 
-/* 🚨 Une stat à zéro n'est pas une petite stat, c'est une stat qui n'est pas
- * décidée. Peinte en rouge vif comme un vrai 9, elle prétend être une valeur
- * de jeu — c'est ce que faisaient les cinq cartes jusqu'au 2026-09-09, avec
- * des chiffres de maquette. Le neutre, lui, se lit comme « pas encore ».
- *
- * Après les trois règles de couleur et non avant : à spécificité égale, c'est
- * la POSITION dans le fichier qui décide, et écrite au-dessus elle serait
- * battue en silence. Même piège que `--tab-reserve` sur le site. */
-/* 🚨 Un neutre ENCRE, pas un neutre clair. Premier jet capturé le
- * 2026-09-09 : `rgba(247, 236, 217, .1)` sur du texte crème — les trois
- * pastilles ont purement DISPARU sur les quatre cartes indéfinies. Elles sont
- * posées sur la fiche, qui est crème ; un neutre se choisit contre le fond
- * qu'il touche, pas contre le fond de la carte. */
-/* La phrase qui remplace une règle pas encore écrite : même place, même
- * taille, mais en retrait — elle n'est pas du texte de jeu. */
+/* Après les trois règles de couleur et non avant : à spécificité égale, c'est
+ * la POSITION dans le fichier qui décide. Le neutre est ENCRE : les pastilles
+ * sont posées sur la fiche, qui est crème. */
 .chero-desc--vide {
   color: rgba(18, 16, 12, .5);
   font-style: italic;
@@ -947,11 +574,30 @@
   color: rgba(18, 16, 12, .45);
 }
 
+/* ── Le vernis ───────────────────────────────────────────────────────────
+ * La tache de lumière qui glisse sur le plastique quand la carte bouge. En
+ * `overlay` le gris moyen est neutre : le blanc du centre éclaircit, le noir
+ * du pourtour assombrit, et c'est ce contraste qui donne le bombé. */
+.chero-vernis {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity .45s ease;
+  mix-blend-mode: overlay;
+  background-image: radial-gradient(
+    farthest-corner circle at var(--chero-vernis-x, 50%) var(--chero-vernis-y, 50%),
+    rgba(255, 255, 255, .85) 8%,
+    rgba(255, 255, 255, .55) 22%,
+    rgba(0, 0, 0, .5) 90%);
+}
+
 /* ── Mise à l'échelle ────────────────────────────────────────────────────
  * L'échelle est une VARIABLE lue par le conteneur, jamais un `scale()` posé
- * sur la carte : un `scale()` laisse la largeur de LAYOUT à 340 px, et la
- * page déborde horizontalement sur un téléphone étroit sans que rien ne le
- * signale (le smoke test le refuse). */
+ * sur la carte seule : un `scale()` laisse la largeur de LAYOUT à 340 px, et
+ * la page déborde sur un téléphone étroit. */
 .chero-boite {
   --chero-k: 1;
   width: calc(340px * var(--chero-k));
@@ -971,21 +617,6 @@
   .chero-boite { --chero-k: .74; }
 }
 
-/* Le mouvement n'est pas le sujet : sous `prefers-reduced-motion`, le JS ne
- * démarre pas les particules du tout et n'incline plus la carte. Couper
- * seulement les animations CSS laisserait tourner la boucle du canvas. */
 @media (prefers-reduced-motion: reduce) {
-  .chero-halo,
   .chero-selection { animation: none; }
-  .chero-carte,
-  .chero-cadres,
-  .chero-clip,
-  .chero-libre,
-  .chero-ap-clip,
-  .chero-ap-libre,
-  .chero-bord,
-  .chero-reflet,
-  .chero-reflet > div,
-  .chero-cout,
-  .chero-bas { transition: none; }
 }

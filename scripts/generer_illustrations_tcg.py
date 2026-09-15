@@ -136,6 +136,22 @@ PLAN = [
     # du repos donnerait un flou dès que la carte s'ouvre.
     ("meliodas-hero.png", "tcg-meliodas-hero", 1.12, 1.12),
     ("meliodas-fond.png", "tcg-meliodas-fond", 1.44, 1.06),
+    # Kassandre — deux visuels (14 % au repos, 4 % au survol, agrandi de
+    # 10 %) et la COUCHE LOINTAINE des soucoupes : 90 % de la carte, agrandie
+    # de 18 % quand son jumeau libre sort du cadre.
+    ("kassandre-hero.png", "tcg-kassandre-hero", 0.72, 1.00),
+    ("kassandre-hero-3d.png", "tcg-kassandre-hero-3d", 0.92, 1.10),
+    ("kassandre-ovni.png", "tcg-kassandre-ovni", 0.90, 1.18),
+    ("kassandre-fond.png", "tcg-kassandre-fond", 1.44, 1.06),
+    # Lilio — deux visuels (−20 % au repos, −10 % au survol, agrandi de 14 %)
+    # et son ULTIME au clic : le slip sert aux deux calques, donc au plus
+    # large des deux cadrages (−25 %, agrandi de 14 %). Le fond de l'ultime
+    # finit par `-fond` pour être traité en décor.
+    ("lilio-hero.png", "tcg-lilio-hero", 1.40, 1.00),
+    ("lilio-hero-3d.png", "tcg-lilio-hero-3d", 1.20, 1.14),
+    ("lilio-hero-slip.png", "tcg-lilio-hero-slip", 1.50, 1.14),
+    ("lilio-fond.png", "tcg-lilio-fond", 1.44, 1.06),
+    ("lilio-fond-slip.png", "tcg-lilio-slip-fond", 1.44, 1.06),
 ]
 
 QUALITE_WEBP = 88

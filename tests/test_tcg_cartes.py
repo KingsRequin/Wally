@@ -18,10 +18,9 @@ def test_toute_carte_declare_ses_illustrations_sans_extension():
     """Le front sert l'AVIF avec repli WebP : il ajoute l'extension lui-même.
     Un chemin qui en porte une ici donnerait `/assets/x.webp.avif`."""
     for carte in tcg_cartes.CARTES.values():
-        for chemin in (carte.hero, carte.fond, carte.avant_plan, carte.hero_3d):
-            if chemin is not None:
-                assert not chemin.endswith((".avif", ".webp", ".png")), chemin
-                assert chemin.startswith("/assets/"), chemin
+        for chemin in tcg_cartes.illustrations(carte):
+            assert not chemin.endswith((".avif", ".webp", ".png")), chemin
+            assert chemin.startswith("/assets/"), chemin
 
 
 def test_normaliser_reduit_a_ce_qui_compte():
@@ -85,14 +84,11 @@ def test_chaque_illustration_declaree_existe_dans_LES_DEUX_formats():
 
     manquantes = []
     for carte in tcg_cartes.CARTES.values():
-        for champ in ("hero", "fond", "avant_plan", "hero_3d"):
-            base = getattr(carte, champ)
-            if not base:
-                continue
+        for base in tcg_cartes.illustrations(carte):
             for ext in (".avif", ".webp"):
                 fichier = tcg_cartes.DOSSIER_ASSETS / f"{Path(base).name}{ext}"
                 if not fichier.exists():
-                    manquantes.append(f"{carte.cle}.{champ} → {fichier}")
+                    manquantes.append(f"{carte.cle} → {fichier}")
     assert not manquantes, (
         "illustrations déclarées mais absentes — lancer "
         "`python3 scripts/generer_illustrations_tcg.py` après avoir ajouté "
@@ -105,10 +101,7 @@ def test_le_repli_webp_accompagne_toujours_l_avif():
     from pathlib import Path
 
     for carte in tcg_cartes.CARTES.values():
-        for champ in ("hero", "fond", "avant_plan", "hero_3d"):
-            base = getattr(carte, champ)
-            if not base:
-                continue
+        for base in tcg_cartes.illustrations(carte):
             nom = Path(base).name
             avif = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.avif").exists()
             webp = (tcg_cartes.DOSSIER_ASSETS / f"{nom}.webp").exists()
@@ -207,12 +200,10 @@ def test_un_champ_obligatoire_manquant_refuse_le_fichier(tmp_path):
 
 
 def test_une_valeur_hors_vocabulaire_refuse_le_fichier(tmp_path):
-    """`particules` et `holo_zone` sont des vocabulaires FERMÉS tenus par le
-    rendu. Une valeur inconnue ne lève rien côté JS : elle rend l'effet par
-    défaut, sans le dire."""
+    """`holo_zone` est un vocabulaire FERMÉ tenu par le rendu. Une valeur
+    inconnue ne lève rien côté JS : elle rend l'effet par défaut, sans le
+    dire."""
     import pytest
-    with pytest.raises(ValueError, match="particules"):
-        tcg_cartes._lire(_fichier(tmp_path, [_carte_valide(particules="neige")]))
     with pytest.raises(ValueError, match="holo_zone"):
         tcg_cartes._lire(_fichier(
             tmp_path, [_carte_valide(holographique=True, holo_zone="coin")]))

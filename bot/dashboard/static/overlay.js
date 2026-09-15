@@ -1148,7 +1148,7 @@
         //
         // ⚠️ Le fond avant le héros : c'est lui qui couvre la carte entière,
         // et une carte sans fond se voit de plus loin qu'une carte sans héros.
-        const files = ["fond", "hero", "hero3d", "avantPlan"]
+        const files = ["fond", "hero", "ovni", "hero3d", "avantPlan"]
           .flatMap((champ) => cartes.map((c) => [c, champ]));
         files.forEach(([c, champ]) => {
           const base = c[champ];

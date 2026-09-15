@@ -88,7 +88,34 @@ class CarteTcg:
     hero_3d: str | None = None
     hero_3d_cote: str | None = None
     hero_3d_haut: str | None = None
-    particules: str = "braises"
+    # L'avant-plan n'existe QUE carte dépliée : Claker sans ses pieds au repos
+    # est une carte lisible, avec, ils mangent le portrait.
+    avant_plan_survol: bool = False
+    # La COUCHE LOINTAINE : une nappe (les soucoupes de Kassandre) posée dans
+    # le décor, derrière le héros, qui sort du cadre quand la carte se déplie.
+    # Centrée sur `ovni_cote`, remontée de `ovni_haut`.
+    ovni: str | None = None
+    ovni_cote: str = "50%"
+    ovni_haut: str = "-6%"
+    ovni_largeur: str = "88%"
+    ovni_opacite: float = 0.85
+    # L'ULTIME au clic : un flash blanc, et les sources s'échangent (Lilio en
+    # slip). Chaque visuel a son propre cadrage, sinon l'un des deux est
+    # toujours mal posé. `hero_3d_ult` absent reprend `hero_ult`.
+    hero_ult: str | None = None
+    hero_3d_ult: str | None = None
+    fond_ult: str | None = None
+    hero_ult_cote: str | None = None
+    hero_ult_haut: str | None = None
+    hero_3d_ult_cote: str | None = None
+    hero_3d_ult_haut: str | None = None
+    hero_ult_echelle: float | None = None
+    # La découpe des PIEDS du héros déplié : sous la ligne (en % de la hauteur
+    # de la carte), il reste borné à l'intérieur du cadre, à `pieds_marge` px du
+    # bord. Sans marge, le héros sort librement par les côtés — c'est l'effet
+    # voulu partout ailleurs.
+    pieds_ligne: float | None = None
+    pieds_marge: float | None = None
     parallaxe: float = 1.0
     intensite: float = 1.0
     # Le reflet irisé qui court sur la carte quand elle se penche, comme une
@@ -117,9 +144,15 @@ class CarteTcg:
     # banc. Aucune carte n'écrit ce champ aujourd'hui, et c'est normal : il ne
     # se pose que le jour où l'une doit diverger des autres.
     holo_force: float = 1.0
-    # Deux nappes de bulles qui montent derrière l'illustration. Aquatique et
-    # rien d'autre : ailleurs ce sont des taches claires sans raison.
-    bulles: bool = False
+    # La BORDURE DORÉE : un cadre d'or brossé autour du liseré, et un contour
+    # de métal irisé autour du héros déplié.
+    bordure_doree: bool = False
+    # Le TRAITEMENT DE FAVEUR : un second filet à l'intérieur du liseré et, si
+    # le vitrage est en surface, le nom en foil. Le design le liait aux paliers
+    # « ange » et « archange » de l'ancienne rareté ; ⚖️ l'owner a tranché le
+    # 2026-09-15 de suivre le design sans remettre la rareté à l'écran — le
+    # palier devient ce booléen, et le cartouche garde le grade.
+    faveur: bool = False
     # Le GRADE : la puissance de la carte, S, A ou B.
     #
     # ⚖️ Il REMPLACE la rareté, retirée le 2026-09-14. L'owner, la veille :
@@ -163,10 +196,12 @@ CHEMIN_CARTES = Path("tcg/cartes.yaml")
 
 _CHAMPS = {f.name for f in fields(CarteTcg)}
 _OBLIGATOIRES = {f.name for f in fields(CarteTcg) if f.default is MISSING}
-# Vocabulaires FERMÉS, tenus par le rendu : `particules()` et `.chero-holo`
-# dans `public-ui/partage/tcg-carte.js`. Une valeur hors liste ne lève rien
-# côté JS — elle rend simplement l'effet par défaut, en silence.
-_PARTICULES = {"braises", "poussiere", "aucune"}
+# Vocabulaire FERMÉ, tenu par le rendu (`.chero-holo--bords` dans
+# `public-ui/partage/tcg-carte.js`). Une valeur hors liste ne lève rien côté
+# JS — elle rend simplement l'effet par défaut, en silence.
+#
+# ⚠️ Les particules et les bulles ne sont plus des champs : l'owner a retiré
+# ces couches de décor du design le 2026-09-15. Les écrire REFUSE le fichier.
 _HOLO_ZONES = {"surface", "bords"}
 # Les grades, du plus puissant au moins puissant. `None` (pas de grade) est
 # HORS de l'échelle : une carte non notée n'est pas une carte de grade B.
@@ -208,6 +243,18 @@ def accent_du_cout(cout: int) -> str:
         round(rouge * 255), round(vert * 255), round(bleu * 255))
 
 
+def illustrations(carte: CarteTcg) -> list[str]:
+    """Toutes les illustrations d'une carte, sans les absentes.
+
+    La SEULE liste des champs d'image : la validation et les tests la lisent,
+    et une couche ajoutée ailleurs qu'ici échapperait aux deux.
+    """
+    return [chemin for chemin in (
+        carte.hero, carte.fond, carte.avant_plan, carte.hero_3d, carte.ovni,
+        carte.hero_ult, carte.hero_3d_ult, carte.fond_ult,
+    ) if chemin is not None]
+
+
 def _exiger(condition: bool, cle: str, probleme: str) -> None:
     """Refuse le fichier en NOMMANT la carte et le problème.
 
@@ -240,8 +287,6 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
         _exiger(entree["cle"] not in cartes, cle, "clé en double")
         alias = entree.get("alias") or []
         carte = CarteTcg(**{**entree, "alias": tuple(alias)})
-        _exiger(carte.particules in _PARTICULES, cle,
-                f"particules={carte.particules!r} hors de {sorted(_PARTICULES)}")
         _exiger(carte.holo_zone in _HOLO_ZONES, cle,
                 f"holo_zone={carte.holo_zone!r} hors de {sorted(_HOLO_ZONES)}")
         _exiger(carte.grade is None or carte.grade in GRADES, cle,
@@ -254,7 +299,7 @@ def _lire(chemin: Path) -> dict[str, CarteTcg]:
         # Les chemins d'illustration sont SANS extension : le front ajoute la
         # sienne (`x.avif` / `x.webp`). Une extension écrite ici donnerait
         # `/assets/x.webp.avif`, soit une carte noire.
-        for chemin_illu in (carte.hero, carte.fond, carte.avant_plan, carte.hero_3d):
+        for chemin_illu in illustrations(carte):
             if chemin_illu is not None:
                 _exiger(chemin_illu.startswith("/assets/")
                         and not chemin_illu.endswith((".avif", ".webp", ".png")),
@@ -429,13 +474,29 @@ def en_json(carte: CarteTcg) -> dict:
         "hero3dHaut": carte.hero_3d_haut,
         "avantPlanLargeur": carte.avant_plan_largeur,
         "avantPlanBas": carte.avant_plan_bas,
-        "particules": carte.particules,
+        "avantPlanSurvol": carte.avant_plan_survol,
+        "ovni": url(carte.ovni) if carte.ovni else None,
+        "ovniCote": carte.ovni_cote,
+        "ovniHaut": carte.ovni_haut,
+        "ovniLargeur": carte.ovni_largeur,
+        "ovniOpacite": carte.ovni_opacite,
+        "heroUlt": url(carte.hero_ult) if carte.hero_ult else None,
+        "hero3dUlt": url(carte.hero_3d_ult) if carte.hero_3d_ult else None,
+        "fondUlt": url(carte.fond_ult) if carte.fond_ult else None,
+        "heroUltCote": carte.hero_ult_cote,
+        "heroUltHaut": carte.hero_ult_haut,
+        "hero3dUltCote": carte.hero_3d_ult_cote,
+        "hero3dUltHaut": carte.hero_3d_ult_haut,
+        "heroUltEchelle": carte.hero_ult_echelle,
+        "piedsLigne": carte.pieds_ligne,
+        "piedsMarge": carte.pieds_marge,
         "parallaxe": carte.parallaxe,
         "intensite": carte.intensite,
         "holographique": carte.holographique,
         "holoZone": carte.holo_zone,
         "holoForce": carte.holo_force,
-        "bulles": carte.bulles,
+        "bordureDoree": carte.bordure_doree,
+        "faveur": carte.faveur,
         "grade": carte.grade,
         "jouable": carte.jouable,
     }
