@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -45,7 +46,16 @@ def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
         salons={},
     )
     bot.get_channel = lambda cid: bot.salons.get(cid)
+    # Par défaut, un salon absent du cache est vraiment disparu côté API.
+    bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel"))
     return bot
+
+
+def _avertissements():
+    """Capture les WARNING de loguru ; rend (liste, jeton à retirer)."""
+    dits: list[str] = []
+    jeton = st.logger.add(lambda m: dits.append(str(m)), level="WARNING")
+    return dits, jeton
 
 
 def _salon(cid, membres=(), guild=SimpleNamespace(id=9), category="cat"):
@@ -142,13 +152,32 @@ async def test_desactive_ne_fait_rien():
 
 async def test_menage_au_boot():
     vide, occupe = _salon(1, membres=[]), _salon(2, membres=[object()])
-    db = FauxDb({1, 2, 3})           # 3 : salon disparu pendant l'arrêt
+    db = FauxDb({1, 2, 3})           # 3 : salon disparu pendant l'arrêt (fetch → NotFound)
     bot = _bot(db)
     bot.salons = {1: vide, 2: occupe}
     await st.menage_au_boot(bot)
     vide.delete.assert_awaited_once()
     occupe.delete.assert_not_awaited()
     assert db.ids == {2}
+
+
+async def test_menage_au_boot_salon_hors_cache_inverifiable_garde_la_ligne():
+    """Serveur indisponible au boot : `get_channel` rend None pour un salon
+    bien réel. Une erreur API autre que NotFound ne prouve rien — la ligne
+    reste, sinon le salon devient orphelin pour toujours."""
+    db = FauxDb({3})
+    bot = _bot(db)
+    bot.fetch_channel = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=503), "indispo"))
+    await st.menage_au_boot(bot)
+    assert db.ids == {3}
+
+
+async def test_menage_au_boot_salon_hors_cache_mais_existant_garde_la_ligne():
+    db = FauxDb({3})
+    bot = _bot(db)
+    bot.fetch_channel = AsyncMock(return_value=_salon(3))
+    await st.menage_au_boot(bot)
+    assert db.ids == {3}
 
 
 async def test_menage_au_boot_une_panne_sur_un_salon_n_arrete_pas_les_autres():
@@ -218,3 +247,98 @@ async def test_l_accueil_vocal_est_toujours_appele(monkeypatch):
     await WallyDiscord.on_voice_state_update(self, membre, _etat(None), _etat(SimpleNamespace(id=42)))
     assert appels == ["salons"]
     vs.greet_newcomer.assert_awaited_once_with(membre)
+
+
+async def test_deux_departs_simultanes_une_seule_suppression_une_seule_fiche(monkeypatch):
+    """Deux départs quasi simultanés passent tous deux le registre avant la
+    première suppression : une seule suppression, une seule fiche."""
+    from bot.discord import journal_moderation as jm
+
+    fiches = []
+
+    async def faux_vocal_supprime(bot, salon):
+        fiches.append(salon.id)
+
+    monkeypatch.setattr(jm, "vocal_supprime", faux_vocal_supprime)
+
+    class DbLente(FauxDb):
+        async def salons_temporaires(self):
+            await asyncio.sleep(0)   # lecture en base : cède la main comme aiosqlite
+            return set(self.ids)
+
+    supprime = False
+
+    async def delete(**_kwargs):
+        nonlocal supprime
+        await asyncio.sleep(0)
+        if supprime:
+            raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
+        supprime = True
+
+    salon = _salon(777, membres=[])
+    salon.delete = AsyncMock(side_effect=delete)
+    db = DbLente({777})
+    bot = _bot(db)
+    membre = SimpleNamespace(id=1, bot=False)
+
+    await asyncio.gather(
+        st.sur_changement_vocal(bot, membre, _etat(salon), _etat(None)),
+        st.sur_changement_vocal(bot, membre, _etat(salon), _etat(None)),
+    )
+    await asyncio.sleep(0)   # laisse partir les fiches schedulées par `_fire`
+
+    salon.delete.assert_awaited_once()
+    assert fiches == [777]
+    assert db.ids == set()
+
+
+async def test_fiche_vocal_cree_publiee_en_tache_de_fond(monkeypatch):
+    from bot.discord import journal_moderation as jm
+
+    fiches = []
+
+    async def faux_vocal_cree(bot, member, salon):
+        fiches.append(salon.id)
+
+    monkeypatch.setattr(jm, "vocal_cree", faux_vocal_cree)
+    nouveau = _salon(777)
+    guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(return_value=nouveau))
+    membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A")
+
+    await st.sur_changement_vocal(_bot(FauxDb()), membre, _etat(None),
+                                  _etat(_salon(CREATEUR, guild=guild)))
+    await asyncio.sleep(0)
+    assert fiches == [777]
+
+
+async def test_deplacement_interdit_avertit_de_la_permission_et_retire_le_salon():
+    nouveau = _salon(777)
+    guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(return_value=nouveau))
+    membre = _Membre(id=1, bot=False, display_name="A",
+                     move_to=AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")))
+    db = FauxDb()
+    dits, jeton = _avertissements()
+    try:
+        await st.sur_changement_vocal(_bot(db), membre, _etat(None),
+                                      _etat(_salon(CREATEUR, guild=guild)))
+    finally:
+        st.logger.remove(jeton)
+    nouveau.delete.assert_awaited_once()
+    assert db.ids == set()
+    assert any("Déplacer des membres" in d and "777" in d for d in dits)
+
+
+async def test_creation_interdite_avertit_des_permissions():
+    guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")))
+    membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A")
+    db = FauxDb()
+    dits, jeton = _avertissements()
+    try:
+        await st.sur_changement_vocal(_bot(db), membre, _etat(None),
+                                      _etat(_salon(CREATEUR, guild=guild)))
+    finally:
+        st.logger.remove(jeton)
+    membre.move_to.assert_not_awaited()
+    assert db.ids == set()
+    assert any("Gérer les salons" in d for d in dits)

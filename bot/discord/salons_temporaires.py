@@ -9,6 +9,10 @@ jamais touché.
 ⚠️ Appelé depuis `WallyDiscord.on_voice_state_update`, jamais enregistré par
 `@bot.event` : un second `on_voice_state_update` REMPLACERAIT la méthode de
 classe, et l'accueil vocal de Wally disparaîtrait sans erreur.
+
+Les fiches du journal de modération (`vocal_cree` / `vocal_supprime`) partent
+en tâche de fond (`_fire`) : un envoi lent sur plusieurs salons de logs ne
+doit pas retenir le traitement de l'événement vocal.
 """
 from __future__ import annotations
 
@@ -22,6 +26,13 @@ if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
 _NOM_PAR_DEFAUT = "Nouveau salon"
+
+# Salons dont la suppression est EN COURS. Deux départs quasi simultanés
+# passent tous deux la vérification du registre (lecture en base) avant que
+# le premier n'ait supprimé quoi que ce soit : sans ce verrou, le second
+# supprimait à nouveau (NotFound avalé) puis journalisait et publiait une
+# seconde fiche « vocal supprimé ». Rempli AVANT le premier `await`.
+_suppressions_en_cours: set[int] = set()
 
 
 async def sur_changement_vocal(bot: "WallyDiscord", member: Any, before: Any, after: Any) -> None:
@@ -45,12 +56,20 @@ async def sur_changement_vocal(bot: "WallyDiscord", member: Any, before: Any, af
 async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
     noms = bot.config.discord.salons_temporaires.noms
     nom = random.choice(noms) if noms else _NOM_PAR_DEFAUT
-    salon = await createur.guild.create_voice_channel(
-        nom,
-        category=createur.category,
-        overwrites={member: discord.PermissionOverwrite(manage_channels=True, manage_roles=True)},
-        reason="Salon vocal temporaire",
-    )
+    try:
+        salon = await createur.guild.create_voice_channel(
+            nom,
+            category=createur.category,
+            overwrites={member: discord.PermissionOverwrite(manage_channels=True, manage_roles=True)},
+            reason="Salon vocal temporaire",
+        )
+    except discord.Forbidden as e:
+        # Sans ce cas propre, la panne tombait dans le WARNING générique de
+        # `sur_changement_vocal`, qui ne dit pas QUOI donner au bot.
+        logger.warning("salons temporaires : création refusée sous « {cat} » — permissions "
+                       "« Gérer les salons » / « Gérer les rôles » manquantes : {e!r}",
+                       cat=getattr(createur.category, "name", None), e=e)
+        return
     try:
         await bot.db.salon_temporaire_ajouter(salon.id, createur.guild.id)
     except Exception as e:  # noqa: BLE001 — sans ce retrait, le salon reste ORPHELIN : absent
@@ -73,6 +92,15 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
         return
     try:
         await member.move_to(salon)
+    except discord.Forbidden as e:
+        # AVANT `HTTPException`, dont `Forbidden` hérite : une permission
+        # manquante n'est pas un membre parti. Sans ce cas, chaque entrée dans
+        # le créateur ouvrait puis fermait un salon avec un simple INFO.
+        logger.warning("salons temporaires : impossible de déplacer {m} dans « {n} » ({c}) — "
+                       "permission « Déplacer des membres » manquante, salon retiré : {e!r}",
+                       m=member.display_name, n=salon.name, c=salon.id, e=e)
+        await _supprimer(bot, salon)
+        return
     except discord.HTTPException as e:
         # Le membre a quitté le vocal entre l'entrée et le déplacement : le
         # salon ne recevra jamais personne, donc jamais d'événement « vidé ».
@@ -81,25 +109,38 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
         return
     logger.info("Salon vocal temporaire « {n} » ({c}) créé pour {m}",
                 n=salon.name, c=salon.id, m=member.display_name)
+    from bot.discord.handlers import _fire
     from bot.discord.journal_moderation import vocal_cree
-    await vocal_cree(bot, member, salon)
+    _fire(vocal_cree(bot, member, salon))
 
 
 async def _supprimer_si_gere(bot: "WallyDiscord", salon: Any) -> None:
     if salon.id not in await bot.db.salons_temporaires():
         return
-    await _supprimer(bot, salon)
+    if not await _supprimer(bot, salon):
+        return  # un autre départ l'a supprimé : lui seul journalise et publie la fiche
     logger.info("Salon vocal temporaire « {n} » ({c}) supprimé (vide)", n=salon.name, c=salon.id)
+    from bot.discord.handlers import _fire
     from bot.discord.journal_moderation import vocal_supprime
-    await vocal_supprime(bot, salon)
+    _fire(vocal_supprime(bot, salon))
 
 
-async def _supprimer(bot: "WallyDiscord", salon: Any) -> None:
+async def _supprimer(bot: "WallyDiscord", salon: Any) -> bool:
+    """Supprime le salon et sa ligne. True seulement si CET appel l'a supprimé."""
+    if salon.id in _suppressions_en_cours:
+        return False
+    _suppressions_en_cours.add(salon.id)
     try:
-        await salon.delete(reason="Salon vocal temporaire vide")
-    except discord.NotFound:
-        logger.info("salons temporaires : {c} déjà supprimé", c=salon.id)
-    await bot.db.salon_temporaire_retirer(salon.id)
+        try:
+            await salon.delete(reason="Salon vocal temporaire vide")
+        except discord.NotFound:
+            logger.info("salons temporaires : {c} déjà supprimé", c=salon.id)
+            await bot.db.salon_temporaire_retirer(salon.id)
+            return False
+        await bot.db.salon_temporaire_retirer(salon.id)
+        return True
+    finally:
+        _suppressions_en_cours.discard(salon.id)
 
 
 async def menage_au_boot(bot: "WallyDiscord") -> None:
@@ -118,10 +159,31 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
             # registre ne contient jamais autre chose.
             salon: Any = bot.get_channel(channel_id)
             if salon is None:
-                await bot.db.salon_temporaire_retirer(channel_id)
-                logger.info("salons temporaires : {c} disparu pendant l'arrêt, ligne retirée", c=channel_id)
+                await _verifier_hors_cache(bot, channel_id)
             elif not salon.members:
-                await _supprimer(bot, salon)
-                logger.info("salons temporaires : « {n} » vide au boot, supprimé", n=salon.name)
+                if await _supprimer(bot, salon):
+                    logger.info("salons temporaires : « {n} » vide au boot, supprimé", n=salon.name)
         except Exception as e:  # noqa: BLE001 — un salon en échec ne doit pas arrêter le ménage des autres
             logger.warning("salons temporaires : {c} : ménage échoué : {e!r}", c=channel_id, e=e)
+
+
+async def _verifier_hors_cache(bot: "WallyDiscord", channel_id: int) -> None:
+    """Un salon absent du cache n'est PAS forcément disparu.
+
+    Pendant une panne ou une reconnexion, un serveur indisponible n'a aucun
+    salon en cache : retirer la ligne sur ce seul indice rendait ORPHELIN un
+    salon bien réel, que plus rien ne supprimerait jamais. Seul un `NotFound`
+    de l'API prouve la disparition ; tout le reste garde la ligne pour le
+    prochain boot.
+    """
+    try:
+        await bot.fetch_channel(channel_id)
+    except discord.NotFound:
+        await bot.db.salon_temporaire_retirer(channel_id)
+        logger.info("salons temporaires : {c} disparu pendant l'arrêt, ligne retirée", c=channel_id)
+        return
+    except Exception as e:  # noqa: BLE001 — invérifiable : la ligne reste, retentée au prochain boot
+        logger.info("salons temporaires : {c} invérifiable au boot ({e!r}), ligne gardée", c=channel_id, e=e)
+        return
+    logger.info("salons temporaires : {c} existe mais hors cache (serveur indisponible ?), ligne gardée",
+                c=channel_id)
