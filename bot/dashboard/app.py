@@ -215,7 +215,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.add_middleware(BearerAuthMiddleware, state=state)
 
     # Import routes (après création pour éviter les imports circulaires)
-    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, person, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music, tcg
+    from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, person, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, theme, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music, tcg, recompenses
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -267,6 +267,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(twitch_auth.router, prefix="/api/admin")
     app.include_router(voice.admin_router, prefix="/api/admin")
     app.include_router(overlay.admin_router, prefix="/api/admin")
+    app.include_router(recompenses.admin_router, prefix="/api/admin")
 
     # Theme CSS dynamique — enregistré AVANT le mount static pour priorité de routing
     app.add_api_route("/static/theme.css", theme.serve_theme_css, methods=["GET"], include_in_schema=False)

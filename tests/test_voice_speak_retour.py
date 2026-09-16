@@ -7,7 +7,7 @@ répondait donc « c'est dit à voix haute » à un modérateur devant un silenc
 symétrique exact du `is_sent: false` côté chat Twitch, que ce projet a déjà payé
 une fois.
 
-La récompense « im out » en dépend pour rembourser : c'est ce qui a rendu le
+Le TTS acheté aux points de chaîne en dépend pour rembourser : c'est ce qui a rendu le
 défaut visible.
 """
 from unittest.mock import AsyncMock, MagicMock

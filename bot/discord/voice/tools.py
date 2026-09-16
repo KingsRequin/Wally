@@ -142,8 +142,8 @@ async def run_say_in_voice_tool(bot, args: dict, *, roles=None,
         # `malgre_ecoute` : pendant un live, Wally est en écoute seule et
         # `speak()` refuse de parler pour ne pas couvrir le streamer. C'est
         # justement le moment où cette fonction sert, et la demande est
-        # explicite — donc elle passe. Seule la récompense « im out » le fait
-        # aussi, et pour la même raison.
+        # explicite — donc elle passe. Seul le TTS acheté aux points de
+        # chaîne le fait aussi, et pour la même raison.
         #
         # Le retour est LU. Il ne l'était pas : `speak()` se taisait en silence
         # sur cinq chemins (salon perdu entre-temps, texte réduit à rien par le

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bot.config import Config
     from bot.dashboard.state import AppState
     from bot.core.apex.duel_runner import DuelRunner
+    from bot.twitch.recompenses import GestionRecompenses
     from bot.db.database import Database
     from bot.core.emotion import EmotionEngine
     from bot.intelligence.memory.service import MemoryService
@@ -120,6 +121,9 @@ class WallyTwitch(commands.Bot):
         # config l'active. Absent, la sonde s'arrête d'elle-même et l'achat
         # d'une récompense est remboursé (cf. `events/redemptions.py`).
         self.duel_runner: Optional["DuelRunner"] = None
+        # Les autres récompenses de points de chaîne et le prix dynamique du
+        # TTS — construit par main.py, modifié à chaud par le panneau admin.
+        self.recompenses: Optional["GestionRecompenses"] = None
         # Dashboard integration — set to AppState by main.py after construction.
         # TYPÉ, et pas laissé à `None` derrière un `type: ignore` : sans le type,
         # chaque `dashboard_state.x` était une erreur mypy de plus, et le

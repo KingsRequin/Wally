@@ -1,9 +1,6 @@
 """Le TTS des viewers : on paie, Wally lit son message à voix haute.
 
-Cousine de « im out » (`im_out.py`), à une différence près qui change tout : la
-phrase n'est plus fixe, c'est le viewer qui l'écrit. Deux conséquences, et
-elles sont la raison d'être de ce module plutôt qu'un paramètre de plus chez le
-voisin :
+Le texte est écrit par le viewer, ce qui a deux conséquences :
 
   · **Le texte est de la donnée, jamais une instruction.** Il ne passe par
     aucun modèle — il part au TTS tel quel. Rien à reformuler, rien à
@@ -49,20 +46,12 @@ if TYPE_CHECKING:
 
 # La clé où vit l'identifiant de NOTRE récompense. Distincte de toutes les
 # autres : partagée, l'une deviendrait irremboursable et l'autre lancerait le
-# mauvais effet — piège déjà nommé pour le duel, l'attaque de meme, l'humeur
-# et « im out ».
+# mauvais effet — piège déjà nommé pour le duel, l'attaque de meme et l'humeur.
 CLE_RECOMPENSE = "voice:tts_viewer_reward_id"
 
-TITRE = "tts wally"
-COUT = 500
-PROMPT = (
-    "Wally lit ton message à voix haute dans le vocal du stream. "
-    "Commence par un ton entre crochets pour colorer sa voix : "
-    "[murmure] [crie] [joyeux] [triste] [énervé] [excité] [peur] [surpris]"
-)
-
-# Le viewer écrit : c'est toute la récompense.
-SAISIE_REQUISE = True
+# Titre, prix de base et invite : `twitch.recompenses.tts_viewer`. Le prix
+# réel monte à chaque achat et redescend avec le temps
+# (`recompenses.PrixDynamique`).
 
 # Une minute entre deux achats D'UNE MÊME PERSONNE. Twitch ne sait poser qu'une
 # recharge GLOBALE, qui bloquait tout le chat dès qu'un seul viewer achetait :
@@ -81,8 +70,7 @@ RECHARGE_PERSONNE_S = 60
 # pour une panne.
 LONGUEUR_MAX = 500
 
-# Ce que Wally prononce vraiment. En un seul endroit, comme la phrase de
-# « im out ».
+# Ce que Wally prononce vraiment. En un seul endroit.
 GABARIT = "{acheteur} dit : {texte}"
 
 # Dernier achat ENTENDU, par personne. En RAM : la valeur ne vaut qu'une
@@ -223,6 +211,27 @@ async def _prevenir_coupe(bot, acheteur: str) -> None:
         logger.error("TTS viewer : coupe non annoncée dans le chat : {e!r}", e=exc)
 
 
+async def _faire_monter_le_prix(bot) -> None:
+    """Un TTS entendu fait monter le prix du suivant, et Wally le dit.
+
+    Seulement après une lecture RÉELLE : un achat remboursé n'a rien consommé.
+    Ne dit rien si le prix n'a pas monté (hausse à 0 %, PATCH refusé) — une
+    annonce de prix fausse est pire que pas d'annonce.
+    """
+    gestion = getattr(bot, "recompenses", None)
+    if gestion is None:
+        return
+    try:
+        avant, apres = await gestion.apres_achat_tts()
+        if apres is None or avant is None or apres <= avant:
+            return
+        await bot.twitch_api.send_automatic(
+            f"Le TTS monte à {apres} points (au lieu de {avant}), il redescend "
+            f"tout seul si on me laisse souffler.")
+    except Exception as exc:  # noqa: BLE001 — le message a été lu, lui
+        logger.error("TTS viewer : hausse de prix en erreur : {e!r}", e=exc)
+
+
 async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
                        reward_id: str, redemption_id: str) -> None:
     """Lit le message à voix haute, ou rend les points. Ne lève jamais."""
@@ -263,8 +272,7 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
         # `malgre_ecoute` : pendant un live Wally est en écoute seule et
         # `speak()` refuse de parler pour ne pas couvrir le streamer. C'est
         # justement le moment où cette récompense sert, et un achat est une
-        # demande on ne peut plus explicite — même arbitrage que « im out » et
-        # `say_in_voice`.
+        # demande on ne peut plus explicite — même arbitrage que `say_in_voice`.
         #
         # Le retour est LU : sans ça on encaisserait un silence. C'est le
         # `is_sent: false` du chat Twitch, transposé à la voix.
@@ -291,6 +299,7 @@ async def lire_message(bot: "WallyTwitch", *, acheteur: str, saisie: str,
         if tronque:
             await _prevenir_coupe(bot, acheteur)
         _feed(bot, f"{acheteur} a fait lire « {texte} » à Wally (points de chaîne)")
+        await _faire_monter_le_prix(bot)
     except Exception as exc:  # noqa: BLE001 — un handler ne tue jamais le bot
         logger.error("TTS viewer en erreur : {e!r}", e=exc)
         await _rendre(bot, acheteur, reward_id, redemption_id,

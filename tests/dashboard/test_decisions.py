@@ -92,7 +92,7 @@ async def test_une_tache_en_echec_ouvre_automatisations_deja_filtre():
     assert len(d["items"]) == 1
     item = d["items"][0]
     assert item["type"] == "echec"
-    assert item["cible"] == "#/live/automatisations?vue=echec"
+    assert item["cible"] == "#/cerveau/automatisations?vue=echec"
     assert "Row has no attribute" in item["detail"]
 
 

@@ -1,8 +1,7 @@
 # tests/test_recompense_tts_viewer.py
 """Le TTS des viewers : on paie, Wally lit le message à voix haute (2026-08-31).
 
-Cousine de « im out », à ceci près que le texte vient du viewer. Ce qui s'y
-joue en plus : le TON est choisi par le viewer (tag de tête, imposé à la
+Le texte vient du viewer. Ce qui s'y joue : le TON est choisi par le viewer (tag de tête, imposé à la
 synthèse), le message est plafonné, le pseudo est dit, et un message vidé par
 le nettoyage rend les points au lieu de partir mourir dans `_speak_locked`.
 
@@ -196,7 +195,7 @@ async def test_une_coupe_est_dite_dans_le_chat():
 @pytest.mark.asyncio
 async def test_elle_passe_malgre_le_mode_ecoute():
     """Pendant un live Wally est en écoute seule ; l'achat est une demande
-    explicite — même arbitrage que « im out »."""
+    explicite — même arbitrage que `say_in_voice`."""
     bot, service = _bot()
 
     await tts_viewer.lire_message(bot, acheteur="alice", saisie="hello",

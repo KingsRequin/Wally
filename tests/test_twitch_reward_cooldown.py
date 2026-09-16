@@ -129,11 +129,3 @@ async def test_assurer_recompense_transmet_la_recharge():
                              prompt=PROMPT, cooldown_s=RECHARGE)
 
     assert api.maj_recompense.call_args.kwargs["cooldown_s"] == RECHARGE
-
-
-@pytest.mark.asyncio
-async def test_l_attaque_de_meme_a_cinq_minutes_de_recharge():
-    """La valeur demandée par l'owner, lue là où elle est déclarée."""
-    from bot.twitch.events.virus_popups import RECHARGE_S
-
-    assert RECHARGE_S == 300

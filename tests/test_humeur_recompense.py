@@ -64,12 +64,18 @@ def test_toutes_les_emotions_du_moteur_ont_un_mot():
 
 def test_le_libelle_PROPOSE_les_emotions():
     """Le viewer doit savoir quoi écrire avant de dépenser 1 000 points."""
-    from bot.core.emotion import EMOTIONS
-    from bot.twitch.events.humeur import PROMPT
+    from pathlib import Path
 
-    assert len(PROMPT) <= 200          # borne de l'API Twitch
-    manquantes = [e for e in EMOTIONS if not _cite(PROMPT, e)]
-    assert not manquantes, f"émotions absentes du libellé : {manquantes}"
+    import yaml
+
+    from bot.core.emotion import EMOTIONS
+
+    conf = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+    for cle in ("humeur_50", "humeur_100"):
+        prompt = conf["twitch"]["recompenses"][cle]["prompt"]
+        assert len(prompt) <= 200          # borne de l'API Twitch
+        manquantes = [e for e in EMOTIONS if not _cite(prompt, e)]
+        assert not manquantes, f"émotions absentes du libellé {cle} : {manquantes}"
 
 
 def _cite(prompt: str, emotion: str) -> bool:
@@ -196,10 +202,10 @@ def test_les_deux_recompenses_ont_des_cles_DISTINCTES():
 
 def test_les_deux_recompenses_demandent_un_TEXTE():
     """Sans champ de texte, le viewer ne peut pas dire quelle émotion il veut."""
-    from bot.twitch.events.humeur import COUT_100, COUT_50
+    from bot.twitch.recompenses import DEFINITIONS
 
-    assert COUT_50 == 1000
-    assert COUT_100 == 2000
+    assert DEFINITIONS["humeur_50"].saisie_requise
+    assert DEFINITIONS["humeur_100"].saisie_requise
 
 
 # ── le routage des achats ───────────────────────────────────────────────────
@@ -286,6 +292,8 @@ def test_les_deux_recompenses_sont_ARMEES_au_demarrage():
     aucun achat n'arriverait jamais."""
     from pathlib import Path
 
+    from bot.twitch.recompenses import DEFINITIONS
+
     source = (Path(__file__).resolve().parents[1] / "bot" / "main.py").read_text(encoding="utf-8")
-    assert "bot.twitch.events.humeur import" in source
-    assert "assurer_recompense" in source
+    assert "armer_au_boot()" in source
+    assert {"humeur_50", "humeur_100"} <= set(DEFINITIONS)

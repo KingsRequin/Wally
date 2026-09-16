@@ -27,17 +27,9 @@ from bot.core.emotion import EMOTIONS
 CLE_50 = "humeur:reward_50_id"
 CLE_100 = "humeur:reward_100_id"
 
-COUT_50 = 1000
-COUT_100 = 2000
-
-TITRE_50 = "Forcer une humeur de wally a 50 %"
-TITRE_100 = "Forcer une humeur de wally a 100 %"
-
-# Le libellé DOIT proposer les mots : le viewer paie avant d'écrire, il ne peut
-# pas deviner ce qu'on accepte. Un test vérifie que les cinq émotions du moteur
-# y figurent — ajouter une émotion sans l'annoncer la rendrait indemandable.
-PROMPT = ("Écris l'humeur voulue : colère, joie, tristesse, curiosité ou "
-          "ennui. Un mot hors de cette liste et tes points te sont rendus")
+# Titres, prix et invite : `twitch.recompenses.humeur_50` / `humeur_100`.
+# L'invite DOIT proposer les mots — le viewer paie avant d'écrire. Un test
+# vérifie que les cinq émotions du moteur y figurent dans `config.yaml`.
 
 # Ce qu'on accepte pour chaque émotion. Les accents et la casse sont retirés
 # AVANT la comparaison (`_nu`), donc inutile de lister « colere » à côté de

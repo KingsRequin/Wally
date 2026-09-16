@@ -31,11 +31,10 @@ def _couleur_envoyee(bot) -> str:
     return bot.twitch_api.send_automatic.await_args.kwargs.get("color", "")
 
 
-# ── Les cinq remboursements ──────────────────────────────────────────────
+# ── Les quatre remboursements ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("module", [
     "bot.twitch.events.tts_viewer",
-    "bot.twitch.events.im_out",
     "bot.twitch.events.virus_popups",
     "bot.twitch.events.humeur",
 ])

@@ -1623,6 +1623,47 @@ class TwitchAPI:
             logger.error("Mise à jour de récompense en erreur : {e!r}", e=exc)
             return False
 
+    async def supprimer_recompense(self, reward_id: str) -> bool:
+        """Supprime NOTRE récompense de la chaîne (DELETE). `True` si elle n'y est plus.
+
+        Un 404 compte comme un succès : la récompense a déjà disparu (supprimée
+        à la main dans la console), et c'est l'état voulu. Seule une récompense
+        créée par notre application peut être supprimée ici (403 sinon).
+        Supprimer, et non désactiver : une récompense désactivée garde sa place
+        dans le plafond de 50 par chaîne.
+        """
+        if not reward_id:
+            return True
+        try:
+            async with httpx.AsyncClient() as client:
+                for attempt in range(2):
+                    resp = await client.delete(
+                        self.REWARDS_URL,
+                        params={"broadcaster_id": self._broadcaster_id,
+                                "id": reward_id},
+                        headers={"Authorization": f"Bearer {self._tm.streamer_token}",
+                                 "Client-Id": self._client_id},
+                        timeout=10,
+                    )
+                    if resp.status_code == 401 and attempt == 0:
+                        logger.warning("Suppression de récompense 401 — "
+                                       "renouvellement du token streamer")
+                        if not await self._tm.refresh("streamer"):
+                            logger.error("Renouvellement du token streamer échoué — "
+                                         "suppression de récompense abandonnée")
+                            return False
+                        continue
+                    if resp.status_code in (204, 404):
+                        logger.info("Récompense {i} supprimée de la chaîne", i=reward_id)
+                        return True
+                    logger.error("Suppression de récompense refusée HTTP {c} : {t}",
+                                 c=resp.status_code, t=resp.text[:200])
+                    return False
+                return False
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Suppression de récompense en erreur : {e!r}", e=exc)
+            return False
+
     async def get_stream(self) -> dict:
         """GET /helix/streams?user_id={self._broadcaster_id}.
 

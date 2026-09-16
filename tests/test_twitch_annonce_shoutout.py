@@ -294,7 +294,6 @@ def make_http_message_ok():
 _AUTOMATIQUES = [
     ("bot/twitch/duel_announce.py", "les étapes du duel Apex"),
     ("bot/twitch/jeu_announce.py", "les fins de sondage et de pendu"),
-    ("bot/twitch/events/im_out.py", "la récompense « I'm out »"),
     ("bot/twitch/events/redemptions.py", "les récompenses de points de chaîne"),
     ("bot/twitch/events/humeur.py", "l'humeur forcée et son remboursement"),
     ("bot/twitch/events/social.py", "follow, sub, bits, raid"),

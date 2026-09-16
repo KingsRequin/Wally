@@ -985,7 +985,7 @@ async def file_de_decisions(request: Request, max_items: int = 12) -> dict:
             "type": "echec",
             "titre": t.get("description") or f"tâche #{t.get('id')}",
             "detail": str(t["last_error"])[:160],
-            "cible": "#/live/automatisations?vue=echec",
+            "cible": "#/cerveau/automatisations?vue=echec",
         })
 
     for lien in await db.list_link_proposals(status="pending") or []:

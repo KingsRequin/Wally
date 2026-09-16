@@ -667,8 +667,8 @@ class VoiceService:
 
         `malgre_ecoute` outrepasse le mode écoute seule. Deux chemins s'en
         servent, et tous deux sur une demande EXPLICITE depuis le chat : un
-        modérateur qui fait parler Wally (`say_in_voice`), et la récompense
-        « im out » achetée aux points de chaîne. Le mode écoute existe pour
+        modérateur qui fait parler Wally (`say_in_voice`), et le TTS acheté aux
+        points de chaîne (`twitch/events/tts_viewer.py`). Le mode écoute existe pour
         qu'il ne prenne jamais la parole de lui-même pendant un live — pas pour
         qu'il refuse celle qu'on lui demande.
 

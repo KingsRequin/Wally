@@ -547,8 +547,10 @@ async def main() -> None:
         # `available` et pas seulement « le service existe » : sans clé Apex,
         # chaque relevé échoue et le duel n'est jamais mesurable — mais la
         # récompense, elle, serait bel et bien créée sur la chaîne.
+        _duel_vente = config.twitch.recompenses.get("duel_apex")
         if (apex_api is not None and apex_api.available and _apex_conf is not None
-                and _duel_conf is not None and _duel_conf.active):
+                and _duel_conf is not None and _duel_conf.active
+                and _duel_vente is not None and _duel_vente.active):
             from bot.core.apex.duel_runner import DuelRunner, armer_le_duel
             from bot.core.apex.seed import uid_declare
             from bot.twitch.duel_announce import DuelAnnonceur
@@ -613,8 +615,9 @@ async def main() -> None:
                     # Reprise de l'état, récompense, source globale : l'ordre
                     # des trois est dans `armer_le_duel`, où il se teste.
                     _reward_id = await armer_le_duel(
-                        _duel_runner, titre=_duel_conf.titre,
-                        cout=int(_duel_conf.cout), prompt=_duel_conf.prompt,
+                        _duel_runner, titre=_duel_vente.titre,
+                        cout=int(_duel_vente.cout), prompt=_duel_vente.prompt,
+                        cooldown_s=int(_duel_vente.recharge_s),
                     )
                     # En DERNIER : tant que le runner n'est pas attaché, un achat
                     # de récompense est remboursé par `events/redemptions.py` au
@@ -637,35 +640,34 @@ async def main() -> None:
                 _raison = "aucune section apex.duel dans config.yaml"
             elif not _duel_conf.active:
                 _raison = "coupé en configuration (apex.duel.active: false)"
+            elif _duel_vente is None:
+                _raison = "aucune entrée twitch.recompenses.duel_apex dans config.yaml"
+            elif not _duel_vente.active:
+                _raison = "récompense supprimée depuis le panneau"
             elif apex_api is None or not apex_api.available:
                 _raison = "APEX_API_KEY absente, aucun relevé ne serait mesurable"
             else:
                 _raison = "aucune section apex dans config.yaml"
             logger.info("Duel Apex non armé : {r}", r=_raison)
 
-        # Attaque de virus : une seconde récompense de points de chaîne, sans
-        # rapport avec Apex — elle ne dépend que de l'overlay et du dossier de
-        # memes, donc elle vit HORS du bloc ci-dessus (qui est conditionné à
-        # l'API Apex). Armée ici pour la même raison que le duel : Twitch ne
+        # Les autres récompenses de points de chaîne (TTS, humeurs, attaque de
+        # meme). Titre, prix, invite et recharge vivent dans
+        # `twitch.recompenses` ; le panneau admin les modifie à chaud par le
+        # même objet. Armées ici pour la même raison que le duel : Twitch ne
         # laisse rembourser qu'à l'application qui a CRÉÉ la récompense.
         try:
-            from bot.twitch.events.virus_popups import (
-                CLE_RECOMPENSE as _CLE_VIRUS, COUT as _COUT_VIRUS,
-                PROMPT as _PROMPT_VIRUS, RECHARGE_S as _RECHARGE_VIRUS,
-                SAISIE_REQUISE as _SAISIE_VIRUS, TITRE as _TITRE_VIRUS,
-            )
-            from bot.twitch.recompenses import assurer_recompense
+            from bot.twitch.recompenses import GestionRecompenses
 
-            _virus_id = await assurer_recompense(
-                twitch_api, db, cle_etat=_CLE_VIRUS,
-                titre=_TITRE_VIRUS, cout=_COUT_VIRUS,
-                prompt=_PROMPT_VIRUS, libelle="attaque de meme",
-                saisie_requise=_SAISIE_VIRUS, cooldown_s=_RECHARGE_VIRUS,
-            )
-            logger.info("Attaque de meme armée (récompense {r})",
-                        r=_virus_id or "INDISPONIBLE")
+            _recompenses = GestionRecompenses(
+                twitch_api, db, config,
+                duel_runner=lambda: getattr(twitch_bot, "duel_runner", None))
+            await _recompenses.armer_au_boot()
+            twitch_bot.recompenses = _recompenses
+            _prix_task = asyncio.create_task(_recompenses.boucle_prix())
+            _stream_voice_tasks.add(_prix_task)
+            _prix_task.add_done_callback(_stream_voice_tasks.discard)
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Attaque de meme non armée : {e!r}", e=exc)
+            logger.error("Récompenses de points de chaîne non armées : {e!r}", e=exc)
 
         # Le pari sur les kills, repris s'il en restait un ouvert. Créé ICI et
         # non à la demande : l'objet naissait dans `run_prediction_tool`, donc
@@ -681,82 +683,6 @@ async def main() -> None:
             twitch_bot.prediction_kills = _paris
         except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
             logger.error("Pari sur les kills non repris : {e!r}", e=exc)
-
-        # « im out » : la voix de Wally aux points de chaîne. Comme l'attaque de
-        # meme, elle ne dépend ni d'Apex ni de l'overlay — seulement du vocal —,
-        # donc elle vit hors des blocs conditionnés plus haut. Armée ici pour la
-        # même raison que ses voisines : Twitch ne laisse rembourser qu'à
-        # l'application qui a CRÉÉ la récompense.
-        try:
-            from bot.twitch.events.im_out import (
-                CLE_RECOMPENSE as _CLE_IMOUT, COUT as _COUT_IMOUT,
-                PROMPT as _PROMPT_IMOUT, SAISIE_REQUISE as _SAISIE_IMOUT,
-                TITRE as _TITRE_IMOUT,
-            )
-            from bot.twitch.recompenses import assurer_recompense
-
-            _imout_id = await assurer_recompense(
-                twitch_api, db, cle_etat=_CLE_IMOUT,
-                titre=_TITRE_IMOUT, cout=_COUT_IMOUT,
-                prompt=_PROMPT_IMOUT, libelle="im out",
-                saisie_requise=_SAISIE_IMOUT,
-            )
-            logger.info("Récompense « im out » armée ({r})",
-                        r=_imout_id or "INDISPONIBLE")
-        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Récompense « im out » non armée : {e!r}", e=exc)
-
-        # Le TTS des viewers : même famille que « im out », mais le texte est
-        # écrit par l'acheteur. Armée ici pour la même raison que ses voisines :
-        # Twitch ne laisse rembourser qu'à l'application qui a CRÉÉ la
-        # récompense, et chaque chemin muet rembourse.
-        try:
-            from bot.twitch.events.tts_viewer import (
-                CLE_RECOMPENSE as _CLE_TTS, COUT as _COUT_TTS,
-                PROMPT as _PROMPT_TTS,
-                SAISIE_REQUISE as _SAISIE_TTS, TITRE as _TITRE_TTS,
-            )
-            from bot.twitch.recompenses import assurer_recompense
-
-            # Aucune recharge GLOBALE ici, contrairement à ses voisines : celle
-            # de Twitch bloque TOUT le chat dès qu'une seule personne achète.
-            # La garde est par PERSONNE, dans `tts_viewer.RECHARGE_PERSONNE_S`.
-            # Le `cooldown_s` par défaut vaut 0, ce qui DÉSACTIVE au prochain
-            # boot celle déjà posée sur la récompense en service.
-            _tts_id = await assurer_recompense(
-                twitch_api, db, cle_etat=_CLE_TTS,
-                titre=_TITRE_TTS, cout=_COUT_TTS,
-                prompt=_PROMPT_TTS, libelle="TTS viewer",
-                saisie_requise=_SAISIE_TTS,
-            )
-            logger.info("Récompense TTS viewer armée ({r})",
-                        r=_tts_id or "INDISPONIBLE")
-        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Récompense TTS viewer non armée : {e!r}", e=exc)
-
-        # Forcer une humeur (§14) : DEUX récompenses, une par intensité — le
-        # coût est fixe par récompense côté Twitch, il en faut donc une pour
-        # 50 % et une pour 100 %. Chacune avec sa clé : partagées, l'une
-        # deviendrait irremboursable et l'autre appliquerait la mauvaise valeur.
-        try:
-            from bot.twitch.events.humeur import (
-                CLE_50 as _CLE_H50, CLE_100 as _CLE_H100,
-                COUT_50 as _COUT_H50, COUT_100 as _COUT_H100,
-                PROMPT as _PROMPT_H,
-                TITRE_50 as _TITRE_H50, TITRE_100 as _TITRE_H100,
-            )
-            from bot.twitch.recompenses import assurer_recompense
-
-            for _cle, _titre, _cout in ((_CLE_H50, _TITRE_H50, _COUT_H50),
-                                        (_CLE_H100, _TITRE_H100, _COUT_H100)):
-                _id = await assurer_recompense(
-                    twitch_api, db, cle_etat=_cle, titre=_titre, cout=_cout,
-                    prompt=_PROMPT_H, libelle=f"humeur {_cout} pts",
-                )
-                logger.info("Humeur {c} pts armée (récompense {r})",
-                            c=_cout, r=_id or "INDISPONIBLE")
-        except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot
-            logger.error("Récompenses d'humeur non armées : {e!r}", e=exc)
 
         # Rattrapage permanent : redémarrage en plein live, crash, kick.
         _watch_task = asyncio.create_task(presence_stream.veiller())

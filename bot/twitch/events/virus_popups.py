@@ -28,24 +28,10 @@ if TYPE_CHECKING:
 # mauvais effet.
 CLE_RECOMPENSE = "overlay:virus_popup_reward_id"
 
-TITRE = "Attaque de meme"
-COUT = 30000
-PROMPT = ("L'écran se fait submerger de fausses fenêtres de virus et de memes, "
-          "de plus en plus vite, jusqu'à un blue screen.")
-
-# Aucun champ de saisie : il n'y a rien à écrire, et `is_user_input_required`
-# est optionnel côté Twitch — il était posé à `True` en dur pour tout le monde,
-# héritage du duel qui attend un uid.
-SAISIE_REQUISE = False
-
-# Cinq minutes de recharge entre deux achats (owner, 2026-08-20). Le spectacle
-# dure et couvre TOUT l'écran : deux achats coup sur coup enchaînaient deux fois
-# la même chose, et le second passait pour un bug d'affichage.
-#
-# Tenu par TWITCH et non par nous : c'est lui qui refuse l'achat pendant le
-# délai, donc il n'y a rien à faire payer puis à rembourser, et le bouton porte
-# son compte à rebours sous les yeux du chat.
-RECHARGE_S = 300
+# Titre, prix, invite et recharge : `twitch.recompenses.attaque_meme`. La
+# recharge de 5 min (owner, 2026-08-20) est tenue par TWITCH : le spectacle
+# couvre tout l'écran, et Twitch refuse lui-même l'achat pendant le délai — rien
+# à faire payer puis rembourser. Aucune saisie : `recompenses.DEFINITIONS`.
 
 
 def _narrateur(bot):

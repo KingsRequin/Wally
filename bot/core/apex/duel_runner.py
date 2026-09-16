@@ -444,7 +444,8 @@ class DuelRunner:
             logger.warning("Annonce de duel en erreur ({t}) : {e!r}", t=evt.type, e=exc)
 
     # -- Récompense -----------------------------------------------------------
-    async def assurer_recompense(self, titre: str, cout: int, prompt: str) -> str:
+    async def assurer_recompense(self, titre: str, cout: int, prompt: str, *,
+                                 cooldown_s: int = 0) -> str:
         """L'ID de notre récompense, créée si besoin. `""` si impossible.
 
         Appelée au boot. Si un ID est déjà connu, on vérifie qu'il figure
@@ -474,6 +475,7 @@ class DuelRunner:
         reward_id = await _assurer(
             self._api, self._db, cle_etat=CLE_RECOMPENSE,
             titre=titre, cout=cout, prompt=prompt, libelle="de duel Apex",
+            cooldown_s=cooldown_s,
         )
         # `_reward_id` est posé DANS TOUS LES CAS où l'on a un identifiant, y
         # compris celui qu'on a gardé faute de pouvoir vérifier : c'est lui que
@@ -1369,7 +1371,7 @@ class DuelRunner:
 
 
 async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
-                        prompt: str) -> str:
+                        prompt: str, cooldown_s: int = 0) -> str:
     """Le démarrage du duel, dans l'ORDRE — rend l'ID de la récompense.
 
     Cet ordre n'est pas un détail de style :
@@ -1393,7 +1395,8 @@ async def armer_le_duel(runner: DuelRunner, *, titre: str, cout: int,
     JOUABLE en test — c'est le seul endroit où il se vérifie.
     """
     await runner.charger()
-    reward_id = await runner.assurer_recompense(titre, cout, prompt)
+    reward_id = await runner.assurer_recompense(titre, cout, prompt,
+                                                cooldown_s=cooldown_s)
     try:
         await runner.rattraper_les_achats_manques()
     except Exception as exc:  # noqa: BLE001 — jamais bloquant pour le boot

@@ -299,6 +299,42 @@ class AnnoncesAutoConfig:
 
 
 @dataclass
+class RecompenseConfig:
+    """Une récompense de points de chaîne que Wally crée et tient à jour.
+
+    Ce qui se vend (titre, prix, invite, recharge) vit ici, modifiable depuis
+    le panneau admin et poussé à Twitch sur-le-champ. Ce que la récompense FAIT
+    (saisie requise, clé d'état, gestionnaire) reste dans le code :
+    `bot/twitch/recompenses.py::DEFINITIONS`.
+
+    `active: false` = supprimée côté Twitch ET jamais recréée au boot. Une
+    récompense recréée en silence au redémarrage suivant annulerait la
+    suppression demandée depuis le panneau.
+    """
+
+    active: bool = True
+    titre: str = ""
+    cout: int = 1
+    prompt: str = ""
+    # Recharge GLOBALE tenue par Twitch (0 = aucune). Le TTS n'en veut pas :
+    # sa garde est par personne, dans `tts_viewer.RECHARGE_PERSONNE_S`.
+    recharge_s: int = 0
+
+
+@dataclass
+class PrixDynamiqueConfig:
+    """Le prix du TTS qui monte à chaque achat et redescend avec le temps.
+
+    Chaque achat ajoute une unité de « chauffe » ; la chauffe fond de moitié
+    toutes les `demi_vie_minutes`. Prix = base × (1 + hausse_pct/100 × chauffe).
+    `hausse_pct: 0` rend le prix fixe. Lu par `recompenses.PrixDynamique`.
+    """
+
+    hausse_pct: float = 20.0
+    demi_vie_minutes: float = 10.0
+
+
+@dataclass
 class TwitchConfig:
     guest_channels: list[str]
     cooldown_seconds: int
@@ -329,6 +365,10 @@ class TwitchConfig:
     # `discord.spam_detection` : `TwitchConfig(**twitch_raw)` recevrait sinon un
     # dict brut là où le reste du code attend un objet.
     annonces_auto: AnnoncesAutoConfig = field(default_factory=AnnoncesAutoConfig)
+    # Clés = `recompenses.DEFINITIONS`. Une clé absente = récompense non armée,
+    # et le boot le dit.
+    recompenses: dict[str, RecompenseConfig] = field(default_factory=dict)
+    prix_dynamique_tts: PrixDynamiqueConfig = field(default_factory=PrixDynamiqueConfig)
 
 
 @dataclass
@@ -470,10 +510,8 @@ class DuelConfig:
     démarrage. Son ID est découvert à l'exécution et vit dans `bot_state`
     (clé `apex:duel_reward_id`), jamais en configuration.
     """
+    # Titre, prix et invite de sa récompense : `twitch.recompenses.duel_apex`.
     active: bool = False
-    titre: str = ""
-    cout: int = 5000
-    prompt: str = ""
     manches: int = 3
     cadence_s: float = 2.0
     attente_squad_min: float = 15.0
@@ -756,13 +794,21 @@ class Config:
                 twitch_raw.setdefault("guest_channels", [])
                 twitch_raw.pop("channels", None)
             annonces_raw = twitch_raw.pop("annonces_auto", None) or {}
+            recompenses_raw = dict(twitch_raw.pop("recompenses", None) or {})
+            prix_dyn_raw = twitch_raw.pop("prix_dynamique_tts", None) or {}
             tavily_raw = raw.get("tavily", {})
             apex_raw = dict(raw.get("apex", {}))
             # `or {}` : un `duel:` présent mais toutes ses clés commentées rend
             # `None`, pas `{}` — sans le repli, `DuelConfig(**None)` lève un
             # TypeError qui remonte en « section manquante », trompeur, et
             # refuse le boot pour un YAML pourtant valide.
-            duel_raw = apex_raw.pop("duel", {}) or {}
+            duel_raw = dict(apex_raw.pop("duel", {}) or {})
+            # Migration : le libellé du duel vivait sous `apex.duel`. Il rejoint
+            # les autres récompenses, là où le panneau les édite toutes.
+            _duel_vente = {k: duel_raw.pop(k) for k in ("titre", "cout", "prompt")
+                           if k in duel_raw}
+            if _duel_vente and "duel_apex" not in recompenses_raw:
+                recompenses_raw["duel_apex"] = _duel_vente
             firecrawl_raw = raw.get("firecrawl", {})
             # RSS : liste imbriquée de flux (comme circadian/spontaneous).
             rss_raw = dict(raw.get("rss", {}))
@@ -879,6 +925,9 @@ class Config:
                 twitch=TwitchConfig(
                     **twitch_raw,
                     annonces_auto=AnnoncesAutoConfig(**annonces_raw),
+                    recompenses={k: RecompenseConfig(**(v or {}))
+                                 for k, v in recompenses_raw.items()},
+                    prix_dynamique_tts=PrixDynamiqueConfig(**prix_dyn_raw),
                 ),
                 emotions=emotions,
                 twitch_events=twitch_events,
