@@ -774,11 +774,12 @@ exécute ce que Wally vient de déclarer raté).
 - `data/hf-cache` est monté : sans lui, chaque rebuild rejette les 145 Mo du modèle STT.
 - Un rebuild coupe le site ~15 s ; l'edge Cloudflare garde un 403 quelques secondes de plus.
 - Dashboard : FastAPI + SPA vanilla JS. Auth : Bearer token (admin), JWT Discord OAuth2 (chat web).
-- Sidebar admin — **11 pages en 4 thèmes** (`ROUTES` d'`app.js`, `index.html`) :
-  **Cockpit** · **Cerveau** (Personnes · Mémoire commune · Personnalité · Modèles & coûts) ·
-  **Live** (Scène & overlays · Voix · Médias & sons · Automatisations) ·
-  **Système** (Journal · Connexions). Route = `#/theme/page` ; les anciens hash
-  (`#admin-memoire`, `admin-overlay`…) redirigent par `ROUTES_LEGACY`.
+- Sidebar admin — **14 pages : le Cockpit + 4 thèmes** (`ROUTES` d'`app.js`, `index.html`) :
+  **Cockpit** · **Cerveau** (Personnes · Mémoire commune · Personnalité · Modèles & coûts ·
+  Automatisations) · **Discord** (Salons · Voix) · **Twitch** (Scène & overlays · Médias & sons ·
+  Memes · Récompenses) · **Système** (Journal · Connexions). Route = `#/theme/page` ; les anciens hash
+  (`#admin-memoire`, `admin-overlay`…) et les routes de l'ex-thème « Live » (`live/scene`,
+  `live/voix`…) redirigent par `ROUTES_LEGACY`, requête comprise, toujours vers la route FINALE.
   (L'onglet Coûts a été retiré : remplacé par Langfuse puis abandonné ; `log_cost()` écrit
   toujours en base, sans UI.)
 - Une nouvelle page se câble à **4 endroits** — chercher les quatre avant de conclure.

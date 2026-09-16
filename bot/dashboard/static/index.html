@@ -52,27 +52,30 @@
       <a class="sidebar-item" data-route="cerveau/modeles" href="#/cerveau/modeles">
         <span>Modèles &amp; coûts</span>
       </a>
+      <a class="sidebar-item" data-route="cerveau/automatisations" href="#/cerveau/automatisations">
+        <span>Automatisations</span>
+      </a>
 
       <div class="sidebar-group">Discord</div>
       <a class="sidebar-item" data-route="discord/salons" href="#/discord/salons">
         <span>Salons</span>
       </a>
-
-      <div class="sidebar-group">Live</div>
-      <a class="sidebar-item" data-route="live/scene" href="#/live/scene">
-        <span>Scène &amp; overlays</span>
-      </a>
-      <a class="sidebar-item" data-route="live/voix" href="#/live/voix">
+      <a class="sidebar-item" data-route="discord/voix" href="#/discord/voix">
         <span>Voix</span>
       </a>
-      <a class="sidebar-item" data-route="live/medias" href="#/live/medias">
+
+      <div class="sidebar-group">Twitch</div>
+      <a class="sidebar-item" data-route="twitch/scene" href="#/twitch/scene">
+        <span>Scène &amp; overlays</span>
+      </a>
+      <a class="sidebar-item" data-route="twitch/medias" href="#/twitch/medias">
         <span>Médias &amp; sons</span>
       </a>
-      <a class="sidebar-item" data-route="live/memes" href="#/live/memes">
+      <a class="sidebar-item" data-route="twitch/memes" href="#/twitch/memes">
         <span>Memes</span>
       </a>
-      <a class="sidebar-item" data-route="live/automatisations" href="#/live/automatisations">
-        <span>Automatisations</span>
+      <a class="sidebar-item" data-route="twitch/recompenses" href="#/twitch/recompenses">
+        <span>Récompenses</span>
       </a>
 
       <div class="sidebar-group">Système</div>
@@ -151,7 +154,7 @@
         <!-- ADMIN MEMOIRE TAB -->
         <div class="tab-content" id="tab-admin-memoire"></div>
 
-        <!-- ADMIN ACTIONS TAB -->
+        <!-- CERVEAU › AUTOMATISATIONS -->
         <div class="tab-content" id="tab-admin-actions"></div>
 
         <!-- CERVEAU › PERSONNALITÉ et MODÈLES & COÛTS -->
@@ -161,12 +164,15 @@
         <!-- DISCORD › SALONS — les salons que Wally ignore complètement. -->
         <div class="tab-content" id="tab-admin-salons"></div>
 
-        <!-- LIVE › MÉDIAS & SONS, MEMES, VOIX -->
-        <div class="tab-content" id="tab-admin-medias"></div>
-        <div class="tab-content" id="tab-admin-memes"></div>
+        <!-- DISCORD › VOIX — le vocal est un vocal Discord. -->
         <div class="tab-content" id="tab-admin-voix"></div>
 
-        <!-- ADMIN MISE EN SCENE TAB (overlay_admin.js le remplit entièrement) -->
+        <!-- TWITCH › MÉDIAS & SONS, MEMES -->
+        <div class="tab-content" id="tab-admin-medias"></div>
+        <div class="tab-content" id="tab-admin-memes"></div>
+        <div class="tab-content" id="tab-admin-recompenses"></div>
+
+        <!-- TWITCH › SCÈNE & OVERLAYS (overlay_admin.js le remplit entièrement) -->
         <div class="tab-content" id="tab-admin-scene"></div>
 
         <!-- SYSTÈME › JOURNAL — page à part entière depuis la refonte : les
@@ -207,9 +213,9 @@
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h8M8 16h5M7 20l-3 2V6a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H7z"/></svg>
       <span>Discord</span>
     </a>
-    <a class="barre-bas-item" data-theme="live" href="#/live/scene">
+    <a class="barre-bas-item" data-theme="twitch" href="#/twitch/scene">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8M12 17v4"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h4v5h-4z"/></svg>
-      <span>Live</span>
+      <span>Twitch</span>
     </a>
     <a class="barre-bas-item" data-theme="systeme" href="#/systeme/journal">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>

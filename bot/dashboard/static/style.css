@@ -4164,8 +4164,8 @@ button:focus-visible {
   background: var(--danger);
 }
 
-/* Les pages du thème courant. Scrollable, parce que « Live » en compte quatre
- * et que quatre libellés ne tiennent pas sur 390 px. */
+/* Les pages du thème courant. Scrollable, parce que « Cerveau » en compte cinq
+ * et que cinq libellés ne tiennent pas sur 390 px. */
 .theme-puces {
   display: none;
   gap: 6px;
@@ -6411,7 +6411,7 @@ body.is-mobile .mobile-back-btn {
 .ovl-insp-volet .ovl-insp-champ { justify-content: space-between; }
 
 
-/* ── Live › Memes ────────────────────────────────────────────────────────── */
+/* ── Twitch › Memes ──────────────────────────────────────────────────────── */
 
 /* La grille est déclarée en CLASSE et non en style EN LIGNE : un
  * `grid-template-columns` posé sur l'attribut bat la media query, et la
@@ -6934,3 +6934,24 @@ body.is-mobile .mobile-back-btn {
 #mc-tete pre {
   overflow-wrap: anywhere;
 }
+
+/* ── Twitch › Récompenses ─────────────────────────────────────────────── */
+.recomp-carte {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.recomp-tete { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recomp-statut { font-size: 0.75rem; color: var(--text-secondary); }
+.recomp-statut[data-etat="ok"] { color: var(--success); }
+.recomp-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.recomp-actions { display: flex; gap: 8px; flex-wrap: wrap; }

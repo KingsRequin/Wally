@@ -277,7 +277,8 @@ async function restartTwitchContainer() {
 //
 // Refonte du 2026-08-28 — cf. docs/plans/2026-08-28-refonte-panel-admin-plan.md
 // et design_handoff_panel_admin/. Le panel passe de 7 onglets × jusqu'à 7
-// sous-onglets à 11 pages plates groupées en 3 thèmes.
+// sous-onglets à 11 pages plates groupées en thèmes (aujourd'hui : Cerveau,
+// Discord, Twitch, Système, plus le Cockpit seul).
 //
 // L'URL porte la page, et plus tard ses filtres (`#/systeme/journal?niveau=error`).
 // Sans elle, un item du cockpit ne peut pas ouvrir Automatisations DÉJÀ filtré
@@ -325,35 +326,44 @@ const ROUTES = {
     sous: 'Quel modèle sert à quoi, et ce que ça coûte.',
     pane: 'admin-modeles',
   },
+  // Les tâches naissent d'une demande faite à Wally, sur Discord comme sur
+  // Twitch : rien à voir avec le live, d'où leur place dans Cerveau.
+  'cerveau/automatisations': {
+    titre: 'Automatisations',
+    sous: 'Les tâches programmées qu\'on a confiées à Wally, et qu\'il exécute à l\'heure dite.',
+    pane: 'admin-actions',
+  },
   'discord/salons': {
     titre: 'Salons',
     sous: 'Les salons Discord que Wally ignore complètement.',
     pane: 'admin-salons',
   },
-  'live/scene': {
-    titre: 'Scène & overlays',
-    sous: 'Le placement de ce que les viewers voient.',
-    pane: 'admin-scene',
-  },
-  'live/voix': {
+  // Le vocal est un vocal DISCORD (un salon vocal, STT + TTS), même quand ce
+  // salon est diffusé sur le live.
+  'discord/voix': {
     titre: 'Voix',
     sous: 'Ce que Wally entend, et ce qu\'il répond à l\'oral.',
     pane: 'admin-voix',
   },
-  'live/medias': {
+  'twitch/scene': {
+    titre: 'Scène & overlays',
+    sous: 'Le placement de ce que les viewers voient.',
+    pane: 'admin-scene',
+  },
+  'twitch/medias': {
     titre: 'Médias & sons',
-    sous: 'Ce que Wally montre et ce qu\'il fait entendre.',
+    sous: 'Les overlays à brancher dans OBS, les sons du chat, la génération d\'images et sa galerie.',
     pane: 'admin-medias',
   },
-  'live/memes': {
+  'twitch/memes': {
     titre: 'Memes',
     sous: 'La banque d\'images que Wally sort sur le live.',
     pane: 'admin-memes',
   },
-  'live/automatisations': {
-    titre: 'Automatisations',
-    sous: 'Les tâches que Wally exécute tout seul.',
-    pane: 'admin-actions',
+  'twitch/recompenses': {
+    titre: 'Récompenses',
+    sous: 'Les récompenses de points de chaîne : prix, textes, suppression.',
+    pane: 'admin-recompenses',
   },
   'systeme/journal': {
     titre: 'Journal',
@@ -362,7 +372,7 @@ const ROUTES = {
   },
   'systeme/connexions': {
     titre: 'Connexions',
-    sous: 'Discord, Twitch, et l\'état des jetons.',
+    sous: 'Discord, Twitch, l\'état des jetons, et les réglages généraux du bot.',
     pane: 'admin-connexions',
   },
 };
@@ -376,22 +386,30 @@ const ROUTES_PARAM = [
 
 const ROUTE_DEFAUT = 'cockpit';
 
-// Les anciens hash — `#admin-memoire`, et les quatre noms d'onglets déjà
-// redirigés avant la refonte. Un signet posé il y a six mois doit continuer de
-// tomber sur la bonne page, pas sur la page d'accueil.
+// Les anciens hash — `#admin-memoire`, les quatre noms d'onglets déjà
+// redirigés avant la refonte, et les routes du thème « Live » (2026-09-16 :
+// Live devient Twitch, Voix passe dans Discord, Automatisations dans Cerveau).
+// Un signet posé il y a six mois doit continuer de tomber sur la bonne page,
+// pas sur la page d'accueil. Chaque entrée vise la route FINALE : une
+// redirection vers une autre redirection ne mènerait nulle part.
 const ROUTES_LEGACY = {
   'admin-parametres':  'cerveau/personnalite',
   'admin-config':      'cerveau/personnalite',
   'admin-memoire':     'cerveau/personnes',
   'admin-memory-dash': 'cerveau/memoire',
-  'admin-actions':     'live/automatisations',
+  'admin-actions':     'cerveau/automatisations',
   'admin-prompts':     'cerveau/personnalite',
-  'admin-scene':       'live/scene',
+  'admin-scene':       'twitch/scene',
   'admin-systeme':     'systeme/journal',
   'admin-logs':        'systeme/journal',
   'admin-twitch':      'systeme/connexions',
-  'admin-overlay':     'live/medias',
-  'admin-voice':       'live/voix',
+  'admin-overlay':     'twitch/medias',
+  'admin-voice':       'discord/voix',
+  'live/scene':        'twitch/scene',
+  'live/voix':         'discord/voix',
+  'live/medias':       'twitch/medias',
+  'live/memes':        'twitch/memes',
+  'live/automatisations': 'cerveau/automatisations',
 };
 
 // La route affichée. `null` tant que rien n'est monté, pour que le premier
@@ -436,8 +454,11 @@ function _analyserHash() {
       };
     }
   }
+  // La requête SURVIT à la redirection : le cockpit sert encore des liens
+  // `#/live/automatisations?vue=echec`, et perdre `?vue=echec` ouvrirait la
+  // page sur le mauvais filtre.
   if (ROUTES_LEGACY[chemin]) {
-    return { route: ROUTES_LEGACY[chemin], param: '', requete: '', canonique: false };
+    return { route: ROUTES_LEGACY[chemin], param: '', requete: requete, canonique: false };
   }
   return { route: ROUTE_DEFAUT, param: '', requete: '', canonique: false };
 }
@@ -489,6 +510,7 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-medias') renderMedias();
   else if (def.pane === 'admin-connexions') renderConnexions();
   else if (def.pane === 'admin-salons') renderSalons();
+  else if (def.pane === 'admin-recompenses') renderRecompenses();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
   else if (def.pane === 'admin-memoire') renderMemoireCommune();
@@ -519,7 +541,7 @@ function routerVersHash() {
   // Réécrit l'URL seulement quand on a dû deviner. Poser le hash relance
   // `hashchange`, mais la route est alors déjà courante : la garde ci-dessus
   // arrête la boucle au deuxième tour.
-  if (!vu.canonique) location.hash = '#/' + vu.route;
+  if (!vu.canonique) location.hash = '#/' + vu.route + vu.requete;
 }
 
 window.addEventListener('hashchange', routerVersHash);
@@ -2505,7 +2527,7 @@ function _rendreQuestions(boite, liste) {
   }
 }
 
-// ── Live › Médias & sons ────────────────────────────────────────────────────
+// ── Twitch › Médias & sons ──────────────────────────────────────────────────
 //
 // Ce que Wally MONTRE et ce qu'il FAIT ENTENDRE, au même endroit : les deux
 // overlays et leurs URL OBS, la génération d'images, la galerie, et les sons
@@ -2532,7 +2554,7 @@ function renderMedias() {
 
   _renderPanelOnce(document.getElementById('medias-overlays'), _renderSystemeOverlay);
   _renderPanelOnce(document.getElementById('medias-images-corps'), _renderParametresImages);
-  poserSommaire('live/medias', _MEDIAS_SECTIONS, '');
+  poserSommaire('twitch/medias', _MEDIAS_SECTIONS, '');
   chargerGalerie();
 }
 
@@ -2570,7 +2592,7 @@ async function chargerGalerie() {
       : '');
 }
 
-// ── Live › Voix ─────────────────────────────────────────────────────────────
+// ── Discord › Voix ──────────────────────────────────────────────────────────
 //
 // Les deux « Vocal » fusionnés : les réglages vivaient dans Paramètres, le
 // suivi en direct dans un onglet à part. On réglait donc la voix sans voir ce
@@ -2599,7 +2621,7 @@ function renderVoix() {
 
   _renderPanelOnce(document.getElementById('voix-reglages-corps'), _renderParametresVoice);
   renderVoiceTab(document.getElementById('voix-suivi-corps'));
-  poserSommaire('live/voix', _VOIX_SECTIONS, '');
+  poserSommaire('discord/voix', _VOIX_SECTIONS, '');
 }
 
 // ── Système › Connexions ────────────────────────────────────────────────────
@@ -2611,7 +2633,7 @@ function renderVoix() {
 const _CNX_SECTIONS = [
   ['cnx-adaptateurs', 'Adaptateurs'],
   ['cnx-twitch', 'Comptes et chaînes Twitch'],
-  ['cnx-discord', 'Réglages Discord'],
+  ['cnx-discord', 'Réglages généraux'],
 ];
 
 function renderConnexions() {
@@ -2624,7 +2646,7 @@ function renderConnexions() {
       + '<div class="page-section-titre">Comptes et chaînes Twitch</div>'
       + '<div id="cnx-twitch-corps"></div></div>'
       + '<div class="page-section" id="cnx-discord">'
-      + '<div class="page-section-titre">Réglages Discord</div>'
+      + '<div class="page-section-titre">Réglages généraux</div>'
       + '<div id="cnx-discord-corps"></div></div>';
   }
 
@@ -2877,6 +2899,257 @@ async function retirerSalonIgnore(salonId) {
     .map(function (s) { return String(s.id); })
     .filter(function (v) { return v !== cible; });
   await _ecrireSalonsIgnores(restants, 'Wally lit de nouveau ce salon');
+}
+
+// ── Twitch › Récompenses ────────────────────────────────────────────────────
+//
+// Les récompenses de points de chaîne que Wally a créées lui-même. Il n'y a
+// que celles-là : Twitch réserve la modification et le remboursement à
+// l'application qui a CRÉÉ la récompense. Chaque enregistrement part chez
+// Twitch dans la seconde (`/api/admin/recompenses`), sans redémarrage.
+//
+// Supprimer retire la récompense de la chaîne ET empêche le boot suivant de la
+// recréer ; « Remettre en ligne » la recrée.
+
+const _RECOMPENSES_SECTIONS = [
+  ['recomp-prix-dyn', 'Prix dynamique du TTS'],
+  ['recomp-liste-section', 'Récompenses'],
+];
+
+// Bornes servies par le GET, jamais recopiées ici.
+let _recompLimites = { titre_max: 45, prompt_max: 200, recharge_max_s: 604800 };
+
+function renderRecompenses() {
+  const el = document.getElementById('tab-admin-recompenses');
+  if (!el) return;
+
+  if (!document.getElementById('recomp-liste-section')) {
+    el.innerHTML = '<div class="page-section" id="recomp-prix-dyn">'
+      + '<div class="page-section-titre">Prix dynamique du TTS</div>'
+      + '<div class="page-section-sous">Chaque TTS réellement lu fait monter le '
+      + 'prix du suivant, et Wally l\'annonce dans le chat. Le prix redescend '
+      + 'tout seul vers la base avec le temps. Une hausse à 0 % rend le prix fixe.'
+      + '</div><div id="recomp-prix-dyn-form"></div></div>'
+      + '<div class="page-section" id="recomp-liste-section">'
+      + '<div class="page-section-titre">Récompenses</div>'
+      + '<div class="page-section-sous">Titre, prix, invite et recharge partent '
+      + 'chez Twitch à l\'enregistrement. Seules les récompenses créées par Wally '
+      + 'sont ici : celles posées à la main dans la console Twitch ne sont pas '
+      + 'pilotables par l\'API.</div><div id="recomp-liste"></div></div>';
+  }
+
+  chargerRecompenses();
+  poserSommaire('twitch/recompenses', _RECOMPENSES_SECTIONS, '');
+}
+
+async function chargerRecompenses() {
+  const liste = document.getElementById('recomp-liste');
+  const dyn = document.getElementById('recomp-prix-dyn-form');
+  if (!liste || !dyn) return;
+  liste.textContent = 'Chargement…';
+
+  const r = await apiFetch('/api/admin/recompenses');
+  if (!r || !r.ok) {
+    let detail = 'Erreur de chargement';
+    try { detail = ((await r.json()) || {}).detail || detail; } catch (e) {
+      // Corps non JSON (proxy, 502 brut) : le message générique suffit.
+    }
+    liste.textContent = detail;
+    dyn.textContent = '';
+    return;
+  }
+  const d = (await r.json()) || {};
+  _recompLimites = d.limites || _recompLimites;
+  const recompenses = d.recompenses || [];
+  const tts = recompenses.find(function (x) { return x.cle === 'tts_viewer'; });
+  _renderPrixDynamique(dyn, d.prix_dynamique_tts || {}, tts);
+  liste.replaceChildren();
+  recompenses.forEach(function (rec) { liste.appendChild(_carteRecompense(rec)); });
+}
+
+function _champ(libelle, input, aide) {
+  const bloc = document.createElement('label');
+  bloc.style.cssText = 'display:flex;flex-direction:column;gap:4px;min-width:0';
+  const t = document.createElement('span');
+  t.style.cssText = 'font-size:0.75rem;color:var(--text-secondary)';
+  t.textContent = libelle;
+  bloc.appendChild(t);
+  bloc.appendChild(input);
+  if (aide) {
+    const a = document.createElement('span');
+    a.style.cssText = 'font-size:0.7rem;color:var(--text-secondary)';
+    a.textContent = aide;
+    bloc.appendChild(a);
+  }
+  return bloc;
+}
+
+function _nombre(valeur, min, max, pas) {
+  const i = document.createElement('input');
+  i.type = 'number';
+  i.min = String(min);
+  if (max !== null) i.max = String(max);
+  i.step = String(pas);
+  i.value = String(valeur);
+  return i;
+}
+
+function _renderPrixDynamique(hote, pd, tts) {
+  hote.replaceChildren();
+  const grille = document.createElement('div');
+  grille.className = 'recomp-grille';
+
+  const hausse = _nombre(pd.hausse_pct != null ? pd.hausse_pct : 20, 0, 1000, 1);
+  const demiVie = _nombre(pd.demi_vie_minutes != null ? pd.demi_vie_minutes : 10, 0.5, 1440, 0.5);
+  grille.appendChild(_champ('Hausse par achat (% du prix de base)', hausse));
+  grille.appendChild(_champ('Demi-vie (minutes)', demiVie,
+    'Le temps pour que la hausse accumulée fonde de moitié.'));
+  hote.appendChild(grille);
+
+  const etat = document.createElement('p');
+  etat.style.cssText = 'color:var(--text-secondary);margin:8px 0';
+  if (tts && tts.active && tts.prix_courant != null) {
+    etat.textContent = 'Prix actuel du TTS : ' + tts.prix_courant + ' points (base '
+      + tts.cout + ')' + (tts.cout_twitch != null && tts.cout_twitch !== tts.prix_courant
+        ? ' · affiché sur Twitch : ' + tts.cout_twitch + ' (mis à jour dans la minute)'
+        : '');
+  } else {
+    etat.textContent = 'Le TTS n\'est pas en ligne.';
+  }
+  hote.appendChild(etat);
+
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-success';
+  btn.textContent = 'Enregistrer';
+  btn.onclick = async function () {
+    btn.disabled = true;
+    const r = await apiFetch('/api/admin/recompenses/prix-dynamique', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        hausse_pct: parseFloat(hausse.value),
+        demi_vie_minutes: parseFloat(demiVie.value),
+      }),
+    });
+    btn.disabled = false;
+    await _signalerReponse(r, 'Prix dynamique enregistré');
+  };
+  hote.appendChild(btn);
+}
+
+function _carteRecompense(rec) {
+  const carte = document.createElement('div');
+  carte.className = 'recomp-carte';
+
+  const tete = document.createElement('div');
+  tete.className = 'recomp-tete';
+  const nom = document.createElement('span');
+  nom.className = 'tc-name';
+  nom.textContent = rec.libelle;
+  tete.appendChild(nom);
+  const statut = document.createElement('span');
+  statut.className = 'recomp-statut';
+  if (!rec.configuree) {
+    statut.textContent = 'absente de config.yaml';
+  } else if (!rec.active) {
+    statut.textContent = 'supprimée';
+  } else if (rec.sur_twitch === null) {
+    statut.textContent = 'en ligne ? (Twitch illisible)';
+  } else {
+    statut.textContent = rec.sur_twitch ? 'en ligne' : 'introuvable sur Twitch';
+  }
+  statut.dataset.etat = rec.active && rec.sur_twitch ? 'ok' : 'ko';
+  tete.appendChild(statut);
+  carte.appendChild(tete);
+
+  if (!rec.configuree) return carte;
+
+  if (!rec.active) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-success';
+    btn.textContent = 'Remettre en ligne';
+    btn.onclick = async function () {
+      btn.disabled = true;
+      const r = await apiFetch('/api/admin/recompenses/' + rec.cle + '/activer',
+        { method: 'POST' });
+      btn.disabled = false;
+      await _signalerReponse(r, rec.libelle + ' remise en ligne');
+    };
+    carte.appendChild(btn);
+    return carte;
+  }
+
+  const grille = document.createElement('div');
+  grille.className = 'recomp-grille';
+  const titre = document.createElement('input');
+  titre.type = 'text';
+  titre.maxLength = _recompLimites.titre_max;
+  titre.value = rec.titre;
+  const cout = _nombre(rec.cout, 1, null, 1);
+  const recharge = _nombre(rec.recharge_s, 0, _recompLimites.recharge_max_s, 1);
+  grille.appendChild(_champ('Titre', titre));
+  grille.appendChild(_champ(rec.cle === 'tts_viewer' ? 'Prix de base (points)' : 'Prix (points)', cout));
+  grille.appendChild(_champ('Recharge globale (secondes, 0 = aucune)', recharge,
+    rec.cle === 'tts_viewer'
+      ? 'Bloque TOUT le chat après un achat. Le TTS a déjà sa recharge par personne.'
+      : ''));
+  carte.appendChild(grille);
+
+  const prompt = document.createElement('textarea');
+  prompt.rows = 2;
+  prompt.maxLength = _recompLimites.prompt_max;
+  prompt.value = rec.prompt;
+  prompt.style.width = '100%';
+  carte.appendChild(_champ('Invite affichée au viewer', prompt,
+    rec.saisie_requise ? 'Le viewer écrit un texte à l\'achat.' : ''));
+
+  const actions = document.createElement('div');
+  actions.className = 'recomp-actions';
+  const enregistrer = document.createElement('button');
+  enregistrer.className = 'btn btn-success';
+  enregistrer.textContent = 'Enregistrer';
+  enregistrer.onclick = async function () {
+    enregistrer.disabled = true;
+    const r = await apiFetch('/api/admin/recompenses/' + rec.cle, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        titre: titre.value,
+        cout: parseInt(cout.value, 10),
+        prompt: prompt.value,
+        recharge_s: parseInt(recharge.value, 10),
+      }),
+    });
+    enregistrer.disabled = false;
+    await _signalerReponse(r, rec.libelle + ' mise à jour sur Twitch');
+  };
+  const supprimer = document.createElement('button');
+  supprimer.className = 'tc-kick';
+  supprimer.textContent = 'Supprimer';
+  supprimer.onclick = async function () {
+    if (!confirm('Supprimer « ' + rec.titre + ' » de la chaîne Twitch ? '
+      + 'Elle ne sera pas recréée au redémarrage.')) return;
+    supprimer.disabled = true;
+    const r = await apiFetch('/api/admin/recompenses/' + rec.cle, { method: 'DELETE' });
+    supprimer.disabled = false;
+    await _signalerReponse(r, rec.libelle + ' supprimée');
+  };
+  actions.appendChild(enregistrer);
+  actions.appendChild(supprimer);
+  carte.appendChild(actions);
+  return carte;
+}
+
+/** Toast selon la réponse, puis rechargement : l'écran montre ce que Twitch a. */
+async function _signalerReponse(r, succes) {
+  let corps = {};
+  try { corps = r ? ((await r.json()) || {}) : {}; } catch (e) {
+    // Corps non JSON : le statut HTTP suffit à trancher.
+  }
+  if (!r || !r.ok) {
+    toast(corps.detail || 'Erreur', 'error');
+  } else {
+    toast(corps.note || succes, corps.note ? 'error' : 'success');
+  }
+  await chargerRecompenses();
 }
 
 // ── Cerveau › Personnalité ──────────────────────────────────────────────────
@@ -6113,7 +6386,7 @@ function stopActionSSE() {
   if (actionSSE) { actionSSE.close(); actionSSE = null; }
 }
 
-// ── Automatisations ─────────────────────────────────────────────────────────
+// ── Cerveau › Automatisations ─────────────────────────────────────────────────
 //
 // Refonte du 2026-08-28. Trois onglets — Tâches, Terminées, Permissions — pour
 // une seule et même liste vue sous trois angles. Les deux premiers deviennent
@@ -6191,7 +6464,7 @@ function renderActionsTab() {
   }
 
   _lireFiltresAuto();
-  poserSommaire('live/automatisations', _AUTO_SECTIONS, '');
+  poserSommaire('cerveau/automatisations', _AUTO_SECTIONS, '');
   chargerAutomatisations();
   loadActionPermissions();
 }
@@ -6247,12 +6520,12 @@ function _lireFiltresAuto() {
 }
 
 function _ecrireFiltresAuto() {
-  if (currentRoute !== 'live/automatisations') return;
+  if (currentRoute !== 'cerveau/automatisations') return;
   const p = new URLSearchParams();
   if (_autoFiltres.q) p.set('q', _autoFiltres.q);
   if (_autoFiltres.vue !== 'avenir') p.set('vue', _autoFiltres.vue);
   const requete = p.toString();
-  const vise = '#/live/automatisations' + (requete ? '?' + requete : '');
+  const vise = '#/cerveau/automatisations' + (requete ? '?' + requete : '');
   if (location.hash !== vise) history.replaceState(null, '', vise);
 }
 
@@ -6891,7 +7164,7 @@ async function savePromptFile() {
   }
 }
 
-// ── Live › Memes ─────────────────────────────────────────────────────────────
+// ── Twitch › Memes ───────────────────────────────────────────────────────────
 //
 // La banque d'images que Wally sort sur le live. Une PAGE et non une section :
 // elle porte 173 vignettes, et une galerie de cette taille noyait le reste de
@@ -6976,7 +7249,7 @@ async function chargerMemes() {
   }
   if (!data) {
     grille.innerHTML = '<div class="muted">Galerie indisponible — le bot ne répond pas.</div>';
-    poserSommaire('live/memes', _MEMES_SECTIONS, '');
+    poserSommaire('twitch/memes', _MEMES_SECTIONS, '');
     return;
   }
   const connus = new Set(_memes.map((m) => m.nom));
@@ -7043,7 +7316,7 @@ function _rendreGalerieMemes() {
   // L'encart du sommaire porte le seul chiffre qui appelle une action : les
   // memes que Wally ne sait pas nommer. Il ne les trouve pas par `pick(hint)`
   // et les commente à l'aveugle quand le tirage les sort.
-  poserSommaire('live/memes', _MEMES_SECTIONS, muets
+  poserSommaire('twitch/memes', _MEMES_SECTIONS, muets
     ? '<div class="rail-encart alerte">'
       + '<div class="rail-encart-titre">Sans description</div>'
       + '<div class="rail-encart-ligne">' + muets + ' meme' + (muets > 1 ? 's' : '')

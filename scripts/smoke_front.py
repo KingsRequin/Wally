@@ -57,12 +57,13 @@ ONGLETS = [
     ("Mémoire commune", "cerveau/memoire"),
     ("Personnalité", "cerveau/personnalite"),
     ("Modèles & coûts", "cerveau/modeles"),
+    ("Automatisations", "cerveau/automatisations"),
     ("Salons", "discord/salons"),
-    ("Scène & overlays", "live/scene"),
-    ("Voix", "live/voix"),
-    ("Médias & sons", "live/medias"),
-    ("Memes", "live/memes"),
-    ("Automatisations", "live/automatisations"),
+    ("Voix", "discord/voix"),
+    ("Scène & overlays", "twitch/scene"),
+    ("Médias & sons", "twitch/medias"),
+    ("Memes", "twitch/memes"),
+    ("Récompenses", "twitch/recompenses"),
     ("Journal", "systeme/journal"),
     ("Connexions", "systeme/connexions"),
 ]
@@ -1525,9 +1526,9 @@ def _verifier_scene(page, rap: Rapport, erreurs: list[str]) -> None:
     `overlay_admin.js` pèse 334 ko et ne se monte qu'UNE fois par session :
     c'est exactement le genre de panneau qui meurt en silence.
     """
-    print("\n── Live › Scène & overlays ──")
+    print("\n── Twitch › Scène & overlays ──")
     del erreurs[:]
-    page.locator('.sidebar-item[data-route="live/scene"]').click()
+    page.locator('.sidebar-item[data-route="twitch/scene"]').click()
     page.wait_for_timeout(3000)
 
     # ── ce qui NE doit PAS avoir bougé ──
@@ -1621,7 +1622,7 @@ def _verifier_scene(page, rap: Rapport, erreurs: list[str]) -> None:
     # revenir sur la Scène la laisserait vide sans la moindre erreur.
     page.locator('.sidebar-item[data-route="systeme/journal"]').click()
     page.wait_for_timeout(1200)
-    page.locator('.sidebar-item[data-route="live/scene"]').click()
+    page.locator('.sidebar-item[data-route="twitch/scene"]').click()
     page.wait_for_timeout(1800)
     rap.dire(page.locator("#page-actions .ovl-scene-corps").count() > 0,
              "la chrome revient quand on revient sur la page")
@@ -1664,7 +1665,7 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
     # ne s'affiche que sur mobile.
     puces = page.locator("#theme-puces .theme-puce").all_inner_texts()
     rap.dire(puces == ["Personnes", "Mémoire commune", "Personnalité",
-                       "Modèles & coûts"],
+                       "Modèles & coûts", "Automatisations"],
              "les pages du thème sont en puces", " · ".join(puces))
 
     actif = page.locator(".barre-bas-item.active").get_attribute("data-theme")
@@ -1731,7 +1732,7 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
     # quatre lignes. On vérifie donc que le texte commence bien au BORD de sa
     # ligne, et non après les colonnes de métadonnée.
     for route, ligne, texte in (("systeme/journal", ".log-entry", ".log-message"),
-                                ("live/voix", ".v-row", ".v-text")):
+                                ("discord/voix", ".v-row", ".v-text")):
         page.evaluate(f"location.hash = '#/{route}'")
         page.wait_for_timeout(2000)
         decalage = page.evaluate(
@@ -1842,10 +1843,10 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     """Médias & sons, Voix et Connexions. Trois pages composées d'anciens
     panneaux : c'est justement là qu'un rendu peut se perdre en silence, parce
     que la fonction existe et que sa cible a changé de nom."""
-    print("\n── Live › Médias, Voix · Système › Connexions ──")
+    print("\n── Twitch › Médias, Discord › Voix · Système › Connexions ──")
 
     del erreurs[:]
-    page.locator('.sidebar-item[data-route="live/medias"]').click()
+    page.locator('.sidebar-item[data-route="twitch/medias"]').click()
     page.wait_for_timeout(2500)
     for ident, libelle in (("medias-overlays", "les overlays"),
                            ("medias-images-corps", "la génération d'images")):
@@ -1862,14 +1863,14 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     rap.dire(sons == 1, "l'atelier des sons a suivi", f"{sons} conteneur(s)")
     rap.dire(not erreurs, "aucune erreur JS sur Médias & sons", " · ".join(erreurs[:2]))
 
-    # ── Live › Memes ────────────────────────────────────────────────────
+    # ── Twitch › Memes ──────────────────────────────────────────────────
     #
     # Une galerie qui MONTE ne prouve rien : ce qu'on vient y faire, c'est
     # ouvrir un meme pour le décrire. On clique donc vraiment une vignette et
     # on vérifie que sa fiche s'ouvre avec son champ — le panneau des réglages
     # de l'overlay était monté, visible, et inatteignable à la souris.
     del erreurs[:]
-    page.locator('.sidebar-item[data-route="live/memes"]').click()
+    page.locator('.sidebar-item[data-route="twitch/memes"]').click()
     page.wait_for_timeout(2500)
     cases = page.locator("#meme-grille .meme-case").count()
     rap.dire(cases > 0, "Memes → la galerie", f"{cases} vignette(s)")
@@ -1884,7 +1885,7 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     rap.dire(not erreurs, "aucune erreur JS sur Memes", " · ".join(erreurs[:2]))
 
     del erreurs[:]
-    page.locator('.sidebar-item[data-route="live/voix"]').click()
+    page.locator('.sidebar-item[data-route="discord/voix"]').click()
     page.wait_for_timeout(2500)
     for ident, libelle in (("voix-reglages-corps", "les réglages"),
                            ("voix-suivi-corps", "le suivi en direct")):
@@ -1903,7 +1904,7 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     rap.dire(faits >= 3, "les cartes portent des faits, pas qu'un voyant",
              f"{faits} fait(s)")
     for ident, libelle in (("cnx-twitch-corps", "les comptes Twitch"),
-                           ("cnx-discord-corps", "les réglages Discord")):
+                           ("cnx-discord-corps", "les réglages généraux")):
         n = _attendre_contenu(page, ident)
         rap.dire(n >= _CONTENU_MIN, f"Connexions → {libelle}", f"{n} car.")
     rap.dire(not erreurs, "aucune erreur JS sur Connexions", " · ".join(erreurs[:2]))
@@ -2026,9 +2027,16 @@ def _verifier_personnes(page, rap: Rapport, erreurs: list[str]) -> None:
 def _verifier_automatisations(page, rap: Rapport, erreurs: list[str]) -> None:
     """Tâches / Terminées / Permissions étaient trois onglets pour une seule
     liste. Les deux premiers sont un filtre d'état, le troisième une section."""
-    print("\n── Live › Automatisations ──")
+    print("\n── Cerveau › Automatisations ──")
     del erreurs[:]
-    page.locator('.sidebar-item[data-route="live/automatisations"]').click()
+    # Un ancien lien du thème « Live » doit tomber sur la page ET garder son
+    # filtre : le cockpit sert encore `#/live/automatisations?vue=echec`.
+    page.evaluate("location.hash = '#/live/automatisations?vue=echec'")
+    page.wait_for_timeout(1800)
+    hash_vu = page.evaluate("location.hash")
+    rap.dire(hash_vu == "#/cerveau/automatisations?vue=echec",
+             "l'ancien hash Live redirige en gardant son filtre", hash_vu)
+    page.locator('.sidebar-item[data-route="cerveau/automatisations"]').click()
     page.wait_for_timeout(1800)
 
     # Les comptes du segmented sont DÉRIVÉS des tâches chargées : trois boutons

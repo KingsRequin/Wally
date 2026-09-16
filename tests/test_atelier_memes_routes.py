@@ -1,4 +1,4 @@
-"""L'atelier des memes — Live → Médias & sons.
+"""L'atelier des memes — Twitch → Médias & sons.
 
 Le DOSSIER est la source de vérité : ces routes déposent, décrivent et
 retirent, elles ne tiennent aucun index. Les tests le vérifient sur un vrai
@@ -251,12 +251,12 @@ async def test_supprimer_un_meme_inconnu_est_refuse(atelier):
     assert e.value.status_code == 404
 
 
-# ── La page Live › Memes ────────────────────────────────────────────────────
+# ── La page Twitch › Memes ──────────────────────────────────────────────────
 
 def _page_memes_js() -> str:
     js = (Path(__file__).resolve().parents[1]
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    return js[js.index("// ── Live › Memes"):js.index("// ── Atelier des sons")]
+    return js[js.index("// ── Twitch › Memes"):js.index("// ── Atelier des sons")]
 
 
 def test_aucun_onclick_ninterpole_un_nom_de_meme():
@@ -294,10 +294,10 @@ def test_la_page_est_cablee_aux_quatre_endroits():
     racine = Path(__file__).resolve().parents[1]
     js = (racine / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
     html = (racine / "bot/dashboard/static/index.html").read_text(encoding="utf-8")
-    assert "'live/memes': {" in js, "route absente de ROUTES"
+    assert "'twitch/memes': {" in js, "route absente de ROUTES"
     assert "pane: 'admin-memes'" in js
     assert "renderMemes(); startMemesVeille();" in js, "dispatcher"
-    assert 'data-route="live/memes"' in html, "entrée de sidebar"
+    assert 'data-route="twitch/memes"' in html, "entrée de sidebar"
     assert 'id="tab-admin-memes"' in html, "panneau"
 
 
@@ -306,7 +306,7 @@ def test_la_galerie_nest_plus_dans_la_page_medias():
     sons hors d'atteinte — c'est ce qui a motivé la page dédiée."""
     js = (Path(__file__).resolve().parents[1]
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    medias = js[js.index("// ── Live › Médias & sons"):js.index("// ── Mise en scène")]
+    medias = js[js.index("// ── Twitch › Médias & sons"):js.index("// ── Mise en scène")]
     assert "meme" not in medias.lower()
 
 
@@ -340,7 +340,7 @@ def test_le_smoke_test_ouvre_vraiment_une_fiche():
     doit donc CLIQUER une vignette, pas compter des nœuds."""
     smoke = (Path(__file__).resolve().parents[1]
              / "scripts/smoke_front.py").read_text(encoding="utf-8")
-    assert '("Memes", "live/memes")' in smoke
+    assert '("Memes", "twitch/memes")' in smoke
     assert "#meme-grille .meme-case" in smoke
     assert "#meme-fiche-desc" in smoke
 

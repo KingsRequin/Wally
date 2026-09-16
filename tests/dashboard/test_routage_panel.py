@@ -128,6 +128,16 @@ def test_les_anciens_hash_retombent_sur_une_route_valide(js, routes):
         f"anciens hash oubliés : {sorted(attendus - anciens)}"
     )
 
+    # Les routes du thème « Live », devenu Twitch le 2026-09-16 (Voix partie
+    # dans Discord, Automatisations dans Cerveau). Des liens les servent encore.
+    live = {"live/scene", "live/voix", "live/medias", "live/memes",
+            "live/automatisations"}
+    assert live <= anciens, f"routes Live oubliées : {sorted(live - anciens)}"
+
+    # Une redirection vise la route FINALE, jamais une autre redirection.
+    chaines = {vieux: cible for vieux, cible in paires if cible in anciens}
+    assert not chaines, f"redirections en chaîne : {chaines}"
+
 
 def test_la_route_par_defaut_existe(js, routes):
     m = re.search(r"const ROUTE_DEFAUT = '([^']+)';", js)
