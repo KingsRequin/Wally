@@ -68,6 +68,25 @@ Trames texte = JSON `{"type": "..."}`. Toutes sont **optionnelles** : le découp
 
 Un type inconnu est ignoré (loggé côté serveur). Un JSON invalide est ignoré.
 
+**Noms à reconnaître — `hotwords`.** Wally l'envoie une fois par connexion, juste après
+`ready` et avant toute trame audio :
+
+```json
+{"type": "hotwords", "head": ["Wally", "wal"], "words": ["Azraël", "Kassandre", "Malef"]}
+```
+
+- `head` : le nom du bot et ses surnoms ; `words` : les noms des gens (présents dans le
+  salon d'abord, puis la communauté, les plus récemment actifs d'abord).
+- Règle mesurée sur le moteur local (`scripts/bench_stt.py`, 2026-09-16) et attendue à
+  l'identique ici : `hotwords` de faster-whisper (JAMAIS `initial_prompt`, qui faisait
+  halluciner « Wally wally » sur du bruit) valant `head, <words qui tiennent>, head`,
+  `words` pris dans l'ordre jusqu'au budget `max_length // 2 - 1` jetons (223), sans
+  sauter un nom pour en caser un plus court. Sans aucun `words` qui tient : `head` seul.
+  Wally 8/8, noms 6/6, zéro faux déclenchement ; la liste brute coupée par la bibliothèque
+  perdait un appel sur huit.
+- Accusé attendu du serveur : `{"type": "hotwords_ok", "count": <nombre de words retenus>}`.
+  Wally le journalise une fois (INFO) comme preuve que le biais s'applique.
+
 ### 2.3 Fin de flux
 
 Il n'existe **pas** de message « fin de session » obligatoire : **fermez simplement la

@@ -31,7 +31,7 @@ from bot.discord.voice.brain import (
     generate_voice_greeting,
     handle_transcript,
 )
-from bot.discord.voice.noms import charger_noms_communaute
+from bot.discord.voice.noms import noms_communaute, rafraichir_noms_communaute
 from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import adapt_style, resolve_style
@@ -125,9 +125,6 @@ class VoiceService:
         self._streaming = None
         self._stt = None
         self._stt_phrases = stt_phrases
-        # Les noms de la communauté (alias appris par la mémoire), relus à
-        # chaque join : le biais STT ne peut pas attendre la base à chaque énoncé.
-        self._noms_communaute: list[str] = []
         self._build_stt_pipeline(cfg, stt_phrases)
         self._tts = build_tts(cfg)
         self._vc: discord.VoiceClient | None = None
@@ -232,7 +229,7 @@ class VoiceService:
         pas à entendre « Kassandre », qui sortait « Cassandra ». Les présents
         passent devant parce que les places de biais sont comptées.
         """
-        return [*self.noms_des_presents(), *self._noms_communaute]
+        return [*self.noms_des_presents(), *noms_communaute()]
 
     def _build_stt_pipeline(self, cfg: VoiceConfig, phrases: list[str]) -> None:
         """Construit le pipeline STT : streaming distant (remote_stream) ou batch."""
@@ -247,7 +244,7 @@ class VoiceService:
             self._stt = None
         else:
             self._streaming = None
-            self._stt = build_stt(cfg, phrases=phrases)
+            self._stt = build_stt(cfg, phrases=phrases, extra_terms=self.noms_a_entendre)
 
     def reload_config(self, cfg: VoiceConfig) -> None:
         """Recharge la config à chaud sans redémarrer.
@@ -390,7 +387,7 @@ class VoiceService:
         self._vc = vc
         self._channel = channel
         self.listen_only = listen_only
-        self._noms_communaute = await charger_noms_communaute(getattr(self._bot, "db", None))
+        await rafraichir_noms_communaute(getattr(self._bot, "db", None))
         if listen_only:
             # Retour volontaire : il redevient rattrapable par le veilleur.
             self.listen_optout = False

@@ -2279,7 +2279,7 @@ async def handle_message(bot: "WallyDiscord", message: discord.Message) -> None:
     if channel_allowed:
         from bot.core.message_vocal import marqueur as _marqueur_vocal
 
-        _vocal, _texte_vocal = await _marqueur_vocal(message, bot.config)
+        _vocal, _texte_vocal = await _marqueur_vocal(message, bot.config, getattr(bot, "db", None))
         if _vocal:
             _enriched_content = (
                 f"{_enriched_content} {_vocal}".strip() if _enriched_content else _vocal

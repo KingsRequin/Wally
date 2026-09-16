@@ -434,3 +434,27 @@ def test_voice_config_defaut_remote_stt():
     assert cfg.remote_stt_url.startswith("ws://")
     assert cfg.remote_stt_max_connections == 2
     assert cfg.remote_stt_fallback == "faster_whisper"
+
+
+async def test_session_envoie_les_noms_AVANT_l_audio(server):
+    """Le serveur GPU biaise le décodage comme les deux autres moteurs : la
+    liste doit lui arriver avant la première trame, sinon le premier énoncé
+    — souvent celui qui appelle Wally — part sans elle."""
+    sess = RemoteSTTSession(
+        server.url, on_partial=lambda t: None, on_final=lambda t, ms: None,
+        termes=lambda: (["Wally"], ["Kassandre"]),
+    )
+    sess.enqueue(b"\x00" * 640)
+    assert await sess.start() is True
+    await _wait_until(lambda: server.received_audio)
+    await sess.close()
+    assert server.received_control[0] == {"type": "hotwords", "head": ["Wally"], "words": ["Kassandre"]}
+
+
+async def test_sans_source_de_noms_rien_n_est_envoye(server):
+    sess = RemoteSTTSession(server.url, on_partial=lambda t: None, on_final=lambda t, ms: None)
+    sess.enqueue(b"\x00" * 640)
+    assert await sess.start() is True
+    await _wait_until(lambda: server.received_audio)
+    await sess.close()
+    assert server.received_control == []

@@ -22,15 +22,15 @@ from bot.discord.voice.providers import FasterWhisperSTT
 
 def test_le_nom_est_souffle_au_moteur():
     stt = FasterWhisperSTT(phrases=["Wally", "wal"])
-    assert "Wally" in (stt._hotwords or "")
+    assert "Wally" in (stt._hotwords() or "")
 
 
 def test_sans_phrases_aucun_indice():
     """Pas de biais inventé quand la config n'en donne pas : `None`, et non une
     chaîne vide, que faster-whisper traiterait comme un prompt à part entière."""
-    assert FasterWhisperSTT()._hotwords is None
-    assert FasterWhisperSTT(phrases=[])._hotwords is None
-    assert FasterWhisperSTT(phrases=["", None])._hotwords is None
+    assert FasterWhisperSTT()._hotwords() is None
+    assert FasterWhisperSTT(phrases=[])._hotwords() is None
+    assert FasterWhisperSTT(phrases=["", None])._hotwords() is None
 
 
 def test_l_indice_atteint_vraiment_la_transcription():
@@ -58,4 +58,4 @@ def test_un_indice_explicite_prime_sur_la_config():
     """Ce que `scripts/bench_stt.py` utilise pour comparer les réglages sans
     toucher au chemin de production."""
     stt = FasterWhisperSTT(phrases=["Wally"], hotwords="Azraël")
-    assert stt._hotwords == "Azraël"
+    assert stt._hotwords() == "Azraël"

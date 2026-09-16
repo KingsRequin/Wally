@@ -86,6 +86,33 @@ _CONTROLES = [
 
 _CAS = [Cas(t, True) for t in _APPELS] + [Cas(t, False) for t in _CONTROLES]
 
+# Les noms de la communauté, prononcés : (phrase, nom attendu dans la sortie).
+# « Kassandre » sortait « Cassandra » 56 fois dans les journaux vocaux.
+_NOMS_COMMU = [
+    ("Bien le bonsoir Kassandre.", "kassandre"),
+    ("Malef, t'es où là ?", "malef"),
+    ("Keychka a encore gagné la partie.", "keychka"),
+    ("Oyoloyoo, tu viens avec nous ?", "oyoloyoo"),
+    ("Snorkiz joue avec Azraël ce soir.", "snorkiz"),
+    ("Merci Lilio pour le raid.", "lilio"),
+]
+
+
+async def _noms_de_la_communaute() -> list[str]:
+    """La liste que la production souffle, lue en LECTURE SEULE dans la base."""
+    import aiosqlite
+
+    from bot.db.mixins.memory import MemoryMixin
+    from bot.discord.voice.noms import charger_noms_communaute
+
+    class _Lecture(MemoryMixin):
+        async def fetch_all(self, query, params=()):
+            async with aiosqlite.connect("file:data/wally.db?mode=ro", uri=True) as c:
+                c.row_factory = aiosqlite.Row
+                return list(await (await c.execute(query, params)).fetchall())
+
+    return await charger_noms_communaute(_Lecture())
+
 
 async def _synthetiser(cas: Cas) -> bytes:
     """PCM 16 kHz mono du texte, via le TTS de production. Mis en cache sur disque.
@@ -115,16 +142,24 @@ async def _synthetiser(cas: Cas) -> bytes:
     return pcm16k
 
 
-def _construire(modele: str, hotwords: str | None):
+def _construire(modele: str, hotwords: str | list[str] | None):
     """Le STT local de production, dont on force l'indice de vocabulaire.
 
     On passe par le constructeur — donc par le chemin de transcription réel — et
     non par une copie du décodage : un banc qui reproduit le code au lieu de
     l'appeler finit par mesurer autre chose que ce qui tourne. `hotwords=None`
     donne bien l'absence d'indice, la config n'étant pas lue ici.
+
+    Une LISTE de noms prend le chemin de production (nom de Wally + source de
+    noms), avec la mise au budget du prompt ; une chaîne est soufflée telle quelle.
     """
     from bot.discord.voice.providers import FasterWhisperSTT
 
+    if isinstance(hotwords, list):
+        noms = hotwords
+        return FasterWhisperSTT(model_size=modele, language="fr-FR", device="cpu",
+                                compute_type="int8", phrases=["Wally"],
+                                extra_terms=lambda: noms)
     return FasterWhisperSTT(model_size=modele, language="fr-FR",
                             device="cpu", compute_type="int8", hotwords=hotwords)
 
@@ -139,10 +174,13 @@ class Bilan:
     secondes_calcul: float = 0.0
     rates: list = None
     inventions: list = None
+    noms_vus: int = 0
+    noms_rates: list = None
 
     def __post_init__(self):
         self.rates = self.rates or []
         self.inventions = self.inventions or []
+        self.noms_rates = self.noms_rates or []
 
     @property
     def debit(self) -> float:
@@ -150,10 +188,20 @@ class Bilan:
         return self.secondes_audio / self.secondes_calcul if self.secondes_calcul else 0.0
 
 
-async def _mesurer(modele: str, hotwords: str | None, echantillons: list) -> Bilan:
+async def _mesurer(modele: str, hotwords: str | list[str] | None, echantillons: list,
+                   noms: list) -> Bilan:
     stt = _construire(modele, hotwords)
     await stt.warmup()
     b = Bilan()
+    for (phrase, attendu), pcm in noms:
+        t0 = time.monotonic()
+        texte = await stt.transcribe(pcm)
+        b.secondes_calcul += time.monotonic() - t0
+        b.secondes_audio += len(pcm) / 32000
+        if attendu in texte.lower():
+            b.noms_vus += 1
+        else:
+            b.noms_rates.append((phrase, texte))
     for cas, pcm in echantillons:
         t0 = time.monotonic()
         texte = await stt.transcribe(pcm)
@@ -201,7 +249,7 @@ def _non_paroles() -> list[tuple[str, bytes]]:
     return sons
 
 
-async def _mesurer_inventions(modele: str, hotwords: str | None,
+async def _mesurer_inventions(modele: str, hotwords: str | list[str] | None,
                               sons: list) -> tuple[int, list]:
     """Combien de ces non-paroles produisent du texte — et lequel."""
     stt = _construire(modele, hotwords)
@@ -231,21 +279,28 @@ async def principal() -> None:
             print(f"  ⚠ écarté par le plancher ({duree:.1f} s, rms {niveau}) : {cas.texte}")
             continue
         echantillons.append((cas, pcm))
+    noms = [((phrase, attendu), await _synthetiser(Cas(phrase, False)))
+            for phrase, attendu in _NOMS_COMMU]
+    communaute = await _noms_de_la_communaute()
     sons = _non_paroles()
-    print(f"{len(echantillons)} échantillons · {len(sons)} non-paroles au-dessus du plancher\n")
+    print(f"{len(echantillons)} échantillons · {len(noms)} noms de la communauté · "
+          f"{len(sons)} non-paroles au-dessus du plancher\n")
 
     for modele in modeles:
         # Le nom seul est mesuré à part : c'est ce que la production enverra
         # (`voice.phrases` = nom du bot + déclencheurs). Déployer la liste large
         # après n'avoir mesuré qu'elle serait déployer autre chose que le banc.
         variantes = (("sans hotwords", None), ("le nom seul", "Wally"),
-                     ("nom + jargon", _HOTWORDS))
+                     ("nom + jargon", _HOTWORDS), ("nom + communauté", communaute))
         for libelle, hw in variantes:
-            b = await _mesurer(modele, hw, echantillons)
+            b = await _mesurer(modele, hw, echantillons, noms)
             n_inventions, details = await _mesurer_inventions(modele, hw, sons)
             print(f"=== {modele} · {libelle} ===")
             print(f"  appels entendus : {b.appels_vus}/{b.appels_total}")
             print(f"  faux déclenchements : {b.faux}/{b.controles_total}")
+            print(f"  noms de la communauté : {b.noms_vus}/{len(noms)}")
+            for dit, entendu in b.noms_rates:
+                print(f"    nom raté : {dit!r} → {entendu!r}")
             print(f"  bavardage sur du bruit : {n_inventions}/{len(sons)}")
             for lib, texte, nomme in details:
                 marque = " ← SE CROIT NOMMÉ" if nomme else ""

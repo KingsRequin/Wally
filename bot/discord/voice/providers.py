@@ -8,6 +8,7 @@ from loguru import logger
 
 from bot.config import VoiceConfig
 from bot.discord.voice.audio import SAMPLE_RATE
+from bot.discord.voice.noms import termes_de_biais, tete_et_noms
 
 
 # Namespace du `mstts:express-as`. En **http**, pas https : c'est un identifiant
@@ -52,9 +53,11 @@ def _azure_creds() -> tuple[str, str]:
 class AzureSTT:
     """STT Azure. Entrée : PCM 16 kHz mono 16-bit. Sortie : texte (vide si rien)."""
 
-    def __init__(self, key: str, region: str, language: str, phrases: list[str] | None = None) -> None:
+    def __init__(self, key: str, region: str, language: str, phrases: list[str] | None = None,
+                 extra_terms=None) -> None:
         self._key, self._region, self._language = key, region, language
         self._phrases = [p for p in (phrases or []) if p]  # indices (nom du bot, surnoms)
+        self._extra_terms = extra_terms  # noms des gens, relus à chaque énoncé
 
     async def transcribe(self, pcm16k_mono: bytes) -> str:
         return await asyncio.to_thread(self._transcribe_sync, pcm16k_mono)
@@ -71,10 +74,10 @@ class AzureSTT:
             recognizer = speechsdk.SpeechRecognizer(
                 speech_config=speech_cfg, audio_config=audio_cfg
             )
-            # Indices de phrase : biaise la reconnaissance vers le nom de Wally et ses surnoms.
-            if self._phrases:
+            # Indices de phrase : le nom de Wally, puis les noms des gens.
+            if termes := termes_de_biais(self._phrases, self._extra_terms):
                 grammar = speechsdk.PhraseListGrammar.from_recognizer(recognizer)
-                for phrase in self._phrases:
+                for phrase in termes:
                     grammar.addPhrase(phrase)
             stream.write(pcm16k_mono)
             stream.close()
@@ -105,6 +108,7 @@ class FasterWhisperSTT:
         cpu_threads: int = 0,
         parallel: int = 1,
         hotwords: str | None = None,
+        extra_terms=None,
     ) -> None:
         self._model_size = model_size
         self._lang = (language or "fr").split("-")[0]  # "fr-FR" → "fr"
@@ -129,7 +133,13 @@ class FasterWhisperSTT:
         # Ce qui a changé depuis l'hallucination : `vad_filter` Silero, et le
         # plancher qui écarte le souffle avant le moteur. Si le bavardage
         # revenait, ce paramètre est le premier à éteindre.
-        self._hotwords = hotwords or (", ".join(p for p in (phrases or []) if p) or None)
+        #
+        # Les noms des gens (`extra_terms`, relus à chaque énoncé) : cf.
+        # `_hotwords`, qui les fait tenir dans le budget du prompt.
+        self._hotwords_fixes = hotwords  # banc : prime sur la config
+        self._phrases = [p for p in (phrases or []) if p]
+        self._extra_terms = extra_terms
+        self._jetons: dict[str, int] = {}  # coût en jetons de chaque nom, appris une fois
         self._model = None  # chargé à la demande
         # Nombre de transcriptions menées de front. Mesuré en live à trois
         # locuteurs : le calcul ne coûte que ~2 s par énoncé, mais l'attente en
@@ -144,6 +154,46 @@ class FasterWhisperSTT:
         # Verrou de thread (et non asyncio) : le chargement a lieu dans le
         # thread de travail, où le verrou asyncio ne protège rien.
         self._model_guard = threading.Lock()
+
+    def _hotwords(self, model=None) -> str | None:
+        """Le nom de Wally en tête ET en queue, les noms des gens entre les deux.
+
+        `None` et jamais "" : faster-whisper traiterait la chaîne vide en prompt.
+
+        faster-whisper coupe les hotwords à `max_length // 2 - 1` jetons (223) :
+        les 167 noms de la communauté en font 746, la queue partait donc au
+        couteau. Et le nom seul en tête d'une longue liste ne suffit plus — le
+        banc (`scripts/bench_stt.py`, 2026-09-16) le mesure :
+
+        - Wally seul : Wally 8/8, noms de la communauté 1/6 ;
+        - Wally + la liste, coupée par la bibliothèque : 7/8, 6/6 ;
+        - Wally + ce qui tient + Wally : **8/8, 6/6**.
+
+        Zéro faux déclenchement et zéro invention sur du bruit dans les trois.
+        """
+        if self._hotwords_fixes:
+            return self._hotwords_fixes
+        tete, autres = tete_et_noms(self._phrases, self._extra_terms)
+        tokenizer = getattr(model, "hf_tokenizer", None)
+        if not autres or tokenizer is None:
+            return ", ".join(tete + autres) or None
+        budget = int(model.max_length) // 2 - 1
+
+        def cout(terme: str) -> int:
+            if terme not in self._jetons:
+                self._jetons[terme] = len(tokenizer.encode(", " + terme, add_special_tokens=False).ids)
+            return self._jetons[terme]
+
+        # Espace de tête et séparateurs : la somme par terme surestime d'un ou
+        # deux jetons, ce qui garde la queue du bon côté de la coupe.
+        reste = budget - 2 * sum(cout(t) for t in tete) - 1
+        gardes = []
+        for terme in autres:
+            reste -= cout(terme)
+            if reste < 0:
+                break
+            gardes.append(terme)
+        return ", ".join(tete + gardes + (tete if gardes else [])) or None
 
     def _ensure_model(self):
         if self._model is None:
@@ -184,7 +234,7 @@ class FasterWhisperSTT:
             segments, _info = model.transcribe(
                 audio, language=self._lang, beam_size=1,
                 initial_prompt=self._initial_prompt,
-                hotwords=self._hotwords,
+                hotwords=self._hotwords(model),
                 vad_filter=True,
                 condition_on_previous_text=False,
             )
@@ -256,16 +306,14 @@ class XaiSTT:
         self._usd_per_hour = float(usd_per_hour or 0.0)
 
     @classmethod
-    def _normaliser(cls, termes, deja: set[str] | None = None,
-                    place: int | None = None) -> list[str]:
+    def _normaliser(cls, termes) -> list[str]:
         """Nettoie, tronque et déduplique sans tenir compte de la casse.
 
         `trigger_names` porte « wally » à côté du `name` « Wally », et un
         pseudo peut valoir l'un des deux : le même mot occuperait deux des cent
         places pour rien.
         """
-        vus = deja if deja is not None else set()
-        place = cls._MAX_KEYTERMS if place is None else place
+        vus: set[str] = set()
         gardes: list[str] = []
         for terme in (termes or []):
             terme = (terme or "").strip()[:cls._MAX_KEYTERM_LEN]
@@ -273,7 +321,7 @@ class XaiSTT:
                 continue
             vus.add(terme.lower())
             gardes.append(terme)
-            if len(gardes) >= place:
+            if len(gardes) >= cls._MAX_KEYTERMS:
                 break
         return gardes
 
@@ -284,16 +332,7 @@ class XaiSTT:
         interpellé, et un salon très peuplé ne doit pas pouvoir l'évincer des
         cent places.
         """
-        if self._extra_terms is None:
-            return self.keyterms
-        try:
-            presents = self._extra_terms()
-        except Exception as exc:  # noqa: BLE001 — un biais optionnel ne coûte pas un énoncé
-            logger.debug("XaiSTT: présents illisibles, biais réduit au nom : {e!r}", e=exc)
-            return self.keyterms
-        deja = {k.lower() for k in self.keyterms}
-        reste = self._MAX_KEYTERMS - len(self.keyterms)
-        return self.keyterms + self._normaliser(presents, deja, reste)
+        return self._normaliser(termes_de_biais(self.keyterms, self._extra_terms))
 
     @staticmethod
     def _wav(pcm16k_mono: bytes) -> bytes:
@@ -450,7 +489,10 @@ class AzureTTS:
                 if n == 0:
                     break
                 produced += n
-                on_chunk(chunk[:n])
+                # Copie OBLIGATOIRE : `chunk[:n]` d'un tampon plein rend le MÊME
+                # objet, réécrit à la lecture suivante. Un appelant qui garde les
+                # morceaux (`synthesize`) recevait N fois le dernier — du silence.
+                on_chunk(bytes(memoryview(chunk)[:n]))
             # Azure ne LÈVE PAS quand la synthèse échoue : il rend un flux vide.
             # Sans ce contrôle, une clé invalide donnait zéro octet en silence —
             # Wally jouait son bip, générait sa réplique, l'inscrivait au
@@ -486,7 +528,8 @@ class AzureTTS:
         )
 
 
-def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None) -> SpeechToText:
+def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None,
+                     extra_terms=None) -> SpeechToText:
     """Construit un STT batch (entrée = segment complet) pour le provider donné."""
     provider = (provider or "azure").lower()
     if provider in ("faster_whisper", "faster-whisper", "whisper"):
@@ -498,13 +541,16 @@ def _build_batch_stt(provider: str, cfg: VoiceConfig, phrases: list[str] | None)
             phrases=phrases,
             cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
             parallel=getattr(cfg, "stt_parallel", 1),
+            extra_terms=extra_terms,
         )
     key, region = _azure_creds()
-    return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases)
+    return AzureSTT(key=key, region=region, language=cfg.language, phrases=phrases,
+                    extra_terms=extra_terms)
 
 
-def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None) -> SpeechToText:
-    return _build_batch_stt(cfg.stt_provider, cfg, phrases)
+def build_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
+              extra_terms=None) -> SpeechToText:
+    return _build_batch_stt(cfg.stt_provider, cfg, phrases, extra_terms)
 
 
 def build_overflow_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
@@ -543,7 +589,7 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
                         extra_terms=None, db=None):
     """Construit le STT streaming distant (RemoteStreamingSTT) + son fallback batch CPU local."""
     from bot.discord.voice.streaming import RemoteStreamingSTT
-    fallback = _build_batch_stt(cfg.remote_stt_fallback, cfg, phrases)
+    fallback = _build_batch_stt(cfg.remote_stt_fallback, cfg, phrases, extra_terms)
     # Les places du serveur distant sont comptées (VRAM) : elles reviennent
     # d'abord à ceux au nom de qui Wally agit. `voice.requesters` porte déjà
     # cette liste — le créateur et le streamer — plutôt qu'un jeu d'ID en dur.
@@ -561,6 +607,7 @@ def build_streaming_stt(cfg: VoiceConfig, phrases: list[str] | None = None,
         priority_speakers=prioritaires,
         overflow=build_overflow_stt(cfg, phrases=phrases, extra_terms=extra_terms, db=db),
         overflow_max_inflight=cfg.overflow_stt_max_inflight,
+        termes=lambda: tete_et_noms(phrases, extra_terms),
     )
 
 

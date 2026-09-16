@@ -72,6 +72,19 @@ _MAX_PENDING_FALLBACK = 2
 _DUREE_MIN_SOUPAPE_S = 0.5
 
 
+_hotwords_confirmes = False
+
+
+def _confirmer_hotwords(nombre) -> None:
+    """Une preuve en INFO que le serveur GPU applique les noms — une seule fois :
+    une session s'ouvre à chaque prise de parole, le log serait du bruit."""
+    global _hotwords_confirmes
+    if not _hotwords_confirmes:
+        _hotwords_confirmes = True
+        logger.info("RemoteSTTSession: le serveur GPU applique {n} nom(s) de biais", n=nombre)
+
+
+
 class RemoteSTTSession:
     """Une connexion WebSocket vers le serveur STT distant, pour un seul locuteur."""
 
@@ -88,8 +101,12 @@ class RemoteSTTSession:
         ping_interval: float = 5.0,
         ping_timeout: float = 5.0,
         now_fn: Callable[[], float] | None = None,
+        termes: Callable[[], tuple[list[str], list[str]]] | None = None,
     ) -> None:
         self._url = url
+        # Le nom de Wally et les noms des gens : envoyés au serveur dès `ready`,
+        # avant tout audio, pour qu'il biaise le décodage comme les autres moteurs.
+        self._termes = termes
         self._on_partial = on_partial
         self._on_final = on_final
         self._on_close = on_close
@@ -156,9 +173,17 @@ class RemoteSTTSession:
 
     async def _sender_loop(self) -> None:
         await self._ready_evt.wait()
-        if not self.ready:  # error / fermeture avant ready → rien à envoyer
+        if not self.ready or self._ws is None:  # error / fermeture avant ready → rien à envoyer
             return
         try:
+            if self._termes is not None:
+                # Un serveur qui ne connaît pas ce type l'ignore (cf.
+                # `docs/voice/REMOTE_STT_API.md` §2.2) : l'envoi est sans risque.
+                # `head` (le nom de Wally) se place en tête ET en queue du prompt,
+                # `words` remplit l'entre-deux jusqu'au budget : la règle mesurée
+                # sur le moteur local, appliquée à l'identique côté serveur.
+                tete, noms = self._termes()
+                await self._ws.send(json.dumps({"type": "hotwords", "head": tete, "words": noms}))
             while not self._closed:
                 item = await self._sendq.get()
                 if item is _FLUSH:
@@ -190,6 +215,8 @@ class RemoteSTTSession:
                     stt_ms = (self._now() - self._t_flush) * 1000 if self._t_flush else 0.0
                     self._t_flush = None
                     self._safe_final(obj.get("text", ""), stt_ms)
+                elif kind == "hotwords_ok":
+                    _confirmer_hotwords(obj.get("count"))
                 elif kind == "error":
                     msgtxt = str(obj.get("message", ""))
                     logger.warning("RemoteSTTSession: erreur serveur: {m}", m=msgtxt)
@@ -268,9 +295,11 @@ class RemoteStreamingSTT:
         priority_speakers: set[str] | None = None,
         overflow=None,
         overflow_max_inflight: int = 8,
+        termes: Callable[[], tuple[list[str], list[str]]] | None = None,
     ) -> None:
         self._url = url
         self._fallback = fallback
+        self._termes = termes
         # La soupape : ce que le local n'a pas le temps de transcrire ne se jette
         # plus, il part là. Mesuré le 2026-08-18 — à trois locuteurs, le local
         # met 6,3 s pour trois énoncés (file séquentielle) et finit par en
@@ -327,6 +356,7 @@ class RemoteStreamingSTT:
             open_timeout=self._open_timeout,
             ready_timeout=self._ready_timeout,
             now_fn=self._now,
+            termes=self._termes,
         )
 
     async def warmup(self) -> None:

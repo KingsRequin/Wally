@@ -129,16 +129,25 @@ async def _moteur(config: Any) -> Any:
         if _stt is None:
             from bot.discord.voice.providers import FasterWhisperSTT
 
+            from bot.discord.voice.noms import noms_communaute
+
             voix = getattr(config, "voice", None)
+            bot_cfg = getattr(config, "bot", None)
             _stt = FasterWhisperSTT(
                 model_size=getattr(voix, "whisper_model", None) or "small",
                 language=getattr(voix, "language", None) or "fr-FR",
                 compute_type=getattr(voix, "whisper_compute_type", None) or "int8",
+                # Les mêmes noms qu'en salon vocal : un prénom entendu en direct
+                # et raté dans un message vocal serait une surdité à géométrie variable.
+                phrases=[str(n) for n in (getattr(bot_cfg, "name", None),
+                                          *(getattr(bot_cfg, "trigger_names", None) or []))
+                         if n],
+                extra_terms=noms_communaute,
             )
         return _stt
 
 
-async def transcrire(piece: Any, config: Any) -> str:
+async def transcrire(piece: Any, config: Any, db: Any = None) -> str:
     """Le texte d'un message vocal. `""` si on n'a rien pu en tirer.
 
     Ne lève jamais : un message vocal illisible doit laisser passer le message,
@@ -162,6 +171,9 @@ async def transcrire(piece: Any, config: Any) -> str:
         return ""
     logger.info("Message vocal : {d:.1f} s à transcrire", d=duree)
     try:
+        from bot.discord.voice.noms import rafraichir_noms_communaute
+
+        await rafraichir_noms_communaute(db)
         moteur = await _moteur(config)
         texte = await moteur.transcribe(pcm)
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
@@ -172,7 +184,7 @@ async def transcrire(piece: Any, config: Any) -> str:
     return texte.strip()
 
 
-async def marqueur(message: Any, config: Any) -> tuple[str, str]:
+async def marqueur(message: Any, config: Any, db: Any = None) -> tuple[str, str]:
     """`(ce qui entre dans le contexte, le texte nu)`. `("", "")` si aucun vocal.
 
     Trois sorties possibles pour la première, et les trois disent la vérité : la
@@ -201,7 +213,7 @@ async def marqueur(message: Any, config: Any) -> tuple[str, str]:
         logger.info("Message vocal ignoré : {m:.1f} Mo", m=taille / 1024 / 1024)
         return "[a envoyé un fichier audio trop lourd pour que tu l'écoutes]", ""
 
-    texte = await transcrire(piece, config)
+    texte = await transcrire(piece, config, db)
     if not texte:
         return "[a envoyé un message vocal, mais tu n'as rien pu en tirer]", ""
     return f"[message vocal] {texte}", texte

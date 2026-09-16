@@ -14,6 +14,7 @@ Un mauvais terme de biais coûte peu ; un nom propre absent coûte le sens.
 from __future__ import annotations
 
 import re
+import time
 
 from loguru import logger
 
@@ -35,6 +36,11 @@ CONFIANCE_MIN = 0.95
 # places des autres.
 _PAR_PERSONNE = 2
 _LONGUEUR = (3, 24)
+# Les alias bougent à l'échelle de la journée, pas de l'énoncé : une relecture
+# par heure suffit, et le chemin d'un énoncé ne touche jamais la base.
+_FRAICHEUR_S = 3600.0
+_instantane: list[str] = []
+_lu_a: float | None = None
 
 
 def forme_parlee(brut: str | None) -> str | None:
@@ -92,3 +98,47 @@ async def charger_noms_communaute(db) -> list[str]:
                         for r in lignes)
     logger.info("voice: {n} nom(s) de la communauté soufflés au STT", n=len(noms))
     return noms
+
+
+async def rafraichir_noms_communaute(db) -> None:
+    """Relit la base si l'instantané a plus d'une heure (ou n'existe pas)."""
+    global _instantane, _lu_a
+    if db is None or (_lu_a is not None and time.monotonic() - _lu_a < _FRAICHEUR_S):
+        return
+    _lu_a = time.monotonic()
+    _instantane = await charger_noms_communaute(db)
+
+
+def noms_communaute() -> list[str]:
+    """Le dernier instantané — synchrone, lu à chaque énoncé par les moteurs."""
+    return _instantane
+
+
+def tete_et_noms(phrases, extra_terms=None) -> tuple[list[str], list[str]]:
+    """`(nom de Wally et surnoms, noms des gens)` — les deux moitiés que les
+    moteurs à budget de prompt placent différemment (cf. `FasterWhisperSTT._hotwords`)."""
+    tete = termes_de_biais(phrases)
+    return tete, termes_de_biais(tete, extra_terms)[len(tete):]
+
+
+def termes_de_biais(phrases, extra_terms=None) -> list[str]:
+    """Le nom de Wally d'abord, puis la source de noms ; sans doublon de casse.
+
+    UNE composition pour les trois moteurs (GPU, local, xAI) : un nom connu de
+    l'un et ignoré de l'autre changerait ce qu'on entend selon la machine qui
+    transcrit. Une source qui lève ne coûte pas l'énoncé : le nom de Wally reste.
+    """
+    termes = [p for p in (phrases or []) if p]
+    if extra_terms is not None:
+        try:
+            termes += list(extra_terms())
+        except Exception as e:  # noqa: BLE001 — un biais optionnel ne coûte pas un énoncé
+            logger.debug("voice: source de noms illisible, biais réduit au nom : {e!r}", e=e)
+    vus: set[str] = set()
+    gardes: list[str] = []
+    for terme in termes:
+        terme = (terme or "").strip()
+        if terme and terme.lower() not in vus:
+            vus.add(terme.lower())
+            gardes.append(terme)
+    return gardes

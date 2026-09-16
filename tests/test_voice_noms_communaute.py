@@ -5,8 +5,14 @@
 `kassandreyunikon` ne se prononce pas. La forme parlée vient des alias appris.
 """
 import asyncio
+from unittest.mock import patch
 
-from bot.discord.voice.noms import charger_noms_communaute, choisir_noms, forme_parlee
+from bot.discord.voice.noms import (
+    charger_noms_communaute,
+    choisir_noms,
+    forme_parlee,
+    termes_de_biais,
+)
 
 
 def test_le_surnom_parle_accompagne_le_pseudo():
@@ -82,5 +88,80 @@ def test_le_service_passe_le_salon_avant_la_communaute():
 
     svc = VoiceService.__new__(VoiceService)
     svc._channel = type("C", (), {"members": [_M("Azraël", "._.azrael._.")]})()
-    svc._noms_communaute = ["Kassandre"]
-    assert svc.noms_a_entendre() == ["Azraël", "._.azrael._.", "Kassandre"]
+    with patch("bot.discord.voice.service.noms_communaute", return_value=["Kassandre"]):
+        assert svc.noms_a_entendre() == ["Azraël", "._.azrael._.", "Kassandre"]
+
+
+def test_la_composition_est_la_meme_pour_tous_les_moteurs():
+    assert termes_de_biais(["Wally", "wally"], lambda: ["Kassandre", "WALLY", ""]) == [
+        "Wally", "Kassandre"]
+
+
+def test_une_source_qui_leve_garde_le_nom_du_bot():
+    def _cassee():
+        raise RuntimeError("plus de salon")
+
+    assert termes_de_biais(["Wally"], _cassee) == ["Wally"]
+
+
+def test_le_moteur_local_recoit_les_noms_apres_celui_du_bot():
+    """faster-whisper coupe les hotwords en gardant le DÉBUT : le nom de Wally
+    doit rester en tête quelle que soit la longueur de la liste."""
+    from bot.discord.voice.providers import FasterWhisperSTT
+
+    stt = FasterWhisperSTT(phrases=["Wally"], extra_terms=lambda: ["Kassandre", "Malef"])
+    assert stt._hotwords() == "Wally, Kassandre, Malef"
+
+
+def test_l_instantane_n_est_relu_qu_une_fois_par_heure():
+    from bot.discord.voice import noms
+
+    appels = []
+
+    class _DB:
+        async def lignes_noms_communaute(self, confiance_min):
+            appels.append(1)
+            return [{"user_id": "twitch:1", "username": "kassandreyunikon",
+                     "nickname": "kassandre", "confidence": 1.0}]
+
+    with patch.object(noms, "_lu_a", None), patch.object(noms, "_instantane", []):
+        asyncio.run(noms.rafraichir_noms_communaute(_DB()))
+        asyncio.run(noms.rafraichir_noms_communaute(_DB()))
+        assert noms.noms_communaute() == ["Kassandreyunikon", "Kassandre"]
+    assert len(appels) == 1
+
+
+class _Jetons:
+    """Un jeton par caractère non séparateur : assez pour tester le budget."""
+
+    class _Enc:
+        def __init__(self, n):
+            self.ids = [0] * n
+
+    def encode(self, texte, add_special_tokens=False):
+        return self._Enc(len(texte.replace(", ", "")))
+
+
+class _Modele:
+    max_length = 40  # budget = 19 jetons
+    hf_tokenizer = _Jetons()
+
+
+def test_wally_encadre_les_noms_qui_tiennent_dans_le_budget():
+    """Mesuré : Wally + liste coupée par la bibliothèque = 7/8 appels entendus ;
+    Wally + ce qui tient + Wally = 8/8, avec les mêmes 6/6 noms."""
+    from bot.discord.voice.providers import FasterWhisperSTT
+
+    stt = FasterWhisperSTT(phrases=["Wally"],
+                           extra_terms=lambda: ["Kassandre", "Malef", "Keychka"])
+    # 19 − 2×5 (Wally) − 1 = 8 : « Kassandre » (9) ne tient pas, rien ne passe
+    # devant lui — l'ordre d'activité n'est jamais sauté.
+    assert stt._hotwords(_Modele()) == "Wally"
+    stt = FasterWhisperSTT(phrases=["Wally"], extra_terms=lambda: ["Malef", "Keychka"])
+    assert stt._hotwords(_Modele()) == "Wally, Malef, Wally"
+
+
+def test_sans_noms_le_nom_seul_reste_tel_qu_il_a_ete_mesure():
+    from bot.discord.voice.providers import FasterWhisperSTT
+
+    assert FasterWhisperSTT(phrases=["Wally"])._hotwords(_Modele()) == "Wally"
