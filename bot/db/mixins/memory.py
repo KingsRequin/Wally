@@ -477,6 +477,22 @@ class MemoryMixin:
         )
         return {r["nickname"]: r["canonical_uid"] for r in rows}
 
+    async def lignes_noms_communaute(self, confiance_min: float) -> list:
+        """Personnes connues et leurs alias sûrs, les plus récemment actives d'abord.
+
+        Lu par le vocal pour biaiser la transcription vers les noms de la
+        communauté (`bot/discord/voice/noms.py`). Une ligne par alias, ou une
+        seule ligne sans alias.
+        """
+        return await self.fetch_all(
+            "SELECT u.user_id, u.username, a.nickname, a.confidence "
+            "FROM memory_users u "
+            "LEFT JOIN user_aliases a ON a.canonical_uid = u.user_id AND a.confidence >= ? "
+            "WHERE u.memory_count > 0 AND u.user_id NOT LIKE 'unknown:%' "
+            "ORDER BY u.last_updated DESC, a.confidence DESC LIMIT 600",
+            (confiance_min,),
+        )
+
     async def list_unresolved_aliases(self) -> list[dict]:
         """Return memory_users rows where user_id LIKE 'unknown:%'."""
         rows = await self.fetch_all(
