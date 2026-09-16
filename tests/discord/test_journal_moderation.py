@@ -114,6 +114,11 @@ def _fichiers_composants(vue) -> list[str]:
             if isinstance(c, discord.ui.File)]
 
 
+def _accent(vue) -> int:
+    """La couleur de son unique `Container`, en clair (comparable à `ACCENTS_JOURNAL`)."""
+    return vue.children[0].accent_colour.value
+
+
 # ---------------------------------------------------------------------------
 # Suppression — cas de base
 
@@ -1885,3 +1890,72 @@ async def test_budget_4000_pire_cas_ghost_ping():
     corps = "\n".join(textes)
     assert "…" in corps                       # la troncature a bien eu lieu
     assert "👻 Ghost ping supprimé" in corps
+
+
+# ---------------------------------------------------------------------------
+# Palette du journal (`ACCENTS_JOURNAL`) — une couleur par type d'événement
+
+
+async def test_accent_message_supprime():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("salut")
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    assert _accent(_vue(logs)) == jm.ACCENTS_JOURNAL["message_supprime"]
+
+
+async def test_accent_ghost_ping():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("salut toi", age=30.0, mentions=[123])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    assert _accent(_vue(logs)) == jm.ACCENTS_JOURNAL["ghost_ping"]
+
+
+async def test_accent_message_supprime_hors_cache():
+    bot, logs = _bot()
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=None)
+
+    await _supprimer(bot, payload)
+
+    assert _accent(_vue(logs)) == jm.ACCENTS_JOURNAL["message_supprime"]
+
+
+async def test_accent_message_modifie():
+    bot, logs = _bot()
+    await jm.message_modifie(bot, _message("ancien texte"), _message("nouveau texte"))
+    assert _accent(_vue(logs)) == jm.ACCENTS_JOURNAL["message_modifie"]
+
+
+async def test_accent_suppression_en_masse():
+    bot, logs = _bot()
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1, 2, 3}, cached_messages=[])
+    await jm.messages_supprimes_en_masse(bot, payload)
+    assert _accent(_vue(logs)) == jm.ACCENTS_JOURNAL["suppression_masse"]
+
+
+def test_aucune_couleur_en_dur_hors_de_la_palette():
+    """Les trois modules du journal ne portent AUCUN littéral de couleur
+    (`0x` suivi de 6 chiffres hexadécimaux) en dehors de la définition de
+    `ACCENTS_JOURNAL` elle-même : un seul écrivain, dans `journal_moderation.py`."""
+    from pathlib import Path
+
+    motif = re.compile(r"0x[0-9A-Fa-f]{6}\b")
+    racine = Path(__file__).resolve().parents[2]
+    tronc = (racine / "bot/discord/journal_moderation.py").read_text(encoding="utf-8")
+    debut = tronc.index("ACCENTS_JOURNAL: dict[str, int] = {")
+    fin = tronc.index("\n}\n", debut) + len("\n}\n")
+    sources = [
+        tronc[:debut] + tronc[fin:],
+        (racine / "bot/discord/journal_vocal.py").read_text(encoding="utf-8"),
+        (racine / "bot/discord/journal_membres.py").read_text(encoding="utf-8"),
+    ]
+    for source in sources:
+        trouve = motif.search(source)
+        assert trouve is None, f"couleur en dur hors de la palette : {trouve.group() if trouve else ''}"

@@ -51,6 +51,11 @@ def _vue_editee(salon):
     return salon._partial.edit.await_args.kwargs["view"]
 
 
+def _accent(vue) -> int:
+    """La couleur de son unique `Container`, en clair (comparable à `ACCENTS_JOURNAL`)."""
+    return vue.children[0].accent_colour.value
+
+
 def _canal(cid, guild=None):
     return SimpleNamespace(id=cid, mention=f"<#{cid}>", guild=guild or SimpleNamespace(id=COMMU))
 
@@ -633,3 +638,62 @@ async def test_reboot_orpheline_nettoyee_au_boot(tmp_path):
         assert await db2.cartes_vocales(777) == []
     finally:
         await db2.close()
+
+
+# ---------------------------------------------------------------------------
+# Palette du journal (`ACCENTS_JOURNAL`) — une couleur par type d'événement
+
+
+async def test_accent_vocal_cree(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+        assert _accent(_vue_envoyee(salons[LOGS])) == jv.ACCENTS_JOURNAL["vocal_cree"]
+    finally:
+        await db.close()
+
+
+async def test_accent_vocal_ferme_a_la_fermeture(tmp_path):
+    """La carte change de couleur à l'édition de fermeture — c'est ce qui
+    marque le changement d'état, pas juste le texte."""
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+
+        await jv.vocal_supprime(bot, salon)
+
+        assert _accent(_vue_editee(salons[LOGS])) == jv.ACCENTS_JOURNAL["vocal_ferme"]
+    finally:
+        await db.close()
+
+
+async def test_accent_vocal_orphelin(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
+
+        assert _accent(_vue_editee(salons[LOGS])) == jv.ACCENTS_JOURNAL["vocal_orphelin"]
+    finally:
+        await db.close()
+
+
+async def test_accent_mouvement_vocal(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = _canal(1)
+        membre = SimpleNamespace(id=1, bot=False)
+
+        await jv.mouvement_vocal(bot, membre, _etat(None), _etat(salon))
+
+        assert _accent(_vue_envoyee(salons[LOGS])) == jv.ACCENTS_JOURNAL["mouvement_vocal"]
+    finally:
+        await db.close()

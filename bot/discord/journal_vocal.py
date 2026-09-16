@@ -45,8 +45,9 @@ import discord
 from loguru import logger
 
 from bot.core.temps import PARIS, maintenant
-from bot.discord.fiches import ACCENT_NEUTRE, fiche
+from bot.discord.fiches import fiche
 from bot.discord.journal_moderation import (
+    ACCENTS_JOURNAL,
     borner_lignes,
     horodatage,
     pied_utilisateur,
@@ -107,7 +108,8 @@ async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
             return
         meta = (f"**Auteur** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id} · "
                f"**Créé** {horodatage(maintenant())}")
-        vue = fiche("🔊 Canal vocal créé", [meta], accent=ACCENT_NEUTRE, pied=pied_utilisateur(member))
+        vue = fiche("🔊 Canal vocal créé", [meta], accent=ACCENTS_JOURNAL["vocal_cree"],
+                    pied=pied_utilisateur(member))
         for salon_log in cibles:
             try:
                 message = await salon_log.send(view=vue, allowed_mentions=discord.AllowedMentions.none())
@@ -128,7 +130,7 @@ def _vue_supprimee(salon: Any, carte: dict, supprime_a: float) -> discord.ui.Lay
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Supprimé** {horodatage(supprime_dt)} · **A vécu** {duree}\n"
            f"{_bloc_participants(carte['participants'])}")
-    return fiche(f"🔊 {salon.name}", [meta], accent=ACCENT_NEUTRE)
+    return fiche(f"🔊 {salon.name}", [meta], accent=ACCENTS_JOURNAL["vocal_ferme"])
 
 
 async def vocal_supprime(bot: "WallyDiscord", salon: Any, *,
@@ -189,7 +191,7 @@ def _vue_orpheline(salon_temp_id: int, carte: dict) -> discord.ui.LayoutView:
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Salon disparu** (détecté au redémarrage, horodatage exact de la suppression perdu)\n"
            f"{_bloc_participants(carte['participants'])}")
-    return fiche(f"🔊 {nom}", [meta], accent=ACCENT_NEUTRE)
+    return fiche(f"🔊 {nom}", [meta], accent=ACCENTS_JOURNAL["vocal_orphelin"])
 
 
 async def _nettoyer_une_carte_orpheline(bot: "WallyDiscord", salon_temp_id: int) -> None:
@@ -269,7 +271,8 @@ async def mouvement_vocal(bot: "WallyDiscord", member: Any, before: Any, after: 
         else:
             titre = "↔️ Déplacement vocal"
             corps = f"**Auteur** <@{member.id}> · **De** {avant.mention} · **Vers** {apres.mention} · **Déplacé** {quand}"
-        vue = fiche(titre, [corps], accent=ACCENT_NEUTRE, pied=pied_utilisateur(member))
+        vue = fiche(titre, [corps], accent=ACCENTS_JOURNAL["mouvement_vocal"],
+                    pied=pied_utilisateur(member))
         await publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001 — un mouvement vocal ne fait pas tomber le bot
         logger.warning("journal vocal : mouvement non journalisé : {e!r}", e=e)

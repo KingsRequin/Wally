@@ -60,8 +60,9 @@ import discord
 from loguru import logger
 
 from bot.core.temps import maintenant
-from bot.discord.fiches import ACCENT_ALERTE, ACCENT_NEUTRE, ACCENT_OK, borner, fiche, url_avatar
+from bot.discord.fiches import borner, fiche, url_avatar
 from bot.discord.journal_moderation import (
+    ACCENTS_JOURNAL,
     Recoupement,
     borner_lignes,
     entree_audit,
@@ -198,8 +199,8 @@ async def membre_rejoint(bot: "WallyDiscord", member: Any, *,
         corps = [meta]
         if horloge() - member.created_at < _SEUIL_COMPTE_RECENT:
             corps.append("⚠️ **Compte récent** (moins de 7 jours)")
-        vue = fiche("📥 Nouveau membre", corps, accent=ACCENT_OK, vignette=url_avatar(member),
-                    pied=pied_utilisateur(member))
+        vue = fiche("📥 Nouveau membre", corps, accent=ACCENTS_JOURNAL["membre_arrive"],
+                    vignette=url_avatar(member), pied=pied_utilisateur(member))
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal des membres : arrivée non journalisée : {e!r}", e=e)
@@ -244,10 +245,10 @@ async def _carte_depart(bot: "WallyDiscord", guild_id: int, user: Any, salons: l
         if kick.entree is not None:
             titre = "👢 Membre expulsé"
             meta += _ligne_auteur(kick, "Expulsé par")
-            accent = ACCENT_ALERTE
+            accent = ACCENTS_JOURNAL["membre_expulse"]
         else:
             titre = "🚪 Départ"
-            accent = ACCENT_NEUTRE
+            accent = ACCENTS_JOURNAL["membre_parti"]
         vue = fiche(titre, [meta], accent=accent, vignette=url_avatar(user), pied=pied_utilisateur(user))
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001 — tâche détachée : personne derrière pour rattraper
@@ -285,8 +286,8 @@ async def _carte_ban(bot: "WallyDiscord", guild: Any, user: Any, salons: list[An
         recoupement = await entree_audit(guild, discord.AuditLogAction.ban, cible_id=user.id, horloge=horloge)
         meta = (f"**Auteur** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Banni** {horodatage(horloge())}{_ligne_auteur(recoupement, 'Banni par')}")
-        vue = fiche("🔨 Membre banni", [meta], accent=ACCENT_ALERTE, vignette=url_avatar(user),
-                    pied=pied_utilisateur(user))
+        vue = fiche("🔨 Membre banni", [meta], accent=ACCENTS_JOURNAL["membre_banni"],
+                    vignette=url_avatar(user), pied=pied_utilisateur(user))
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal des membres : ban non journalisé : {e!r}", e=e)
@@ -316,8 +317,8 @@ async def _carte_deban(bot: "WallyDiscord", guild: Any, user: Any, salons: list[
         recoupement = await entree_audit(guild, discord.AuditLogAction.unban, cible_id=user.id, horloge=horloge)
         meta = (f"**Auteur** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Débanni** {horodatage(horloge())}{_ligne_auteur(recoupement, 'Débanni par')}")
-        vue = fiche("🔓 Membre débanni", [meta], accent=ACCENT_OK, vignette=url_avatar(user),
-                    pied=pied_utilisateur(user))
+        vue = fiche("🔓 Membre débanni", [meta], accent=ACCENTS_JOURNAL["membre_debanni"],
+                    vignette=url_avatar(user), pied=pied_utilisateur(user))
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal des membres : déban non journalisé : {e!r}", e=e)
@@ -444,7 +445,7 @@ async def _carte_modification(bot: "WallyDiscord", *, guild_id: int, membre_id: 
             corps.append(f"**Rôles retirés**{ligne_roles}\n{lignes}")
             ligne_roles = ""
 
-        accent = ACCENT_ALERTE if ch.debut_exclusion else (ACCENT_OK if ch.fin_exclusion else ACCENT_NEUTRE)
+        accent = ACCENTS_JOURNAL["membre_exclu"] if ch.debut_exclusion else ACCENTS_JOURNAL["membre_modifie"]
         vue = fiche(_titre_modification(ch), corps, accent=accent, vignette=avatar,
                     pied=pied_utilisateur(SimpleNamespace(id=membre_id)))
         await publier_partout(salons, lambda _t: vue)

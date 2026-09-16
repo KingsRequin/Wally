@@ -52,10 +52,34 @@ import discord
 from loguru import logger
 
 from bot.core.temps import maintenant
-from bot.discord.fiches import ACCENT_ALERTE, Piece, borner, fiche, url_avatar
+from bot.discord.fiches import ACCENT_ALERTE, ACCENT_OK, ACCENTS_EMOTION, Piece, borner, fiche, url_avatar
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
+
+# Palette du journal : UNE couleur par type d'événement, écrite UNE SEULE
+# fois ici — les trois modules du journal (ce fichier, `journal_vocal.py`,
+# `journal_membres.py`) lisent cette table, aucun n'a sa propre couleur en
+# dur. Recoupée avec les accents déjà posés par `fiches.py`
+# (`ACCENT_*`/`ACCENTS_EMOTION`) quand l'un d'eux convient — jamais dupliquée
+# en une nouvelle valeur hexadécimale à côté.
+ACCENTS_JOURNAL: dict[str, int] = {
+    "message_supprime": ACCENTS_EMOTION["anger"],
+    "ghost_ping": ACCENTS_EMOTION["boredom"],
+    "message_modifie": ACCENT_ALERTE,
+    "suppression_masse": 0xB91C1C,
+    "vocal_cree": 0x3498DB,
+    "vocal_ferme": 0x64748B,
+    "vocal_orphelin": 0x94A3B8,
+    "mouvement_vocal": 0x38BDF8,
+    "membre_arrive": ACCENT_OK,
+    "membre_parti": 0x94A3B8,
+    "membre_expulse": 0xF59E0B,
+    "membre_banni": 0xDC2626,
+    "membre_debanni": 0x16A34A,
+    "membre_exclu": 0xEA580C,
+    "membre_modifie": 0x6366F1,
+}
 
 _MAX_CITATION = 1500           # budget V2 total (4000) réparti entre les blocs cités
 _MAX_NON_RECUPEREES = 500      # budget de la liste des pièces non récupérées
@@ -807,7 +831,8 @@ async def _carte_hors_cache(payload: Any, source: Any, salons: list[Any],
     """
     meta = (f"**Auteur** inconnu · **Salon** {_mention_salon(payload.channel_id, source)} · "
             f"**Message** {payload.message_id} · **Supprimé** {horodatage(horloge())}")
-    vue = fiche("🗑️ Message supprimé", [meta, "*contenu non disponible*"], accent=ACCENT_ALERTE)
+    vue = fiche("🗑️ Message supprimé", [meta, "*contenu non disponible*"],
+                accent=ACCENTS_JOURNAL["message_supprime"])
     await publier_partout(salons, lambda _t: vue)
 
 
@@ -846,6 +871,7 @@ async def _carte_suppression(bot: "WallyDiscord", payload: Any, msg: Any, source
         # suppression ordinaire d'un message qui mentionnait quelqu'un.
         ghost = bool(mentions) and (horloge() - msg.created_at).total_seconds() < _GHOST_PING_SECONDES
         titre = "👻 Ghost ping supprimé" if ghost else "🗑️ Message supprimé"
+        accent = ACCENTS_JOURNAL["ghost_ping"] if ghost else ACCENTS_JOURNAL["message_supprime"]
 
         def construire(t: _Telechargement) -> discord.ui.LayoutView:
             corps = [meta, bloc_contenu]
@@ -853,7 +879,7 @@ async def _carte_suppression(bot: "WallyDiscord", payload: Any, msg: Any, source
                 corps.append(f"**Mentionnait** {mentions}")
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
-            return fiche(titre, corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
+            return fiche(titre, corps, accent=accent, vignette=url_avatar(auteur),
                          medias=t.medias, fichiers=t.autres, pied=pied_utilisateur(auteur))
 
         await publier_partout(salons, construire, tele)
@@ -904,8 +930,9 @@ async def message_modifie(bot: "WallyDiscord", before: Any, after: Any) -> None:
                     corps.append(_bloc_deja_echappe("Modification", diff))
             if t.ratees:
                 corps.append(_bloc_non_recuperees(t.ratees))
-            return fiche("✏️ Message modifié", corps, accent=ACCENT_ALERTE, vignette=url_avatar(auteur),
-                         medias=t.medias, fichiers=t.autres, pied=pied_utilisateur(auteur))
+            return fiche("✏️ Message modifié", corps, accent=ACCENTS_JOURNAL["message_modifie"],
+                         vignette=url_avatar(auteur), medias=t.medias, fichiers=t.autres,
+                         pied=pied_utilisateur(auteur))
 
         await publier_partout(salons, construire, tele)
     except Exception as e:  # noqa: BLE001
@@ -944,7 +971,7 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
         corps = [meta]
         if lignes:
             corps.append(borner_lignes(lignes, _MAX_CITATION))
-        vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
+        vue = fiche("🧹 Suppression en masse", corps, accent=ACCENTS_JOURNAL["suppression_masse"])
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression en masse non journalisée : {e!r}", e=e)

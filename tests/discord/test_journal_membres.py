@@ -132,6 +132,11 @@ def _longueur_totale(vue) -> int:
     return sum(len(t) for t in _textes(vue))
 
 
+def _accent(vue) -> int:
+    """La couleur de son unique `Container`, en clair (comparable à `ACCENTS_JOURNAL`)."""
+    return vue.children[0].accent_colour.value
+
+
 # ---------------------------------------------------------------------------
 # #8 — arrivée
 
@@ -729,3 +734,99 @@ async def test_raison_d_audit_bornee_a_quelques_centaines_de_caracteres():
     texte = "\n".join(_textes(_vue(logs)))
     assert raison_longue not in texte
     assert "R" * (jmb._MAX_RAISON - 1) + "…" in texte
+
+
+# ---------------------------------------------------------------------------
+# Palette du journal (`ACCENTS_JOURNAL`) — une couleur par type d'événement
+
+
+async def test_accent_membre_arrive():
+    bot, logs = _bot()
+    membre = _membre(id=1, age_compte_jours=30)
+
+    await jmb.membre_rejoint(bot, membre)
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_arrive"]
+
+
+async def test_accent_membre_parti():
+    _etat_audit_neuf()
+    audit = _FauxAudit([])
+    bot, logs = _bot(audit=audit)
+    user = _membre(id=1, joined_at=maintenant() - timedelta(days=10))
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
+
+    await jmb.membre_parti(bot, payload, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_parti"]
+
+
+async def test_accent_membre_expulse():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.kick, modo_id=999, cible_id=1,
+                                age=1.0, raison="spam")])
+    bot, logs = _bot(audit=audit)
+    user = _membre(id=1)
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
+
+    await jmb.membre_parti(bot, payload, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_expulse"]
+
+
+async def test_accent_membre_banni():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.ban, modo_id=42, cible_id=1,
+                                age=1.0, raison="toxicité")])
+    bot, logs = _bot(audit=audit)
+    guild, user = audit, _membre(id=1)
+
+    await jmb.membre_banni(bot, guild, user, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_banni"]
+
+
+async def test_accent_membre_debanni():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.unban, modo_id=3, cible_id=1, age=1.0)])
+    bot, logs = _bot(audit=audit)
+    guild, user = audit, _membre(id=1)
+
+    await jmb.membre_debanni(bot, guild, user, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_debanni"]
+
+
+async def test_accent_membre_exclu():
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.member_update, modo_id=5,
+                                cible_id=1, age=1.0, raison="flood")])
+    bot, logs = _bot(audit=audit)
+    guild = _guild()
+    fin = maintenant() + timedelta(hours=1)
+    avant = _membre(id=1, timed_out_until=None, guild=guild)
+    apres = _membre(id=1, timed_out_until=fin, guild=guild)
+
+    await jmb.membre_modifie(bot, avant, apres, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_exclu"]
+
+
+async def test_accent_membre_modifie():
+    """Surnom, rôles, exclusion levée : tout le reste de `membre_modifie`
+    partage la même couleur, sans clé dédiée dans la palette."""
+    _etat_audit_neuf()
+    bot, logs = _bot(audit=_FauxAudit([]))
+    guild = _guild()
+    avant = _membre(id=1, nick="A", guild=guild)
+    apres = _membre(id=1, nick="B", guild=guild)
+
+    await jmb.membre_modifie(bot, avant, apres, dormir=_sans_sommeil)
+    await _fond()
+
+    assert _accent(_vue(logs)) == jmb.ACCENTS_JOURNAL["membre_modifie"]
