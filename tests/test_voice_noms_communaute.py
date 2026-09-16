@@ -165,3 +165,31 @@ def test_sans_noms_le_nom_seul_reste_tel_qu_il_a_ete_mesure():
     from bot.discord.voice.providers import FasterWhisperSTT
 
     assert FasterWhisperSTT(phrases=["Wally"])._hotwords(_Modele()) == "Wally"
+
+
+_NOMS = ["Wally", "Kassandre", "Azraël", "Ayaa", "Salah", "Tako", "Malef"]
+
+
+def test_un_nom_qui_sonne_pareil_prend_la_forme_connue():
+    """xAI rend « Cassandra » avec ou sans keyterm : le filet est en sortie."""
+    from bot.discord.voice.noms import corriger_noms
+
+    assert corriger_noms("Bien le bonsoir, Cassandra, tu vas bien?", _NOMS) == \
+        "Bien le bonsoir, Kassandre, tu vas bien?"
+    assert corriger_noms("Azrael appelle Waly", _NOMS) == "Azraël appelle Wally"
+
+
+def test_les_mots_courants_ne_deviennent_pas_des_noms():
+    """Mesuré sur 13 623 répliques : sous cinq sons, « ai » devenait « Ayaa »
+    1 187 fois, « salle » « Salah », « take » « Tako »."""
+    from bot.discord.voice.noms import corriger_noms
+
+    phrase = "ai ai aïe, take ça dans la salle"
+    assert corriger_noms(phrase, _NOMS) == phrase
+
+
+def test_sans_noms_le_texte_passe_tel_quel():
+    from bot.discord.voice.noms import corriger_noms
+
+    assert corriger_noms("Cassandra", []) == "Cassandra"
+    assert corriger_noms("", _NOMS) == ""

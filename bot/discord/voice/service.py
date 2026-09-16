@@ -31,7 +31,12 @@ from bot.discord.voice.brain import (
     generate_voice_greeting,
     handle_transcript,
 )
-from bot.discord.voice.noms import noms_communaute, rafraichir_noms_communaute
+from bot.discord.voice.noms import (
+    corriger_noms,
+    noms_communaute,
+    rafraichir_noms_communaute,
+    termes_de_biais,
+)
 from bot.discord.voice.providers import build_stt, build_streaming_stt, build_tts
 from bot.discord.voice.quota import VoiceQuota
 from bot.discord.voice.style import adapt_style, resolve_style
@@ -909,7 +914,8 @@ class VoiceService:
 
         Pendant que Wally parle, seuls les ordres d'arrêt courts passent (barge-in) ; le
         reste est ignoré (sa propre voix captée par les micros, ou parole hors-sujet)."""
-        text = (text or "").strip()
+        text = corriger_noms((text or "").strip(),
+                             termes_de_biais(self._stt_phrases, self.noms_a_entendre))
         if not text:
             return
         # Une transcription ABOUTIE. C'est ce compte, confronté aux énoncés que

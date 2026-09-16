@@ -118,6 +118,12 @@ async def _en_pcm(donnees: bytes) -> bytes:
     return sortie
 
 
+def _noms_du_bot(config: Any) -> list[str]:
+    bot_cfg = getattr(config, "bot", None)
+    return [str(n) for n in (getattr(bot_cfg, "name", None),
+                             *(getattr(bot_cfg, "trigger_names", None) or [])) if n]
+
+
 async def _moteur(config: Any) -> Any:
     """L'instance STT locale, chargée à la PREMIÈRE transcription.
 
@@ -132,16 +138,13 @@ async def _moteur(config: Any) -> Any:
             from bot.discord.voice.noms import noms_communaute
 
             voix = getattr(config, "voice", None)
-            bot_cfg = getattr(config, "bot", None)
             _stt = FasterWhisperSTT(
                 model_size=getattr(voix, "whisper_model", None) or "small",
                 language=getattr(voix, "language", None) or "fr-FR",
                 compute_type=getattr(voix, "whisper_compute_type", None) or "int8",
                 # Les mêmes noms qu'en salon vocal : un prénom entendu en direct
                 # et raté dans un message vocal serait une surdité à géométrie variable.
-                phrases=[str(n) for n in (getattr(bot_cfg, "name", None),
-                                          *(getattr(bot_cfg, "trigger_names", None) or []))
-                         if n],
+                phrases=_noms_du_bot(config),
                 extra_terms=noms_communaute,
             )
         return _stt
@@ -171,11 +174,17 @@ async def transcrire(piece: Any, config: Any, db: Any = None) -> str:
         return ""
     logger.info("Message vocal : {d:.1f} s à transcrire", d=duree)
     try:
-        from bot.discord.voice.noms import rafraichir_noms_communaute
+        from bot.discord.voice.noms import (
+            corriger_noms,
+            noms_communaute,
+            rafraichir_noms_communaute,
+            termes_de_biais,
+        )
 
         await rafraichir_noms_communaute(db)
         moteur = await _moteur(config)
-        texte = await moteur.transcribe(pcm)
+        texte = corriger_noms(await moteur.transcribe(pcm),
+                              termes_de_biais(_noms_du_bot(config), noms_communaute))
     except Exception as exc:  # noqa: BLE001 — jamais bloquant
         logger.warning("Message vocal : transcription impossible ({e!r})", e=exc)
         return ""

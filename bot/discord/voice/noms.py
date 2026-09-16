@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
+from functools import lru_cache
 
 from loguru import logger
 
@@ -137,8 +139,60 @@ def termes_de_biais(phrases, extra_terms=None) -> list[str]:
     vus: set[str] = set()
     gardes: list[str] = []
     for terme in termes:
-        terme = (terme or "").strip()
+        # Un nom de config absent (`name: null`) n'est pas une chaîne.
+        terme = terme.strip() if isinstance(terme, str) else ""
         if terme and terme.lower() not in vus:
             vus.add(terme.lower())
             gardes.append(terme)
     return gardes
+
+
+# Sons en dessous desquels un nom ressemble à trop de mots courants. Mesuré sur
+# les 13 623 répliques vocales du journal (2026-09-16) : à 4, « ai » devenait
+# « Ayaa » 1 187 fois, « salle » « Salah », « take » « Tako ». À 5, il ne reste
+# que de vrais ratés (Cassandra → Kassandre 36 fois, Azrael → Azraël 13 fois).
+_SONS_MIN = 5
+_MOT = re.compile(r"[^\W\d_]+")
+_GRAPHIES = [(re.compile(a), b) for a, b in (
+    ("ph", "f"), ("qu", "k"), ("ck", "k"), ("c(?=[aouklr])", "k"), ("c(?=[eiy])", "s"),
+    ("y", "i"), ("w", "ou"), ("h", ""),
+)]
+
+
+def cle_phonetique(mot: str) -> str:
+    """Ce qui s'entend d'un mot : sans accent, casse, lettre muette ni voyelle finale."""
+    brut = unicodedata.normalize("NFD", mot.lower())
+    cle = re.sub(r"[^a-z]", "", "".join(c for c in brut if unicodedata.category(c) != "Mn"))
+    for motif, son in _GRAPHIES:
+        cle = motif.sub(son, cle)
+    return re.sub(r"[aeo]$", "", re.sub(r"(.)\1+", r"\1", cle))
+
+
+@lru_cache(maxsize=8)
+def _table(noms: tuple[str, ...]) -> dict[str, str]:
+    table: dict[str, str] = {}
+    for nom in noms:
+        cle = cle_phonetique(nom)
+        if " " not in nom.strip() and len(cle) >= _SONS_MIN:
+            table.setdefault(cle, nom)  # le premier est le plus prioritaire
+    return table
+
+
+def corriger_noms(texte: str, noms) -> str:
+    """Réécrit un mot qui SONNE comme un nom connu sous la forme de ce nom.
+
+    Le filet des moteurs qui n'écoutent pas leur biais : xAI rend « Cassandra »
+    avec ou sans `keyterm=Kassandre` (cinq variantes essayées le 2026-09-16),
+    alors que le GPU et le local, biaisés, écrivent « Kassandre ». Appliqué à la
+    sortie de TOUS les moteurs, pour que le même mot prononcé donne le même
+    texte quelle que soit la machine qui l'a transcrit.
+    """
+    table = _table(tuple(noms))
+    if not table or not texte:
+        return texte
+
+    def remplacer(m: re.Match) -> str:
+        nom = table.get(cle_phonetique(m.group(0)))
+        return nom if nom and nom.lower() != m.group(0).lower() else m.group(0)
+
+    return _MOT.sub(remplacer, texte)
