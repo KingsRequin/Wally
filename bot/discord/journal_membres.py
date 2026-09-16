@@ -12,15 +12,28 @@ ce membre) d'un départ volontaire ; durée de présence si `joined_at` connu.
 Ban (`membre_banni`) / déban (`membre_debanni`) : auteur et raison depuis
 l'audit, même recoupement que #1 (T2).
 
-**Éviter la carte en double sur un ban.** Discord dispatche TOUJOURS
-`GUILD_BAN_ADD` avant `GUILD_MEMBER_REMOVE` (le membre banni quitte donc
-aussi le serveur) : sans précaution, un ban publierait à la fois une carte
-« départ » et une carte « banni ». `_carte_depart` attend `_DELAI_AUDIT` avant
-de conclure (comme #1), et vérifie D'ABORD une entrée `ban` récente sur ce
-membre — trouvée, elle rend la main sans publier : `membre_banni` porte déjà
-sa propre carte, plus complète (raison comprise). Aucun état partagé entre
-les deux tâches : chacune relit le journal d'audit, qui a eu le temps de
-s'écrire pendant l'attente commune.
+**Éviter la carte en double sur un ban.** Un membre banni quitte aussi le
+serveur : sans précaution, `_carte_depart` publierait un « 🚪 Départ » EN PLUS
+du « 🔨 Membre banni ». Se fier au journal d'audit pour repérer ce cas est le
+mauvais signal : une permission refusée ou une entrée pas encore écrite après
+`_DELAI_AUDIT` (l'audit n'y met pas systématiquement moins de deux secondes)
+fait passer un ban pour un départ volontaire, et la carte part quand même en
+double — c'est le défaut corrigé ici. `on_member_ban` le dit de PREMIÈRE MAIN,
+sans permission à demander : `membre_banni` pose un marqueur en RAM
+(`_marquer_banni`) dès l'événement reçu, AVANT tout délai, et `_carte_depart`
+le consulte EN PREMIER — trouvé, elle rend la main sans publier, `membre_banni`
+portant déjà sa propre carte (raison comprise). Le marqueur expire vite
+(`_MARQUEUR_BAN_TTL`, quelques secondes au-delà de `_DELAI_AUDIT`) : passé ce
+délai, un départ n'a plus à se taire pour un ban trop ancien pour appartenir à
+la même rafale d'événements. Le journal d'audit ne sert plus qu'en SECOURS,
+pour distinguer un kick d'un départ volontaire (aucun marqueur équivalent : un
+kick n'a pas d'événement `on_member_kick` de première main).
+
+Sens unique : le marqueur n'existe QUE pour faire taire un départ qui n'est
+pas encore parti — si la carte de départ est déjà publiée quand l'événement de
+ban arrive (ordre inversé, ou délai anormalement long), `membre_banni` publie
+quand même la sienne. C'est honnête (un ban a bien eu lieu) au prix d'un
+doublon dans ce cas limite, plus rare que celui corrigé ici.
 
 **#9 Surnoms et rôles.** `membre_modifie` (`on_member_update`, UN SEUL dans
 `bot/` — il porte #8 « exclusion temporaire » et #9 ensemble) : surnom changé
@@ -37,6 +50,7 @@ comme un bot.
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -74,6 +88,45 @@ _MAX_ROLES = 1500
 
 # Un compte plus jeune que ça porte le badge « compte récent » à l'arrivée.
 _SEUIL_COMPTE_RECENT = timedelta(days=7)
+
+# Durée de vie du marqueur « banni » posé par `membre_banni` (cf. docstring de
+# module, § éviter la carte en double). Large au-delà de `_DELAI_AUDIT` : le
+# marqueur doit encore être là quand `_carte_depart` le consulte après SON
+# propre délai, même si les deux événements Discord n'arrivent pas dans le
+# même ordre exact.
+_MARQUEUR_BAN_TTL = 10.0
+
+# Bornage par serveur, même famille que
+# `journal_moderation._MAX_COMPTEURS_AUDIT` : sans plafond, un serveur très
+# actif ferait croître ce dictionnaire pour la durée de vie du process.
+_MAX_MARQUEURS_BAN = 200
+
+#: `{guild_id: {user_id: epoch_du_marquage}}`. En RAM seulement — le perdre au
+#: redémarrage coûte au pire une carte de départ en double sur un ban survenu
+#: juste avant l'arrêt, un cas déjà rare.
+_marqueurs_ban: dict[int, "OrderedDict[int, float]"] = {}
+
+
+def _marquer_banni(guild_id: int, user_id: int, horloge: Callable[[], datetime]) -> None:
+    """Pose le marqueur « banni », appelé synchrone dès `on_member_ban` —
+    avant tout `await`, pour qu'il existe le plus tôt possible face à un
+    départ qui a déjà commencé son propre délai."""
+    memoire = _marqueurs_ban.setdefault(guild_id, OrderedDict())
+    memoire[user_id] = horloge().timestamp()
+    memoire.move_to_end(user_id)
+    while len(memoire) > _MAX_MARQUEURS_BAN:
+        memoire.popitem(last=False)
+
+
+def _recemment_banni(guild_id: int, user_id: int, horloge: Callable[[], datetime]) -> bool:
+    """Le marqueur « banni » existe-t-il encore pour ce membre, pas expiré ?"""
+    memoire = _marqueurs_ban.get(guild_id)
+    if not memoire:
+        return False
+    pose = memoire.get(user_id)
+    if pose is None:
+        return False
+    return horloge().timestamp() - pose < _MARQUEUR_BAN_TTL
 
 
 def _echapper(texte: str) -> str:
@@ -166,10 +219,9 @@ async def _carte_depart(bot: "WallyDiscord", guild_id: int, user: Any, salons: l
                         dormir: Callable[[float], Any], horloge: Callable[[], datetime]) -> None:
     try:
         await dormir(_DELAI_AUDIT)
-        guild = bot.get_guild(guild_id)
-        ban = await entree_audit(guild, discord.AuditLogAction.ban, cible_id=user.id, horloge=horloge)
-        if ban.entree is not None:
+        if _recemment_banni(guild_id, user.id, horloge):
             return   # `membre_banni` publie déjà sa propre carte : pas de doublon
+        guild = bot.get_guild(guild_id)
         kick = await entree_audit(guild, discord.AuditLogAction.kick, cible_id=user.id, horloge=horloge)
         meta = (f"**Qui** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Parti** {horodatage(horloge())}")
@@ -192,8 +244,15 @@ async def _carte_depart(bot: "WallyDiscord", guild_id: int, user: Any, salons: l
 async def membre_banni(bot: "WallyDiscord", guild: Any, user: Any, *,
                        dormir: Callable[[float], Any] = asyncio.sleep,
                        horloge: Callable[[], datetime] = maintenant) -> None:
-    """`on_member_ban` : bannissement, auteur et raison depuis l'audit."""
+    """`on_member_ban` : bannissement, auteur et raison depuis l'audit.
+
+    Pose le marqueur « banni » (`_marquer_banni`) tout de suite, AVANT même
+    de savoir si une carte sera publiée (bot exclu, journal désactivé…) : il
+    ne sert qu'à faire taire un départ pour CE membre, indépendamment de la
+    publication de la carte de ban elle-même.
+    """
     try:
+        _marquer_banni(guild.id, user.id, horloge)
         cfg = bot.config.discord.journal_moderation
         if user.bot and not cfg.inclure_bots:
             return

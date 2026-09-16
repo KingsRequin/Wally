@@ -101,6 +101,14 @@ def isolate_bg_tasks():
     `test_journal_membres.py`) plante sur un objet qui n'est ni une
     coroutine ni un futur, au hasard de la distribution des fichiers entre
     workers `pytest-xdist`.
+
+    ⚠️ Ce fixture MASQUE le symptôme, il ne le détecte pas : en vidant
+    `_bg_tasks` avant ET après chaque test, une vraie fuite de PRODUCTION (une
+    tâche de `_fire()` qui ne se termine jamais, `_done` jamais appelé pour
+    une raison autre qu'un mock) disparaîtrait du `set` sans jamais lever
+    d'erreur ici — elle continuerait de fuir en vrai, seulement invisible à
+    cette suite. Ce nettoyage ne couvre QUE la pollution inter-tests décrite
+    ci-dessus, pas une garantie que `_fire()` se comporte bien.
     """
     from bot.discord.handlers import _bg_tasks
     _bg_tasks.clear()

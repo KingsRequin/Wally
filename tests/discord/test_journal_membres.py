@@ -62,10 +62,13 @@ def _entree(*, action, id=1, modo_id=999, cible_id=1, age=0.0, raison=None):
 
 
 def _etat_audit_neuf() -> None:
-    """Les compteurs et les serveurs déjà signalés vivent en RAM, par module
-    (`journal_moderation`, partagé par le recoupement d'audit)."""
+    """Les compteurs, les serveurs déjà signalés et les marqueurs « banni »
+    vivent en RAM, par module (`journal_moderation` pour le recoupement
+    d'audit partagé, `journal_membres` pour le marqueur qui évite la carte de
+    départ en double sur un ban)."""
     jm._compteurs_audit.clear()
     jm._audit_refuse.clear()
+    jmb._marqueurs_ban.clear()
 
 
 def _salon_logs(sid):
@@ -241,18 +244,86 @@ async def test_depart_avec_entree_kick_devient_expulsion():
     assert "spam" in texte
 
 
-async def test_depart_avec_ban_ne_publie_pas_de_carte_depart():
-    """§3 : `on_member_ban` publiera sa propre carte — pas de doublon."""
+async def test_ban_avec_entree_audit_visible_ne_publie_qu_une_carte():
+    """`on_member_ban` pose son marqueur AVANT tout délai : `_carte_depart`
+    le voit et ne publie pas de « Départ » en plus du « Banni »."""
     _etat_audit_neuf()
     audit = _FauxAudit([_entree(action=discord.AuditLogAction.ban, modo_id=999, cible_id=1, age=1.0)])
     bot, logs = _bot(audit=audit)
     user = _membre(id=1)
-    payload = SimpleNamespace(guild_id=COMMU, user=user)
 
+    await jmb.membre_banni(bot, audit, user, dormir=_sans_sommeil)
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
     await jmb.membre_parti(bot, payload, dormir=_sans_sommeil)
     await _fond()
 
-    logs.send.assert_not_awaited()
+    logs.send.assert_awaited_once()
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🔨 Membre banni" in texte
+    assert "**Banni par** <@999>" in texte
+
+
+async def test_ban_avec_audit_refuse_ne_publie_quand_meme_qu_une_carte():
+    """Le marqueur ne dépend PAS de la lisibilité du journal d'audit — c'est
+    justement le défaut corrigé : une permission refusée ne doit plus faire
+    passer le ban pour un départ volontaire."""
+    _etat_audit_neuf()
+    audit = _FauxAudit(refuse=True)
+    bot, logs = _bot(audit=audit)
+    user = _membre(id=1)
+
+    await jmb.membre_banni(bot, audit, user, dormir=_sans_sommeil)
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
+    await jmb.membre_parti(bot, payload, dormir=_sans_sommeil)
+    await _fond()
+
+    logs.send.assert_awaited_once()
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🔨 Membre banni" in texte
+    assert "Banni par" not in texte
+
+
+async def test_ban_avec_audit_pas_encore_ecrit_ne_publie_quand_meme_qu_une_carte():
+    """Même chose quand l'audit est lisible mais l'entrée pas encore écrite
+    (retard d'écriture Discord) : liste vide plutôt que refusée."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([])
+    bot, logs = _bot(audit=audit)
+    user = _membre(id=1)
+
+    await jmb.membre_banni(bot, audit, user, dormir=_sans_sommeil)
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
+    await jmb.membre_parti(bot, payload, dormir=_sans_sommeil)
+    await _fond()
+
+    logs.send.assert_awaited_once()
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🔨 Membre banni" in texte
+    assert "Banni par" not in texte
+
+
+async def test_marqueur_ban_expire_le_depart_publie_quand_meme():
+    """Passé `_MARQUEUR_BAN_TTL`, le marqueur ne fait plus taire un départ —
+    trop vieux pour appartenir à la même rafale d'événements que le ban."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([])
+    bot, logs = _bot(audit=audit)
+    user = _membre(id=1)
+    t0 = maintenant()
+
+    await jmb.membre_banni(bot, audit, user, dormir=_sans_sommeil, horloge=lambda: t0)
+
+    def _horloge_tardive():
+        return t0 + timedelta(seconds=jmb._MARQUEUR_BAN_TTL + 5)
+
+    payload = SimpleNamespace(guild_id=COMMU, user=user)
+    await jmb.membre_parti(bot, payload, dormir=_sans_sommeil, horloge=_horloge_tardive)
+    await _fond()
+
+    assert logs.send.await_count == 2
+    textes = ["\n".join(_textes(appel.kwargs["view"])) for appel in logs.send.await_args_list]
+    assert any("🔨 Membre banni" in t for t in textes)
+    assert any("🚪 Départ" in t for t in textes)
 
 
 async def test_depart_bot_exclu_par_defaut():
