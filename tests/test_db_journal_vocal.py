@@ -15,7 +15,7 @@ async def test_aucune_carte_par_defaut(tmp_path):
 async def test_carte_vocale_ajouter_et_lecture(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 999, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS1, 999, 42, [42], "Arène")
         cartes = await db.cartes_vocales(777)
         assert len(cartes) == 1
         carte = cartes[0]
@@ -23,7 +23,20 @@ async def test_carte_vocale_ajouter_et_lecture(tmp_path):
         assert carte["message_id"] == 999
         assert carte["createur_id"] == 42
         assert carte["participants"] == [42]
+        assert carte["salon_nom"] == "Arène"
         assert isinstance(carte["cree_a"], float) and carte["cree_a"] > 0
+    finally:
+        await db.close()
+
+
+async def test_carte_vocale_ajouter_salon_nom_vide_par_defaut_migration(tmp_path):
+    """Une ligne migrée avant l'ajout de la colonne n'a jamais reçu de nom :
+    `salon_nom=""` explicite reproduit ce cas sans écriture SQL directe."""
+    db = await Database.create(str(tmp_path / "t.db"))
+    try:
+        await db.carte_vocale_ajouter(777, LOGS1, 999, 42, [42], "")
+        carte = (await db.cartes_vocales(777))[0]
+        assert carte["salon_nom"] == ""
     finally:
         await db.close()
 
@@ -32,8 +45,8 @@ async def test_une_carte_par_salon_de_logs(tmp_path):
     """Autant de lignes que de salons de logs configurés : chacun a SA carte."""
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
-        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
+        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42], "Arène")
         cartes = await db.cartes_vocales(777)
         assert {c["log_salon_id"] for c in cartes} == {LOGS1, LOGS2}
     finally:
@@ -43,8 +56,8 @@ async def test_une_carte_par_salon_de_logs(tmp_path):
 async def test_participant_ajoute_a_toutes_les_cartes_du_salon(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
-        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
+        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42], "Arène")
         await db.carte_vocale_participant_ajouter(777, 1)
         cartes = await db.cartes_vocales(777)
         assert all(set(c["participants"]) == {42, 1} for c in cartes)
@@ -55,7 +68,7 @@ async def test_participant_ajoute_a_toutes_les_cartes_du_salon(tmp_path):
 async def test_participant_ajoute_idempotent(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
         await db.carte_vocale_participant_ajouter(777, 1)
         await db.carte_vocale_participant_ajouter(777, 1)
         carte = (await db.cartes_vocales(777))[0]
@@ -76,8 +89,8 @@ async def test_participant_sans_carte_ne_fait_rien(tmp_path):
 async def test_cartes_vocales_supprimer(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
-        await db.carte_vocale_ajouter(888, LOGS1, 300, 1, [1])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
+        await db.carte_vocale_ajouter(888, LOGS1, 300, 1, [1], "Autre")
         await db.cartes_vocales_supprimer(777)
         assert await db.cartes_vocales(777) == []
         assert len(await db.cartes_vocales(888)) == 1   # l'autre salon n'est pas touché
@@ -89,8 +102,8 @@ async def test_carte_vocale_ajouter_remplace_la_meme_carte(tmp_path):
     """`INSERT OR REPLACE` : rejouer la création (retry) ne duplique pas la ligne."""
     db = await Database.create(str(tmp_path / "t.db"))
     try:
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
-        await db.carte_vocale_ajouter(777, LOGS1, 101, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
+        await db.carte_vocale_ajouter(777, LOGS1, 101, 42, [42], "Arène")
         cartes = await db.cartes_vocales(777)
         assert len(cartes) == 1
         assert cartes[0]["message_id"] == 101
@@ -102,9 +115,9 @@ async def test_salons_temp_avec_carte(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
         assert await db.salons_temp_avec_carte() == set()
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
-        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42])   # même salon, autre log
-        await db.carte_vocale_ajouter(888, LOGS1, 300, 1, [1])
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42], "Arène")
+        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42], "Arène")   # même salon, autre log
+        await db.carte_vocale_ajouter(888, LOGS1, 300, 1, [1], "Autre")
         assert await db.salons_temp_avec_carte() == {777, 888}
         await db.cartes_vocales_supprimer(777)
         assert await db.salons_temp_avec_carte() == {888}
@@ -118,7 +131,7 @@ async def test_participants_stockes_plafonnes(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
         deja_500 = list(range(500))
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, deja_500)
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, deja_500, "Arène")
         carte = (await db.cartes_vocales(777))[0]
         assert len(carte["participants"]) == 500
         assert carte["participants"] == deja_500
@@ -136,7 +149,7 @@ async def test_carte_vocale_ajouter_plafonne_la_liste_initiale(tmp_path):
     db = await Database.create(str(tmp_path / "t.db"))
     try:
         trop = list(range(600))
-        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, trop)
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, trop, "Arène")
         carte = (await db.cartes_vocales(777))[0]
         assert len(carte["participants"]) == 500
         assert carte["participants"] == trop[:500]

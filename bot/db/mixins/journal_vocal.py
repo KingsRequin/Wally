@@ -34,18 +34,20 @@ class JournalVocalMixin:
         raise NotImplementedError
 
     async def carte_vocale_ajouter(self, salon_temp_id: int, log_salon_id: int, message_id: int,
-                                    createur_id: int, participants: list[int]) -> None:
+                                    createur_id: int, participants: list[int], salon_nom: str) -> None:
         """Range la carte publiée dans `log_salon_id` pour le salon temporaire.
 
         Un couple (salon_temp_id, log_salon_id) par salon de logs : autant de
-        lignes que de cartes envoyées à la création.
+        lignes que de cartes envoyées à la création. `salon_nom` est rangé
+        pour que la carte orpheline (`journal_vocal.nettoyer_cartes_orphelines`)
+        puisse encore nommer le salon une fois le salon Discord disparu.
         """
         await self.execute(
             "INSERT OR REPLACE INTO journal_cartes_vocales "
-            "(salon_temp_id, log_salon_id, message_id, createur_id, cree_a, participants) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(salon_temp_id, log_salon_id, message_id, createur_id, cree_a, participants, salon_nom) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(salon_temp_id), str(log_salon_id), str(message_id), str(createur_id), time.time(),
-             json.dumps([str(p) for p in participants][:_MAX_PARTICIPANTS_STOCKES])),
+             json.dumps([str(p) for p in participants][:_MAX_PARTICIPANTS_STOCKES]), salon_nom),
         )
 
     async def carte_vocale_participant_ajouter(self, salon_temp_id: int, user_id: int) -> None:
@@ -73,9 +75,14 @@ class JournalVocalMixin:
             )
 
     async def cartes_vocales(self, salon_temp_id: int) -> list[dict]:
-        """Les cartes rangées pour ce salon temporaire, une par salon de logs."""
+        """Les cartes rangées pour ce salon temporaire, une par salon de logs.
+
+        `salon_nom` vaut `""` sur une ligne migrée avant son ajout — aucun nom
+        n'a jamais été écrit pour elle, l'appelant (`journal_vocal._vue_orpheline`)
+        retombe alors sur « Salon {id} ».
+        """
         lignes = await self.fetch_all(
-            "SELECT log_salon_id, message_id, createur_id, cree_a, participants "
+            "SELECT log_salon_id, message_id, createur_id, cree_a, participants, salon_nom "
             "FROM journal_cartes_vocales WHERE salon_temp_id = ?",
             (str(salon_temp_id),),
         )
@@ -86,6 +93,7 @@ class JournalVocalMixin:
                 "createur_id": int(ligne["createur_id"]),
                 "cree_a": float(ligne["cree_a"]),
                 "participants": [int(p) for p in json.loads(ligne["participants"])],
+                "salon_nom": ligne["salon_nom"],
             }
             for ligne in lignes
         ]

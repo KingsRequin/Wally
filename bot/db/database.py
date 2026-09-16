@@ -485,7 +485,10 @@ CREATE TABLE IF NOT EXISTS salons_vocaux_temporaires (
 -- une carte par salon de logs, à la création d'un salon vocal temporaire.
 -- Range le message pour l'ÉDITER (durée, participants) à la suppression, au
 -- lieu d'en republier une seconde. Ids en TEXT : un snowflake ne survit pas
--- à un REAL. `participants` est une liste d'ids au format JSON.
+-- à un REAL. `participants` est une liste d'ids au format JSON. `salon_nom`
+-- sert à la carte orpheline (salon disparu au boot, cf. `nettoyer_cartes_
+-- orphelines`) — vide sur les lignes migrées avant son ajout, elle retombe
+-- alors sur « Salon {id} ».
 CREATE TABLE IF NOT EXISTS journal_cartes_vocales (
     salon_temp_id TEXT NOT NULL,
     log_salon_id  TEXT NOT NULL,
@@ -493,6 +496,7 @@ CREATE TABLE IF NOT EXISTS journal_cartes_vocales (
     createur_id   TEXT NOT NULL,
     cree_a        REAL NOT NULL,
     participants  TEXT NOT NULL,
+    salon_nom     TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (salon_temp_id, log_salon_id)
 );
 
@@ -646,6 +650,12 @@ class Database(
         await migrer(conn, "ALTER TABLE journal_archive ADD COLUMN chart_path TEXT DEFAULT NULL")
         # Topics remplace opinions — retire la table morte
         await migrer(conn, "DROP TABLE IF EXISTS opinions")
+        # Migration: le nom du salon vocal temporaire, pour que la carte
+        # orpheline (salon disparu au boot) puisse le nommer comme la carte
+        # de création. Les lignes déjà en base gardent une chaîne vide — le
+        # nom n'a jamais été écrit pour elles — et `journal_vocal._vue_orpheline`
+        # retombe alors sur « Salon {id} ».
+        await migrer(conn, "ALTER TABLE journal_cartes_vocales ADD COLUMN salon_nom TEXT NOT NULL DEFAULT ''")
         logger.info("Database initialized at {path}", path=path)
         return cls(conn)
 

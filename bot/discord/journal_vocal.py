@@ -117,7 +117,8 @@ async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
                 logger.warning("journal vocal : envoi impossible dans {c} : {e!r}",
                                c=getattr(salon_log, "id", "?"), e=e)
                 continue
-            await bot.db.carte_vocale_ajouter(salon.id, salon_log.id, message.id, member.id, [member.id])
+            await bot.db.carte_vocale_ajouter(salon.id, salon_log.id, message.id, member.id,
+                                              [member.id], salon.name)
     except Exception as e:  # noqa: BLE001 — jamais lever, appelé depuis salons_temporaires
         logger.warning("journal vocal : création non journalisée : {e!r}", e=e)
 
@@ -179,15 +180,18 @@ async def vocal_supprime(bot: "WallyDiscord", salon: Any, *,
 def _vue_orpheline(salon_temp_id: int, carte: dict) -> discord.ui.LayoutView:
     """La carte d'un salon disparu sans que `vocal_supprime` ait pu l'éditer.
 
-    Le salon Discord d'origine n'existe plus (ni en cache, ni via l'API) : ni
-    nom, ni heure de suppression exacte à afficher — seule l'édition dit que
-    le salon a disparu, sans rien affirmer qu'on ne sait pas.
+    Le salon Discord d'origine n'existe plus (ni en cache, ni via l'API) :
+    plus d'heure de suppression exacte à afficher — seule l'édition dit que
+    le salon a disparu, sans rien affirmer qu'on ne sait pas. Le NOM, lui,
+    est rangé dès la création (`salon_nom`) : une ligne migrée avant son
+    ajout porte une chaîne vide, et retombe alors sur « Salon {id} ».
     """
+    nom = carte["salon_nom"] or f"Salon {salon_temp_id}"
     cree_dt = datetime.fromtimestamp(carte["cree_a"], tz=PARIS)
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Salon disparu** (détecté au redémarrage, horodatage exact de la suppression perdu)\n"
            f"{_bloc_participants(carte['participants'])}")
-    return fiche(f"🔊 Salon {salon_temp_id}", [meta], accent=_COULEUR_VOCAL)
+    return fiche(f"🔊 {nom}", [meta], accent=_COULEUR_VOCAL)
 
 
 async def _nettoyer_une_carte_orpheline(bot: "WallyDiscord", salon_temp_id: int) -> None:

@@ -87,6 +87,7 @@ async def test_vocal_cree_publie_une_carte_et_range_en_base(tmp_path):
         assert cartes[0]["createur_id"] == 42
         assert cartes[0]["participants"] == [42]
         assert cartes[0]["message_id"] == salons[LOGS].send.return_value.id
+        assert cartes[0]["salon_nom"] == "Arène"
     finally:
         await db.close()
 
@@ -171,9 +172,11 @@ async def test_vocal_supprime_edite_la_carte_avec_duree_et_participants(tmp_path
 
 
 async def test_budget_4000_pire_cas_participants(tmp_path):
-    """300 participants à 18 chiffres dépassent 4000 caractères sans bornage
-    (mesuré : 180 → 4109, 200 → 4549) : la carte reste sous le plafond
-    Components V2, et une ligne récapitulative dit ce qui a été coupé."""
+    """300 participants à 18 chiffres dépassaient le plafond Components V2
+    de 4000 caractères avant le bornage de `_bloc_participants` (non chiffré
+    ici : la valeur exacte dépend du salon et du reste de la carte, mesurer
+    dans le doute plutôt que recopier un chiffre). Avec le bornage, la carte
+    reste sous le plafond et une ligne récapitulative dit ce qui a été coupé."""
     db = await _db(tmp_path)
     try:
         bot, salons = _bot(db)
@@ -235,7 +238,7 @@ async def test_vocal_supprime_course_avec_vocal_cree_attend_puis_relit(tmp_path)
         async def dormir_puis_ecrire(secondes: float) -> None:
             attentes.append(secondes)
             # `vocal_cree`, lancé en parallèle, termine pendant l'attente.
-            await db.carte_vocale_ajouter(777, LOGS, 555, 42, [42])
+            await db.carte_vocale_ajouter(777, LOGS, 555, 42, [42], "Arène")
 
         await jv.vocal_supprime(bot, salon, dormir=dormir_puis_ecrire)
 
@@ -521,10 +524,32 @@ async def test_orpheline_carte_encore_atteignable_editee_pour_dire_le_salon_disp
         await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
 
         salons[LOGS]._partial.edit.assert_awaited_once()
-        texte = "\n".join(_textes(_vue_editee(salons[LOGS])))
+        vue = _vue_editee(salons[LOGS])
+        titre = _textes(vue)[0]
+        texte = "\n".join(_textes(vue))
+        assert "Arène" in titre   # le nom du salon a survécu à sa disparition
         assert "disparu" in texte
         assert "<@42>" in texte
         assert await db.cartes_vocales(777) == []
+    finally:
+        await db.close()
+
+
+async def test_orpheline_sans_nom_retombe_sur_le_fallback_salon_id(tmp_path):
+    """Une ligne écrite avant l'ajout de `salon_nom` (migration : chaîne
+    vide par défaut) : la carte retombe sur « Salon {id} »."""
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        # Simule une ligne d'avant la migration : `salon_nom=""` explicite,
+        # plutôt qu'une écriture SQL directe qui dupliquerait le schéma ici.
+        await db.carte_vocale_ajouter(777, LOGS, 555, 42, [42], "")
+
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
+
+        salons[LOGS]._partial.edit.assert_awaited_once()
+        titre = _textes(_vue_editee(salons[LOGS]))[0]
+        assert "Salon 777" in titre
     finally:
         await db.close()
 
