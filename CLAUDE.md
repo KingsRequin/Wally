@@ -582,8 +582,20 @@ modules, chacun sous `discord:` dans la config, chacun désactivable (`null` / l
   jamais par `@bot.event` — un second handler du même nom REMPLACE le premier (accueil vocal perdu).
   Ménage au boot : une ligne n'est retirée que sur `NotFound` (ou 403 + serveur quitté), jamais
   sur un simple absent du cache (panne Discord).
-- **`journal_moderation.py`** : fiches Components V2 (supprimé, modifié, suppression en masse,
-  vocal créé/supprimé) vers PLUSIEURS salons (`salon_ids`, deux serveurs). Les pièces jointes d'un
+- **`journal_moderation.py`** (messages + TRONC COMMUN : `salons_cibles`, `publier_partout`,
+  `horodatage`, `pied_utilisateur`, `borner`/`borner_lignes`, `entree_audit`), plus
+  **`journal_vocal.py`** (salons temporaires et mouvements vocaux) et **`journal_membres.py`**
+  (arrivées, départs, ban, exclusion, surnoms, rôles) : fiches Components V2 vers PLUSIEURS
+  salons (`salon_ids`, deux serveurs).
+  ⚠️ **Discord ne relie AUCUNE entrée d'audit à un message supprimé**, et ne trace ni la
+  suppression par l'auteur ni celle d'un bot : le « qui » se déduit par recoupement (même auteur,
+  même salon, entrée récente OU compteur incrémenté), sinon la carte dit « l'auteur ou un bot ».
+  ⚠️ **Un ban ne se déduit pas de l'audit** (il peut tarder ou être refusé) : `on_member_ban` pose
+  un marqueur en RAM que le départ relit, sinon DEUX cartes partent pour le même ban.
+  ⚠️ Une seule carte par salon vocal : elle est ÉDITÉE à la suppression (durée, participants),
+  d'où la table `journal_cartes_vocales` et le ménage des orphelines au boot.
+  ⚠️ Gras et barré ne traversent PAS une ligne citée : le diff d'édition pose ses marqueurs
+  ligne par ligne, et la troncature ne coupe jamais un marqueur ouvert. Les pièces jointes d'un
   message supprimé sont re-téléversées (`to_file(use_cached=True)` : le `proxy_url` survit un
   moment à la suppression) — sauf depuis un salon NSFW ; les spoilers restent spoilers.
   ⚠️ `#logs` (`1105086620237049956`) est DANS le serveur observé : les salons de logs et leurs fils
