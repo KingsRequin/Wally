@@ -484,38 +484,6 @@ async def test_salon_de_logs_injoignable_ne_leve_pas():
 
 
 # ---------------------------------------------------------------------------
-# Vocal
-
-
-async def test_vocal_cree_et_supprime():
-    bot, logs = _bot()
-    salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
-    membre = SimpleNamespace(id=42, name="alice")
-
-    await jm.vocal_cree(bot, membre, salon)
-    await jm.vocal_supprime(bot, salon)
-
-    assert logs.send.await_count == 2
-    texte_creation = "\n".join(_textes(_vue(logs, 0)))
-    assert "<@42>" in texte_creation
-    assert "Arène" in texte_creation
-    texte_suppression = "\n".join(_textes(_vue(logs, 1)))
-    assert "Arène" in texte_suppression
-
-
-async def test_vocal_cree_sans_guild_ne_leve_pas():
-    bot, _logs = _bot()
-    salon = SimpleNamespace(id=777, name="Arène")  # pas de `.guild`
-    await jm.vocal_cree(bot, SimpleNamespace(id=1, name="alice"), salon)
-
-
-async def test_vocal_supprime_sans_guild_ne_leve_pas():
-    bot, _logs = _bot()
-    salon = SimpleNamespace(id=777, name="Arène")  # pas de `.guild`
-    await jm.vocal_supprime(bot, salon)
-
-
-# ---------------------------------------------------------------------------
 # Suppression en masse (`on_raw_bulk_message_delete`)
 
 
@@ -832,7 +800,8 @@ def test_horodatage_exige_un_datetime_conscient_du_fuseau():
 
 async def test_horodatage_present_dans_toutes_les_cartes():
     """§2 de la spec : la fabrique d'horodatage sert TOUTES les cartes du
-    tronc commun — suppression, édition, masse, vocal créé/supprimé."""
+    tronc commun — suppression, édition, masse. Le journal vocal (T3, qui
+    l'importe aussi) a sa propre suite : `tests/discord/test_journal_vocal.py`."""
     bot, logs = _bot()
     msg = _message("texte")
     payload_suppr = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
@@ -840,12 +809,9 @@ async def test_horodatage_present_dans_toutes_les_cartes():
     await jm.message_modifie(bot, _message("a"), _message("b"))
     payload_masse = SimpleNamespace(guild_id=COMMU, channel_id=5, message_ids={1}, cached_messages=[])
     await jm.messages_supprimes_en_masse(bot, payload_masse)
-    salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
-    await jm.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
-    await jm.vocal_supprime(bot, salon)
 
-    assert logs.send.await_count == 5
-    for appel in range(5):
+    assert logs.send.await_count == 3
+    for appel in range(3):
         texte = "\n".join(_textes(_vue(logs, appel)))
         assert re.search(r"<t:\d+:f> \(<t:\d+:R>\)", texte), f"appel {appel} sans horodatage natif"
 
@@ -875,14 +841,6 @@ async def test_pied_id_utilisateur_absent_hors_cache():
 async def test_pied_id_utilisateur_edition():
     bot, logs = _bot()
     await jm.message_modifie(bot, _message("a", auteur_id=42), _message("b", auteur_id=42))
-    texte = "\n".join(_textes(_vue(logs)))
-    assert "-# ID `42`" in texte
-
-
-async def test_pied_id_utilisateur_vocal_cree():
-    bot, logs = _bot()
-    salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
-    await jm.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
     texte = "\n".join(_textes(_vue(logs)))
     assert "-# ID `42`" in texte
 

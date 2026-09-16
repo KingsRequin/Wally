@@ -278,14 +278,14 @@ async def test_l_accueil_vocal_est_toujours_appele(monkeypatch):
 async def test_deux_departs_simultanes_une_seule_suppression_une_seule_fiche(monkeypatch):
     """Deux départs quasi simultanés passent tous deux le registre avant la
     première suppression : une seule suppression, une seule fiche."""
-    from bot.discord import journal_moderation as jm
+    from bot.discord import journal_vocal as jv
 
     fiches = []
 
     async def faux_vocal_supprime(bot, salon):
         fiches.append(salon.id)
 
-    monkeypatch.setattr(jm, "vocal_supprime", faux_vocal_supprime)
+    monkeypatch.setattr(jv, "vocal_supprime", faux_vocal_supprime)
 
     class DbLente(FauxDb):
         async def salons_temporaires(self):
@@ -319,14 +319,14 @@ async def test_deux_departs_simultanes_une_seule_suppression_une_seule_fiche(mon
 
 
 async def test_fiche_vocal_cree_publiee_en_tache_de_fond(monkeypatch):
-    from bot.discord import journal_moderation as jm
+    from bot.discord import journal_vocal as jv
 
     fiches = []
 
     async def faux_vocal_cree(bot, member, salon):
         fiches.append(salon.id)
 
-    monkeypatch.setattr(jm, "vocal_cree", faux_vocal_cree)
+    monkeypatch.setattr(jv, "vocal_cree", faux_vocal_cree)
     nouveau = _salon(777)
     guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock(return_value=nouveau))
     membre = _Membre(id=1, bot=False, move_to=AsyncMock(), display_name="A")

@@ -10,9 +10,10 @@ jamais touché.
 `@bot.event` : un second `on_voice_state_update` REMPLACERAIT la méthode de
 classe, et l'accueil vocal de Wally disparaîtrait sans erreur.
 
-Les fiches du journal de modération (`vocal_cree` / `vocal_supprime`) partent
-en tâche de fond (`_fire`) : un envoi lent sur plusieurs salons de logs ne
-doit pas retenir le traitement de l'événement vocal.
+Les fiches du journal vocal (`bot/discord/journal_vocal.py` — `vocal_cree` /
+`vocal_supprime`) partent en tâche de fond (`_fire`) : un envoi lent sur
+plusieurs salons de logs ne doit pas retenir le traitement de l'événement
+vocal.
 """
 from __future__ import annotations
 
@@ -110,7 +111,7 @@ async def _creer(bot: "WallyDiscord", member: Any, createur: Any) -> None:
     logger.info("Salon vocal temporaire « {n} » ({c}) créé pour {m}",
                 n=salon.name, c=salon.id, m=member.display_name)
     from bot.discord.handlers import _fire
-    from bot.discord.journal_moderation import vocal_cree
+    from bot.discord.journal_vocal import vocal_cree
     _fire(vocal_cree(bot, member, salon))
 
 
@@ -121,7 +122,7 @@ async def _supprimer_si_gere(bot: "WallyDiscord", salon: Any) -> None:
         return  # un autre départ l'a supprimé : lui seul journalise et publie la fiche
     logger.info("Salon vocal temporaire « {n} » ({c}) supprimé (vide)", n=salon.name, c=salon.id)
     from bot.discord.handlers import _fire
-    from bot.discord.journal_moderation import vocal_supprime
+    from bot.discord.journal_vocal import vocal_supprime
     _fire(vocal_supprime(bot, salon))
 
 

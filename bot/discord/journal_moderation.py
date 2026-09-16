@@ -1,10 +1,14 @@
 """Journal de modération — repris du bot Node `wally-discord`.
 
 Une fiche Components V2 par geste dans le salon de logs : message supprimé,
-message modifié, suppression en masse, salon vocal temporaire créé ou
-supprimé. C'est un outil de MODÉRATION, pas de la perception : il couvre
-aussi les messages de bots et les serveurs que la perception de Wally ignore
-(`ignored_guilds`).
+message modifié, suppression en masse. C'est un outil de MODÉRATION, pas de
+la perception : il couvre aussi les messages de bots et les serveurs que la
+perception de Wally ignore (`ignored_guilds`).
+
+Ce module est aussi le TRONC COMMUN du reste du journal : `salons_cibles`,
+`publier_partout`, `horodatage` et `pied_utilisateur` sont partagés par
+`bot/discord/journal_vocal.py` (salon vocal temporaire créé/supprimé,
+mouvements vocaux), qui les importe au lieu de les réimplémenter.
 
 Le dépôt n'a plus aucun `discord.Embed` (chantier Components V2 clos le
 2026-09-04) : le tronc commun est `bot/discord/fiches.py`.
@@ -53,7 +57,6 @@ from bot.discord.fiches import ACCENT_ALERTE, Piece, borner, fiche, url_avatar
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
-_COULEUR_VOCAL = 0x3498DB      # pas dans fiches.py : propre au journal
 _MAX_CITATION = 1500           # budget V2 total (4000) réparti entre les blocs cités
 _MAX_NON_RECUPEREES = 500      # budget de la liste des pièces non récupérées
 _MAX_EXTRAIT = 120             # extrait par message d'une suppression en masse
@@ -906,28 +909,3 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal de modération : suppression en masse non journalisée : {e!r}", e=e)
-
-
-async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
-    try:
-        cibles = salons_cibles(bot, salon.guild.id, None)
-        if not cibles:
-            return
-        meta = (f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id} · "
-               f"**Créé** {horodatage(maintenant())}")
-        vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL, pied=pied_utilisateur(member))
-        await publier_partout(cibles, lambda _t: vue)
-    except Exception as e:  # noqa: BLE001 — jamais lever, appelé depuis salons_temporaires
-        logger.warning("journal de modération : création vocale non journalisée : {e!r}", e=e)
-
-
-async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
-    try:
-        cibles = salons_cibles(bot, salon.guild.id, None)
-        if not cibles:
-            return
-        meta = f"**Salon** {salon.name} · **ID** {salon.id} · **Supprimé** {horodatage(maintenant())}"
-        vue = fiche("🔇 Canal vocal supprimé", [meta], accent=_COULEUR_VOCAL)
-        await publier_partout(cibles, lambda _t: vue)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("journal de modération : suppression vocale non journalisée : {e!r}", e=e)

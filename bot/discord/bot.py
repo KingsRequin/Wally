@@ -719,6 +719,12 @@ class WallyDiscord(commands.Bot):
         # et le `return` ci-dessous les couperait dès qu'il n'est pas connecté.
         from bot.discord.salons_temporaires import sur_changement_vocal
         await sur_changement_vocal(self, member, before, after)
+        # Journal vocal (#10, entrée/sortie/déplacement) : tâche de fond, un
+        # envoi lent sur plusieurs salons de logs ne doit pas retenir la
+        # suite (accueil vocal de Wally).
+        from bot.discord.handlers import _fire
+        from bot.discord.journal_vocal import mouvement_vocal
+        _fire(mouvement_vocal(self, member, before, after))
         vs = getattr(self, "voice_service", None)
         if vs is None or not vs.is_connected:
             return

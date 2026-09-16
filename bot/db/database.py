@@ -21,6 +21,7 @@ from bot.db.mixins import (
     StateMixin,
     TcgMixin,
     SalonsMixin,
+    JournalVocalMixin,
 )
 
 SCHEMA = """
@@ -480,6 +481,21 @@ CREATE TABLE IF NOT EXISTS salons_vocaux_temporaires (
     created_at REAL NOT NULL
 );
 
+-- Une ligne par carte du journal vocal (`bot/discord/journal_vocal.py`) :
+-- une carte par salon de logs, à la création d'un salon vocal temporaire.
+-- Range le message pour l'ÉDITER (durée, participants) à la suppression, au
+-- lieu d'en republier une seconde. Ids en TEXT : un snowflake ne survit pas
+-- à un REAL. `participants` est une liste d'ids au format JSON.
+CREATE TABLE IF NOT EXISTS journal_cartes_vocales (
+    salon_temp_id TEXT NOT NULL,
+    log_salon_id  TEXT NOT NULL,
+    message_id    TEXT NOT NULL,
+    createur_id   TEXT NOT NULL,
+    cree_a        REAL NOT NULL,
+    participants  TEXT NOT NULL,
+    PRIMARY KEY (salon_temp_id, log_salon_id)
+);
+
 """
 
 
@@ -537,6 +553,7 @@ class Database(
     StateMixin,
     TcgMixin,
     SalonsMixin,
+    JournalVocalMixin,
 ):
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn
