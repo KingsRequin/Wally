@@ -74,6 +74,13 @@ _MAX_COMPTEURS_AUDIT = 50      # compteurs mémorisés PAR SERVEUR (borne de la 
 _GHOST_PING_SECONDES = 300.0   # au-delà, un message mentionnant n'est plus un ghost ping
 _MAX_MENTIONS = 400            # budget du bloc « Mentionnait »
 
+# Une rafale de gestes du même (serveur, action) — suppressions en masse,
+# plusieurs bans en quelques secondes — partage la lecture d'audit au lieu
+# d'une lecture d'API PAR ÉVÉNEMENT. Quelques secondes seulement : c'est le
+# délai qu'on accepte de vivre avec un train d'entrées légèrement périmé.
+_FENETRE_CACHE_LECTURE = 2.0
+_MAX_CACHE_LECTURE = 100       # bornage du cache, même famille que _MAX_COMPTEURS_AUDIT
+
 #: Le dernier `extra.count` vu pour chaque entrée d'audit, par serveur :
 #: `{guild_id: {entry_id: count}}`. En RAM seulement — le perdre au
 #: redémarrage coûte au pire une fausse négative (« l'auteur ou un bot » là
@@ -85,6 +92,13 @@ _compteurs_audit: dict[int, OrderedDict[int, int]] = {}
 #: Les serveurs dont le journal d'audit nous est refusé et qui ont déjà été
 #: signalés : un WARNING par suppression noierait les logs.
 _audit_refuse: set[int] = set()
+
+#: La dernière lecture d'audit par `(guild_id, action)` : `(entrées, instant
+#: de la lecture)`. Partagée par tous les appels d'`entree_audit()` qui
+#: tombent dans `_FENETRE_CACHE_LECTURE` — jamais un VERDICT, seulement la
+#: liste brute (cf. la docstring d'`entree_audit`). Bornée en LRU, même
+#: famille que `_compteurs_audit`.
+_cache_lecture: "OrderedDict[tuple[int, Any], tuple[list[Any], datetime]]" = OrderedDict()
 
 
 class _PieceRecuperee(NamedTuple):
@@ -631,30 +645,51 @@ async def entree_audit(guild: Any, action: Any, *, cible_id: int, salon_id: int 
     l'appel — il n'est pas le même pour une suppression de message et pour un
     départ de membre.
 
+    **Cache de lecture** (`_cache_lecture`) : une rafale de gestes du même
+    `(guild, action)` en quelques secondes (suppressions en masse, plusieurs
+    bans à la suite) ne déclenche qu'UNE lecture d'API, partagée par tous les
+    appels qui tombent dans `_FENETRE_CACHE_LECTURE`. On cache la LISTE
+    d'entrées brute, JAMAIS un verdict : deux appels de la fenêtre peuvent
+    viser des `cible_id`/`salon_id` différents, et chacun rejoue SON PROPRE
+    recoupement (et sa propre mise à jour de `_compteurs_audit`) sur ces mêmes
+    entrées — l'heuristique de compteur ci-dessus reste donc correcte même à
+    l'intérieur d'une fenêtre de cache. Un échec de lecture n'est jamais mis
+    en cache : le prochain appel retente, comme avant.
+
     Ne lève JAMAIS. Journal illisible (permission « Voir les logs du serveur »
     manquante, serveur hors cache, API en panne) → `lisible=False`, et un seul
     WARNING par serveur pour la permission : un par geste noierait les logs.
     """
     if guild is None:
         return Recoupement(None, False)
-    entrees: list[Any] = []
-    try:
-        async for entree in guild.audit_logs(limit=_ENTREES_AUDIT_LUES, action=action):
-            entrees.append(entree)
-    except discord.Forbidden as e:
-        if guild.id not in _audit_refuse:
-            _audit_refuse.add(guild.id)
-            logger.warning("journal de modération : journal d'audit refusé sur le serveur {g} "
-                           "(permission « Voir les logs du serveur » manquante ?) — plus "
-                           "d'avertissement pour ce serveur : {e!r}", g=guild.id, e=e)
-        return Recoupement(None, False)
-    except Exception as e:  # noqa: BLE001 — l'audit est un CONFORT, la carte part sans lui
-        logger.warning("journal de modération : journal d'audit illisible sur le serveur {g} : {e!r}",
-                       g=getattr(guild, "id", "?"), e=e)
-        return Recoupement(None, False)
+    instant = horloge()
+    cle_cache = (guild.id, action)
+    en_cache = _cache_lecture.get(cle_cache)
+    if en_cache is not None and (instant - en_cache[1]).total_seconds() < _FENETRE_CACHE_LECTURE:
+        entrees = en_cache[0]
+        _cache_lecture.move_to_end(cle_cache)
+    else:
+        entrees = []
+        try:
+            async for entree in guild.audit_logs(limit=_ENTREES_AUDIT_LUES, action=action):
+                entrees.append(entree)
+        except discord.Forbidden as e:
+            if guild.id not in _audit_refuse:
+                _audit_refuse.add(guild.id)
+                logger.warning("journal de modération : journal d'audit refusé sur le serveur {g} "
+                               "(permission « Voir les logs du serveur » manquante ?) — plus "
+                               "d'avertissement pour ce serveur : {e!r}", g=guild.id, e=e)
+            return Recoupement(None, False)
+        except Exception as e:  # noqa: BLE001 — l'audit est un CONFORT, la carte part sans lui
+            logger.warning("journal de modération : journal d'audit illisible sur le serveur {g} : {e!r}",
+                           g=getattr(guild, "id", "?"), e=e)
+            return Recoupement(None, False)
+        _cache_lecture[cle_cache] = (entrees, instant)
+        _cache_lecture.move_to_end(cle_cache)
+        while len(_cache_lecture) > _MAX_CACHE_LECTURE:
+            _cache_lecture.popitem(last=False)
 
     memoire = _compteurs_audit.setdefault(guild.id, OrderedDict())
-    instant = horloge()
     retenue: Any | None = None
     for entree in entrees:
         extra = getattr(entree, "extra", None)

@@ -68,6 +68,7 @@ def _etat_audit_neuf() -> None:
     départ en double sur un ban)."""
     jm._compteurs_audit.clear()
     jm._audit_refuse.clear()
+    jm._cache_lecture.clear()
     jmb._marqueurs_ban.clear()
 
 
@@ -681,3 +682,50 @@ async def test_budget_v2_tenu_avec_cent_cinquante_roles_noms_longs():
     vue = _vue(logs)
     assert _longueur_totale(vue) <= 4000
     assert "… et" in "\n".join(_textes(vue))    # le bornage s'est réellement déclenché
+
+
+async def test_budget_v2_tenu_avec_cent_cinquante_roles_et_raison_512():
+    """Repro : 150 changements de rôles à noms de 100 caractères + une raison
+    d'audit de 512 caractères dépassaient 4000 caractères avant bornage de la
+    raison ET avant que la ligne d'audit ne soit rendue une seule fois (au
+    lieu d'une fois par bloc « ajoutés »/« retirés »)."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.member_role_update, modo_id=8,
+                                cible_id=1, age=1.0, raison="R" * 512)])
+    bot, logs = _bot(audit=audit)
+    guild = _guild()
+    nom_long = "x" * 100   # plafond Discord pour un nom de rôle
+    avant_roles = [_role(i, nom_long) for i in range(150)]
+    apres_roles = [_role(1000 + i, nom_long) for i in range(150)]
+    avant = _membre(id=1, roles=avant_roles, guild=guild)
+    apres = _membre(id=1, roles=apres_roles, guild=guild)
+
+    await jmb.membre_modifie(bot, avant, apres, dormir=_sans_sommeil)
+    await _fond()
+
+    vue = _vue(logs)
+    assert _longueur_totale(vue) <= 4000
+    texte = "\n".join(_textes(vue))
+    assert "**Par** <@8>" in texte      # la ligne d'audit est bien rendue…
+    assert texte.count("**Par** <@8>") == 1   # … mais UNE seule fois, pas une par bloc
+
+
+async def test_raison_d_audit_bornee_a_quelques_centaines_de_caracteres():
+    """Une raison de 2000 caractères ne doit jamais partir intégralement —
+    bornée à `_MAX_RAISON`, marque de troncature comprise."""
+    _etat_audit_neuf()
+    raison_longue = "R" * 2000
+    audit = _FauxAudit([_entree(action=discord.AuditLogAction.member_role_update, modo_id=8,
+                                cible_id=1, age=1.0, raison=raison_longue)])
+    bot, logs = _bot(audit=audit)
+    guild = _guild()
+    r = _role(10, "Membre")
+    avant = _membre(id=1, roles=[], guild=guild)
+    apres = _membre(id=1, roles=[r], guild=guild)
+
+    await jmb.membre_modifie(bot, avant, apres, dormir=_sans_sommeil)
+    await _fond()
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert raison_longue not in texte
+    assert "R" * (jmb._MAX_RAISON - 1) + "…" in texte

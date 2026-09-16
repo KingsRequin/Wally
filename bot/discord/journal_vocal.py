@@ -45,7 +45,7 @@ import discord
 from loguru import logger
 
 from bot.core.temps import PARIS, maintenant
-from bot.discord.fiches import fiche
+from bot.discord.fiches import ACCENT_NEUTRE, fiche
 from bot.discord.journal_moderation import (
     borner_lignes,
     horodatage,
@@ -56,8 +56,6 @@ from bot.discord.journal_moderation import (
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
-
-_COULEUR_VOCAL = 0x3498DB      # même bleu que l'ancien `vocal_cree`/`vocal_supprime`
 
 # Budget du bloc « Participants », sur les 4000 caractères de TOUS les
 # TextDisplay réunis (cf. `bot/discord/fiches.py`). Le reste de la carte
@@ -107,9 +105,9 @@ async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
         cibles = salons_cibles(bot, salon.guild.id, None)
         if not cibles:
             return
-        meta = (f"**Par** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id} · "
+        meta = (f"**Auteur** <@{member.id}> · **Salon** {salon.name} · **ID** {salon.id} · "
                f"**Créé** {horodatage(maintenant())}")
-        vue = fiche("🔊 Canal vocal créé", [meta], accent=_COULEUR_VOCAL, pied=pied_utilisateur(member))
+        vue = fiche("🔊 Canal vocal créé", [meta], accent=ACCENT_NEUTRE, pied=pied_utilisateur(member))
         for salon_log in cibles:
             try:
                 message = await salon_log.send(view=vue, allowed_mentions=discord.AllowedMentions.none())
@@ -130,7 +128,7 @@ def _vue_supprimee(salon: Any, carte: dict, supprime_a: float) -> discord.ui.Lay
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Supprimé** {horodatage(supprime_dt)} · **A vécu** {duree}\n"
            f"{_bloc_participants(carte['participants'])}")
-    return fiche(f"🔊 {salon.name}", [meta], accent=_COULEUR_VOCAL)
+    return fiche(f"🔊 {salon.name}", [meta], accent=ACCENT_NEUTRE)
 
 
 async def vocal_supprime(bot: "WallyDiscord", salon: Any, *,
@@ -191,7 +189,7 @@ def _vue_orpheline(salon_temp_id: int, carte: dict) -> discord.ui.LayoutView:
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Salon disparu** (détecté au redémarrage, horodatage exact de la suppression perdu)\n"
            f"{_bloc_participants(carte['participants'])}")
-    return fiche(f"🔊 {nom}", [meta], accent=_COULEUR_VOCAL)
+    return fiche(f"🔊 {nom}", [meta], accent=ACCENT_NEUTRE)
 
 
 async def _nettoyer_une_carte_orpheline(bot: "WallyDiscord", salon_temp_id: int) -> None:
@@ -264,14 +262,14 @@ async def mouvement_vocal(bot: "WallyDiscord", member: Any, before: Any, after: 
         quand = horodatage(maintenant())
         if avant is None:
             titre = "🔊 Entrée vocale"
-            corps = f"**Qui** <@{member.id}> · **Salon** {apres.mention} · **Entré** {quand}"
+            corps = f"**Auteur** <@{member.id}> · **Salon** {apres.mention} · **Entré** {quand}"
         elif apres is None:
             titre = "🔇 Sortie vocale"
-            corps = f"**Qui** <@{member.id}> · **Salon** {avant.mention} · **Sorti** {quand}"
+            corps = f"**Auteur** <@{member.id}> · **Salon** {avant.mention} · **Sorti** {quand}"
         else:
             titre = "↔️ Déplacement vocal"
-            corps = f"**Qui** <@{member.id}> · **De** {avant.mention} · **Vers** {apres.mention} · **Déplacé** {quand}"
-        vue = fiche(titre, [corps], accent=_COULEUR_VOCAL, pied=pied_utilisateur(member))
+            corps = f"**Auteur** <@{member.id}> · **De** {avant.mention} · **Vers** {apres.mention} · **Déplacé** {quand}"
+        vue = fiche(titre, [corps], accent=ACCENT_NEUTRE, pied=pied_utilisateur(member))
         await publier_partout(cibles, lambda _t: vue)
     except Exception as e:  # noqa: BLE001 — un mouvement vocal ne fait pas tomber le bot
         logger.warning("journal vocal : mouvement non journalisé : {e!r}", e=e)

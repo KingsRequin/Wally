@@ -60,7 +60,7 @@ import discord
 from loguru import logger
 
 from bot.core.temps import maintenant
-from bot.discord.fiches import ACCENT_ALERTE, ACCENT_NEUTRE, ACCENT_OK, fiche, url_avatar
+from bot.discord.fiches import ACCENT_ALERTE, ACCENT_NEUTRE, ACCENT_OK, borner, fiche, url_avatar
 from bot.discord.journal_moderation import (
     Recoupement,
     borner_lignes,
@@ -100,6 +100,12 @@ _MARQUEUR_BAN_TTL = 10.0
 # `journal_moderation._MAX_COMPTEURS_AUDIT` : sans plafond, un serveur très
 # actif ferait croître ce dictionnaire pour la durée de vie du process.
 _MAX_MARQUEURS_BAN = 200
+
+# Une raison d'audit n'a AUCUN plafond côté Discord (jusqu'à 512 caractères
+# vus en pratique, et rien n'empêche plus). Sur une modification de rôles en
+# masse (dashboard), `_ligne_auteur` porte cette raison — bornée ici, plutôt
+# qu'un envoi qui dépasse le budget V2 et se perd en silence.
+_MAX_RAISON = 300
 
 #: `{guild_id: {user_id: epoch_du_marquage}}`. En RAM seulement — le perdre au
 #: redémarrage coûte au pire une carte de départ en double sur un ban survenu
@@ -149,6 +155,12 @@ def _ligne_auteur(recoupement: Recoupement, verbe: str) -> str:
     déban, modification de membre) sont TOUJOURS journalisées par Discord :
     une entrée manquante ne dit rien de fiable, donc aucune ligne n'est
     ajoutée plutôt que d'affirmer une absence.
+
+    La raison n'a pas de plafond côté Discord : bornée à `_MAX_RAISON` AVANT
+    l'échappement, pour que la marque de troncature ne porte aucun markdown à
+    briser. Sur une modification de rôles en masse (150+ rôles), une raison
+    de plusieurs centaines de caractères suffisait à elle seule à dépasser le
+    budget V2 de 4000 caractères.
     """
     if not recoupement.lisible or recoupement.entree is None:
         return ""
@@ -158,7 +170,8 @@ def _ligne_auteur(recoupement: Recoupement, verbe: str) -> str:
     ligne = f" · **{verbe}** <@{modo.id}>"
     raison = getattr(recoupement.entree, "reason", None)
     if raison:
-        ligne += f" · **Raison** {_echapper(discord.utils.escape_markdown(raison))}"
+        raison_bornee = _echapper(discord.utils.escape_markdown(borner(raison, _MAX_RAISON)))
+        ligne += f" · **Raison** {raison_bornee}"
     return ligne
 
 
@@ -180,7 +193,7 @@ async def membre_rejoint(bot: "WallyDiscord", member: Any, *,
         salons = salons_cibles(bot, member.guild.id, None)
         if not salons:
             return
-        meta = (f"**Qui** <@{member.id}> ({discord.utils.escape_markdown(member.name)}) · "
+        meta = (f"**Auteur** <@{member.id}> ({discord.utils.escape_markdown(member.name)}) · "
                f"**Compte créé** {horodatage(member.created_at)}")
         corps = [meta]
         if horloge() - member.created_at < _SEUIL_COMPTE_RECENT:
@@ -223,7 +236,7 @@ async def _carte_depart(bot: "WallyDiscord", guild_id: int, user: Any, salons: l
             return   # `membre_banni` publie déjà sa propre carte : pas de doublon
         guild = bot.get_guild(guild_id)
         kick = await entree_audit(guild, discord.AuditLogAction.kick, cible_id=user.id, horloge=horloge)
-        meta = (f"**Qui** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
+        meta = (f"**Auteur** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Parti** {horodatage(horloge())}")
         rejoint = getattr(user, "joined_at", None)
         if rejoint is not None:
@@ -270,7 +283,7 @@ async def _carte_ban(bot: "WallyDiscord", guild: Any, user: Any, salons: list[An
     try:
         await dormir(_DELAI_AUDIT)
         recoupement = await entree_audit(guild, discord.AuditLogAction.ban, cible_id=user.id, horloge=horloge)
-        meta = (f"**Qui** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
+        meta = (f"**Auteur** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Banni** {horodatage(horloge())}{_ligne_auteur(recoupement, 'Banni par')}")
         vue = fiche("🔨 Membre banni", [meta], accent=ACCENT_ALERTE, vignette=url_avatar(user),
                     pied=pied_utilisateur(user))
@@ -301,7 +314,7 @@ async def _carte_deban(bot: "WallyDiscord", guild: Any, user: Any, salons: list[
     try:
         await dormir(_DELAI_AUDIT)
         recoupement = await entree_audit(guild, discord.AuditLogAction.unban, cible_id=user.id, horloge=horloge)
-        meta = (f"**Qui** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
+        meta = (f"**Auteur** <@{user.id}> ({discord.utils.escape_markdown(user.name)}) · "
                f"**Débanni** {horodatage(horloge())}{_ligne_auteur(recoupement, 'Débanni par')}")
         vue = fiche("🔓 Membre débanni", [meta], accent=ACCENT_OK, vignette=url_avatar(user),
                     pied=pied_utilisateur(user))
@@ -401,21 +414,35 @@ async def _carte_modification(bot: "WallyDiscord", *, guild_id: int, membre_id: 
             roles_maj = await entree_audit(guild, discord.AuditLogAction.member_role_update,
                                            cible_id=membre_id, horloge=horloge)
 
-        corps = [f"**Qui** <@{membre_id}> ({discord.utils.escape_markdown(membre_nom)})"]
+        # `maj`/`roles_maj` peuvent chacune driver PLUSIEURS blocs (nick +
+        # exclusion partagent `maj` ; ajoutés + retirés partagent `roles_maj`)
+        # — la ligne « Par · Raison » ne se répète qu'à la première utilisation
+        # de chaque recoupement, jamais une par bloc. Sans ce partage, une
+        # raison d'audit longue sur un changement de rôles en masse (ajoutés
+        # ET retirés) doublait son propre poids dans le budget V2.
+        ligne_maj = _ligne_auteur(maj, "Par")
+        ligne_roles = _ligne_auteur(roles_maj, "Par")
+
+        corps = [f"**Auteur** <@{membre_id}> ({discord.utils.escape_markdown(membre_nom)})"]
         if ch.nick_change:
             avant = _echapper(discord.utils.escape_markdown(ch.nick_avant)) if ch.nick_avant else "*aucun*"
             apres = _echapper(discord.utils.escape_markdown(ch.nick_apres)) if ch.nick_apres else "*aucun*"
-            corps.append(f"**Surnom** {avant} → {apres}{_ligne_auteur(maj, 'Par')}")
+            corps.append(f"**Surnom** {avant} → {apres}{ligne_maj}")
+            ligne_maj = ""
         if ch.debut_exclusion and ch.exclu_jusqua is not None:
-            corps.append(f"**Exclu jusqu'à** {horodatage(ch.exclu_jusqua)}{_ligne_auteur(maj, 'Par')}")
+            corps.append(f"**Exclu jusqu'à** {horodatage(ch.exclu_jusqua)}{ligne_maj}")
+            ligne_maj = ""
         if ch.fin_exclusion:
-            corps.append(f"**Exclusion levée** {horodatage(horloge())}{_ligne_auteur(maj, 'Par')}")
+            corps.append(f"**Exclusion levée** {horodatage(horloge())}{ligne_maj}")
+            ligne_maj = ""
         if ch.ajoutes:
             lignes = borner_lignes([f"- {n}" for n in ch.ajoutes], _MAX_ROLES)
-            corps.append(f"**Rôles ajoutés**{_ligne_auteur(roles_maj, 'Par')}\n{lignes}")
+            corps.append(f"**Rôles ajoutés**{ligne_roles}\n{lignes}")
+            ligne_roles = ""
         if ch.retires:
             lignes = borner_lignes([f"- {n}" for n in ch.retires], _MAX_ROLES)
-            corps.append(f"**Rôles retirés**{_ligne_auteur(roles_maj, 'Par')}\n{lignes}")
+            corps.append(f"**Rôles retirés**{ligne_roles}\n{lignes}")
+            ligne_roles = ""
 
         accent = ACCENT_ALERTE if ch.debut_exclusion else (ACCENT_OK if ch.fin_exclusion else ACCENT_NEUTRE)
         vue = fiche(_titre_modification(ch), corps, accent=accent, vignette=avatar,

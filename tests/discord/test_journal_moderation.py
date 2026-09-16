@@ -1390,9 +1390,13 @@ def _entree(*, id=1, modo_id=999, cible_id=1, salon_id=5, age=0.0, compte=None, 
 
 
 def _etat_audit_neuf():
-    """Les compteurs et les serveurs déjà signalés vivent en RAM, par module."""
+    """Les compteurs, le cache de lecture et les serveurs déjà signalés vivent
+    en RAM, par module — sans ce nettoyage, deux tests qui utilisent le MÊME
+    (serveur, action) (le cas courant ici : `COMMU`/`message_delete`) se
+    partageraient le cache de lecture d'un test à l'autre."""
     jm._compteurs_audit.clear()
     jm._audit_refuse.clear()
+    jm._cache_lecture.clear()
 
 
 async def test_suppression_par_un_modo_nomme_le_modo():
@@ -1447,17 +1451,28 @@ async def test_entree_visant_un_autre_auteur_ignoree():
 async def test_entree_ancienne_retenue_si_le_compteur_a_augmente():
     """Discord REGROUPE : la 2e suppression du même modo incrémente `extra.count`
     sans ouvrir de nouvelle entrée — sans cette comparaison, elle passerait
-    pour non tracée dès que l'entrée a plus de 10 s."""
+    pour non tracée dès que l'entrée a plus de 10 s.
+
+    L'horloge avance de plus que `_FENETRE_CACHE_LECTURE` entre les deux
+    appels : sans ça, le second réutiliserait la lecture en cache du premier
+    et ne verrait jamais le compteur incrémenté (cf. T5 plus bas, qui teste
+    ce cache directement)."""
     _etat_audit_neuf()
     audit = _FauxAudit([_entree(id=7, modo_id=999, age=300.0, compte=1)])
     bot, logs = _bot(audit=audit)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
                               cached_message=_message("un"))
-    await _supprimer(bot, payload)
+    etat = {"instant": maintenant()}
+
+    def horloge():
+        return etat["instant"]
+
+    await _supprimer(bot, payload, horloge=horloge)
     assert "l'auteur ou un bot" in "\n".join(_textes(_vue(logs, 0)))
 
     audit.entrees = [_entree(id=7, modo_id=999, age=300.0, compte=2)]
-    await _supprimer(bot, payload)
+    etat["instant"] += timedelta(seconds=jm._FENETRE_CACHE_LECTURE + 1)
+    await _supprimer(bot, payload, horloge=horloge)
 
     assert "**Supprimé par** <@999>" in "\n".join(_textes(_vue(logs, 1)))
 
@@ -1569,15 +1584,26 @@ async def test_la_carte_en_cache_ne_retarde_pas_l_evenement():
 
 
 async def test_compteurs_audit_bornes_par_serveur():
-    """La mémoire des compteurs ne grandit pas indéfiniment."""
+    """La mémoire des compteurs ne grandit pas indéfiniment.
+
+    L'horloge avance de plus que `_FENETRE_CACHE_LECTURE` à chaque tour :
+    sans ça, le cache de lecture réutiliserait la première entrée pour tout
+    le tour de boucle (exécuté en quelques millisecondes) au lieu de lire
+    chaque entrée synthétique une par une."""
     _etat_audit_neuf()
     audit = _FauxAudit([])
     bot, _logs = _bot(audit=audit)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1,
                               cached_message=_message("texte"))
+    etat = {"instant": maintenant()}
+
+    def horloge():
+        return etat["instant"]
+
     for i in range(jm._MAX_COMPTEURS_AUDIT + 20):
         audit.entrees = [_entree(id=1000 + i, age=1.0, compte=1)]
-        await _supprimer(bot, payload)
+        etat["instant"] += timedelta(seconds=jm._FENETRE_CACHE_LECTURE + 1)
+        await _supprimer(bot, payload, horloge=horloge)
 
     memoire = jm._compteurs_audit[COMMU]
     assert len(memoire) == jm._MAX_COMPTEURS_AUDIT
@@ -1599,6 +1625,68 @@ async def test_compteurs_audit_separes_par_serveur():
 
     assert jm._compteurs_audit[COMMU] == {7: 1}
     assert jm._compteurs_audit[autre] == {7: 1}
+
+
+# ---------------------------------------------------------------------------
+# T5 — cache de lecture du journal d'audit (rafale de gestes)
+
+
+async def test_cache_lecture_deux_appels_dans_la_fenetre_une_seule_lecture():
+    """Deux événements dans la fenêtre de cache (deux auteurs différents,
+    supprimés à quelques instants d'écart) ne déclenchent qu'UNE lecture
+    d'API — chacun rejoue son PROPRE recoupement sur les mêmes entrées et
+    voit SA cible, jamais le verdict de l'autre."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([
+        _entree(id=1, modo_id=999, cible_id=1, salon_id=5, age=1.0),
+        _entree(id=2, modo_id=998, cible_id=2, salon_id=5, age=1.0),
+    ])
+    t0 = maintenant()
+
+    r1 = await jm.entree_audit(audit, discord.AuditLogAction.message_delete,
+                               cible_id=1, salon_id=5, horloge=lambda: t0)
+    r2 = await jm.entree_audit(audit, discord.AuditLogAction.message_delete,
+                               cible_id=2, salon_id=5, horloge=lambda: t0)
+
+    assert audit.appels == [(10, discord.AuditLogAction.message_delete)]
+    assert r1.entree.user.id == 999
+    assert r2.entree.user.id == 998
+
+
+async def test_cache_lecture_appel_apres_la_fenetre_relit():
+    """Passé `_FENETRE_CACHE_LECTURE`, un appel suivant relit l'API — le
+    cache ne fige pas une lecture pour la durée de vie du process."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(id=1, modo_id=999, cible_id=1, salon_id=5, age=1.0)])
+    t0 = maintenant()
+    t1 = t0 + timedelta(seconds=jm._FENETRE_CACHE_LECTURE + 1)
+
+    await jm.entree_audit(audit, discord.AuditLogAction.message_delete,
+                          cible_id=1, salon_id=5, horloge=lambda: t0)
+    await jm.entree_audit(audit, discord.AuditLogAction.message_delete,
+                          cible_id=1, salon_id=5, horloge=lambda: t1)
+
+    assert len(audit.appels) == 2
+
+
+async def test_cache_lecture_heuristique_compteur_toujours_correcte_hors_fenetre():
+    """Le cache ne casse pas l'heuristique de compteur (Discord regroupe les
+    suppressions) : passé la fenêtre de cache, une deuxième lecture voit
+    bien le compteur augmenté et attribue la suppression."""
+    _etat_audit_neuf()
+    audit = _FauxAudit([_entree(id=7, modo_id=999, age=300.0, compte=1)])
+    t0 = maintenant()
+
+    r1 = await jm.entree_audit(audit, discord.AuditLogAction.message_delete, cible_id=1, horloge=lambda: t0)
+    assert r1.entree is None   # ni fraîche, ni compteur mémorisé au premier passage
+
+    audit.entrees = [_entree(id=7, modo_id=999, age=300.0, compte=2)]
+    t1 = t0 + timedelta(seconds=jm._FENETRE_CACHE_LECTURE + 1)
+    r2 = await jm.entree_audit(audit, discord.AuditLogAction.message_delete, cible_id=1, horloge=lambda: t1)
+
+    assert r2.entree is not None
+    assert r2.entree.user.id == 999
+    assert len(audit.appels) == 2   # une lecture par fenêtre, pas une par appel
 
 
 async def test_entree_audit_sans_extra_ne_leve_pas():
