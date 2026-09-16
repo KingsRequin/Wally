@@ -84,8 +84,23 @@ Un type inconnu est ignoré (loggé côté serveur). Un JSON invalide est ignor�
   sauter un nom pour en caser un plus court. Sans aucun `words` qui tient : `head` seul.
   Wally 8/8, noms 6/6, zéro faux déclenchement ; la liste brute coupée par la bibliothèque
   perdait un appel sur huit.
-- Accusé attendu du serveur : `{"type": "hotwords_ok", "count": <nombre de words retenus>}`.
-  Wally le journalise une fois (INFO) comme preuve que le biais s'applique.
+- Accusé du serveur : `{"type": "hotwords_ok", "count": <nombre de words retenus>}` (`head`
+  non compté). Wally le journalise une fois (INFO) comme preuve que le biais s'applique.
+
+Côté serveur (implémenté le 2026-09-16, `server.py` sur le PC GPU) :
+- RealtimeSTT 1.0.2 n'a aucun support des hotwords : le serveur passe par ses hooks
+  `transcription_executor` / `realtime_transcription_executor` (moteur
+  `HotwordsWhisperEngine`), donc plus de process enfant pour le modèle final.
+- Appliqué aux **deux** modèles (partiels et final) de **cette connexion**, dès l'énoncé
+  suivant. Une nouvelle trame REMPLACE la précédente, sans fusion.
+- Budget effectif 221 jetons (2 de marge), comptés avec le `hf_tokenizer` du modèle final.
+  Avec 166 noms envoyés, 55 sont retenus.
+- Chaînes vides et non-chaînes ignorées ; une virgule dans un nom devient une espace (c'est
+  le séparateur). Trame absente : comportement inchangé.
+- Mesuré sur 4 voix TTS : « Kassandre » 0/4 → 4/4 ; Kassandre, Azraël, Malef dans une même
+  phrase 0/4, 1/4, 1/4 → 4/4 chacun ; « Wally » 4/4 inchangé ; aucun final inventé sur 30 s
+  de bruit blanc, 30 s de ventilateur synthétique et 30 s de silence ; fin de parole →
+  final 0,55–0,80 s (avant : 0,58–0,85 s). Pas encore mesuré sur un vrai micro.
 
 ### 2.3 Fin de flux
 
@@ -180,6 +195,10 @@ Réglables par **variables d'environnement** (lues au démarrage du serveur) :
   carte (avec le bureau Windows qui consomme déjà ~2–3 Go). **3 connexions → risque d'OOM.**
 - Au-delà de `WALLY_MAX_CONNECTIONS`, les nouvelles connexions reçoivent
   `{"type":"error","message":"server full (...)"}` puis sont fermées (code `1013`).
+- **Remesuré le 2026-09-16** après le passage aux executors (sans process enfant) :
+  **+2 659 Mio de VRAM** et +3 308 Mio de RAM par connexion, `ready` en 4,5 s ;
+  **2 connexions = 7,4 Go** au total. Les chiffres ci-dessus datent de l'ancienne
+  architecture. 3 connexions n'ont pas été essayées.
 - **Pour viser 3–4 connexions** : réduire la VRAM par connexion, p.ex.
   `WALLY_REALTIME_MODEL=base` (ou `tiny`) et/ou `WALLY_COMPUTE_TYPE=int8_float16`, puis
   augmenter `WALLY_MAX_CONNECTIONS` en conséquence.

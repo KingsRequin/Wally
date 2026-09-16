@@ -618,6 +618,11 @@ même persona, mémoire et émotions qu'à l'écrit.
   repli **faster-whisper local** (modèle `small`) + soupape **xAI** en débordement.
   Ordre depuis le 2026-08-19 — **prioritaires : GPU → xAI · autres : local → GPU → xAI**.
   Le GPU ne tient que DEUX locuteurs. Un seuil se MESURE dans les logs, il ne se choisit pas.
+  **Noms à reconnaître** : une seule source (`voice/noms.py` : nom de Wally, présents du salon,
+  alias sûrs de la communauté) pour TOUS les moteurs, messages vocaux compris. Sur les moteurs
+  faster-whisper (local et GPU, trame `hotwords`), le nom de Wally se place en tête ET en
+  queue, et seuls les noms qui tiennent dans 223 jetons passent. Liste brute coupée par la
+  bibliothèque : Wally 7/8 ; encadrée : 8/8, noms 6/6.
 - **TTS** (`providers.py`) : Azure Speech, free tier F0 suivi par `quota.py`
   (5 h STT / 500 k car. TTS par mois). Le namespace `mstts:express-as` est en **http**, pas https —
   avec https, Azure ignore le style EN SILENCE.
