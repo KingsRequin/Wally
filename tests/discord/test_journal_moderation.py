@@ -1592,7 +1592,7 @@ async def test_deux_secondes_avant_la_lecture_du_journal_d_audit():
     await jm.message_supprime(bot, payload, dormir=_dormir)
     await _fond()
 
-    assert sommeils == [(2.0, [])]      # le sommeil précède la lecture
+    assert sommeils == [(jm._DELAI_AUDIT, [])]      # le sommeil précède la lecture
     assert audit.appels
 
 
@@ -1696,13 +1696,15 @@ async def test_ghost_ping_titre_et_bloc_mentionnait():
 async def test_ghost_ping_roles_et_everyone_rendus():
     _etat_audit_neuf()
     bot, logs = _bot()
-    msg = _message("@everyone dehors", age=1.0, mentions=[1], roles_mentionnes=[55], everyone=True)
+    # Une mention d'un TIERS (l'auteur est 1) : la sienne serait retirée.
+    msg = _message("@everyone dehors", age=1.0, mentions=[2], roles_mentionnes=[55], everyone=True)
     payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
 
     await _supprimer(bot, payload)
 
     texte = "\n".join(_textes(_vue(logs)))
-    assert "<@1>" in texte and "<@&55>" in texte
+    mentionnait = texte.split("**Mentionnait**")[1]
+    assert "<@2>" in mentionnait and "<@&55>" in mentionnait
     # `@everyone` part en TEXTE, `@` neutralisé : pas de seconde notification.
     assert "@\u200beveryone" in texte
     assert "**Mentionnait** " in texte
@@ -1719,6 +1721,35 @@ async def test_ghost_ping_here_rendu_quand_c_est_here():
     texte = "\n".join(_textes(_vue(logs)))
     assert "@\u200bhere" in texte
     assert "everyone" not in texte
+
+
+async def test_auto_mention_seule_n_est_pas_un_ghost_ping():
+    """Se mentionner soi-même ne notifie personne : pas de ghost ping."""
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("je me parle", age=1.0, auteur_id=1, mentions=[1])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "🗑️ Message supprimé" in texte
+    assert "Ghost ping" not in texte
+    assert "Mentionnait" not in texte
+
+
+async def test_auto_mention_avec_un_tiers_reste_un_ghost_ping_sans_l_auteur():
+    _etat_audit_neuf()
+    bot, logs = _bot()
+    msg = _message("nous deux", age=1.0, auteur_id=1, mentions=[1, 456])
+    payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)
+
+    await _supprimer(bot, payload)
+
+    texte = "\n".join(_textes(_vue(logs)))
+    assert "👻 Ghost ping supprimé" in texte
+    assert "**Mentionnait** <@456>" in texte
+    assert "<@1>" not in texte.split("**Mentionnait**")[1]
 
 
 async def test_message_ancien_avec_mention_reste_une_suppression_ordinaire():
@@ -1742,7 +1773,7 @@ async def test_ghost_ping_borne_a_cinq_minutes_pile():
     from datetime import datetime, timezone
     t0 = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
     bot, logs = _bot()
-    for decalage, attendu in ((299.0, True), (300.0, False)):
+    for decalage in (299.0, 300.0):     # les cinq minutes de la spec, de part et d'autre
         msg = _message("salut", mentions=[123])
         msg.created_at = t0 - timedelta(seconds=decalage)
         payload = SimpleNamespace(guild_id=COMMU, channel_id=5, message_id=1, cached_message=msg)

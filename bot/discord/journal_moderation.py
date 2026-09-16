@@ -700,8 +700,14 @@ def _mentions_rendues(msg: Any) -> str:
     de forme d'id — ils partent en TEXTE, `@` neutralisé, parce qu'un
     `@everyone` à vif republié dans le salon de logs est exactement ce que
     l'échappement de ce module existe pour éviter.
+
+    L'auteur sort de sa propre liste : Discord ne notifie PERSONNE quand on se
+    mentionne soi-même, donc un message où l'auteur se cite n'a fait sonner
+    personne — le titrer « ghost ping » serait une accusation sans victime.
+    Les rôles restent, eux, même un rôle que l'auteur porte : il notifie tous
+    les AUTRES membres de ce rôle.
     """
-    rendues = [f"<@{uid}>" for uid in msg.raw_mentions]
+    rendues = [f"<@{uid}>" for uid in msg.raw_mentions if uid != msg.author.id]
     rendues += [f"<@&{rid}>" for rid in msg.raw_role_mentions]
     if msg.mention_everyone:
         # Le drapeau ne dit pas LEQUEL des deux ; le contenu, lui, le dit.
