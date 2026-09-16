@@ -5,6 +5,11 @@ temporaire ; ce registre range le triplet (salon temporaire, salon de logs,
 message) pour que la carte soit ÉDITÉE — et non republiée — à la suppression.
 Ids en TEXT : un snowflake ne survit pas à un REAL. `participants` est une
 liste d'ids JSON, alimentée à chaque entrée dans le salon.
+
+`participants` est plafonné à `_MAX_PARTICIPANTS_STOCKES` (500) : au-delà, un
+nouvel arrivant n'est plus ajouté à la colonne — les premiers sont gardés, la
+ligne ne grossit pas indéfiniment. La carte elle-même n'en affiche de toute
+façon qu'une fraction (budget Components V2, cf. `journal_vocal._bloc_participants`).
 """
 from __future__ import annotations
 
@@ -12,6 +17,8 @@ import json
 import time
 
 import aiosqlite
+
+_MAX_PARTICIPANTS_STOCKES = 500
 
 
 class JournalVocalMixin:
@@ -38,7 +45,7 @@ class JournalVocalMixin:
             "(salon_temp_id, log_salon_id, message_id, createur_id, cree_a, participants) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (str(salon_temp_id), str(log_salon_id), str(message_id), str(createur_id), time.time(),
-             json.dumps([str(p) for p in participants])),
+             json.dumps([str(p) for p in participants][:_MAX_PARTICIPANTS_STOCKES])),
         )
 
     async def carte_vocale_participant_ajouter(self, salon_temp_id: int, user_id: int) -> None:
@@ -46,7 +53,9 @@ class JournalVocalMixin:
 
         Sans ligne pour ce salon (journal désactivé au moment de la création,
         ou salon non temporaire), ne fait rien : il n'y a aucune carte où
-        ranger ce participant.
+        ranger ce participant. Au-delà de `_MAX_PARTICIPANTS_STOCKES`, le
+        nouvel arrivant n'est plus ajouté : la ligne ne grossit pas pour
+        toujours sur un salon qui reste ouvert des jours.
         """
         lignes = await self.fetch_all(
             "SELECT log_salon_id, participants FROM journal_cartes_vocales WHERE salon_temp_id = ?",
@@ -54,7 +63,7 @@ class JournalVocalMixin:
         )
         for ligne in lignes:
             participants: list[str] = json.loads(ligne["participants"])
-            if str(user_id) in participants:
+            if str(user_id) in participants or len(participants) >= _MAX_PARTICIPANTS_STOCKES:
                 continue
             participants.append(str(user_id))
             await self.execute(
@@ -86,3 +95,14 @@ class JournalVocalMixin:
             "DELETE FROM journal_cartes_vocales WHERE salon_temp_id = ?",
             (str(salon_temp_id),),
         )
+
+    async def salons_temp_avec_carte(self) -> set[int]:
+        """Les salons temporaires distincts qui ont encore au moins une carte.
+
+        Sert au ménage des cartes orphelines au boot (`salons_temporaires.
+        menage_au_boot`) : comparé au registre des salons temporaires encore
+        valides pour trouver celles dont le salon a disparu sans que
+        `vocal_supprime` ait pu les éditer (bot arrêté entre-temps).
+        """
+        rows = await self.fetch_all("SELECT DISTINCT salon_temp_id FROM journal_cartes_vocales")
+        return {int(r["salon_temp_id"]) for r in rows}

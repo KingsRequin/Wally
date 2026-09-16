@@ -40,6 +40,11 @@ class FauxDb:
     async def salons_temporaires_avec_guild(self):
         return {cid: 9 for cid in self.ids}
 
+    async def salons_temp_avec_carte(self):
+        """Aucune carte du journal vocal suivie ici : `menage_au_boot` appelle
+        aussi `journal_vocal.nettoyer_cartes_orphelines`, qui lit ce registre."""
+        return set()
+
 
 def _bot(db, createur=CREATEUR, noms=("Arène des Apex",)):
     cfg = SimpleNamespace(salon_createur_id=createur, noms=list(noms))
@@ -204,6 +209,31 @@ async def test_menage_au_boot_interdit_mais_toujours_dans_le_serveur_garde_la_li
     bot.fetch_channel = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "Missing Access"))
     await st.menage_au_boot(bot)
     assert db.ids == {3}
+
+
+async def test_menage_au_boot_nettoie_aussi_les_cartes_orphelines(monkeypatch):
+    """`menage_au_boot` appelle `journal_vocal.nettoyer_cartes_orphelines`
+    avec le registre restant APRÈS son propre ménage (2 vide et 3 disparu
+    retirés, 1 encore occupé gardé) — pas avant, sinon un salon tout juste
+    retiré paraîtrait encore valide."""
+    from bot.discord import journal_vocal as jv
+
+    occupe = _salon(1, membres=[object()])
+    vide = _salon(2, membres=[])
+    db = FauxDb({1, 2, 3})   # 3 : disparu (fetch → NotFound, cf. `_bot`)
+    bot = _bot(db)
+    bot.salons = {1: occupe, 2: vide}
+
+    appels = []
+
+    async def faux_nettoyer(bot, salons_valides):
+        appels.append(salons_valides)
+
+    monkeypatch.setattr(jv, "nettoyer_cartes_orphelines", faux_nettoyer)
+
+    await st.menage_au_boot(bot)
+
+    assert appels == [{1}]   # 2 supprimé (vide), 3 retiré (NotFound) : seul 1 reste
 
 
 async def test_menage_au_boot_une_panne_sur_un_salon_n_arrete_pas_les_autres():

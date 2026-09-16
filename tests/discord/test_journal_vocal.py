@@ -36,6 +36,13 @@ def _textes(vue) -> list[str]:
     return [c.content for c in vue.walk_children() if isinstance(c, discord.ui.TextDisplay)]
 
 
+def _longueur_totale(vue) -> int:
+    """La somme réelle du budget Components V2 : TOUS les `TextDisplay`
+    réunis (cf. `bot/discord/fiches.py`), pas le texte rejoint par des `\\n`
+    qu'ajoute `_textes` pour la lecture des tests."""
+    return sum(len(t) for t in _textes(vue))
+
+
 def _vue_envoyee(salon, appel=0):
     return salon.send.await_args_list[appel].kwargs["view"]
 
@@ -163,13 +170,38 @@ async def test_vocal_supprime_edite_la_carte_avec_duree_et_participants(tmp_path
         await db.close()
 
 
-async def test_vocal_supprime_sans_carte_en_base_ne_publie_rien(tmp_path):
-    """Création jamais journalisée (journal désactivé à l'époque) : rien à éditer."""
+async def test_budget_4000_pire_cas_participants(tmp_path):
+    """300 participants à 18 chiffres dépassent 4000 caractères sans bornage
+    (mesuré : 180 → 4109, 200 → 4549) : la carte reste sous le plafond
+    Components V2, et une ligne récapitulative dit ce qui a été coupé."""
     db = await _db(tmp_path)
     try:
         bot, salons = _bot(db)
         salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        base = 100_000_000_000_000_000   # 18 chiffres
+        createur = SimpleNamespace(id=base, name="alice")
+        await jv.vocal_cree(bot, createur, salon)
+        for i in range(1, 300):
+            await db.carte_vocale_participant_ajouter(777, base + i)
+
         await jv.vocal_supprime(bot, salon)
+
+        vue = _vue_editee(salons[LOGS])
+        assert _longueur_totale(vue) <= 4000
+        texte = "\n".join(_textes(vue))
+        assert re.search(r"… et \d+ autres", texte)
+    finally:
+        await db.close()
+
+
+async def test_vocal_supprime_sans_carte_en_base_ne_publie_rien(tmp_path):
+    """Toujours rien après le délai de rattrapage (journal désactivé à
+    l'époque de la création, ou tous les envois avaient échoué) : rien à éditer."""
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_supprime(bot, salon, dormir=AsyncMock())
         salons[LOGS].send.assert_not_awaited()
         salons[LOGS]._partial.edit.assert_not_awaited()
     finally:
@@ -181,7 +213,80 @@ async def test_vocal_supprime_sans_guild_ne_leve_pas(tmp_path):
     try:
         bot, _salons = _bot(db)
         salon = SimpleNamespace(id=777, name="Arène")  # pas de `.guild`
-        await jv.vocal_supprime(bot, salon)
+        await jv.vocal_supprime(bot, salon, dormir=AsyncMock())
+    finally:
+        await db.close()
+
+
+# ---------------------------------------------------------------------------
+# vocal_supprime — course avec `vocal_cree`, lancé en parallèle (#2)
+
+
+async def test_vocal_supprime_course_avec_vocal_cree_attend_puis_relit(tmp_path):
+    """`vocal_cree` (envoi réseau + écriture en base) n'a pas encore fini
+    d'écrire sa ligne quand `vocal_supprime` regarde : une seule relecture
+    après le délai de rattrapage la retrouve — pas de carte orpheline."""
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        attentes: list[float] = []
+
+        async def dormir_puis_ecrire(secondes: float) -> None:
+            attentes.append(secondes)
+            # `vocal_cree`, lancé en parallèle, termine pendant l'attente.
+            await db.carte_vocale_ajouter(777, LOGS, 555, 42, [42])
+
+        await jv.vocal_supprime(bot, salon, dormir=dormir_puis_ecrire)
+
+        assert attentes == [jv._DELAI_RATTRAPAGE]
+        salons[LOGS]._partial.edit.assert_awaited_once()
+        texte = "\n".join(_textes(_vue_editee(salons[LOGS])))
+        assert "<@42>" in texte
+        assert await db.cartes_vocales(777) == []   # aucune ligne orpheline
+    finally:
+        await db.close()
+
+
+async def test_vocal_supprime_toujours_rien_apres_le_delai_journalise_en_info(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        attentes: list[float] = []
+
+        async def dormir_espion(secondes: float) -> None:
+            attentes.append(secondes)
+
+        dits: list[str] = []
+        jeton = jv.logger.add(lambda m: dits.append(str(m)), level="INFO")
+        try:
+            await jv.vocal_supprime(bot, salon, dormir=dormir_espion)
+        finally:
+            jv.logger.remove(jeton)
+
+        assert attentes == [jv._DELAI_RATTRAPAGE]
+        salons[LOGS].send.assert_not_awaited()
+        assert any("aucune carte" in d for d in dits)
+    finally:
+        await db.close()
+
+
+async def test_vocal_supprime_journal_desactive_n_attend_pas(tmp_path):
+    """Sans salon de logs configuré, `vocal_cree` n'a jamais pu écrire de
+    ligne : inutile d'attendre le délai de rattrapage à chaque suppression."""
+    db = await _db(tmp_path)
+    try:
+        bot, _salons = _bot(db, salon_ids=())
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        appels: list[float] = []
+
+        async def dormir_espion(secondes: float) -> None:
+            appels.append(secondes)
+
+        await jv.vocal_supprime(bot, salon, dormir=dormir_espion)
+
+        assert appels == []
     finally:
         await db.close()
 
@@ -397,3 +502,109 @@ async def test_mouvement_entree_dans_un_salon_ordinaire_n_ajoute_aucun_participa
         assert await db.cartes_vocales(1) == []
     finally:
         await db.close()
+
+
+# ---------------------------------------------------------------------------
+# nettoyer_cartes_orphelines — reboot entre la disparition du salon et
+# l'édition de sa carte (#2)
+
+
+async def test_orpheline_carte_encore_atteignable_editee_pour_dire_le_salon_disparu(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+
+        # Le salon a disparu (registre déjà nettoyé par `menage_au_boot`) SANS
+        # que `vocal_supprime` ait tourné : `salons_valides` ne le contient plus.
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
+
+        salons[LOGS]._partial.edit.assert_awaited_once()
+        texte = "\n".join(_textes(_vue_editee(salons[LOGS])))
+        assert "disparu" in texte
+        assert "<@42>" in texte
+        assert await db.cartes_vocales(777) == []
+    finally:
+        await db.close()
+
+
+async def test_orpheline_carte_introuvable_ligne_retiree_sans_republier(tmp_path):
+    """Le salon ET son message de carte ont tous les deux disparu : rien à
+    corriger visuellement, juste la ligne à retirer."""
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+        salons[LOGS]._partial.edit.side_effect = discord.NotFound(
+            SimpleNamespace(status=404, reason="x"), "Unknown Message")
+
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
+
+        assert salons[LOGS].send.await_count == 1   # la création seulement, pas de carte de remplacement
+        assert await db.cartes_vocales(777) == []
+    finally:
+        await db.close()
+
+
+async def test_orpheline_salon_encore_valide_n_est_pas_touchee(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot, SimpleNamespace(id=42, name="alice"), salon)
+
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides={777})   # encore dans le registre
+
+        salons[LOGS]._partial.edit.assert_not_awaited()
+        assert len(await db.cartes_vocales(777)) == 1
+    finally:
+        await db.close()
+
+
+async def test_orpheline_aucune_carte_ne_leve_pas(tmp_path):
+    db = await _db(tmp_path)
+    try:
+        bot, salons = _bot(db)
+        await jv.nettoyer_cartes_orphelines(bot, salons_valides=set())
+        salons[LOGS].send.assert_not_awaited()
+    finally:
+        await db.close()
+
+
+async def test_reboot_orpheline_nettoyee_au_boot(tmp_path):
+    """Bout en bout : le salon a fermé pendant que le bot était arrêté — ni
+    `_supprimer_si_gere` ni `vocal_supprime` n'ont tourné. `menage_au_boot`
+    retire le salon du registre (comme avant) ET retrouve/édite sa carte
+    orpheline via `nettoyer_cartes_orphelines`."""
+    from bot.discord import salons_temporaires as st
+
+    path = str(tmp_path / "vocal.db")
+    db1 = await Database.create(path)
+    try:
+        bot1, _salons1 = _bot(db1)
+        salon = SimpleNamespace(id=777, name="Arène", guild=SimpleNamespace(id=COMMU))
+        await jv.vocal_cree(bot1, SimpleNamespace(id=42, name="alice"), salon)
+        await db1.salon_temporaire_ajouter(777, COMMU)   # posé par `_creer()` avant l'arrêt
+    finally:
+        await db1.close()
+
+    db2 = await Database.create(path)
+    try:
+        bot2, salons2 = _bot(db2, createur=CREATEUR)
+        # `bot2.get_channel` (posé par `_bot()`) ne connaît que les salons de
+        # logs : le salon vocal 777 y est déjà introuvable, comme après un
+        # redémarrage où il n'est plus en cache.
+        bot2.fetch_channel = AsyncMock(side_effect=discord.NotFound(
+            SimpleNamespace(status=404, reason="x"), "Unknown Channel"))
+
+        await st.menage_au_boot(bot2)
+
+        assert await db2.salons_temporaires() == set()   # registre nettoyé comme avant
+        salons2[LOGS]._partial.edit.assert_awaited_once()
+        texte = "\n".join(_textes(_vue_editee(salons2[LOGS])))
+        assert "disparu" in texte
+        assert await db2.cartes_vocales(777) == []
+    finally:
+        await db2.close()

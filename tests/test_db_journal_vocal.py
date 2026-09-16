@@ -96,3 +96,49 @@ async def test_carte_vocale_ajouter_remplace_la_meme_carte(tmp_path):
         assert cartes[0]["message_id"] == 101
     finally:
         await db.close()
+
+
+async def test_salons_temp_avec_carte(tmp_path):
+    db = await Database.create(str(tmp_path / "t.db"))
+    try:
+        assert await db.salons_temp_avec_carte() == set()
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, [42])
+        await db.carte_vocale_ajouter(777, LOGS2, 200, 42, [42])   # même salon, autre log
+        await db.carte_vocale_ajouter(888, LOGS1, 300, 1, [1])
+        assert await db.salons_temp_avec_carte() == {777, 888}
+        await db.cartes_vocales_supprimer(777)
+        assert await db.salons_temp_avec_carte() == {888}
+    finally:
+        await db.close()
+
+
+async def test_participants_stockes_plafonnes(tmp_path):
+    """Au-delà de 500, les nouveaux arrivants ne sont plus ajoutés à la
+    colonne — les premiers sont gardés, la ligne ne grossit pas pour toujours."""
+    db = await Database.create(str(tmp_path / "t.db"))
+    try:
+        deja_500 = list(range(500))
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, deja_500)
+        carte = (await db.cartes_vocales(777))[0]
+        assert len(carte["participants"]) == 500
+        assert carte["participants"] == deja_500
+
+        await db.carte_vocale_participant_ajouter(777, 999999)   # le 501e : refusé
+
+        carte = (await db.cartes_vocales(777))[0]
+        assert len(carte["participants"]) == 500
+        assert 999999 not in carte["participants"]
+    finally:
+        await db.close()
+
+
+async def test_carte_vocale_ajouter_plafonne_la_liste_initiale(tmp_path):
+    db = await Database.create(str(tmp_path / "t.db"))
+    try:
+        trop = list(range(600))
+        await db.carte_vocale_ajouter(777, LOGS1, 100, 42, trop)
+        carte = (await db.cartes_vocales(777))[0]
+        assert len(carte["participants"]) == 500
+        assert carte["participants"] == trop[:500]
+    finally:
+        await db.close()

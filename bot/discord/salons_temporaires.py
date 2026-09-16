@@ -145,7 +145,9 @@ async def _supprimer(bot: "WallyDiscord", salon: Any) -> bool:
 
 
 async def menage_au_boot(bot: "WallyDiscord") -> None:
-    """Retire les salons vidés ou disparus pendant l'arrêt. Ne lève jamais."""
+    """Retire les salons vidés ou disparus pendant l'arrêt, puis les cartes du
+    journal vocal orphelines (salon disparu sans que `vocal_supprime` ait pu
+    les éditer — bot arrêté entre-temps). Ne lève jamais."""
     if bot.config.discord.salons_temporaires.salon_createur_id is None:
         return
     try:
@@ -166,6 +168,15 @@ async def menage_au_boot(bot: "WallyDiscord") -> None:
                     logger.info("salons temporaires : « {n} » vide au boot, supprimé", n=salon.name)
         except Exception as e:  # noqa: BLE001 — un salon en échec ne doit pas arrêter le ménage des autres
             logger.warning("salons temporaires : {c} : ménage échoué : {e!r}", c=channel_id, e=e)
+
+    from bot.discord.journal_vocal import nettoyer_cartes_orphelines
+    try:
+        restants = await bot.db.salons_temporaires()
+    except Exception as e:  # noqa: BLE001 — le ménage des cartes ne bloque pas le démarrage
+        logger.warning("salons temporaires : lecture du registre pour les cartes orphelines a échoué : {e!r}",
+                       e=e)
+        return
+    await nettoyer_cartes_orphelines(bot, restants)
 
 
 async def _verifier_hors_cache(bot: "WallyDiscord", channel_id: int, guild_id: int) -> None:

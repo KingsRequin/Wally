@@ -191,13 +191,17 @@ def _recap(n: int) -> str:
     return f"… et {n} autre" if n == 1 else f"… et {n} autres"
 
 
-def _borner_lignes(lignes: list[str], limite: int) -> str:
+def borner_lignes(lignes: list[str], limite: int) -> str:
     """Borne une liste de lignes par lignes ENTIÈRES.
 
     `_borner` coupe au caractère près : sur `**auteur** : extrait`, la
     coupure peut tomber au milieu du marqueur `**`, laissant tout le RESTE du
     message en gras. Les lignes qui ne tiennent plus deviennent une seule
     ligne récapitulative « … et N autre(s) ».
+
+    Publique : réutilisée par `bot/discord/journal_vocal.py` pour borner sa
+    liste de participants (une mention par « ligne ») — pas de troisième
+    fonction de bornage à écrire pour la même règle.
     """
     texte = "\n".join(lignes)
     if len(texte) <= limite:
@@ -904,7 +908,7 @@ async def messages_supprimes_en_masse(bot: "WallyDiscord", payload: Any) -> None
             lignes.append(f"**{auteur}** : {extrait}")
         corps = [meta]
         if lignes:
-            corps.append(_borner_lignes(lignes, _MAX_CITATION))
+            corps.append(borner_lignes(lignes, _MAX_CITATION))
         vue = fiche("🧹 Suppression en masse", corps, accent=ACCENT_ALERTE)
         await publier_partout(salons, lambda _t: vue)
     except Exception as e:  # noqa: BLE001

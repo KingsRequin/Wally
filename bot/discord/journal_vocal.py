@@ -2,7 +2,7 @@
 
 Suite de `bot/discord/journal_moderation.py`, qui garde les MESSAGES et sert
 de tronc commun (`salons_cibles`, `publier_partout`, `horodatage`,
-`pied_utilisateur`) au reste du journal de modération.
+`pied_utilisateur`, `borner_lignes`) au reste du journal de modération.
 
 **Carte vocale unique (#3).** À la création d'un salon vocal temporaire, une
 carte est publiée dans chaque salon de logs, et le triplet (salon temporaire,
@@ -11,9 +11,20 @@ ne perd rien, il n'y a aucun état en RAM ici. Chaque entrée d'un membre dans
 le salon temporaire ajoute son id aux participants de CHAQUE carte. À la
 suppression du salon, chaque carte est ÉDITÉE (`message.edit(view=...)`,
 message déjà Components V2) plutôt que republiée : durée de vie, créateur,
-participants. Une carte introuvable (supprimée à la main dans le salon de
-logs) republie une carte neuve — l'information ne doit pas se perdre parce
-que l'édition a échoué.
+participants (bornés à `_MAX_PARTICIPANTS` caractères, comme le reste du
+journal — cf. `_bloc_participants`). Une carte introuvable (supprimée à la
+main dans le salon de logs) republie une carte neuve.
+
+`vocal_cree` (envoi réseau + écriture en base) et `vocal_supprime` partent
+tous deux en tâche de fond, indépendamment l'un de l'autre (`_creer()` /
+`_supprimer_si_gere()` dans `salons_temporaires.py`) : un salon créé puis
+vidé presque aussitôt peut faire lire `vocal_supprime` AVANT que la ligne de
+`vocal_cree` existe. `vocal_supprime` attend donc une fois, brièvement,
+avant de conclure qu'il n'y a rien à éditer (cf. `_DELAI_RATTRAPAGE`).
+
+Les cartes qu'aucune des deux tâches n'a pu réconcilier (bot arrêté entre la
+disparition Discord du salon et l'édition) sont nettoyées au boot par
+`nettoyer_cartes_orphelines`, appelée depuis `salons_temporaires.menage_au_boot`.
 
 **Mouvements vocaux (#10).** Depuis `WallyDiscord.on_voice_state_update` :
 entrée, sortie, déplacement (avant → après). Ignorés : changements de
@@ -25,6 +36,8 @@ Remplace `vocal_cree` / `vocal_supprime` de `journal_moderation.py`.
 """
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -33,12 +46,32 @@ from loguru import logger
 
 from bot.core.temps import PARIS, maintenant
 from bot.discord.fiches import fiche
-from bot.discord.journal_moderation import horodatage, pied_utilisateur, publier_partout, salons_cibles
+from bot.discord.journal_moderation import (
+    borner_lignes,
+    horodatage,
+    pied_utilisateur,
+    publier_partout,
+    salons_cibles,
+)
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
 
 _COULEUR_VOCAL = 0x3498DB      # même bleu que l'ancien `vocal_cree`/`vocal_supprime`
+
+# Budget du bloc « Participants », sur les 4000 caractères de TOUS les
+# TextDisplay réunis (cf. `bot/discord/fiches.py`). Le reste de la carte
+# (titre, créé/supprimé/durée) tient large sous les ~600 caractères restants —
+# mesuré avec un nom de salon de 100 caractères (le maximum Discord) et des
+# horodatages/mentions au format le plus long.
+_MAX_PARTICIPANTS = 3200
+
+# `vocal_cree` (envoi réseau + écriture en base) tourne en parallèle de
+# `vocal_supprime` : un salon vidé presque aussitôt après sa création peut
+# faire lire la base avant que la ligne existe. Même seam que `_DELAI_AUDIT`
+# dans `journal_moderation.py` — `dormir`, injectable, pour ne jamais
+# attendre ce délai dans un test.
+_DELAI_RATTRAPAGE = 1.0
 
 
 def _duree(secondes: float) -> str:
@@ -51,6 +84,20 @@ def _duree(secondes: float) -> str:
     if minutes:
         return f"{minutes} min {secs} s" if secs else f"{minutes} min"
     return f"{secs} s"
+
+
+def _bloc_participants(participants: list[int]) -> str:
+    """« **Participants** » suivi d'une mention par ligne, bornée.
+
+    Une mention par LIGNE (pas par mot séparé d'espace) : `borner_lignes`
+    coupe par unité entière, jamais au milieu d'une mention `<@id>` — sur un
+    salon qui a vu passer des centaines de participants, la carte affiche les
+    premiers puis une ligne récapitulative « … et N autres » plutôt que de
+    dépasser le budget Components V2 (mesuré : 300 participants à 18 chiffres
+    dépassent 4000 caractères sans ce bornage).
+    """
+    mentions = [f"<@{p}>" for p in participants] or ["*aucun*"]
+    return f"**Participants**\n{borner_lignes(mentions, _MAX_PARTICIPANTS)}"
 
 
 async def vocal_cree(bot: "WallyDiscord", member: Any, salon: Any) -> None:
@@ -79,22 +126,30 @@ def _vue_supprimee(salon: Any, carte: dict, supprime_a: float) -> discord.ui.Lay
     duree = _duree(supprime_a - carte["cree_a"])
     cree_dt = datetime.fromtimestamp(carte["cree_a"], tz=PARIS)
     supprime_dt = datetime.fromtimestamp(supprime_a, tz=PARIS)
-    participants = " ".join(f"<@{p}>" for p in carte["participants"]) or "*aucun*"
     meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
            f"**Supprimé** {horodatage(supprime_dt)} · **A vécu** {duree}\n"
-           f"**Participants** {participants}")
+           f"{_bloc_participants(carte['participants'])}")
     return fiche(f"🔊 {salon.name}", [meta], accent=_COULEUR_VOCAL)
 
 
-async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
+async def vocal_supprime(bot: "WallyDiscord", salon: Any, *,
+                         dormir: Callable[[float], Any] = asyncio.sleep) -> None:
     """Salon vocal temporaire supprimé : édite chaque carte de création.
 
-    Sans ligne en base pour ce salon (création non journalisée : journal
-    désactivé, ou tous les envois avaient échoué), rien à éditer.
+    `vocal_cree` tourne en tâche de fond séparée : sur un salon vidé presque
+    aussitôt après sa création, sa ligne peut ne pas encore exister. Une
+    absence de ligne déclenche donc UNE relecture après `_DELAI_RATTRAPAGE`
+    avant de conclure qu'il n'y a vraiment rien (journal désactivé, ou tous
+    les envois de `vocal_cree` avaient échoué).
     """
     try:
         cartes = await bot.db.cartes_vocales(salon.id)
+        if not cartes and bot.config.discord.journal_moderation.salon_ids:
+            await dormir(_DELAI_RATTRAPAGE)
+            cartes = await bot.db.cartes_vocales(salon.id)
         if not cartes:
+            logger.info("journal vocal : aucune carte à éditer pour {c} (jamais créée, ou déjà "
+                        "supprimée)", c=salon.id)
             return
         supprime_a = maintenant().timestamp()
         for carte in cartes:
@@ -119,6 +174,63 @@ async def vocal_supprime(bot: "WallyDiscord", salon: Any) -> None:
         await bot.db.cartes_vocales_supprimer(salon.id)
     except Exception as e:  # noqa: BLE001
         logger.warning("journal vocal : suppression non journalisée : {e!r}", e=e)
+
+
+def _vue_orpheline(salon_temp_id: int, carte: dict) -> discord.ui.LayoutView:
+    """La carte d'un salon disparu sans que `vocal_supprime` ait pu l'éditer.
+
+    Le salon Discord d'origine n'existe plus (ni en cache, ni via l'API) : ni
+    nom, ni heure de suppression exacte à afficher — seule l'édition dit que
+    le salon a disparu, sans rien affirmer qu'on ne sait pas.
+    """
+    cree_dt = datetime.fromtimestamp(carte["cree_a"], tz=PARIS)
+    meta = (f"**Créé** {horodatage(cree_dt)} par <@{carte['createur_id']}> · "
+           f"**Salon disparu** (détecté au redémarrage, horodatage exact de la suppression perdu)\n"
+           f"{_bloc_participants(carte['participants'])}")
+    return fiche(f"🔊 Salon {salon_temp_id}", [meta], accent=_COULEUR_VOCAL)
+
+
+async def _nettoyer_une_carte_orpheline(bot: "WallyDiscord", salon_temp_id: int) -> None:
+    try:
+        cartes = await bot.db.cartes_vocales(salon_temp_id)
+        for carte in cartes:
+            salon_log: Any = bot.get_channel(carte["log_salon_id"])
+            if salon_log is None:
+                continue
+            vue = _vue_orpheline(salon_temp_id, carte)
+            try:
+                message = salon_log.get_partial_message(carte["message_id"])
+                await message.edit(view=vue)
+            except discord.NotFound:  # la carte a aussi disparu : rien à corriger, juste la ligne à retirer
+                pass
+            except Exception as e:  # noqa: BLE001 — un salon en échec ne prive pas les autres
+                logger.warning("journal vocal : édition de la carte orpheline de {c} impossible : {e!r}",
+                               c=salon_temp_id, e=e)
+        await bot.db.cartes_vocales_supprimer(salon_temp_id)
+        logger.info("journal vocal : carte(s) orpheline(s) nettoyée(s) pour le salon {c}", c=salon_temp_id)
+    except Exception as e:  # noqa: BLE001 — un salon en échec ne doit pas arrêter le ménage des autres
+        logger.warning("journal vocal : ménage de la carte orpheline de {c} a échoué : {e!r}",
+                       c=salon_temp_id, e=e)
+
+
+async def nettoyer_cartes_orphelines(bot: "WallyDiscord", salons_valides: set[int]) -> None:
+    """Édite puis retire les cartes dont le salon temporaire a disparu SANS
+    passer par `vocal_supprime` — bot arrêté entre la suppression Discord du
+    salon et l'édition de sa carte. Sans ce ménage, la carte reste bloquée
+    sur « créé » pour toujours.
+
+    `salons_valides` : le registre `salons_vocaux_temporaires` APRÈS le
+    ménage habituel de `menage_au_boot` — tout salon qui a une carte mais
+    n'y figure plus est orphelin. Ne lève jamais ; un salon en échec ne prive
+    pas les autres.
+    """
+    try:
+        tous = await bot.db.salons_temp_avec_carte()
+    except Exception as e:  # noqa: BLE001 — le ménage ne bloque pas le démarrage
+        logger.warning("journal vocal : lecture des cartes orphelines impossible : {e!r}", e=e)
+        return
+    for salon_temp_id in tous - salons_valides:
+        await _nettoyer_une_carte_orpheline(bot, salon_temp_id)
 
 
 async def mouvement_vocal(bot: "WallyDiscord", member: Any, before: Any, after: Any) -> None:

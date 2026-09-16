@@ -325,14 +325,14 @@ def test_borner_ne_coupe_jamais_un_backslash_isole():
 def test_borner_lignes_singulier_pour_une_seule_ligne_restante():
     """« … et 1 autres » est un mauvais français : le singulier s'impose."""
     lignes = ["a" * 50, "b" * 50]
-    resultat = jm._borner_lignes(lignes, 65)   # seule la 1re ligne tient
+    resultat = jm.borner_lignes(lignes, 65)   # seule la 1re ligne tient
     assert resultat.endswith("… et 1 autre")
     assert "1 autres" not in resultat
 
 
 def test_borner_lignes_pluriel_pour_plusieurs_lignes_restantes():
     lignes = ["a" * 50, "b" * 50, "c" * 50]
-    resultat = jm._borner_lignes(lignes, 65)   # seule la 1re ligne tient, 2 restent
+    resultat = jm.borner_lignes(lignes, 65)   # seule la 1re ligne tient, 2 restent
     assert resultat.endswith("… et 2 autres")
 
 
