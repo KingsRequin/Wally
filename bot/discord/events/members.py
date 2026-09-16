@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import discord
 from loguru import logger
 
-from bot.discord import bienvenue
+from bot.discord import bienvenue, journal_membres
 
 if TYPE_CHECKING:
     from bot.discord.bot import WallyDiscord
@@ -16,7 +16,7 @@ def register(bot: "WallyDiscord") -> None:
     @bot.event
     async def on_member_join(member: discord.Member) -> None:
         # Perception cognitive (#A2) : un nouveau venu doit atteindre le cerveau.
-        from bot.discord.handlers import _member_join_context
+        from bot.discord.handlers import _fire, _member_join_context
 
         # La fiche d'abord : elle est consignée dans self_trace, et la
         # cognition doit la voir quand elle décide si elle accueille à son tour.
@@ -27,6 +27,10 @@ def register(bot: "WallyDiscord") -> None:
             await bienvenue.accueillir(bot, member)
         except Exception as e:  # noqa: BLE001 — la perception cognitive doit continuer
             logger.warning("bienvenue : accueillir a levé : {e!r}", e=e)
+        # Journal des membres (#8) : tâche de fond, un envoi lent sur
+        # plusieurs salons de logs ne doit retarder ni l'accueil ni la
+        # perception cognitive ci-dessous.
+        _fire(journal_membres.membre_rejoint(bot, member))
         await _member_join_context(bot, member)
 
     @bot.event

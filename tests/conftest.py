@@ -83,6 +83,32 @@ def isolate_processed_message_ids():
 
 
 @pytest.fixture(autouse=True)
+def isolate_bg_tasks():
+    """Vide les tâches de fond de `_fire()` entre deux tests.
+
+    `bot.discord.handlers._bg_tasks` est un `set` de MODULE, même famille que
+    `isolate_processed_message_ids` ci-dessus. De nombreux tests patchent
+    `asyncio.create_task` (`with patch("...asyncio.create_task"):` ou
+    `monkeypatch.setattr(mod.asyncio, "create_task", ...)`) pour vérifier
+    QU'un appel a lieu sans exécuter la coroutine — `mod.asyncio` est le MÊME
+    module `asyncio` partagé par tout le process, donc ce patch remplace bien
+    la fonction globale, le temps du test. `_fire()` y ajoute alors un
+    `MagicMock` (pas un vrai `Task`) : `add_done_callback` dessus est un
+    no-op silencieux, `_done` ne retire donc jamais l'entrée. Le fantôme
+    reste dans `_bg_tasks` pour le RESTE du worker — un test qui appelle
+    ensuite `asyncio.gather(*_bg_tasks)` (le `_fond()` de
+    `tests/discord/test_journal_moderation.py`, `test_journal_vocal.py`,
+    `test_journal_membres.py`) plante sur un objet qui n'est ni une
+    coroutine ni un futur, au hasard de la distribution des fichiers entre
+    workers `pytest-xdist`.
+    """
+    from bot.discord.handlers import _bg_tasks
+    _bg_tasks.clear()
+    yield
+    _bg_tasks.clear()
+
+
+@pytest.fixture(autouse=True)
 def isolate_thread_sense():
     """Vide la mesure du fil entre deux tests.
 
