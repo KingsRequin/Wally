@@ -326,6 +326,13 @@ const ROUTES = {
     sous: 'Quel modèle sert à quoi, et ce que ça coûte.',
     pane: 'admin-modeles',
   },
+  // Génération par `/wally imagine`, le chat web et l'outil du LLM : rien de
+  // propre au live. Seul l'overlay d'images (`!image`) reste sous Twitch.
+  'cerveau/images': {
+    titre: 'Images',
+    sous: 'La génération d\'images de Wally et tout ce qu\'il a déjà produit.',
+    pane: 'admin-images',
+  },
   // Les tâches naissent d'une demande faite à Wally, sur Discord comme sur
   // Twitch : rien à voir avec le live, d'où leur place dans Cerveau.
   'cerveau/automatisations': {
@@ -345,6 +352,11 @@ const ROUTES = {
     sous: 'Ce que Wally entend, et ce qu\'il répond à l\'oral.',
     pane: 'admin-voix',
   },
+  'discord/anti-spam': {
+    titre: 'Anti-spam',
+    sous: 'Quand Wally se fâche contre quelqu\'un qui inonde un salon Discord.',
+    pane: 'admin-antispam',
+  },
   'twitch/scene': {
     titre: 'Scène & overlays',
     sous: 'Le placement de ce que les viewers voient.',
@@ -352,7 +364,7 @@ const ROUTES = {
   },
   'twitch/medias': {
     titre: 'Médias & sons',
-    sous: 'Les overlays à brancher dans OBS, les sons du chat, la génération d\'images et sa galerie.',
+    sous: 'Les overlays à brancher dans OBS et les sons du chat.',
     pane: 'admin-medias',
   },
   'twitch/memes': {
@@ -510,6 +522,8 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-medias') renderMedias();
   else if (def.pane === 'admin-connexions') renderConnexions();
   else if (def.pane === 'admin-salons') renderSalons();
+  else if (def.pane === 'admin-images') renderImages();
+  else if (def.pane === 'admin-antispam') renderAntiSpam();
   else if (def.pane === 'admin-recompenses') renderRecompenses();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
@@ -2529,15 +2543,12 @@ function _rendreQuestions(boite, liste) {
 
 // ── Twitch › Médias & sons ──────────────────────────────────────────────────
 //
-// Ce que Wally MONTRE et ce qu'il FAIT ENTENDRE, au même endroit : les deux
-// overlays et leurs URL OBS, la génération d'images, la galerie, et les sons
-// que le chat déclenche. C'était réparti entre Paramètres › Images et
-// Système › Overlay, deux sections qui ne se voyaient pas.
+// Ce que le live MONTRE et FAIT ENTENDRE : les overlays, leurs URL OBS et les
+// sons que le chat déclenche. La génération d'images et la galerie vivent sous
+// Cerveau › Images : elles servent Discord et le chat web bien plus que le live.
 
 const _MEDIAS_SECTIONS = [
   ['medias-overlays', 'Overlays'],
-  ['medias-images', 'Génération d\'images'],
-  ['medias-galerie', 'Galerie'],
 ];
 
 function renderMedias() {
@@ -2545,16 +2556,33 @@ function renderMedias() {
   if (!el) return;
 
   if (!document.getElementById('medias-overlays')) {
-    el.innerHTML = '<div class="page-section" id="medias-overlays"></div>'
-      + '<div class="page-section" id="medias-images">'
-      + '<div class="page-section-titre">Génération d\'images</div>'
-      + '<div id="medias-images-corps"></div></div>'
-      + '<div class="page-section" id="medias-galerie"></div>';
+    el.innerHTML = '<div class="page-section" id="medias-overlays"></div>';
   }
 
   _renderPanelOnce(document.getElementById('medias-overlays'), _renderSystemeOverlay);
-  _renderPanelOnce(document.getElementById('medias-images-corps'), _renderParametresImages);
   poserSommaire('twitch/medias', _MEDIAS_SECTIONS, '');
+}
+
+// ── Cerveau › Images ────────────────────────────────────────────────────────
+
+const _IMAGES_SECTIONS = [
+  ['images-generation', 'Génération d\'images'],
+  ['images-galerie', 'Galerie'],
+];
+
+function renderImages() {
+  const el = document.getElementById('tab-admin-images');
+  if (!el) return;
+
+  if (!document.getElementById('images-generation')) {
+    el.innerHTML = '<div class="page-section" id="images-generation">'
+      + '<div class="page-section-titre">Génération d\'images</div>'
+      + '<div id="images-generation-corps"></div></div>'
+      + '<div class="page-section" id="images-galerie"></div>';
+  }
+
+  _renderPanelOnce(document.getElementById('images-generation-corps'), _renderParametresImages);
+  poserSommaire('cerveau/images', _IMAGES_SECTIONS, '');
   chargerGalerie();
 }
 
@@ -2563,7 +2591,7 @@ function renderMedias() {
 const _GALERIE_MAX = 23;
 
 async function chargerGalerie() {
-  const boite = document.getElementById('medias-galerie');
+  const boite = document.getElementById('images-galerie');
   if (!boite) return;
   const r = await apiFetch('/api/public/gallery?limit=200');
   if (!r || !r.ok) {
@@ -2652,7 +2680,7 @@ function renderConnexions() {
 
   chargerConnexions();
   _renderSystemeTwitch(document.getElementById('cnx-twitch-corps'));
-  _renderPanelOnce(document.getElementById('cnx-discord-corps'), _renderReglagesDiscord);
+  _renderPanelOnce(document.getElementById('cnx-discord-corps'), _renderReglagesGeneraux);
   poserSommaire('systeme/connexions', _CNX_SECTIONS, '');
 }
 
@@ -4586,15 +4614,11 @@ async function _renderParametresEmotions(panel) {
   await chargerEmotions();
 }
 
-/** Les réglages de l'ADAPTATEUR Discord — langue par défaut, heure du journal,
- *  fenêtre de contexte, salon de notification, anti-spam.
- *
- *  Ils vivaient dans le panneau « Émotions », où ils n'avaient rien à faire :
- *  la vitesse à laquelle la colère retombe et le nombre de messages avant un
- *  mute sont deux sujets sans rapport. La refonte les range sous Connexions,
- *  avec le reste de ce qui concerne les plateformes.
+/** Les réglages généraux du bot — langue par défaut, heure du journal,
+ *  fenêtre de contexte, déclencheurs, alerte coûts, salon de notification.
+ *  L'anti-spam, propre à Discord, a sa page : Discord › Anti-spam.
  */
-async function _renderReglagesDiscord(panel) {
+async function _renderReglagesGeneraux(panel) {
   if (!panel) return;
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
@@ -4636,10 +4660,22 @@ async function _renderReglagesDiscord(panel) {
   `;
   wrapper.appendChild(botCard);
 
+  panel.appendChild(wrapper);
+  loadNotificationChannels(cfg);
+}
+
+/** L'anti-spam Discord : combien de messages avant le mute, et ce que coûte
+ *  en colère un muté qui continue de parler. Sorti de Connexions, où il
+ *  cohabitait avec les réglages généraux sans rapport avec lui. */
+async function _renderAntiSpam(panel) {
+  if (!panel) return;
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const cfg = await r.json();
+
   const spamCard = document.createElement('div');
   spamCard.className = 'card config-section';
   spamCard.innerHTML = `
-    <div class="config-section-title">ANTI-SPAM DISCORD</div>
     <div class="field-group" style="display:flex;align-items:center;gap:12px">
       <label class="field-label" style="margin:0" for="cfg-spam-enabled">Activé</label>
       <input type="checkbox" id="cfg-spam-enabled" ${(cfg.discord.spam_detection || {}).enabled !== false ? 'checked' : ''}>
@@ -4670,9 +4706,23 @@ async function _renderReglagesDiscord(panel) {
     </div>
     <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
   `;
-  wrapper.appendChild(spamCard);
-  panel.appendChild(wrapper);
-  loadNotificationChannels(cfg);
+  panel.appendChild(spamCard);
+}
+
+// ── Discord › Anti-spam ─────────────────────────────────────────────────────
+
+function renderAntiSpam() {
+  const el = document.getElementById('tab-admin-antispam');
+  if (!el) return;
+  if (!document.getElementById('antispam-reglages')) {
+    el.innerHTML = '<div class="page-section" id="antispam-reglages">'
+      + '<div class="page-section-titre">Détection du spam</div>'
+      + '<div class="page-section-sous">Au-delà du seuil, Wally met la personne en '
+      + 'sourdine (réactions seules) et chaque message de plus l\'agace un peu plus.'
+      + '</div><div id="antispam-corps"></div></div>';
+  }
+  _renderPanelOnce(document.getElementById('antispam-corps'), _renderAntiSpam);
+  poserSommaire('discord/anti-spam', [['antispam-reglages', 'Détection du spam']], '');
 }
 
 async function _renderParametresLLM(panel) {

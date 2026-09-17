@@ -57,9 +57,11 @@ ONGLETS = [
     ("Mémoire commune", "cerveau/memoire"),
     ("Personnalité", "cerveau/personnalite"),
     ("Modèles & coûts", "cerveau/modeles"),
+    ("Images", "cerveau/images"),
     ("Automatisations", "cerveau/automatisations"),
     ("Salons", "discord/salons"),
     ("Voix", "discord/voix"),
+    ("Anti-spam", "discord/anti-spam"),
     ("Scène & overlays", "twitch/scene"),
     ("Médias & sons", "twitch/medias"),
     ("Memes", "twitch/memes"),
@@ -1665,7 +1667,7 @@ def _verifier_mobile(page, rap: Rapport, erreurs: list[str]) -> None:
     # ne s'affiche que sur mobile.
     puces = page.locator("#theme-puces .theme-puce").all_inner_texts()
     rap.dire(puces == ["Personnes", "Mémoire commune", "Personnalité",
-                       "Modèles & coûts", "Automatisations"],
+                       "Modèles & coûts", "Images", "Automatisations"],
              "les pages du thème sont en puces", " · ".join(puces))
 
     actif = page.locator(".barre-bas-item.active").get_attribute("data-theme")
@@ -1848,15 +1850,8 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     del erreurs[:]
     page.locator('.sidebar-item[data-route="twitch/medias"]').click()
     page.wait_for_timeout(2500)
-    for ident, libelle in (("medias-overlays", "les overlays"),
-                           ("medias-images-corps", "la génération d'images")):
-        n = _attendre_contenu(page, ident)
-        rap.dire(n >= _CONTENU_MIN, f"Médias → {libelle}", f"{n} car.")
-    # La galerie se compte en VIGNETTES : mesurer son texte donnerait une
-    # trentaine de caractères (le titre) sur une grille pleine d'images, et
-    # crierait au panneau mort. Un smoke test qui crie à tort finit ignoré.
-    vignettes = page.locator("#medias-galerie .galerie-case").count()
-    rap.dire(vignettes > 0, "Médias → la galerie", f"{vignettes} vignette(s)")
+    n = _attendre_contenu(page, "medias-overlays")
+    rap.dire(n >= _CONTENU_MIN, "Médias → les overlays", f"{n} car.")
     # L'atelier des sons vit DANS le panneau overlay : il a déjà disparu une
     # fois d'un déplacement de section.
     sons = page.locator("#atelier-sons").count()
@@ -1883,6 +1878,28 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
         page.wait_for_timeout(300)
         rap.dire(page.locator("#meme-fiche").count() == 0, "Échap referme la fiche")
     rap.dire(not erreurs, "aucune erreur JS sur Memes", " · ".join(erreurs[:2]))
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="cerveau/images"]').click()
+    page.wait_for_timeout(2500)
+    n = _attendre_contenu(page, "images-generation-corps")
+    rap.dire(n >= _CONTENU_MIN, "Images → la génération", f"{n} car.")
+    # La galerie se compte en VIGNETTES : mesurer son texte donnerait une
+    # trentaine de caractères (le titre) sur une grille pleine d'images, et
+    # crierait au panneau mort. Un smoke test qui crie à tort finit ignoré.
+    vignettes = page.locator("#images-galerie .galerie-case").count()
+    rap.dire(vignettes > 0, "Images → la galerie", f"{vignettes} vignette(s)")
+    rap.dire(not erreurs, "aucune erreur JS sur Images", " · ".join(erreurs[:2]))
+
+    del erreurs[:]
+    page.locator('.sidebar-item[data-route="discord/anti-spam"]').click()
+    page.wait_for_timeout(2500)
+    n = _attendre_contenu(page, "antispam-corps")
+    rap.dire(n >= _CONTENU_MIN, "Anti-spam → les réglages", f"{n} car.")
+    rap.dire(page.locator("#cnx-discord-corps #cfg-spam-enabled").count() == 0
+             and page.locator("#antispam-corps #cfg-spam-enabled").count() == 1,
+             "l'anti-spam n'existe qu'une fois, sur sa page")
+    rap.dire(not erreurs, "aucune erreur JS sur Anti-spam", " · ".join(erreurs[:2]))
 
     del erreurs[:]
     page.locator('.sidebar-item[data-route="discord/voix"]').click()
