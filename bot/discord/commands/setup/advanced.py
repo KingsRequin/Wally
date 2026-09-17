@@ -315,10 +315,25 @@ class OpenAIParamsModal(discord.ui.Modal, title="Paramètres OpenAI"):
                 ephemeral=True,
             )
             return
-        self.bot.config.openai.reasoning_effort = effort
-        self.bot.config.openai.text_verbosity = verbosity
-        self.bot.config.openai.max_tokens = mt
-        self.bot.config.save()
+        # Écrits dans `llm:`, la section que lisent les clients, ET sur les
+        # clients vivants. Le formulaire n'écrivait que le miroir `openai:` :
+        # rien ne changeait, et le chargement suivant (qui reconstruit le miroir
+        # depuis `llm:`) effaçait le réglage — même geste que la route `/config`.
+        cfg = self.bot.config
+        cfg.openai.reasoning_effort = effort
+        cfg.openai.text_verbosity = verbosity
+        cfg.openai.max_tokens = mt
+        for role, client in ((cfg.llm.primary, self.bot.llm),
+                             (cfg.llm.secondary, self.bot.llm_secondary)):
+            role.reasoning_effort = effort
+            role.text_verbosity = verbosity
+            role.max_tokens = mt
+            for attribut, valeur in (("reasoning_effort", effort),
+                                     ("text_verbosity", verbosity),
+                                     ("max_tokens", mt)):
+                if hasattr(client, attribut):
+                    setattr(client, attribut, valeur)
+        cfg.save()
         await interaction.response.send_message(
             f"✅ Effort : {effort}, verbosité : {verbosity}, max tokens : {mt}.",
             ephemeral=True,

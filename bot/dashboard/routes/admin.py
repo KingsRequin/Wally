@@ -17,6 +17,7 @@ from loguru import logger
 
 from bot.config import VALID_REASONING_EFFORTS, VALID_TEXT_VERBOSITIES, VALID_THINKING_TYPES, VALID_THINKING_EFFORTS
 from bot.core.llm import SUPPORTED_TEXT_PROVIDERS
+from bot.core.llm.deepseek import modeles_deepseek
 from bot.core.overlay_feed import payload_image_galerie
 from bot.dashboard.routes.memory import memory_dashboard
 from bot.dashboard.routes.sse import journal_erreurs
@@ -56,11 +57,17 @@ async def get_config(request: Request) -> dict:
     bot_cfg = asdict(cfg.bot)
     if bot_cfg.get("notification_channel_id") is not None:
         bot_cfg["notification_channel_id"] = str(bot_cfg["notification_channel_id"])
+    # Même raison pour les salons exemptés de l'anti-spam : relus en `Number`
+    # puis renvoyés, ils revenaient arrondis (…502844 rangé …502800), et
+    # l'exemption visait un salon qui n'existe pas.
+    discord_cfg = asdict(cfg.discord)
+    spam_cfg = discord_cfg["spam_detection"]
+    spam_cfg["exempt_channels"] = [str(c) for c in spam_cfg["exempt_channels"]]
     return {
         "bot": bot_cfg,
         "openai": asdict(cfg.openai),
         "llm": asdict(cfg.llm),
-        "discord": asdict(cfg.discord),
+        "discord": discord_cfg,
         "twitch": asdict(cfg.twitch),
         "emotions": {k: asdict(v) for k, v in cfg.emotions.items()},
         "twitch_events": {k: asdict(v) for k, v in cfg.twitch_events.items()},
@@ -194,7 +201,7 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
                 cfg.llm.primary.model = p["model"]
                 cfg.openai.primary_model = p["model"]
                 state.primary_llm.model = p["model"]
-            # Claude thinking settings
+            # Raisonnement DeepSeek (lu par `DeepSeekLLMClient` via la factory)
             if "thinking_type" in p:
                 thinking_type = str(p["thinking_type"])
                 if thinking_type not in VALID_THINKING_TYPES:
@@ -328,7 +335,7 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
                     raise HTTPException(400, "spam_anger_delta must be 0.01-0.2")
                 spam.spam_anger_delta = spam_anger_delta
             if "exempt_channels" in sd:
-                spam.exempt_channels = [int(c) for c in sd["exempt_channels"]]
+                spam.exempt_channels = _ids_de_salons(sd["exempt_channels"], "exempt_channels")
 
     if "twitch" in body:
         d = body["twitch"]
@@ -497,34 +504,13 @@ async def get_openai_models(request: Request) -> dict:
         ]}
 
 
-_CLAUDE_INCLUDE = ["claude"]
-_CLAUDE_EXCLUDE = ["beta", "preview"]
+@router.get("/deepseek/models")
+async def get_deepseek_models() -> dict:
+    """Les modèles DeepSeek connus, même forme que `/openai/models`.
 
-
-@router.get("/claude/models")
-async def get_claude_models(request: Request) -> dict:
-    """Liste les modèles Claude disponibles via l'API Anthropic.
-
-    Fallback sur les modèles configurés en cas d'erreur API.
+    Aucun appel réseau : la liste vient de la grille de prix du client.
     """
-    state = request.app.state.wally
-    try:
-        from anthropic import AsyncAnthropic
-        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
-        models_page = await client.models.list(limit=100)
-        filtered = sorted([
-            m.id for m in models_page.data
-            if any(kw in m.id for kw in _CLAUDE_INCLUDE)
-            and not any(kw in m.id for kw in _CLAUDE_EXCLUDE)
-        ])
-        return {"models": filtered}
-    except Exception as exc:
-        logger.warning("Failed to list Claude models: {e!r}", e=exc)
-        return {"models": [
-            state.config.llm.primary.model,
-            state.config.llm.secondary.model,
-        ]}
-
+    return {"models": modeles_deepseek()}
 
 
 @router.post("/twitch/channels")
@@ -883,13 +869,20 @@ async def save_persona_file(filename: str, request: Request) -> dict:
     content = body.get("content", "")
     persona_dir = Path(__file__).parents[3] / "bot" / "persona"
     (persona_dir / filename).write_text(content)
-    # Reload persona service if available
+    # Le fichier est écrit ; seul le rechargement a pu échouer. On le dit à
+    # l'appelant au lieu d'annoncer un succès : Wally garderait l'ancienne
+    # persona en mémoire jusqu'au prochain `/reload-persona`, sans que rien ne
+    # le signale.
     bot = getattr(request.app.state, "wally", None)
     if bot and hasattr(bot, "persona"):
         try:
             bot.persona.reload()
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — l'échec remonte à l'appelant
+            logger.error("Persona reload after saving {f} failed: {e!r}", f=filename, e=e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"{filename} enregistré, mais le rechargement de la persona a échoué : {e!r}",
+            ) from e
     return {"ok": True}
 
 
@@ -958,6 +951,9 @@ async def restart_container(request: Request) -> dict:
 # bleu. Un ordre, pas une décoration : ce qui est CASSÉ se lit avant ce qui
 # attend une réponse.
 _RANG_DECISION = {"echec": 0, "erreur": 1, "fusion": 2, "question": 3}
+# Les statuts d'une tâche encore vivante (`bot/intelligence/actions/`) ; les
+# autres (`cancelled`, `completed`, `missed`) sont terminaux.
+_STATUTS_A_DECIDER = frozenset({"active", "paused"})
 
 
 @router.get("/decisions")
@@ -979,7 +975,10 @@ async def file_de_decisions(request: Request, max_items: int = 12) -> dict:
     items: list[dict] = []
 
     for t in await db.list_action_tasks() or []:
-        if not t.get("last_error"):
+        # Seule une tâche qui peut ENCORE tourner appelle une décision. Une tâche
+        # annulée, terminée ou manquée garde son `last_error` pour l'historique,
+        # mais personne n'a plus rien à trancher : elle occupait le cockpit à vie.
+        if not t.get("last_error") or t.get("status") not in _STATUTS_A_DECIDER:
             continue
         items.append({
             "type": "echec",

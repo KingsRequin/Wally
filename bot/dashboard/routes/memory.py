@@ -800,8 +800,14 @@ async def memory_dashboard(request: Request):
     db = state.db
 
     # 1. Toutes les questions en attente (non résolues)
+    # Le pseudo vient de `memory_users`, et à défaut de l'alias le plus sûr : une
+    # personne connue seulement par ses alias (twitch:502342016, 383 faits) s'y
+    # affichait en id brut — « à twitch:502342016 » au cockpit.
     async with db._conn.execute(
-        "SELECT mq.*, mu.username FROM memory_questions mq "
+        "SELECT mq.*, COALESCE(NULLIF(mu.username, ''), ("
+        "  SELECT a.display_name FROM user_aliases a WHERE a.canonical_uid = mq.user_id"
+        "  ORDER BY a.confidence DESC, a.created_at DESC LIMIT 1"
+        ")) AS username FROM memory_questions mq "
         "LEFT JOIN memory_users mu ON mu.user_id = mq.user_id "
         "WHERE mq.resolved = 0 ORDER BY "
         "CASE mq.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, "

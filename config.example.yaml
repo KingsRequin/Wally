@@ -248,9 +248,9 @@ llm:
     thinking_type: disabled
 openai:
   max_tokens: 8192
-  primary_model: claude-haiku-4-5-20251001
+  primary_model: deepseek-v4-pro
   reasoning_effort: medium
-  secondary_model: gpt-5-nano
+  secondary_model: deepseek-v4-flash
   temperature: 0.8
   text_verbosity: medium
 overlay_image:
@@ -296,13 +296,6 @@ rss:
       enabled: true
 tavily:
   monthly_limit: 200
-theme:
-  accent_color: '#06b6d4'
-  bg_color: '#11151c'
-  layout_variant: sidebar-left
-  sidebar_bg: rgba(255,255,255,0.02)
-  surface_color: rgba(255,255,255,0.03)
-  tab_style: icons-only
 twitch:
   cooldown_seconds: 10
   guest_channels: []
@@ -349,4 +342,3 @@ cognitive_loop:
   enabled: true
   provider: deepseek
   model_pro: deepseek-v4-pro
-  model_flash: deepseek-v4-flash

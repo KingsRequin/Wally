@@ -31,10 +31,14 @@ async def voice_sse(request: Request):
         if feed is None:
             yield ": no-feed\n\n"
             return
+        # Premier octet immédiat, comme `sse_logs` : `GZipMiddleware` retient les
+        # en-têtes jusqu'au premier corps, et sans événement vocal le client
+        # n'avait ni en-têtes ni `onopen` avant le keepalive de 15 s.
         # Pas de snapshot ici : le client charge l'historique persistant via /voice/history
         # (avec id), le SSE ne diffuse que le live → pas de doublon.
         q = feed.subscribe()
         try:
+            yield ": ready\n\n"   # abonné AVANT : rien ne passe entre les deux
             while True:
                 if await request.is_disconnected():
                     break

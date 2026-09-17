@@ -86,8 +86,12 @@ async def cognitive_sse(request: Request):
         if feed is None:
             yield ": no-feed\n\n"
             return
+        # Premier octet immédiat (cf. `sse_logs`) : un instantané VIDE — juste
+        # après un redémarrage — laissait le client sans en-têtes ni `onopen`
+        # jusqu'au keepalive de 15 s.
         q = feed.subscribe()
         try:
+            yield ": ready\n\n"   # abonné AVANT : rien ne passe entre les deux
             for evt in feed.snapshot():
                 yield f"data: {json.dumps(_pour_le_public(evt), ensure_ascii=False)}\n\n"
             while True:

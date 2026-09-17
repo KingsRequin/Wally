@@ -660,6 +660,34 @@ async def test_openai_params_modal_rejects_invalid_reasoning_effort():
 
 
 @pytest.mark.asyncio
+async def test_openai_params_modal_atteint_la_config_lue_et_les_clients():
+    """Le formulaire règle `llm:` (ce que lisent les clients) et les clients vivants,
+    pas seulement le miroir legacy `openai:` que personne ne lit."""
+    from types import SimpleNamespace
+    from bot.discord.commands.setup import OpenAIParamsModal
+
+    bot = make_bot()
+    bot.llm = SimpleNamespace(reasoning_effort="medium", text_verbosity="medium", max_tokens=1000)
+    bot.llm_secondary = SimpleNamespace(reasoning_effort="medium", text_verbosity="medium", max_tokens=1000)
+    bot.config.save = MagicMock()
+
+    modal = OpenAIParamsModal(bot)
+    modal.reasoning_effort._value = "low"
+    modal.text_verbosity._value = "high"
+    modal.max_tokens._value = "4000"
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    for role, client in ((bot.config.llm.primary, bot.llm),
+                         (bot.config.llm.secondary, bot.llm_secondary)):
+        assert (role.reasoning_effort, role.text_verbosity, role.max_tokens) == ("low", "high", 4000)
+        assert (client.reasoning_effort, client.text_verbosity, client.max_tokens) == ("low", "high", 4000)
+    bot.config.save.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_decay_modal_saves_all_lambdas():
     """DecayModal met à jour decay_lambda pour chaque émotion."""
     from bot.discord.commands.setup import DecayModal

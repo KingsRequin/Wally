@@ -63,11 +63,11 @@ async def set_emotion(request: Request, body: SetEmotionBody) -> dict:
 
 @admin_router.post("/emotions/reset")
 async def reset_emotions(request: Request) -> dict:
-    """Reset toutes les émotions à 0.5 (neutre).
-    Appelle set_emotion() pour chaque émotion — NE PAS utiliser emotion.reset()
-    qui remet à 0.0.
+    """Remet toutes les émotions à 0.0 : le ton de base neutre, c'est AUCUNE émotion.
+
+    Le bouton remettait tout à 0.5, qui n'a rien de neutre : deux dominantes
+    ≥ 0.4 déclenchent un composite (`bot/intelligence/prompts.py`), et cinq à
+    0.5 en déclenchaient donc à coup sûr — « réinitialiser » colorait Wally.
     """
-    state = request.app.state.wally
-    for emotion in EMOTIONS:
-        state.emotion.set_emotion(emotion, 0.5)
-    return {"status": "ok", "message": "All emotions reset to 0.5 (neutral)"}
+    request.app.state.wally.emotion.reset()
+    return {"status": "ok", "message": "All emotions reset to 0.0 (neutral)"}

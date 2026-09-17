@@ -41,6 +41,20 @@ _DEEPSEEK_COSTS: dict[str, tuple[float, float, float]] = {
 }
 _DEEPSEEK_FALLBACK_COST = (0.007, 0.22, 0.66)
 
+# Les alias dépréciés restent dans les grilles (un vieil appel doit rester
+# chiffré), mais ne se proposent plus à la sélection.
+_DEEPSEEK_ALIAS_DEPRECIES = frozenset({"deepseek-chat", "deepseek-reasoner"})
+
+
+def modeles_deepseek() -> list[str]:
+    """Les modèles DeepSeek sélectionnables : la grille en vigueur, sans alias déprécié.
+
+    Dérivée de la grille de prix plutôt que tenue à part : un modèle qu'on sait
+    chiffrer est un modèle qu'on sait proposer, et une liste recopiée ailleurs
+    finirait par proposer ce que `_deepseek_rates` facture au tarif de repli.
+    """
+    return sorted(m for m in _DEEPSEEK_COSTS if m not in _DEEPSEEK_ALIAS_DEPRECIES)
+
 # Instant exact de la bascule (annonce DeepSeek du 2026-08-13). Gouverne à la fois
 # le changement de grille et l'apparition des heures pleines : les deux arrivent
 # ensemble. Une `date` ne suffirait pas — la bascule tombe à 16:00, pas à minuit.

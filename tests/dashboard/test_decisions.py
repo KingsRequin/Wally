@@ -85,8 +85,9 @@ async def test_une_file_vide_est_une_file_vide():
 
 async def test_une_tache_en_echec_ouvre_automatisations_deja_filtre():
     db = _FauxDB(taches=[
-        {"id": 4, "description": "Dire bonjour", "last_error": "Row has no attribute"},
-        {"id": 5, "description": "Rappel sain", "last_error": None},
+        {"id": 4, "description": "Dire bonjour", "last_error": "Row has no attribute",
+         "status": "active"},
+        {"id": 5, "description": "Rappel sain", "last_error": None, "status": "active"},
     ])
     d = await file_de_decisions(_requete(db))
     assert len(d["items"]) == 1
@@ -94,6 +95,19 @@ async def test_une_tache_en_echec_ouvre_automatisations_deja_filtre():
     assert item["type"] == "echec"
     assert item["cible"] == "#/cerveau/automatisations?vue=echec"
     assert "Row has no attribute" in item["detail"]
+
+
+async def test_une_tache_terminee_nattend_plus_de_decision():
+    """Annulée, terminée ou manquée, elle garde son erreur pour l'historique,
+    mais il n'y a plus rien à trancher."""
+    db = _FauxDB(taches=[
+        {"id": 1, "description": "annulée", "last_error": "boum", "status": "cancelled"},
+        {"id": 2, "description": "terminée", "last_error": "boum", "status": "completed"},
+        {"id": 3, "description": "manquée", "last_error": "boum", "status": "missed"},
+        {"id": 4, "description": "en pause", "last_error": "boum", "status": "paused"},
+    ])
+    d = await file_de_decisions(_requete(db))
+    assert [i["titre"] for i in d["items"]] == ["en pause"]
 
 
 async def test_une_erreur_unique_nappelle_pas_encore_de_decision(monkeypatch):
@@ -113,7 +127,7 @@ async def test_ce_qui_est_casse_passe_devant_ce_qui_attend_une_reponse(monkeypat
         {"message": "err", "fois": 3, "derniere": "10:00", "source": "bot.a"},
     ])
     db = _FauxDB(
-        taches=[{"id": 1, "description": "t", "last_error": "boum"}],
+        taches=[{"id": 1, "description": "t", "last_error": "boum", "status": "active"}],
         liens=[{"status": "pending", "alias_id": "twitch:x", "canonical_id": "discord:1",
                 "alias_username": "x"}],
         questions=[{"id": 1, "question": "q", "username": "a", "priority": "high"}],
@@ -127,7 +141,7 @@ async def test_chaque_item_porte_une_cible_navigable(monkeypatch):
         {"message": "err", "fois": 3, "derniere": "10:00", "source": "bot.a"},
     ])
     db = _FauxDB(
-        taches=[{"id": 1, "description": "t", "last_error": "boum"}],
+        taches=[{"id": 1, "description": "t", "last_error": "boum", "status": "active"}],
         liens=[{"status": "pending", "alias_id": "twitch:x", "canonical_id": "discord:1",
                 "alias_username": "x"}],
         questions=[{"id": 1, "question": "q", "username": "a", "priority": "high"}],
@@ -151,7 +165,8 @@ async def test_la_liste_est_bornee_mais_le_total_dit_la_verite():
     """Tronquer sans le dire ferait croire que tout est réglé à la douzième
     ligne."""
     db = _FauxDB(taches=[
-        {"id": i, "description": f"t{i}", "last_error": "boum"} for i in range(30)
+        {"id": i, "description": f"t{i}", "last_error": "boum", "status": "paused"}
+        for i in range(30)
     ])
     d = await file_de_decisions(_requete(db), )
     assert len(d["items"]) == 12
@@ -170,3 +185,18 @@ async def test_les_erreurs_du_jour_sont_comptees_pour_la_tuile(monkeypatch):
     _groupes(monkeypatch, [], niveaux={"ERROR": 11, "CRITICAL": 2, "INFO": 900})
     d = await file_de_decisions(_requete(_FauxDB()))
     assert d["erreurs_du_jour"] == 13
+
+
+async def test_une_question_nomme_la_personne_connue_par_ses_seuls_alias(tmp_path):
+    """Sans ligne dans `memory_users`, le cockpit affichait l'id brut."""
+    from bot.db.database import Database
+
+    db = await Database.create(str(tmp_path / "t.db"))
+    try:
+        await db.insert_memory_question("twitch:502342016", "souvenir", "Ça va ?", "high")
+        await db.upsert_alias("elya", "twitch:502342016", "elya", "llm", 0.8)
+        await db.upsert_alias("elhya_", "twitch:502342016", "elhya__", "llm", 1.0)
+        d = await file_de_decisions(_requete(db))
+    finally:
+        await db.close()
+    assert [i["detail"] for i in d["items"]] == ["à elhya__ · priorité high"]

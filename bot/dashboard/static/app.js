@@ -18,7 +18,7 @@ const EMOTION_EMOJIS = {
   anger: '😤', joy: '😊', sadness: '😢', curiosity: '🤔', boredom: '😴',
 };
 const EMOTION_LABELS = {
-  anger: 'ANGER', joy: 'JOY', curiosity: 'CURIOSITY', sadness: 'SADNESS', boredom: 'BOREDOM',
+  anger: 'Colère', joy: 'Joie', curiosity: 'Curiosité', sadness: 'Tristesse', boredom: 'Ennui',
 };
 const EMOTIONS = ['anger', 'joy', 'sadness', 'curiosity', 'boredom'];
 const SECONDARY_COLORS = {
@@ -1055,7 +1055,7 @@ function escHtml(str) {
 // niveau : un `const` au sommet du fichier se lit avant son initialisation si
 // quoi que ce soit l'atteint trop tôt, et cette zone morte a déjà cassé le site.
 function providerOptions(cfg, role) {
-  const libelles = { deepseek: 'DeepSeek', openai: 'OpenAI', claude: 'Claude (Anthropic)' };
+  const libelles = { deepseek: 'DeepSeek', openai: 'OpenAI' };
   const actuel = (cfg.llm && cfg.llm[role] && cfg.llm[role].provider) || '';
   const dispos = cfg.llm_providers || [];
   // Un provider configuré mais non supporté reste AFFICHÉ, marqué comme tel :
@@ -1094,18 +1094,13 @@ function currentModel(cfg, role) {
     || '';
 }
 
-async function loadOpenAIModels() {
-  const r = await apiFetch('/api/admin/openai/models');
+/** Le catalogue de modèles d'UN fournisseur. Un seul catalogue pour les deux
+ *  rôles proposait des `gpt-*` à un client DeepSeek. */
+async function chargerModeles(provider) {
+  const r = await apiFetch('/api/admin/' + encodeURIComponent(provider) + '/models');
   if (!r || !r.ok) return [];
   const { models } = await r.json();
-  return models;
-}
-
-async function loadClaudeModels() {
-  const r = await apiFetch('/api/admin/claude/models');
-  if (!r || !r.ok) return [];
-  const { models } = await r.json();
-  return models;
+  return models || [];
 }
 
 async function loadNotificationChannels(cfg) {
@@ -1131,57 +1126,41 @@ async function loadNotificationChannels(cfg) {
   } catch (e) { /* silently fail */ }
 }
 
+// Le catalogue de chaque fournisseur, chargé une fois par rendu du panneau.
+let _catalogueModeles = {};
+
+/** Changer de fournisseur recharge la liste de modèles du rôle, et montre les
+ *  réglages propres au fournisseur principal. Aucun redémarrage : la route
+ *  recrée le client à chaud. */
 function onProviderChange() {
-  const primaryProv = document.getElementById('cfg-primary-provider').value;
-  const secondaryProv = document.getElementById('cfg-secondary-provider').value;
-  // Toggle model dropdowns based on provider (OpenAI vs Claude)
-  const primarySelect = document.getElementById('cfg-primary-model');
-  const primaryClaude = document.getElementById('cfg-primary-model-claude');
-  const secondarySelect = document.getElementById('cfg-secondary-model');
-  const secondaryClaude = document.getElementById('cfg-secondary-model-claude');
-  if (primaryProv === 'claude') {
-    primarySelect.style.display = 'none';
-    primaryClaude.style.display = 'block';
-  } else {
-    primarySelect.style.display = 'block';
-    primaryClaude.style.display = 'none';
-  }
-  if (secondaryProv === 'claude') {
-    secondarySelect.style.display = 'none';
-    secondaryClaude.style.display = 'block';
-  } else {
-    secondarySelect.style.display = 'block';
-    secondaryClaude.style.display = 'none';
-  }
-  // Show/hide provider-specific settings based on primary provider
-  const openaiSettings = document.getElementById('openai-specific-settings');
-  const claudeSettings = document.getElementById('claude-specific-settings');
-  if (openaiSettings) openaiSettings.style.display = primaryProv === 'openai' ? 'block' : 'none';
-  if (claudeSettings) claudeSettings.style.display = primaryProv === 'claude' ? 'block' : 'none';
-  if (primaryProv === 'claude') onThinkingTypeChange();
-  // Show restart notice if provider changed
-  const notice = document.getElementById('llm-restart-notice');
-  if (notice) notice.style.display = 'block';
+  ['primary', 'secondary'].forEach(function (role) {
+    const prov = document.getElementById('cfg-' + role + '-provider').value;
+    const select = document.getElementById('cfg-' + role + '-model');
+    let choix = '';
+    if (select.dataset.provider === prov) choix = select.value;
+    else if (prov === select.dataset.providerConfigure) choix = select.dataset.configure;
+    select.innerHTML = modelOptions(_catalogueModeles[prov] || [], choix);
+    select.dataset.provider = prov;
+  });
+  const primaire = document.getElementById('cfg-primary-provider').value;
+  const openai = document.getElementById('openai-specific-settings');
+  const deepseek = document.getElementById('deepseek-specific-settings');
+  if (openai) openai.style.display = primaire === 'openai' ? 'block' : 'none';
+  if (deepseek) deepseek.style.display = primaire === 'deepseek' ? 'block' : 'none';
+  onThinkingTypeChange();
 }
 
 function onThinkingTypeChange() {
-  // Le champ « budget tokens » a été retiré le 2026-08-26 : il pilotait un
-  // `ClaudeLLMClient` qui n'existe pas dans ce dépôt, et sa valeur n'était lue
-  // par aucun client. Seul `thinking_effort` (adaptive) est branché.
   const type = document.getElementById('cfg-thinking-type')?.value || 'disabled';
   const effortGroup = document.getElementById('thinking-effort-group');
-  if (effortGroup) effortGroup.style.display = type === 'adaptive' ? 'block' : 'none';
+  if (effortGroup) effortGroup.style.display = type === 'enabled' ? 'block' : 'none';
 }
 
 async function saveOpenAI() {
   const primaryProv = document.getElementById('cfg-primary-provider').value;
   const secondaryProv = document.getElementById('cfg-secondary-provider').value;
-  const primaryModel = primaryProv === 'claude'
-    ? document.getElementById('cfg-primary-model-claude').value
-    : document.getElementById('cfg-primary-model').value;
-  const secondaryModel = secondaryProv === 'claude'
-    ? document.getElementById('cfg-secondary-model-claude').value
-    : document.getElementById('cfg-secondary-model').value;
+  const primaryModel = document.getElementById('cfg-primary-model').value;
+  const secondaryModel = document.getElementById('cfg-secondary-model').value;
 
   const payload = {
     openai: {
@@ -1195,8 +1174,8 @@ async function saveOpenAI() {
       primary: {
         provider: primaryProv,
         model: primaryModel,
-        thinking_type: document.getElementById('cfg-thinking-type')?.value || 'disabled',
-        thinking_effort: document.getElementById('cfg-thinking-effort')?.value || 'medium',
+        thinking_type: document.getElementById('cfg-thinking-type').value,
+        thinking_effort: document.getElementById('cfg-thinking-effort').value,
       },
       secondary: { provider: secondaryProv, model: secondaryModel },
     },
@@ -1205,7 +1184,7 @@ async function saveOpenAI() {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (r && r.ok) toast('Config LLM sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
+  if (r && r.ok) toast('Modèles enregistrés', 'success'); else toast('Erreur d\'enregistrement', 'error');
 }
 
 function updateDecayTime(input, name) {
@@ -1266,7 +1245,9 @@ async function saveBotGeneral() {
 
 async function saveSpamConfig() {
   const exemptRaw = document.getElementById('cfg-spam-exempt').value;
-  const exempt = exemptRaw.split(',').map(s => s.trim()).filter(Boolean).map(Number).filter(n => !isNaN(n));
+  // En CHAÎNES : un id Discord dépasse 2^53, et `Number` l'arrondit sans rien
+  // dire (1485380606224502844 devenait …800, l'exemption ne marchait plus).
+  const exempt = exemptRaw.split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
   const r = await apiFetch('/api/admin/config', {
     method: 'POST',
     body: JSON.stringify({ discord: { spam_detection: {
@@ -1354,9 +1335,9 @@ async function resetEmotions() {
   if (r && r.ok) {
     for (const e of EMOTIONS) {
       const s = document.getElementById(`slider-${e}`);
-      if (s) { s.value = 0.5; document.getElementById(`val-${e}`).textContent = '0.50'; }
+      if (s) { s.value = 0; document.getElementById(`val-${e}`).textContent = '0.00'; }
     }
-    toast('Émotions reset à 0.5', 'success');
+    toast('Émotions remises à zéro', 'success');
   } else {
     toast('Erreur reset', 'error');
   }
@@ -2516,8 +2497,8 @@ function _rendreQuestions(boite, liste) {
           + '">' + escHtml(q.question || '') + '</span>'
           + '<div class="fiche-memoire-meta">'
           + escHtml(q.username || q.user_id || 'personne précise')
-          + ' · priorité ' + escHtml(q.priority || 'basse')
-          + ' · ' + Number(q.attempts || 0) + ' tentative(s)</div></div>'
+          + ' · priorité ' + escHtml(({ low: 'basse', medium: 'moyenne', high: 'haute' })[q.priority] || q.priority || 'basse')
+          + ' · ' + (Number(q.attempts || 0) ? Number(q.attempts) + ' fois posée' : 'jamais posée') + '</div></div>'
           + '<div class="fiche-memoire-actions">'
           + '<button class="lien-doux" data-mcq="editer" data-arg="' + Number(q.id)
           + '">Modifier</button>'
@@ -2549,6 +2530,7 @@ function _rendreQuestions(boite, liste) {
 
 const _MEDIAS_SECTIONS = [
   ['medias-overlays', 'Overlays'],
+  ['atelier-sons', 'Sons du chat'],
 ];
 
 function renderMedias() {
@@ -3150,7 +3132,7 @@ function _carteRecompense(rec) {
     await _signalerReponse(r, rec.libelle + ' mise à jour sur Twitch');
   };
   const supprimer = document.createElement('button');
-  supprimer.className = 'tc-kick';
+  supprimer.className = 'btn btn-danger';
   supprimer.textContent = 'Supprimer';
   supprimer.onclick = async function () {
     if (!confirm('Supprimer « ' + rec.titre + ' » de la chaîne Twitch ? '
@@ -3199,9 +3181,9 @@ function renderPersonnalite() {
     el.innerHTML = '<div class="page-section" id="perso-etat"></div>'
       + '<div class="page-section" id="perso-textes">'
       + '<div class="page-section-titre">Textes de référence</div>'
-      + '<div class="page-section-sous">Les fichiers qui définissent sa voix et '
-      + 'sa cognition. Ceux de <code>bot/persona/</code> se rechargent à chaud ; '
-      + 'ceux de la cognition sont lus au démarrage et demandent un restart.</div>'
+      + '<div class="page-section-sous">Les fichiers qui définissent sa personnalité '
+      + 'et sa voix (<code>bot/persona/</code>). Une modification enregistrée est '
+      + 'rechargée à chaud, sans redémarrage.</div>'
       + '<div id="perso-prompts"></div></div>';
   }
 
@@ -4483,9 +4465,6 @@ async function _renderParametresVoice(panel) {
 
   const section = document.createElement('div');
   section.className = 'overlay-section';
-  const title = document.createElement('h3');
-  title.textContent = 'Vocal (Discord)';
-  section.appendChild(title);
 
   // Activé (checkbox)
   const chk = document.createElement('input');
@@ -4512,7 +4491,7 @@ async function _renderParametresVoice(panel) {
   const al = document.createElement('input');
   al.type = 'number'; al.id = 'voice-autoleave-p'; al.className = 'neo-input';
   al.min = 1; al.max = 60; al.value = v.auto_leave_minutes != null ? v.auto_leave_minutes : 2;
-  section.appendChild(makeFormRow('Auto-leave (min)', al));
+  section.appendChild(makeFormRow('Quitter le salon vide après (min)', al));
 
   // VAD agressivité (0-3)
   const vad = document.createElement('select');
@@ -4523,7 +4502,7 @@ async function _renderParametresVoice(panel) {
     if (String(v.vad_aggressiveness) === o) opt.selected = true;
     vad.appendChild(opt);
   });
-  section.appendChild(makeFormRow('Sensibilité VAD (0-3)', vad));
+  section.appendChild(makeFormRow('Filtrage du bruit (0 = tout passe, 3 = strict)', vad));
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'neo-btn'; saveBtn.textContent = 'Sauvegarder';
@@ -4566,10 +4545,10 @@ async function _renderParametresEmotions(panel) {
   const emotCard = document.createElement('div');
   emotCard.className = 'card config-section';
   emotCard.innerHTML = `
-    <div class="config-section-title">ÉMOTIONS</div>
+    <div class="config-section-title">Émotions</div>
     <div id="gauges-parametres-inline" role="group" aria-label="Controle des emotions"></div>
     <div class="mt-4">
-      <button class="btn btn-danger" onclick="resetEmotions()">RESET À NEUTRE (0.5)</button>
+      <button class="btn btn-danger" onclick="resetEmotions()">Remettre à zéro</button>
     </div>
   `;
   wrapper.appendChild(emotCard);
@@ -4582,8 +4561,8 @@ async function _renderParametresEmotions(panel) {
     const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
     const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
     return `<div class="field-group" style="display:flex;align-items:center;gap:12px">
-      <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'};min-width:100px">${name.toUpperCase()} λ</label>
-      <input type="number" id="cfg-lambda-${name}" min="0" max="1" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this,'${name}')">
+      <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'};min-width:100px">${EMOTION_LABELS[name] || name} λ</label>
+      <input type="number" id="cfg-lambda-${name}" min="0" max="10" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this,'${name}')">
       <span id="decay-time-${name}" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
     </div>`;
   }).join('');
@@ -4591,18 +4570,18 @@ async function _renderParametresEmotions(panel) {
   const boredomH = boredomRise > 0 ? 1/boredomRise : Infinity;
   const boredomLabel = boredomH === Infinity ? '∞' : boredomH < 1 ? Math.round(boredomH*60)+' min' : Math.round(boredomH*10)/10+' h';
   lambdaCard.innerHTML = `
-    <div class="config-section-title">DÉCROISSANCE ÉMOTIONS (λ)</div>
-    <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. Boredom monte avec l'inactivité et n'utilise pas ce paramètre.</p>
+    <div class="config-section-title">Vitesse à laquelle chaque émotion retombe (λ)</div>
+    <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. L'ennui monte avec l'inactivité et n'utilise pas ce paramètre.</p>
     ${lambdaRows}
     <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:12px">
-        <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'};min-width:100px">BOREDOM ↑/h</label>
+        <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'};min-width:100px">Ennui ↑/h</label>
         <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${boredomRise}" style="width:90px" oninput="updateBoredomTime(this)">
         <span id="boredom-time-info" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${boredomLabel}</strong></span>
       </div>
       <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
     </div>
-    <button class="btn btn-success" onclick="saveEmotionLambdas()">💾 SAUVEGARDER</button>
+    <button class="btn btn-success" onclick="saveEmotionLambdas()">Enregistrer</button>
   `;
   wrapper.appendChild(lambdaCard);
 
@@ -4628,8 +4607,7 @@ async function _renderReglagesGeneraux(panel) {
   const botCard = document.createElement('div');
   botCard.className = 'card config-section';
   botCard.innerHTML = `
-    <div class="config-section-title">BOT GÉNÉRAL</div>
-    <div class="field-group">
+      <div class="field-group">
       <label class="field-label" for="cfg-lang">Langue par défaut</label>
       <input type="text" id="cfg-lang" value="${cfg.bot.language_default || ''}">
     </div>
@@ -4642,12 +4620,13 @@ async function _renderReglagesGeneraux(panel) {
       <input type="number" id="cfg-ctx-size" value="${cfg.bot.context_window_size || 20}">
     </div>
     <div class="field-group">
-      <label class="field-label" for="cfg-triggers">Triggers (séparés par virgule)</label>
+      <label class="field-label" for="cfg-triggers">Noms qui l'interpellent (séparés par des virgules)</label>
       <input type="text" id="cfg-triggers" value="${(cfg.bot.trigger_names || []).join(', ')}">
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-cost-threshold">Seuil d'alerte coûts ($)</label>
-      <input type="number" id="cfg-cost-threshold" min="1" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold || 25}">
+      <input type="number" id="cfg-cost-threshold" min="0" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold ?? 0}">
+      <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">0 = veille des coûts désactivée</p>
     </div>
     <div class="field-group">
       <label class="field-label">Notifications Discord</label>
@@ -4656,7 +4635,7 @@ async function _renderReglagesGeneraux(panel) {
       </select>
       <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
     </div>
-    <button class="btn btn-success" onclick="saveBotGeneral()">💾 SAUVEGARDER</button>
+    <button class="btn btn-success" onclick="saveBotGeneral()">Enregistrer</button>
   `;
   wrapper.appendChild(botCard);
 
@@ -4700,11 +4679,11 @@ async function _renderAntiSpam(panel) {
       <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
     </div>
     <div class="field-group">
-      <label class="field-label" for="cfg-spam-exempt">Channels exemptés (IDs séparés par virgule)</label>
+      <label class="field-label" for="cfg-spam-exempt">Salons exemptés (ids séparés par des virgules)</label>
       <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
       <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
     </div>
-    <button class="btn btn-success" onclick="saveSpamConfig()">💾 SAUVEGARDER</button>
+    <button class="btn btn-success" onclick="saveSpamConfig()">Enregistrer</button>
   `;
   panel.appendChild(spamCard);
 }
@@ -4731,85 +4710,87 @@ async function _renderParametresLLM(panel) {
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const cfg = await r.json();
-  const [models, claudeModels] = await Promise.all([loadOpenAIModels(), loadClaudeModels()]);
+  const fournisseurs = cfg.llm_providers || [];
+  const catalogues = await Promise.all(fournisseurs.map(chargerModeles));
+  _catalogueModeles = {};
+  fournisseurs.forEach(function (p, i) { _catalogueModeles[p] = catalogues[i]; });
 
-  const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-  const TEXT_VERBOSITIES = ['low', 'medium', 'high'];
-  const THINKING_TYPES = ['disabled', 'enabled', 'adaptive'];
-  const THINKING_EFFORTS = ['low', 'medium', 'high', 'max'];
+  const EFFORTS_OPENAI = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  const VERBOSITES = ['low', 'medium', 'high'];
+  const EFFORTS_DEEPSEEK = ['low', 'high', 'max'];
+  const LIBELLES = { none: 'aucun', minimal: 'minimal', low: 'faible', medium: 'moyen',
+                     high: 'élevé', xhigh: 'très élevé', max: 'maximal' };
+  function options(liste, actuel) {
+    const tout = (actuel && liste.indexOf(actuel) === -1) ? [actuel].concat(liste) : liste;
+    return tout.map(function (v) {
+      return '<option value="' + escAttr(v) + '"' + (v === actuel ? ' selected' : '') + '>'
+        + escHtml(LIBELLES[v] || v) + '</option>';
+    }).join('');
+  }
+  const p = (cfg.llm && cfg.llm.primary) || {};
 
   const card = document.createElement('div');
   card.className = 'card config-section';
   card.innerHTML = `
-    <div class="config-section-title">LLM — MODÈLES</div>
     <div class="field-group">
-      <label class="field-label" for="cfg-primary-provider">Provider principal</label>
+      <label class="field-label" for="cfg-primary-provider">Fournisseur principal</label>
       <select id="cfg-primary-provider" onchange="onProviderChange()">
         ${providerOptions(cfg, 'primary')}
       </select>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-primary-model">Modèle principal</label>
-      <select id="cfg-primary-model">
-        ${modelOptions(models, currentModel(cfg, 'primary'))}
-      </select>
-      <select id="cfg-primary-model-claude" style="display:none">
-        ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.primary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
-      </select>
+      <select id="cfg-primary-model"></select>
     </div>
     <div class="field-group">
-      <label class="field-label" for="cfg-secondary-provider">Provider secondaire</label>
+      <label class="field-label" for="cfg-secondary-provider">Fournisseur secondaire</label>
       <select id="cfg-secondary-provider" onchange="onProviderChange()">
         ${providerOptions(cfg, 'secondary')}
       </select>
     </div>
     <div class="field-group">
       <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
-      <select id="cfg-secondary-model">
-        ${modelOptions(models, currentModel(cfg, 'secondary'))}
-      </select>
-      <select id="cfg-secondary-model-claude" style="display:none">
-        ${claudeModels.map(function(m) { return '<option value="' + m + '"' + (m === (cfg.llm?.secondary?.model || '') ? ' selected' : '') + '>' + m + '</option>'; }).join('')}
-      </select>
+      <select id="cfg-secondary-model"></select>
     </div>
-    <div id="openai-specific-settings">
+    <div id="openai-specific-settings" style="display:none">
       <div class="field-group">
-        <label class="field-label" for="cfg-reasoning-effort">Niveau d'effort (reasoning) <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
-        <select id="cfg-reasoning-effort">
-          ${REASONING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === cfg.openai.reasoning_effort ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
-        </select>
+        <label class="field-label" for="cfg-reasoning-effort">Effort de raisonnement</label>
+        <select id="cfg-reasoning-effort">${options(EFFORTS_OPENAI, cfg.openai.reasoning_effort)}</select>
       </div>
       <div class="field-group">
-        <label class="field-label" for="cfg-text-verbosity">Verbosité des réponses <span style="font-size:0.7rem;color:var(--text-muted)">OpenAI only</span></label>
-        <select id="cfg-text-verbosity">
-          ${TEXT_VERBOSITIES.map(function(v) { return '<option value="' + v + '"' + (v === cfg.openai.text_verbosity ? ' selected' : '') + '>' + v.toUpperCase() + '</option>'; }).join('')}
-        </select>
+        <label class="field-label" for="cfg-text-verbosity">Longueur des réponses</label>
+        <select id="cfg-text-verbosity">${options(VERBOSITES, cfg.openai.text_verbosity)}</select>
       </div>
     </div>
-    <div id="claude-specific-settings" style="display:none">
+    <div id="deepseek-specific-settings" style="display:none">
       <div class="field-group">
-        <label class="field-label" for="cfg-thinking-type">Réflexion (thinking) <span style="font-size:0.7rem;color:var(--text-muted)">Claude only</span></label>
+        <label class="field-label" for="cfg-thinking-type">Réflexion avant de répondre</label>
         <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
-          ${THINKING_TYPES.map(function(t) { return '<option value="' + t + '"' + (t === (cfg.llm?.primary?.thinking_type || 'disabled') ? ' selected' : '') + '>' + (t === 'disabled' ? 'DÉSACTIVÉ' : t === 'adaptive' ? 'ADAPTATIF' : 'ACTIVÉ (budget fixe)') + '</option>'; }).join('')}
+          <option value="disabled"${p.thinking_type === 'enabled' ? '' : ' selected'}>désactivée</option>
+          <option value="enabled"${p.thinking_type === 'enabled' ? ' selected' : ''}>activée</option>
         </select>
       </div>
       <div id="thinking-effort-group" class="field-group" style="display:none">
-        <label class="field-label" for="cfg-thinking-effort">Niveau d'effort thinking</label>
-        <select id="cfg-thinking-effort">
-          ${THINKING_EFFORTS.map(function(e) { return '<option value="' + e + '"' + (e === (cfg.llm?.primary?.thinking_effort || 'medium') ? ' selected' : '') + '>' + e.toUpperCase() + '</option>'; }).join('')}
-        </select>
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">LOW = rapide · MEDIUM = équilibré · HIGH = défaut, pense souvent · MAX = max (Opus 4.6 only)</p>
+        <label class="field-label" for="cfg-thinking-effort">Effort de réflexion</label>
+        <select id="cfg-thinking-effort">${options(EFFORTS_DEEPSEEK, p.thinking_effort || 'low')}</select>
       </div>
     </div>
     <div class="field-group">
-      <label class="field-label" for="cfg-max-tokens">Max output tokens</label>
+      <label class="field-label" for="cfg-max-tokens">Longueur maximale d'une réponse (tokens)</label>
       <input type="number" id="cfg-max-tokens" min="100" max="32000" value="${cfg.openai.max_tokens}">
     </div>
-    <button class="btn btn-success" onclick="saveOpenAI()">💾 SAUVEGARDER</button>
-    <p id="llm-restart-notice" style="display:none;font-size:0.75rem;color:#f59e0b;margin-top:8px">⚠️ Changement de provider — redémarrage requis pour prendre effet.</p>
+    <button class="btn btn-success" onclick="saveOpenAI()">Enregistrer</button>
   `;
   panel.appendChild(card);
 
+  // Le modèle CONFIGURÉ est retenu par fournisseur : repasser sur le fournisseur
+  // d'origine le re-sélectionne, au lieu du premier modèle du catalogue.
+  ['primary', 'secondary'].forEach(function (role) {
+    const select = document.getElementById('cfg-' + role + '-model');
+    select.dataset.configure = currentModel(cfg, role);
+    select.dataset.providerConfigure = (cfg.llm && cfg.llm[role] && cfg.llm[role].provider) || '';
+    select.dataset.provider = '';
+  });
   onProviderChange();
 }
 
@@ -4826,18 +4807,18 @@ async function _renderParametresImages(panel) {
 
   const section = document.createElement('div');
   section.className = 'overlay-section';
-  const title = document.createElement('h3');
-  title.textContent = 'Génération d\'images';
-  section.appendChild(title);
 
 
   function makeSelect(id, options, selected) {
     const sel = document.createElement('select');
     sel.id = id + '-p';
     sel.className = 'neo-select';
+    // Les VALEURS restent celles de l'API ; seul le libellé est traduit.
+    const LIBELLES = { low: 'basse', medium: 'moyenne', high: 'haute',
+                       auto: 'automatique', transparent: 'transparent', opaque: 'opaque' };
     options.forEach(function(o) {
       const opt = document.createElement('option');
-      opt.value = o; opt.textContent = o;
+      opt.value = o; opt.textContent = LIBELLES[o] || o;
       if (o === selected) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -4848,7 +4829,7 @@ async function _renderParametresImages(panel) {
   section.appendChild(makeFormRow('Qualité', makeSelect('ig-quality', ['low','medium','high'], ig.quality)));
   section.appendChild(makeFormRow('Taille', makeSelect('ig-size', ['1024x1024','1024x1536','1536x1024'], ig.size)));
   section.appendChild(makeFormRow('Format', makeSelect('ig-format', ['png','jpeg','webp'], ig.format)));
-  section.appendChild(makeFormRow('Background', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
+  section.appendChild(makeFormRow('Fond', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
 
   const dlRow = document.createElement('div'); dlRow.className = 'form-row';
   const dlLabel = document.createElement('label'); dlLabel.textContent = 'Limite/jour (global)'; dlRow.appendChild(dlLabel);
@@ -4880,7 +4861,7 @@ async function _renderParametresImages(panel) {
     if (r2.ok) {
       const data = await r2.json();
       const elCost = document.getElementById('ig-cost-estimate-p');
-      if (elCost) elCost.textContent = 'Coût estimé : $' + data.cost_usd.toFixed(4) + ' par image';
+      if (elCost) elCost.textContent = 'Coût estimé : ' + data.cost_usd.toFixed(4) + ' $ par image';
     }
   }
   updateCostEstimateParams();
@@ -5002,7 +4983,6 @@ async function _renderSystemeOverlay(panel) {
 
   const base = window.location.origin;
   const urlEmotion = base + '/overlay';
-  const urlImage = base + '/overlay-image';
 
   // Load config to get image overlay state + command name
   const cfgR = await apiFetch('/api/admin/config');
@@ -5019,14 +4999,14 @@ async function _renderSystemeOverlay(panel) {
         <div class="overlay-card-header">
           <div class="overlay-card-icon" style="background:rgba(234,179,8,0.1);border-color:rgba(234,179,8,0.2)">🎭</div>
           <div>
-            <div class="card-title" style="margin:0">OVERLAY COMPAGNON</div>
+            <div class="card-title" style="margin:0">Overlay compagnon</div>
             <div class="overlay-card-sub">Bulles, réactions et widgets du live</div>
           </div>
         </div>
         <p class="overlay-card-desc">
           Wally commente le live en bulles courtes et affiche ses widgets
-          (pile ou face, dé, roue, sondage…). Ancré en bas à gauche, fond
-          transparent, compatible Browser Source OBS.
+          (pile ou face, dé, roue, sondage…). Cette adresse ouvre la scène par
+          défaut ; chaque scène a la sienne dans « Scène &amp; overlays ».
         </p>
         <div class="overlay-card-toggle-row">
           <span class="overlay-card-toggle-label">Afficher</span>
@@ -5054,7 +5034,7 @@ async function _renderSystemeOverlay(panel) {
           <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
           <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-emotion')">Copier</button>
         </div>
-        <div class="overlay-url-hint">Browser Source · Largeur 560px · Hauteur 460px · Fond transparent</div>
+        <div class="overlay-url-hint">Browser Source · Largeur 1920px · Hauteur 1080px · Fond transparent</div>
       </div>
 
       <!-- Overlay Images -->
@@ -5062,13 +5042,14 @@ async function _renderSystemeOverlay(panel) {
         <div class="overlay-card-header">
           <div class="overlay-card-icon" style="background:rgba(6,182,212,0.1);border-color:rgba(6,182,212,0.2)">🖼️</div>
           <div>
-            <div class="card-title" style="margin:0">OVERLAY IMAGES</div>
+            <div class="card-title" style="margin:0">Images du chat</div>
             <div class="overlay-card-sub">Galerie via commande Twitch</div>
           </div>
         </div>
         <p class="overlay-card-desc">
           Affiche une image de la galerie quand un viewer tape <code style="color:var(--accent)">${imageCmd}</code> dans le chat.
-          Sa place, sa durée et ses animations se règlent dans « Mise en scène », par scène.
+          L'image s'affiche dans l'overlay compagnon : sa place, sa durée et ses
+          animations se règlent dans « Scène &amp; overlays », par scène.
         </p>
         <div class="overlay-card-toggle-row">
           <span class="overlay-card-toggle-label">Activer</span>
@@ -5077,17 +5058,10 @@ async function _renderSystemeOverlay(panel) {
           </div>
           <span id="overlay-status-label-image" class="overlay-card-status">${imageEnabled ? 'Activé' : 'Désactivé'}</span>
         </div>
-        <div class="overlay-url-row">
-          <span class="overlay-url-label">URL OBS</span>
-          <code class="overlay-url-code" id="url-image">${urlImage}</code>
-          <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-image')">Copier</button>
-        </div>
-        <div class="overlay-url-hint">Browser Source · Largeur 1920px · Hauteur 1080px · Fond transparent</div>
       </div>
     </div>
 
-    <!-- Image overlay config -->
-    <div id="overlay-health-systeme" class="card" style="margin-top:12px">
+      <div id="overlay-health-systeme" class="card" style="margin-top:12px">
       <div class="card-title">Rendu chez le streamer</div>
       <div id="overlay-health-line" class="muted">Mesure en cours…</div>
     </div>
@@ -5298,14 +5272,14 @@ async function loadOverlayConfigInPanel(container) {
   const oiSection = document.createElement('div');
   oiSection.className = 'overlay-section';
   const oiTitle = document.createElement('h3');
-  oiTitle.textContent = 'Configuration — Overlay Images';
+  oiTitle.textContent = 'Réglages des images du chat';
   oiSection.appendChild(oiTitle);
 
 
-  function makeSelect(id, options, selected) {
+  function makeSelect(id, options, selected, libelles) {
     const sel = document.createElement('select'); sel.id = id; sel.className = 'neo-select';
     options.forEach(function(o) {
-      const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
+      const opt = document.createElement('option'); opt.value = o; opt.textContent = (libelles || {})[o] || o;
       if (o === selected) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -5326,11 +5300,11 @@ async function loadOverlayConfigInPanel(container) {
   oiRenvoi.className = 'form-row';
   oiRenvoi.style.opacity = '0.75';
   oiRenvoi.style.fontSize = '0.8rem';
-  oiRenvoi.textContent = "Durée d'affichage et animations : onglet « Mise en "
-    + "scène », élément « Image de la galerie » — et par scène.";
+  oiRenvoi.textContent = "Durée d'affichage et animations : page « Scène & "
+    + "overlays », élément « Image de la galerie » — et par scène.";
   oiSection.appendChild(oiRenvoi);
 
-  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter-s', ['all','top','recent'], oi.random_filter)));
+  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter-s', ['all','top','recent'], oi.random_filter, { all: 'toutes', top: 'les plus aimées', recent: 'les plus récentes' })));
 
   const btnRow = document.createElement('div'); btnRow.className = 'form-row';
   const oiSaveBtn = document.createElement('button'); oiSaveBtn.className = 'neo-btn'; oiSaveBtn.textContent = 'Sauvegarder'; oiSaveBtn.onclick = saveOverlayImageConfigSysteme; btnRow.appendChild(oiSaveBtn);
@@ -6359,45 +6333,6 @@ function updateOverlaySwitchTab(visible) {
   if (lbl) lbl.textContent = visible ? 'Visible' : 'Masqué';
 }
 
-async function updateCostEstimate() {
-  const model = document.getElementById('ig-model')?.value;
-  const quality = document.getElementById('ig-quality')?.value;
-  const size = document.getElementById('ig-size')?.value;
-  const r = await fetch('/api/public/gallery/estimate-cost?model=' + model + '&quality=' + quality + '&size=' + size);
-  if (r.ok) {
-    const data = await r.json();
-    const el = document.getElementById('ig-cost-estimate');
-    if (el) el.textContent = 'Coût estimé : $' + data.cost_usd.toFixed(4) + ' par image';
-  }
-}
-
-async function saveImageGenConfig() {
-  const body = { image_generation: {
-    model: document.getElementById('ig-model').value,
-    quality: document.getElementById('ig-quality').value,
-    size: document.getElementById('ig-size').value,
-    format: document.getElementById('ig-format').value,
-    background: document.getElementById('ig-background').value,
-    daily_limit: parseInt(document.getElementById('ig-daily-limit').value),
-    per_user_limit: parseInt(document.getElementById('ig-per-user-limit').value),
-  }};
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
-  if (r && r.ok) toast('Config image sauvegardée', 'success');
-}
-
-async function saveOverlayImageConfig() {
-  // Les quatre réglages d'affichage ne partent plus d'ici : ils vivent dans le
-  // layout, par scène. Les laisser enverrait la valeur d'un champ disparu —
-  // donc `NaN` — et écraserait ce que la scène porte.
-  const body = { overlay_image: {
-    enabled: document.getElementById('oi-enabled').checked,
-    command: document.getElementById('oi-command').value,
-    random_filter: document.getElementById('oi-filter').value,
-  }};
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
-  if (r && r.ok) toast('Config overlay sauvegardée', 'success');
-}
-
 async function testOverlayImage() {
   const r = await apiFetch('/api/admin/overlay-image/test', { method: 'POST' });
   if (r && r.ok) toast('Image envoyée à l\'overlay', 'success');
@@ -6766,7 +6701,14 @@ function _buildPermRow(p) {
 
   var nameSpan = document.createElement('span');
   nameSpan.className = 'action-perm-name';
-  nameSpan.textContent = actionType;
+  // Le nom technique reste en bulle d'aide : c'est lui qui figure en base.
+  nameSpan.textContent = ({
+    join_twitch_channel: 'Rejoindre une chaîne Twitch',
+    reminder: 'Rappel ponctuel',
+    reminder_recurring: 'Rappel récurrent',
+    send_message_to_channel: 'Envoyer un message dans un salon',
+  })[actionType] || actionType;
+  nameSpan.title = actionType;
   header.appendChild(nameSpan);
 
   // Enabled toggle
@@ -7107,15 +7049,6 @@ var _MODEL_PRICE_TABLE = {
   'o3':                 10.00,
   'o3-mini':             1.10,
   'o4-mini':             1.10,
-  // Anthropic
-  'claude-opus-4':      15.00,
-  'claude-opus-4-5':    15.00,
-  'claude-opus-4-6':    15.00,
-  'claude-sonnet-4':     3.00,
-  'claude-sonnet-4-5':   3.00,
-  'claude-sonnet-4-6':   3.00,
-  'claude-haiku-4':      0.80,
-  'claude-haiku-4-5':    1.00,   // 0,80 était le tarif de Haiku 3.5, pas du 4.5
   // DeepSeek — input cache MISS en heures CREUSES, par 1M
   // (https://api-docs.deepseek.com/quick_start/pricing/, relevé le 2026-08-25).
   // La table portait encore 0,14 et 0,435 : la grille d'AVANT la hausse du
@@ -7171,7 +7104,7 @@ function _updatePromptTokenInfo(text) {
       costStr = '<strong style="color:var(--text-muted)">prix inconnu</strong>';
     } else {
       var cost = (tokens / 1_000_000) * p.usd;
-      var costFmt = cost < 0.0001 ? ('< $0.0001') : ('$' + cost.toFixed(4));
+      var costFmt = cost < 0.0001 ? ('< 0.0001 $') : (cost.toFixed(4) + ' $');
       costStr = '<strong style="color:var(--text-secondary)">' + costFmt + '</strong>';
     }
     parts.push('<span>' + p.label + ' : ' + costStr + '/appel</span>');

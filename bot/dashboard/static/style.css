@@ -6756,6 +6756,9 @@ body.is-mobile .mobile-back-btn {
 
   .champ-recherche { min-width: 0 !important; }
   .auto-barre, .journal-filtres { gap: 8px !important; }
+  /* La recherche prend sa ligne : à côté des quatre onglets d'état, elle
+   * tombait à ~80 px (« Cherch »). */
+  .auto-barre .champ-recherche { flex: 1 0 100%; }
 
   /* Dans l'en-tête devenu une colonne, la rangée de puces et les commandes de
    * page prennent chacune leur ligne — les serrer à droite du titre sur 390 px

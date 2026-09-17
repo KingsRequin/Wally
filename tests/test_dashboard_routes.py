@@ -221,15 +221,43 @@ async def test_set_emotion_out_of_range_returns_400(client):
     assert r.status_code == 400
 
 
-async def test_reset_emotions_calls_set_emotion_05(client, app):
-    state = app.state.wally
-    state.emotion.set_emotion.reset_mock()
+async def test_reset_emotions_ramene_au_ton_neutre(client, app):
+    """Après la remise à zéro, aucune émotion ne pèse : ni dominante, ni composite."""
+    from bot.core.emotion import EMOTIONS, EmotionEngine
+
+    moteur = EmotionEngine(config=MagicMock())
+    for e in EMOTIONS:
+        moteur.set_emotion(e, 0.8)
+    app.state.wally.emotion = moteur
     r = await client.post("/api/admin/emotions/reset", headers=ADMIN_HEADERS)
     assert r.status_code == 200
-    calls = {call.args[0]: call.args[1] for call in state.emotion.set_emotion.call_args_list}
-    assert calls["joy"] == 0.5
-    assert calls["anger"] == 0.5
-    assert calls["sadness"] == 0.5
+    assert moteur.get_state() == {e: 0.0 for e in EMOTIONS}
+    assert moteur.get_dominant(threshold=0.4) == []
+
+
+async def test_deepseek_models_sans_alias_deprecie(client):
+    r = await client.get("/api/admin/deepseek/models", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    modeles = r.json()["models"]
+    assert "deepseek-v4-flash" in modeles and "deepseek-v4-pro" in modeles
+    assert "deepseek-chat" not in modeles and "deepseek-reasoner" not in modeles
+
+
+async def test_config_rend_les_salons_exemptes_en_chaines(client, app):
+    """Un snowflake ne survit pas à un `Number` JavaScript : il part en chaîne."""
+    app.state.wally.config.discord.spam_detection.exempt_channels = [1485380606224502844]
+    r = await client.get("/api/admin/config", headers=ADMIN_HEADERS)
+    assert r.json()["discord"]["spam_detection"]["exempt_channels"] == ["1485380606224502844"]
+
+
+async def test_config_salons_exemptes_acceptes_en_chaines(client, app):
+    r = await client.post(
+        "/api/admin/config",
+        json={"discord": {"spam_detection": {"exempt_channels": ["1485380606224502844"]}}},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 200
+    assert app.state.wally.config.discord.spam_detection.exempt_channels == [1485380606224502844]
 
 
 # ── Config ────────────────────────────────────────────────────────────────────

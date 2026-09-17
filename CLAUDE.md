@@ -292,7 +292,7 @@ bot/
 │   ├── app.py · auth.py · state.py
 │   ├── routes/                  # admin, memory, actions, emotions, cognitive, sse,
 │   │                            #   status, setup, chat(+auth), gallery, journal,
-│   │                            #   links, music, overlay, roadmap, theme,
+│   │                            #   links, music, overlay, roadmap,
 │   │                            #   twitch(+auth), voice, apex_accounts, apex_chart
 │   └── static/                  # SPA admin (index.html, app.js) + overlay OBS
 │                                #   (overlay.html/js, overlay_apex, overlay_layout,
@@ -344,8 +344,9 @@ adapters. Attributs du bot : `bot.llm` (primaire), `bot.llm_secondary`, `bot.ima
 `config.save()` réécrit tout le config en mémoire dans `config.yaml`, de façon synchrone.
 Toute modification via `/wally setup` ou le dashboard doit appeler `config.save()` immédiatement.
 Aucun redémarrage nécessaire. Sections : `apex`, `bot`, `cognitive_loop`, `discord`, `emotions`,
-`firecrawl`, `image_generation`, `llm`, `openai` (legacy, tenue en phase), `overlay_image`,
-`response_gate`, `rss`, `tavily`, `theme`, `twitch`, `twitch_events`, `voice`, `web_chat`.
+`firecrawl`, `image_generation`, `llm`, `openai` (legacy, miroir de `llm:`
+reconstruit à chaque chargement — seul `vision_model` y est propre), `overlay_image`,
+`response_gate`, `rss`, `tavily`, `twitch`, `twitch_events`, `voice`, `web_chat`.
 
 ⚠️ `.get(clé, défaut)` ne couvre PAS `clé: null` en YAML — vérifier explicitement `is None`.
 
@@ -889,7 +890,9 @@ thinking réellement branché est `thinking_type` + `thinking_effort`, passés �
 Un appel qui RÉÉMET son entrée (passe de journal, réécriture) doit passer son propre `max_tokens`
 et lire `finish_reason`.
 
-La section legacy `openai:` de la config est tenue en phase avec la section `llm:`.
+La section legacy `openai:` de la config est un miroir de `llm:` : `Config.load()` la RECONSTRUIT
+depuis `llm:` (rôle primaire pour les scalaires), seul `vision_model` vient du disque. Une retouche
+à la main de `openai:` est donc perdue au chargement ; c'est `llm:` qu'on modifie.
 
 ---
 

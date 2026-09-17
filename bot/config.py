@@ -676,20 +676,6 @@ class OverlayImageConfig:
     enabled: bool = True
 
 
-VALID_LAYOUT_VARIANTS = ("sidebar-left", "sidebar-top", "sidebar-mini")
-VALID_TAB_STYLES = ("icons-only", "icons-labels", "text-only")
-
-
-@dataclass
-class ThemeConfig:
-    accent_color: str = "#06b6d4"
-    bg_color: str = "#11151c"
-    surface_color: str = "rgba(255,255,255,0.03)"
-    sidebar_bg: str = "rgba(255,255,255,0.02)"
-    layout_variant: str = "sidebar-left"
-    tab_style: str = "icons-only"
-
-
 @dataclass
 class Config:
     bot: BotConfig
@@ -707,7 +693,6 @@ class Config:
     web_chat: WebChatConfig = field(default_factory=WebChatConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
     overlay_image: OverlayImageConfig = field(default_factory=OverlayImageConfig)
-    theme: ThemeConfig = field(default_factory=ThemeConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     mood: MoodConfig = field(default_factory=MoodConfig)
     fatigue: FatigueConfig = field(default_factory=FatigueConfig)
@@ -822,7 +807,6 @@ class Config:
             web_chat_raw = raw.get("web_chat", {})
             image_generation = ImageGenerationConfig(**raw.get("image_generation", {}))
             overlay_image = OverlayImageConfig(**raw.get("overlay_image", {}))
-            theme = ThemeConfig(**raw.get("theme", {}))
             voice_raw = dict(raw.get("voice", {}))
             # --- Organic emotion configs (nested under emotions:) ---
             emo_raw = raw.get("emotions", {})
@@ -897,19 +881,25 @@ class Config:
             bienvenue_raw = _listes_nulles_en_vides(
                 discord_raw.pop("bienvenue", None) or {}, ("guild_ids", "messages", "gifs"))
             llm_config = cls._build_llm_config(raw)
-            # Build OpenAIConfig from raw or synthesize from llm config
-            openai_raw = raw.get("openai")
-            if openai_raw:
-                openai_config = OpenAIConfig(**openai_raw)
-            else:
-                openai_config = OpenAIConfig(
-                    primary_model=llm_config.primary.model,
-                    secondary_model=llm_config.secondary.model,
-                    temperature=llm_config.primary.temperature,
-                    max_tokens=llm_config.primary.max_tokens,
-                    reasoning_effort=llm_config.primary.reasoning_effort,
-                    text_verbosity=llm_config.primary.text_verbosity,
-                )
+            # La section `openai:` est un MIROIR de `llm:`, qui seule est lue
+            # (`_build_llm_config` la privilégie dès qu'elle existe). Elle était
+            # relue telle quelle du disque : les écrivains Python la tenaient en
+            # phase, mais toute retouche qui les contournait (édition du texte
+            # de `config.yaml`) la laissait diverger POUR TOUJOURS, chaque
+            # `save()` regravant la vieille valeur — `secondary_model:
+            # gpt-5-nano` face à un secondaire `deepseek-v4-flash`. Le miroir est
+            # donc reconstruit depuis `llm:` à chaque chargement. Seul
+            # `vision_model`, qui n'a pas d'équivalent dans `llm:`, vient du disque.
+            openai_raw = raw.get("openai") or {}
+            openai_config = OpenAIConfig(
+                primary_model=llm_config.primary.model,
+                secondary_model=llm_config.secondary.model,
+                temperature=llm_config.primary.temperature,
+                max_tokens=llm_config.primary.max_tokens,
+                reasoning_effort=llm_config.primary.reasoning_effort,
+                text_verbosity=llm_config.primary.text_verbosity,
+                vision_model=openai_raw.get("vision_model", ""),
+            )
             instance = cls(
                 bot=BotConfig(**raw["bot"]),
                 openai=openai_config,
@@ -941,7 +931,6 @@ class Config:
                 web_chat=WebChatConfig(**web_chat_raw),
                 image_generation=image_generation,
                 overlay_image=overlay_image,
-                theme=theme,
                 voice=VoiceConfig(**voice_raw),
                 mood=mood_cfg,
                 fatigue=fatigue_cfg,
@@ -978,7 +967,6 @@ class Config:
             "web_chat": asdict(self.web_chat),
             "image_generation": asdict(self.image_generation),
             "overlay_image": asdict(self.overlay_image),
-            "theme": asdict(self.theme),
             "voice": asdict(self.voice),
             # `save()` réécrit le fichier ENTIER : toute section absente d'ici est
             # effacée du disque au premier bouton du dashboard. `apex` manquait —

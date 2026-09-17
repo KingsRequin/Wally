@@ -18,9 +18,6 @@ twitchio>=2.10.0,<3.0.0
 # OpenAI
 openai>=1.91.0,<2.0.0
 
-# Anthropic (Claude)
-anthropic>=0.40.0
-
 # Emotion & language detection
 nrclex>=4.0.0
 langdetect>=1.0.9

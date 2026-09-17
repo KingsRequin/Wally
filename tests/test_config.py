@@ -69,11 +69,12 @@ def test_save_preserves_all_sections(tmp_path):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
     config = Config.load(str(cfg_file))
-    config.openai.temperature = 0.5
+    config.llm.primary.temperature = 0.5
     config.save()
 
     reloaded = Config.load(str(cfg_file))
-    assert reloaded.openai.temperature == 0.5
+    assert reloaded.llm.primary.temperature == 0.5
+    assert reloaded.openai.temperature == 0.5  # le miroir legacy suit `llm:`
     assert reloaded.bot.trigger_names == ["wally"]  # unchanged
 
 
@@ -105,48 +106,6 @@ def test_optional_fields_absent_from_yaml(tmp_path):
     config = Config.load(str(cfg_file))
     assert config.bot.journal_channel_id is None
     assert config.bot.dashboard_token is None
-
-
-def test_theme_config_defaults():
-    """ThemeConfig a des valeurs par défaut sensées."""
-    from bot.config import ThemeConfig
-    t = ThemeConfig()
-    assert t.accent_color == "#06b6d4"
-    assert t.bg_color == "#11151c"
-    assert t.layout_variant == "sidebar-left"
-    assert t.tab_style == "icons-only"
-
-
-def test_load_config_theme_defaults(tmp_path):
-    """Config.load() crée un ThemeConfig par défaut si absent du YAML."""
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
-    config = Config.load(str(cfg_file))
-    assert config.theme.accent_color == "#06b6d4"
-    assert config.theme.layout_variant == "sidebar-left"
-
-
-def test_load_config_theme_from_yaml(tmp_path):
-    """Config.load() lit le bloc theme: du YAML."""
-    data = dict(MINIMAL_CONFIG)
-    data["theme"] = {"accent_color": "#ff6b6b", "layout_variant": "sidebar-top"}
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(yaml.dump(data))
-    config = Config.load(str(cfg_file))
-    assert config.theme.accent_color == "#ff6b6b"
-    assert config.theme.layout_variant == "sidebar-top"
-    assert config.theme.bg_color == "#11151c"  # défaut conservé
-
-
-def test_save_config_includes_theme(tmp_path):
-    """Config.save() sérialise le bloc theme: dans le YAML."""
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(yaml.dump(MINIMAL_CONFIG))
-    config = Config.load(str(cfg_file))
-    config.theme.accent_color = "#abc123"
-    config.save()
-    saved = yaml.safe_load(cfg_file.read_text())
-    assert saved["theme"]["accent_color"] == "#abc123"
 
 
 def test_save_nefface_pas_la_section_apex(tmp_path):
@@ -255,3 +214,25 @@ def test_journal_moderation_inclure_bots_lu_depuis_le_yaml(tmp_path):
     cfg_file.write_text(yaml.dump(raw))
     config = Config.load(str(cfg_file))
     assert config.discord.journal_moderation.inclure_bots is True
+
+
+def test_miroir_openai_suit_llm_meme_edite_a_la_main(tmp_path):
+    """Une section `openai:` retouchée à la main ne diverge plus de `llm:`.
+
+    `secondary_model: gpt-5-nano` survivait à tous les `save()` alors que le
+    secondaire réel était `deepseek-v4-flash`.
+    """
+    brut = dict(MINIMAL_CONFIG)
+    brut["llm"] = {
+        "primary": {"provider": "openai", "model": "gpt-5", "max_tokens": 8192},
+        "secondary": {"provider": "deepseek", "model": "deepseek-v4-flash"},
+    }
+    brut["openai"] = {**MINIMAL_CONFIG["openai"], "secondary_model": "gpt-5-nano",
+                      "vision_model": "gpt-5-nano"}
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(yaml.dump(brut))
+    config = Config.load(str(cfg_file))
+    assert config.openai.primary_model == "gpt-5"
+    assert config.openai.secondary_model == "deepseek-v4-flash"
+    assert config.openai.max_tokens == 8192
+    assert config.openai.vision_model == "gpt-5-nano"  # sans équivalent dans `llm:`
