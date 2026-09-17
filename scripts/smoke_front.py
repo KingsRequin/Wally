@@ -62,12 +62,16 @@ ONGLETS = [
     ("Salons", "discord/salons"),
     ("Voix", "discord/voix"),
     ("Anti-spam", "discord/anti-spam"),
+    ("Serveur communautaire", "discord/communaute"),
     ("Scène & overlays", "twitch/scene"),
     ("Médias & sons", "twitch/medias"),
     ("Memes", "twitch/memes"),
     ("Récompenses", "twitch/recompenses"),
+    ("Chat & événements", "twitch/chat"),
+    ("Apex", "twitch/apex"),
     ("Journal", "systeme/journal"),
     ("Connexions", "systeme/connexions"),
+    ("Veille", "systeme/veille"),
 ]
 
 # Sous-onglets, et l'id du panneau que chacun remplit. C'est ici que vivait le

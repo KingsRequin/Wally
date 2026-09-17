@@ -216,6 +216,7 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
 
     # Import routes (après création pour éviter les imports circulaires)
     from bot.dashboard.routes import status, emotions, admin, sse, twitch, memory, person, links, roadmap, chat_auth, chat, gallery, actions, setup, twitch_auth, journal, cognitive, voice, overlay, apex_chart, apex_accounts, music, tcg, recompenses
+    from bot.dashboard.routes import config_discord, config_twitch, config_cerveau, config_systeme
 
     # Public routes
     app.include_router(status.router, prefix="/api/public")
@@ -268,6 +269,9 @@ def create_dashboard_app(state: "AppState") -> FastAPI:
     app.include_router(voice.admin_router, prefix="/api/admin")
     app.include_router(overlay.admin_router, prefix="/api/admin")
     app.include_router(recompenses.admin_router, prefix="/api/admin")
+    # Réglages par domaine, un module chacun (pages de `static/pages/`).
+    for _module in (config_discord, config_twitch, config_cerveau, config_systeme):
+        app.include_router(_module.admin_router, prefix="/api/admin")
 
     # Static files — NoCacheStaticFiles force la revalidation via Cloudflare tunnel
     if STATIC_DIR.exists():

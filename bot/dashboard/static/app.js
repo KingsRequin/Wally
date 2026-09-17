@@ -357,6 +357,12 @@ const ROUTES = {
     sous: 'Quand Wally se fâche contre quelqu\'un qui inonde un salon Discord.',
     pane: 'admin-antispam',
   },
+  'discord/communaute': {
+    titre: 'Serveur communautaire',
+    sous: 'Salons vocaux temporaires, journal de modération, statut du live et bienvenue.',
+    pane: 'admin-communaute',
+    rendu: 'renderCommunaute',
+  },
   'twitch/scene': {
     titre: 'Scène & overlays',
     sous: 'Le placement de ce que les viewers voient.',
@@ -377,6 +383,18 @@ const ROUTES = {
     sous: 'Les récompenses de points de chaîne : prix, textes, suppression.',
     pane: 'admin-recompenses',
   },
+  'twitch/chat': {
+    titre: 'Chat & événements',
+    sous: 'Ce que Wally dit et fait tout seul dans le chat Twitch.',
+    pane: 'admin-twitch-chat',
+    rendu: 'renderTwitchChat',
+  },
+  'twitch/apex': {
+    titre: 'Apex',
+    sous: 'Le compte suivi pendant les lives et le duel payé en points de chaîne.',
+    pane: 'admin-apex',
+    rendu: 'renderApex',
+  },
   'systeme/journal': {
     titre: 'Journal',
     sous: 'Ce qui se passe, en direct.',
@@ -386,6 +404,12 @@ const ROUTES = {
     titre: 'Connexions',
     sous: 'Discord, Twitch, l\'état des jetons, et les réglages généraux du bot.',
     pane: 'admin-connexions',
+  },
+  'systeme/veille': {
+    titre: 'Veille',
+    sous: 'Les flux RSS que Wally lit pour savoir ce qui se passe.',
+    pane: 'admin-veille',
+    rendu: 'renderVeille',
   },
 };
 
@@ -524,6 +548,12 @@ function _appliquerRoute(route, param) {
   else if (def.pane === 'admin-salons') renderSalons();
   else if (def.pane === 'admin-images') renderImages();
   else if (def.pane === 'admin-antispam') renderAntiSpam();
+  // Pages fournies par `static/pages/*.js` : la route nomme leur fonction.
+  else if (def.rendu) {
+    const hote = document.getElementById('tab-' + def.pane);
+    if (typeof window[def.rendu] === 'function') window[def.rendu](hote);
+    else if (hote) hote.textContent = 'Page indisponible : ' + def.rendu + ' n\'est pas chargée.';
+  }
   else if (def.pane === 'admin-recompenses') renderRecompenses();
   else if (def.pane === 'admin-personne') renderFichePersonne(currentParam);
   else if (def.pane === 'admin-journal') renderJournal();
@@ -2383,9 +2413,30 @@ const _MC_SECTIONS = [
   ['mc-questions', 'Questions de Wally'],
   ['mc-notes', 'Notes du bot'],
   ['mc-tete', 'Dans sa tête'],
+  ['mc-reglages', 'Réglages de la mémoire'],
 ];
 
 let _mcVues = [];   // les sections montrées ; vide = toutes
+
+/** Une section de réglages fournie par un fichier de `static/pages/`.
+ *
+ *  La boîte est créée si absente, puis remplie UNE fois par la fonction
+ *  globale `nomFn(boite)`. Absente (fichier non chargé), la boîte le dit plutôt
+ *  que de rester vide. */
+function _extension(parent, id, nomFn) {
+  if (!parent) return;
+  let boite = document.getElementById(id);
+  if (!boite) {
+    boite = document.createElement('div');
+    boite.className = 'page-section';
+    boite.id = id;
+    parent.appendChild(boite);
+  }
+  if (boite.dataset.monte) return;
+  boite.dataset.monte = '1';
+  if (typeof window[nomFn] === 'function') window[nomFn](boite);
+  else boite.textContent = 'Section indisponible : ' + nomFn + ' n\'est pas chargée.';
+}
 
 function renderMemoireCommune() {
   const el = document.getElementById('tab-admin-memoire');
@@ -2415,6 +2466,7 @@ function renderMemoireCommune() {
   chargerMemoireCommune();
   loadNotesTab(document.getElementById('mc-notes'));
   renderWallySelfTab(document.getElementById('mc-tete'));
+  _extension(el, 'mc-reglages', 'renderMemoireReglages');
 }
 
 /** Les puces montrent ou cachent des SECTIONS. Les entrées sont de natures
@@ -2549,6 +2601,7 @@ function renderMedias() {
 
 const _IMAGES_SECTIONS = [
   ['images-generation', 'Génération d\'images'],
+  ['images-autonomes', 'Images spontanées'],
   ['images-galerie', 'Galerie'],
 ];
 
@@ -2560,10 +2613,12 @@ function renderImages() {
     el.innerHTML = '<div class="page-section" id="images-generation">'
       + '<div class="page-section-titre">Génération d\'images</div>'
       + '<div id="images-generation-corps"></div></div>'
+      + '<div class="page-section" id="images-autonomes"></div>'
       + '<div class="page-section" id="images-galerie"></div>';
   }
 
   _renderPanelOnce(document.getElementById('images-generation-corps'), _renderParametresImages);
+  _extension(el, 'images-autonomes', 'renderImagesAutonomes');
   poserSommaire('cerveau/images', _IMAGES_SECTIONS, '');
   chargerGalerie();
 }
@@ -2611,6 +2666,7 @@ async function chargerGalerie() {
 
 const _VOIX_SECTIONS = [
   ['voix-reglages', 'Réglages'],
+  ['voix-avance', 'Transcription et accès'],
   ['voix-suivi', 'Suivi en direct'],
 ];
 
@@ -2622,6 +2678,7 @@ function renderVoix() {
     el.innerHTML = '<div class="page-section" id="voix-reglages">'
       + '<div class="page-section-titre">Réglages</div>'
       + '<div id="voix-reglages-corps"></div></div>'
+      + '<div class="page-section" id="voix-avance"></div>'
       + '<div class="page-section" id="voix-suivi">'
       + '<div class="page-section-titre">Suivi en direct</div>'
       + '<div class="page-section-sous">Ce que Wally entend, et ce qu\'il répond. '
@@ -2631,6 +2688,7 @@ function renderVoix() {
 
   _renderPanelOnce(document.getElementById('voix-reglages-corps'), _renderParametresVoice);
   renderVoiceTab(document.getElementById('voix-suivi-corps'));
+  _extension(el, 'voix-avance', 'renderVoixAvance');
   poserSommaire('discord/voix', _VOIX_SECTIONS, '');
 }
 
@@ -2644,6 +2702,7 @@ const _CNX_SECTIONS = [
   ['cnx-adaptateurs', 'Adaptateurs'],
   ['cnx-twitch', 'Comptes et chaînes Twitch'],
   ['cnx-discord', 'Réglages généraux'],
+  ['cnx-avance', 'Salons de service et chat web'],
 ];
 
 function renderConnexions() {
@@ -2663,6 +2722,7 @@ function renderConnexions() {
   chargerConnexions();
   _renderSystemeTwitch(document.getElementById('cnx-twitch-corps'));
   _renderPanelOnce(document.getElementById('cnx-discord-corps'), _renderReglagesGeneraux);
+  _extension(el, 'cnx-avance', 'renderConnexionsAvance');
   poserSommaire('systeme/connexions', _CNX_SECTIONS, '');
 }
 
@@ -2730,6 +2790,7 @@ function _cnxCarte(nom, a, cle) {
 const _SALONS_SECTIONS = [
   ['salons-liste-section', 'Salons ignorés'],
   ['salons-ajout', 'Ajouter un salon'],
+  ['salons-speciaux', 'Salons au rôle particulier'],
 ];
 
 // Ce que le serveur a répondu au dernier chargement. `null` = pas encore lu.
@@ -2757,6 +2818,7 @@ function renderSalons() {
   }
 
   chargerSalons();
+  _extension(el, 'salons-speciaux', 'renderSalonsSpeciaux');
   poserSommaire('discord/salons', _SALONS_SECTIONS, '');
 }
 
@@ -3170,6 +3232,7 @@ async function _signalerReponse(r, succes) {
 
 const _PERSO_SECTIONS = [
   ['perso-etat', 'Humeur et tempérament'],
+  ['perso-avance', 'Rythmes et prise de parole'],
   ['perso-textes', 'Textes de référence'],
 ];
 
@@ -3179,6 +3242,7 @@ function renderPersonnalite() {
 
   if (!document.getElementById('perso-etat')) {
     el.innerHTML = '<div class="page-section" id="perso-etat"></div>'
+      + '<div class="page-section" id="perso-avance"></div>'
       + '<div class="page-section" id="perso-textes">'
       + '<div class="page-section-titre">Textes de référence</div>'
       + '<div class="page-section-sous">Les fichiers qui définissent sa personnalité '
@@ -3189,6 +3253,7 @@ function renderPersonnalite() {
 
   _renderPanelOnce(document.getElementById('perso-etat'), _renderParametresEmotions);
   renderPromptsTab(document.getElementById('perso-prompts'));
+  _extension(el, 'perso-avance', 'renderPersonnaliteAvance');
   poserSommaire('cerveau/personnalite', _PERSO_SECTIONS, '');
 }
 
@@ -3203,6 +3268,7 @@ function renderPersonnalite() {
 
 const _MOD_SECTIONS = [
   ['mod-modeles', 'Modèles'],
+  ['mod-avance', 'Cognition, vision et recherche web'],
   ['mod-usage', 'Coûts par usage'],
   ['mod-jours', '14 derniers jours'],
 ];
@@ -3213,11 +3279,13 @@ function renderModeles() {
 
   if (!document.getElementById('mod-modeles')) {
     el.innerHTML = '<div class="page-section" id="mod-modeles"></div>'
+      + '<div class="page-section" id="mod-avance"></div>'
       + '<div class="page-section" id="mod-usage"></div>'
       + '<div class="page-section" id="mod-jours"></div>';
   }
 
   _renderPanelOnce(document.getElementById('mod-modeles'), _renderParametresLLM);
+  _extension(el, 'mod-avance', 'renderModelesAvance');
   poserSommaire('cerveau/modeles', _MOD_SECTIONS, '');
   chargerCouts();
 }
@@ -4701,7 +4769,9 @@ function renderAntiSpam() {
       + '</div><div id="antispam-corps"></div></div>';
   }
   _renderPanelOnce(document.getElementById('antispam-corps'), _renderAntiSpam);
-  poserSommaire('discord/anti-spam', [['antispam-reglages', 'Détection du spam']], '');
+  _extension(el, 'antispam-colere', 'renderAntiSpamColere');
+  poserSommaire('discord/anti-spam', [['antispam-reglages', 'Détection du spam'],
+                                      ['antispam-colere', 'Sourdine sur colère']], '');
 }
 
 async function _renderParametresLLM(panel) {

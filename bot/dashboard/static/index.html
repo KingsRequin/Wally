@@ -69,6 +69,9 @@
       <a class="sidebar-item" data-route="discord/anti-spam" href="#/discord/anti-spam">
         <span>Anti-spam</span>
       </a>
+      <a class="sidebar-item" data-route="discord/communaute" href="#/discord/communaute">
+        <span>Serveur communautaire</span>
+      </a>
 
       <div class="sidebar-group">Twitch</div>
       <a class="sidebar-item" data-route="twitch/scene" href="#/twitch/scene">
@@ -83,6 +86,12 @@
       <a class="sidebar-item" data-route="twitch/recompenses" href="#/twitch/recompenses">
         <span>Récompenses</span>
       </a>
+      <a class="sidebar-item" data-route="twitch/chat" href="#/twitch/chat">
+        <span>Chat &amp; événements</span>
+      </a>
+      <a class="sidebar-item" data-route="twitch/apex" href="#/twitch/apex">
+        <span>Apex</span>
+      </a>
 
       <div class="sidebar-group">Système</div>
       <a class="sidebar-item" data-route="systeme/journal" href="#/systeme/journal">
@@ -90,6 +99,9 @@
       </a>
       <a class="sidebar-item" data-route="systeme/connexions" href="#/systeme/connexions">
         <span>Connexions</span>
+      </a>
+      <a class="sidebar-item" data-route="systeme/veille" href="#/systeme/veille">
+        <span>Veille</span>
       </a>
 
     </nav>
@@ -175,6 +187,7 @@
 
         <!-- DISCORD › ANTI-SPAM -->
         <div class="tab-content" id="tab-admin-antispam"></div>
+        <div class="tab-content" id="tab-admin-communaute"></div>
 
         <!-- DISCORD › VOIX — le vocal est un vocal Discord. -->
         <div class="tab-content" id="tab-admin-voix"></div>
@@ -183,6 +196,9 @@
         <div class="tab-content" id="tab-admin-medias"></div>
         <div class="tab-content" id="tab-admin-memes"></div>
         <div class="tab-content" id="tab-admin-recompenses"></div>
+        <div class="tab-content" id="tab-admin-twitch-chat"></div>
+        <div class="tab-content" id="tab-admin-apex"></div>
+        <div class="tab-content" id="tab-admin-veille"></div>
 
         <!-- TWITCH › SCÈNE & OVERLAYS (overlay_admin.js le remplit entièrement) -->
         <div class="tab-content" id="tab-admin-scene"></div>
@@ -255,7 +271,14 @@
 <!-- Toast Container -->
 <div id="toast-container" aria-live="assertive"></div>
 
-<script src="/static/app.js?v=19"></script>
+<script src="/static/formulaires.js?v=1"></script>
+<script src="/static/app.js?v=20"></script>
+<!-- Pages et sections de réglages, une par domaine. Déclarent des fonctions
+     globales nommées par `ROUTES[…].rendu` ou `_extension(…)` dans app.js. -->
+<script src="/static/pages/discord.js?v=1"></script>
+<script src="/static/pages/twitch.js?v=1"></script>
+<script src="/static/pages/cerveau.js?v=1"></script>
+<script src="/static/pages/systeme.js?v=1"></script>
 <!-- La mise en scène de l'overlay. `overlay_layout.js` d'abord : il porte les
      neuf ancrages, dont `overlay_admin.js` se sert pour placer ses rectangles. -->
 <script src="/static/overlay_layout.js?v=2"></script>
