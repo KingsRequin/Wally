@@ -95,7 +95,7 @@
       c.corps.appendChild(F.champ('Activé', actif));
       c.corps.appendChild(F.champ('Salon créateur', createur, 'Le salon vocal où il faut entrer.'));
       c.corps.appendChild(F.champ('Noms des salons', noms, 'Un par ligne, tiré au hasard. Sans nom, le salon s\'appelle « Nouveau salon ».', true));
-      c.el.appendChild(F.note('Désactivé, Wally ne crée plus de salon et ne supprime plus non plus ceux encore ouverts : ils restent jusqu\'à ce qu\'on les efface à la main. Désactiver oublie le salon créateur.'));
+      c.el.appendChild(F.note('Désactivé, Wally ne crée plus de salon, mais continue de ranger ceux qui sont encore ouverts quand ils se vident. Désactiver oublie le salon créateur.'));
       const b = F.bouton('Enregistrer', function () {
         envoyer(b, { actif: actif.checked, salon_createur_id: createur.value || null, noms: noms.lireListe() });
       });

@@ -39,15 +39,19 @@ _suppressions_en_cours: set[int] = set()
 async def sur_changement_vocal(bot: "WallyDiscord", member: Any, before: Any, after: Any) -> None:
     """Crée ou supprime un salon temporaire. Ne lève jamais."""
     createur = bot.config.discord.salons_temporaires.salon_createur_id
-    if createur is None:
-        return
     try:
-        entre = after.channel is not None and after.channel.id == createur
-        venait_du_createur = before.channel is not None and before.channel.id == createur
+        entre = createur is not None and after.channel is not None and after.channel.id == createur
+        venait_du_createur = createur is not None and before.channel is not None and before.channel.id == createur
         if entre and not venait_du_createur and not member.bot:
             await _creer(bot, member, after.channel)
         # Pas de filtre `member.bot` ici : si Wally est le dernier à partir,
         # le salon est vide et doit disparaître comme pour n'importe qui.
+        #
+        # Et pas de garde « module désactivé » non plus : couper le module
+        # arrête la CRÉATION, jamais le ménage. Le registre reste la seule
+        # autorisation de supprimer — un salon vocal ordinaire n'y figure pas —,
+        # et les salons déjà ouverts au moment de la coupure restaient sinon à
+        # vie, à effacer à la main.
         if before.channel is not None and not venait_du_createur and not before.channel.members:
             await _supprimer_si_gere(bot, before.channel)
     except Exception as e:  # noqa: BLE001 — un événement vocal ne fait pas tomber le bot
@@ -147,9 +151,10 @@ async def _supprimer(bot: "WallyDiscord", salon: Any) -> bool:
 async def menage_au_boot(bot: "WallyDiscord") -> None:
     """Retire les salons vidés ou disparus pendant l'arrêt, puis les cartes du
     journal vocal orphelines (salon disparu sans que `vocal_supprime` ait pu
-    les éditer — bot arrêté entre-temps). Ne lève jamais."""
-    if bot.config.discord.salons_temporaires.salon_createur_id is None:
-        return
+    les éditer — bot arrêté entre-temps). Ne lève jamais.
+
+    Tourne même module DÉSACTIVÉ : ce qui est déjà ouvert doit être rangé, et
+    le registre seul autorise une suppression."""
     try:
         registre = await bot.db.salons_temporaires_avec_guild()
     except Exception as e:  # noqa: BLE001 — le ménage ne bloque pas le démarrage

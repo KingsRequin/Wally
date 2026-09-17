@@ -152,13 +152,33 @@ async def test_salon_deja_supprime_retire_la_ligne():
     assert db.ids == set()
 
 
-async def test_desactive_ne_fait_rien():
+async def test_desactive_ne_cree_plus_rien():
+    guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock())
+    db = FauxDb(set())
+    await st.sur_changement_vocal(_bot(db, createur=None), SimpleNamespace(id=1, bot=False),
+                                  _etat(None), _etat(_salon(CREATEUR, guild=guild)))
+    guild.create_voice_channel.assert_not_awaited()
+
+
+async def test_desactive_range_QUAND_MEME_les_salons_deja_ouverts():
+    """Couper le module arrête la création, jamais le ménage : sinon les salons
+    ouverts avant la coupure restent à vie, à effacer à la main."""
     guild = SimpleNamespace(id=9, create_voice_channel=AsyncMock())
     salon = _salon(777, membres=[])
     db = FauxDb({777})
     await st.sur_changement_vocal(_bot(db, createur=None), SimpleNamespace(id=1, bot=False),
                                   _etat(salon), _etat(_salon(CREATEUR, guild=guild)))
     guild.create_voice_channel.assert_not_awaited()
+    salon.delete.assert_awaited_once()
+    assert db.ids == set()
+
+
+async def test_desactive_ne_touche_pas_un_salon_vocal_ordinaire():
+    """Le registre reste la SEULE autorisation de supprimer."""
+    salon = _salon(555, membres=[])
+    db = FauxDb(set())
+    await st.sur_changement_vocal(_bot(db, createur=None), SimpleNamespace(id=1, bot=False),
+                                  _etat(salon), _etat(None))
     salon.delete.assert_not_awaited()
 
 
