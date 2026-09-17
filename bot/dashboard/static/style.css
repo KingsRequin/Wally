@@ -553,31 +553,6 @@ body {
   border-color: var(--border-accent);
 }
 
-.card-title {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.card-sublabel {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-
-.card-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -1px;
-}
-
 /* ── Tab Content ──────────────────────────────────────────────── */
 
 .tab-content {
@@ -627,126 +602,6 @@ body {
 
 .status-dot.offline {
   background: var(--c-offline);
-}
-
-/* ── Emotion Gauges ───────────────────────────────────────────── */
-
-.gauges {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.gauge {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.gauge-label {
-  width: 80px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
-  text-align: right;
-}
-
-.gauge-bar {
-  flex: 1;
-  height: 8px;
-  background: var(--bg-overlay);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.gauge-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.5s ease;
-}
-
-.gauge-fill.anger    { background: var(--c-anger); }
-.gauge-fill.joy      { background: var(--c-joy); }
-.gauge-fill.curiosity{ background: var(--c-curiosity); }
-.gauge-fill.sadness  { background: var(--c-sadness); }
-.gauge-fill.boredom  { background: var(--c-boredom); }
-
-.gauge-value {
-  width: 36px;
-  font-size: 0.72rem;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  text-align: right;
-}
-
-/* ── Admin Emotion Sliders ────────────────────────────────────── */
-
-.emotion-slider-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.emotion-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.emotion-slider-row label {
-  width: 80px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.emotion-slider-row label.anger    { color: var(--c-anger); }
-.emotion-slider-row label.joy      { color: var(--c-joy); }
-.emotion-slider-row label.curiosity{ color: var(--c-curiosity); }
-.emotion-slider-row label.sadness  { color: var(--c-sadness); }
-.emotion-slider-row label.boredom  { color: var(--c-boredom); }
-
-.emotion-slider-row input[type="range"] {
-  flex: 1;
-  -webkit-appearance: none;
-  height: 6px;
-  background: var(--bg-overlay);
-  border-radius: 3px;
-  outline: none;
-}
-
-.emotion-slider-row input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid var(--bg-canvas);
-}
-
-.emotion-slider-row .anger input[type="range"]::-webkit-slider-thumb,
-input[type="range"].anger::-webkit-slider-thumb { background: var(--c-anger); }
-.emotion-slider-row .joy input[type="range"]::-webkit-slider-thumb,
-input[type="range"].joy::-webkit-slider-thumb { background: var(--c-joy); }
-.emotion-slider-row .curiosity input[type="range"]::-webkit-slider-thumb,
-input[type="range"].curiosity::-webkit-slider-thumb { background: var(--c-curiosity); }
-.emotion-slider-row .sadness input[type="range"]::-webkit-slider-thumb,
-input[type="range"].sadness::-webkit-slider-thumb { background: var(--c-sadness); }
-.emotion-slider-row .boredom input[type="range"]::-webkit-slider-thumb,
-input[type="range"].boredom::-webkit-slider-thumb { background: var(--c-boredom); }
-
-.emotion-slider-row .slider-val {
-  width: 36px;
-  font-size: 0.78rem;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  text-align: right;
-  flex-shrink: 0;
 }
 
 /* Config range sliders */
@@ -851,7 +706,7 @@ canvas {
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 
-.btn, .neo-btn {
+.btn {
   padding: 8px 18px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -864,12 +719,12 @@ canvas {
   transition: all 0.15s;
 }
 
-.btn:hover, .neo-btn:hover {
+.btn:hover {
   background: var(--border);
   border-color: var(--border-accent);
 }
 
-.btn:active, .neo-btn:active {
+.btn:active {
   background: var(--border-accent);
 }
 
@@ -943,7 +798,7 @@ canvas {
   margin-bottom: 5px;
 }
 
-input[type="text"], input[type="number"], input[type="password"], select, textarea, .neo-input {
+input[type="text"], input[type="number"], input[type="password"], select, textarea {
   width: 100%;
   padding: 8px 12px;
   background: var(--bg-canvas);
@@ -957,11 +812,11 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
 }
 
 input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus,
-select:focus, textarea:focus, .neo-input:focus {
+select:focus, textarea:focus {
   border-color: var(--accent);
 }
 
-select, .neo-select {
+select {
   cursor: pointer;
   color: var(--text-primary);
   background: var(--bg-canvas);
@@ -974,39 +829,13 @@ select, .neo-select {
   transition: border-color 0.15s;
 }
 
-select:focus, .neo-select:focus {
+select:focus {
   border-color: var(--accent);
 }
 
-select option, .neo-select option {
+select option {
   background: var(--bg-surface);
   color: var(--text-primary);
-}
-
-.config-section select {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.config-section input[type="number"] {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-/* ── Config Sections ──────────────────────────────────────────── */
-
-.config-section { margin-bottom: 24px; }
-
-.config-section-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 6px;
-  margin-bottom: 16px;
 }
 
 /* ── Stream Card ──────────────────────────────────────────────── */
@@ -3427,43 +3256,6 @@ select option, .neo-select option {
   background: transparent;
 }
 
-/* ── Memory Dashboard / Questions ─────────────────────────────── */
-
-.mem-dash-questions { display: flex; flex-direction: column; gap: 12px; }
-
-.mem-dash-q-row, .mem-question-row {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 16px;
-  border-left: 3px solid var(--border);
-}
-
-.mem-dash-q-info { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.mem-dash-q-prio { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-
-.mem-dash-q-memory, .mem-question-meta {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-.mem-dash-q-question, .mem-question-text {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-  font-style: italic;
-}
-
-.mem-dash-q-actions { display: flex; gap: 8px; }
-
-.mem-dash-bars { display: flex; flex-direction: column; gap: 8px; }
-.mem-dash-bar-row { display: flex; align-items: center; gap: 10px; }
-.mem-dash-bar-label { width: 140px; font-size: 0.8rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.mem-dash-bar-track { flex: 1; height: 14px; background: var(--bg-overlay); border-radius: 7px; overflow: hidden; }
-.mem-dash-bar-fill { height: 100%; background: var(--accent); border-radius: 7px; transition: width 0.3s; }
-.mem-dash-bar-count { width: 36px; text-align: right; font-size: 0.75rem; color: var(--text-muted); flex-shrink: 0; }
-
 /* ── Gallery ──────────────────────────────────────────────────── */
 
 .gallery-grid {
@@ -3598,35 +3390,7 @@ select option, .neo-select option {
 .overlay-url-label { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
 .overlay-url-code { font-size: 0.78rem; color: var(--accent); font-family: monospace; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.overlay-copy-btn {
-  background: rgba(88, 166, 255, 0.1);
-  color: var(--accent);
-  border: 1px solid rgba(88, 166, 255, 0.25);
-  border-radius: 6px;
-  padding: 4px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-family: var(--font);
-}
-
-.overlay-copy-btn:hover { background: rgba(88, 166, 255, 0.2); }
 .overlay-url-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; }
-
-.overlay-section {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  margin-bottom: 20px;
-}
-
-.overlay-section h3 { font-weight: 700; font-size: 1rem; margin-bottom: 16px; color: var(--text-primary); letter-spacing: 0.05em; }
-.overlay-section .form-row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.overlay-section label { color: var(--text-secondary); font-weight: 600; min-width: 160px; font-size: 0.82rem; }
 
 /* ── Slash Command Autocomplete ───────────────────────────────── */
 
@@ -6850,27 +6614,10 @@ body.is-mobile .mobile-back-btn {
   .v-lat, .v-reason { order: 1; margin-left: auto; }
   .v-text { flex: 1 0 100%; order: 2; margin-top: 2px; }
 
-  /* Médias — la ligne de son est une grille `1fr auto` posée en style INLINE,
-   * d'où le `!important` : la colonne des trois boutons ne tenait pas, et
-   * « Écouter / Enregistrer / Supprimer » sortaient du cadre. */
-  .son-ligne { grid-template-columns: 1fr !important; }
-  /* Les trois boutons repassent en RANGÉE. Empilés en colonne, chaque son
-   * mangeait sept lignes d'écran pour trois gestes. Leur conteneur porte
-   * `flex-direction: column` en style INLINE — d'où les `!important` : une
-   * règle de classe, si tardive soit-elle, ne bat jamais un attribut `style`. */
-  .son-ligne > div:last-child {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: stretch !important;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .son-ligne > div:last-child .btn { flex: 1 1 auto; }
-
   /* Les valeurs techniques sans espace — « safeword_coupe_circuit_elsalvador »,
    * une URL, une clé d'élément — ne se coupent nulle part et poussent leur
    * conteneur. */
-  .mem-dash-q-row, .mem-question-row, .fiche-memoire, .mc-sujet,
+  .fiche-memoire, .mc-sujet,
   .liste-ligne, .cnx-fait, .ovl-el { overflow-wrap: anywhere; }
 
   /* Personnalité — la ligne de coût du prompt et l'en-tête de l'éditeur. */
@@ -6939,26 +6686,9 @@ body.is-mobile .mobile-back-btn {
 }
 
 /* ── Twitch › Récompenses ─────────────────────────────────────────────── */
-.recomp-carte {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .recomp-tete { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .recomp-statut { font-size: 0.75rem; color: var(--text-secondary); }
 .recomp-statut[data-etat="ok"] { color: var(--success); }
-.recomp-grille {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-}
-.recomp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
 /* ── Formulaires (modèle unique, formulaires.js) ──────────────────────── */
 .form-carte {
   background: rgba(255, 255, 255, 0.03);
@@ -6981,6 +6711,10 @@ body.is-mobile .mobile-back-btn {
 .form-libelle { font-size: 0.78rem; color: var(--text-secondary); }
 .form-aide { font-size: 0.72rem; color: var(--text-muted); }
 .form-input { width: 100%; }
+/* Le préflight Tailwind, chargé APRÈS cette feuille, remet `padding: 0` et
+ * `font-size: 100%` sur `select` et `textarea` (même spécificité, il gagne par
+ * l'ordre) : un menu déroulant sortait plus petit que le champ texte voisin. */
+select.form-input, textarea.form-input { padding: 8px 12px; font-size: 0.88rem; line-height: 1.4; }
 textarea.form-input { resize: vertical; padding: 8px 12px; line-height: 1.4; }
 .form-bascule { width: 18px; height: 18px; accent-color: #06b6d4; }
 .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
@@ -6998,3 +6732,83 @@ textarea.form-input { resize: vertical; padding: 8px 12px; line-height: 1.4; }
 }
 .form-multi-groupe { font-size: 0.72rem; color: var(--text-muted); margin: 6px 0 2px; }
 .form-multi-ligne { display: flex; gap: 8px; align-items: center; font-size: 0.82rem; padding: 2px 0; }
+.form-multi-ligne input[type="checkbox"] { width: auto; }
+
+/* Une carte posée juste sous le titre d'une section : même respiration que le
+ * reste de la page, et les cartes voisines d'une grille n'empilent pas deux
+ * marges. */
+.page-section-sous + .form-carte,
+.page-section-titre + .form-carte { margin-top: 4px; }
+.overlay-cards-grid .form-carte { margin-bottom: 0; }
+
+/* Un bloc qui n'existe que pour être montré/caché d'un coup : ses champs
+ * restent des cellules de la grille parente. */
+.form-sous-grille { display: contents; }
+
+/* Case à cocher dans un champ libellé : elle garde sa taille, à gauche. */
+.form-champ > .form-bascule { align-self: flex-start; margin: 6px 0; }
+
+/* Une ligne d'information calculée (coût estimé, prix courant). */
+.form-estimation { font-size: 0.82rem; color: var(--accent); font-weight: 600; margin-top: 12px; }
+
+/* L'état d'un geste en cours (« Envoi… », « 3 rangés »), à côté des boutons. */
+.form-etat { font-size: 0.78rem; color: var(--text-muted); align-self: center; }
+
+/* Choix de fichier : le champ natif (« Choose File ») est caché, un bouton en
+ * français le remplace. Le `label` transmet le clic à l'input. */
+.form-fichier { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; max-width: 100%; cursor: pointer; }
+.form-fichier input[type="file"] { position: absolute; left: 0; top: 0; width: 0; height: 0; padding: 0; border: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+.form-fichier:focus-within .btn { border-color: var(--accent); }
+.form-fichier-nom {
+  font-size: 0.78rem; color: var(--text-muted); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(260px, 100%);
+}
+
+/* Curseurs d'émotion : libellé à largeur FIXE, piste qui prend le reste,
+ * valeur à largeur fixe. Avant, la piste se tassait contre un libellé de
+ * largeur variable, et chaque ligne avait sa propre longueur. */
+.form-curseurs { display: flex; flex-direction: column; gap: 10px; }
+.form-curseur {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 14px;
+}
+.form-curseur-nom { font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+.form-curseur-nom.anger     { color: var(--c-anger); }
+.form-curseur-nom.joy       { color: var(--c-joy); }
+.form-curseur-nom.sadness   { color: var(--c-sadness); }
+.form-curseur-nom.curiosity { color: var(--c-curiosity); }
+.form-curseur-nom.boredom   { color: var(--c-boredom); }
+.form-curseur-val { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); text-align: right; }
+.form-curseur-piste { width: 100%; height: 8px; margin: 0; --rempli: 0%; --teinte: var(--accent); }
+.form-curseur-piste.anger     { --teinte: var(--c-anger); }
+.form-curseur-piste.joy       { --teinte: var(--c-joy); }
+.form-curseur-piste.sadness   { --teinte: var(--c-sadness); }
+.form-curseur-piste.curiosity { --teinte: var(--c-curiosity); }
+.form-curseur-piste.boredom   { --teinte: var(--c-boredom); }
+input[type="range"].form-curseur-piste {
+  background: linear-gradient(to right, var(--teinte) var(--rempli), rgba(255, 255, 255, 0.1) var(--rempli));
+  border-radius: 4px;
+}
+input[type="range"].form-curseur-piste::-webkit-slider-thumb { width: 16px; height: 16px; background: var(--teinte); }
+input[type="range"].form-curseur-piste::-moz-range-thumb { width: 16px; height: 16px; background: var(--teinte); }
+@media (max-width: 620px) {
+  .form-curseur { grid-template-columns: 96px minmax(0, 1fr) 40px; gap: 10px; }
+  .form-curseur-nom { font-size: 0.78rem; }
+}
+
+/* Cerveau › Mémoire commune › Dans sa tête : une liste longue se replie. */
+.tete-liste { margin: 6px 0 0; padding-left: 20px; line-height: 1.65; font-size: 0.85rem; color: var(--text-body); }
+.tete-liste.replie {
+  max-height: 10.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 60%, transparent);
+  mask-image: linear-gradient(#000 60%, transparent);
+}
+.tete-vide { color: var(--text-muted); list-style: none; margin-left: -20px; }
+.tete-liste + .lien-doux { margin-top: 6px; }
+.note-contenu { white-space: pre-wrap; margin-top: 4px; }
+
+/* Sons du chat : une carte par son, dont le titre est la commande. */
+.son-ligne .form-carte-titre { font-family: var(--font-mono); }

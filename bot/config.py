@@ -93,10 +93,10 @@ class LLMRoleConfig:
     model: str
     temperature: float = 0.8
     max_tokens: int = 1000
-    reasoning_effort: str = "medium"      # OpenAI-specific, ignored by Claude
-    text_verbosity: str = "medium"        # OpenAI-specific, ignored by Claude
-    thinking_type: str = "disabled"       # Claude-specific: disabled/enabled/adaptive
-    thinking_effort: str = "medium"       # Claude-specific: effort for type=adaptive (low/medium/high)
+    reasoning_effort: str = "medium"      # OpenAI seulement (Responses API)
+    text_verbosity: str = "medium"        # OpenAI seulement
+    thinking_type: str = "disabled"       # DeepSeek seulement : disabled/enabled
+    thinking_effort: str = "medium"       # DeepSeek seulement : effort quand thinking est activé
 
 
 @dataclass

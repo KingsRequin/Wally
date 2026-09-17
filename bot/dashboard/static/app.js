@@ -402,7 +402,7 @@ const ROUTES = {
   },
   'systeme/connexions': {
     titre: 'Connexions',
-    sous: 'Discord, Twitch, l\'état des jetons, et les réglages généraux du bot.',
+    sous: 'Discord, Twitch et l\'état des jetons.',
     pane: 'admin-connexions',
   },
   'systeme/veille': {
@@ -881,32 +881,47 @@ function dismissToast(el) {
 
 // ── Emotion gauges ────────────────────────────────────────────────────────────
 
-function buildGauges(containerId, editable) {
-  const c = document.getElementById(containerId);
-  c.innerHTML = '';
+/** Les cinq curseurs d'émotion : libellé à largeur FIXE, piste qui prend le
+ *  reste, valeur à droite. La piste est remplie jusqu'à la valeur (`--rempli`),
+ *  la couleur vient de la classe de l'émotion dans `style.css`. */
+function construireCurseursEmotions() {
+  const liste = document.createElement('div');
+  liste.className = 'form-curseurs form-champ-large';
+  liste.setAttribute('role', 'group');
+  liste.setAttribute('aria-label', 'Contrôle des émotions');
   for (const e of EMOTIONS) {
-    const row = document.createElement('div');
-    row.className = 'emotion-row';
-    if (!editable) {
-      row.innerHTML = `
-        <span class="emotion-label" style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}</span>
-        <div class="gauge-track" role="progressbar" aria-label="${EMOTION_LABELS[e]}" aria-valuenow="0" aria-valuemin="0" aria-valuemax="1">
-          <div class="gauge-fill ${e}" id="fill-${e}"></div>
-        </div>
-        <span class="gauge-val" id="val-${e}">0.00</span>
-      `;
-    } else {
-      row.innerHTML = `
-        <span class="emotion-label" style="color:${EMOTION_COLORS[e]}">${EMOTION_EMOJIS[e]} ${EMOTION_LABELS[e]}</span>
-        <input type="range" class="emotion-slider" id="slider-${e}" min="0" max="1" step="0.01" value="0"
-               aria-label="${EMOTION_LABELS[e]}"
-               oninput="document.getElementById('val-${e}').textContent=parseFloat(this.value).toFixed(2)"
-               onchange="setEmotion('${e}', parseFloat(this.value))">
-        <span class="gauge-val" id="val-${e}">0.00</span>
-      `;
-    }
-    c.appendChild(row);
+    const ligne = document.createElement('label');
+    ligne.className = 'form-curseur';
+    const nom = document.createElement('span');
+    nom.className = 'form-curseur-nom ' + e;
+    nom.textContent = EMOTION_EMOJIS[e] + ' ' + EMOTION_LABELS[e];
+    const piste = document.createElement('input');
+    piste.type = 'range';
+    piste.className = 'form-curseur-piste ' + e;
+    piste.id = 'slider-' + e;
+    piste.min = '0'; piste.max = '1'; piste.step = '0.01'; piste.value = '0';
+    const val = document.createElement('span');
+    val.className = 'form-curseur-val';
+    val.id = 'val-' + e;
+    val.textContent = '0.00';
+    piste.addEventListener('input', function () { _poserCurseurEmotion(e, parseFloat(piste.value)); });
+    piste.addEventListener('change', function () { setEmotion(e, parseFloat(piste.value)); });
+    ligne.appendChild(nom);
+    ligne.appendChild(piste);
+    ligne.appendChild(val);
+    liste.appendChild(ligne);
   }
+  return liste;
+}
+
+function _poserCurseurEmotion(e, v) {
+  const piste = document.getElementById('slider-' + e);
+  if (piste) {
+    piste.value = v;
+    piste.style.setProperty('--rempli', (v * 100).toFixed(1) + '%');
+  }
+  const val = document.getElementById('val-' + e);
+  if (val) val.textContent = v.toFixed(2);
 }
 
 function updateEmotionGauges(payload) {
@@ -917,17 +932,7 @@ function updateEmotionGauges(payload) {
 
   currentEmotions = payload;
   for (const e of EMOTIONS) {
-    const v = payload[e] ?? 0;
-    const fill = document.getElementById(`fill-${e}`);
-    if (fill) {
-      fill.style.width = `${(v * 100).toFixed(1)}%`;
-      const track = fill.parentElement;
-      if (track) track.setAttribute('aria-valuenow', v.toFixed(2));
-    }
-    const slider = document.getElementById(`slider-${e}`);
-    if (slider) slider.value = v;
-    const val = document.getElementById(`val-${e}`);
-    if (val) val.textContent = v.toFixed(2);
+    _poserCurseurEmotion(e, payload[e] ?? 0);
   }
   updateMoodFatigueLine(currentMood, currentFatigue);
   updateEmotionalStateBlock(payload, currentMood, currentFatigue, currentSecondaries);
@@ -1133,29 +1138,6 @@ async function chargerModeles(provider) {
   return models || [];
 }
 
-async function loadNotificationChannels(cfg) {
-  const select = document.getElementById('cfg-notif-channel');
-  if (!select) return;
-  try {
-    const r = await apiFetch('/api/admin/notification-channels');
-    if (!r || !r.ok) return;
-    const data = await r.json();
-    const currentChannelId = cfg.bot.notification_channel_id;
-    for (const guild of (data.guilds || [])) {
-      const group = document.createElement('optgroup');
-      group.label = guild.name;
-      for (const ch of guild.channels) {
-        const opt = document.createElement('option');
-        opt.value = String(ch.id);
-        opt.textContent = '#' + ch.name;
-        if (currentChannelId && String(ch.id) === String(currentChannelId)) opt.selected = true;
-        group.appendChild(opt);
-      }
-      select.appendChild(group);
-    }
-  } catch (e) { /* silently fail */ }
-}
-
 // Le catalogue de chaque fournisseur, chargé une fois par rendu du panneau.
 let _catalogueModeles = {};
 
@@ -1175,18 +1157,19 @@ function onProviderChange() {
   const primaire = document.getElementById('cfg-primary-provider').value;
   const openai = document.getElementById('openai-specific-settings');
   const deepseek = document.getElementById('deepseek-specific-settings');
-  if (openai) openai.style.display = primaire === 'openai' ? 'block' : 'none';
-  if (deepseek) deepseek.style.display = primaire === 'deepseek' ? 'block' : 'none';
+  // '' et non 'block' : ces blocs sont en `display: contents` dans la grille.
+  if (openai) openai.style.display = primaire === 'openai' ? '' : 'none';
+  if (deepseek) deepseek.style.display = primaire === 'deepseek' ? '' : 'none';
   onThinkingTypeChange();
 }
 
 function onThinkingTypeChange() {
   const type = document.getElementById('cfg-thinking-type')?.value || 'disabled';
   const effortGroup = document.getElementById('thinking-effort-group');
-  if (effortGroup) effortGroup.style.display = type === 'enabled' ? 'block' : 'none';
+  if (effortGroup) effortGroup.style.display = type === 'enabled' ? '' : 'none';
 }
 
-async function saveOpenAI() {
+async function saveOpenAI(bouton) {
   const primaryProv = document.getElementById('cfg-primary-provider').value;
   const secondaryProv = document.getElementById('cfg-secondary-provider').value;
   const primaryModel = document.getElementById('cfg-primary-model').value;
@@ -1210,86 +1193,23 @@ async function saveOpenAI() {
       secondary: { provider: secondaryProv, model: secondaryModel },
     },
   };
-  const r = await apiFetch('/api/admin/config', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  if (r && r.ok) toast('Modèles enregistrés', 'success'); else toast('Erreur d\'enregistrement', 'error');
+  await window.Formulaire.enregistrer(bouton, '/api/admin/config', 'POST', payload, 'Modèles enregistrés');
 }
 
-function updateDecayTime(input, name) {
-  const lam = parseFloat(input.value) || 0;
-  const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
-  const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
-  const span = document.getElementById(`decay-time-${name}`);
-  if (span) span.innerHTML = `100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong>`;
+/** Le temps qu'une émotion met à retomber de 100 % à 1 %, pour un λ donné. */
+function _dureeRetombee(lam) {
+  const h = lam > 0 ? Math.log(1 / 0.01) / lam : Infinity;
+  return '100 → 0 % en ' + _dureeLisible(h);
 }
 
-function updateBoredomTime(input) {
-  const r = parseFloat(input.value) || 0;
-  let label;
-  if (r <= 0) { label = '\u221e'; }
-  else { const h = 1/r; label = h < 1 ? Math.round(h*60) + ' min' : Math.round(h*10)/10 + ' h'; }
-  const span = document.getElementById('boredom-time-info');
-  if (span) {
-    span.textContent = '';
-    span.append('0\u2192100% en ');
-    const strong = document.createElement('strong');
-    strong.style.color = '#e2e8f0';
-    strong.textContent = label;
-    span.appendChild(strong);
-  }
+/** Le temps que l'ennui met à monter de 0 à 100 %, pour une montée par heure. */
+function _dureeMonteeEnnui(parHeure) {
+  return '0 → 100 % en ' + _dureeLisible(parHeure > 0 ? 1 / parHeure : Infinity);
 }
 
-async function saveEmotionLambdas() {
-  const emotions = {};
-  for (const e of EMOTIONS) {
-    if (e === 'boredom') continue;
-    const el = document.getElementById(`cfg-lambda-${e}`);
-    if (el) emotions[e] = { decay_lambda: parseFloat(el.value) };
-  }
-  const boredomRise = document.getElementById('cfg-boredom-rise');
-  if (boredomRise) emotions['boredom'] = { decay_lambda: 0.01, boredom_rise_per_hour: parseFloat(boredomRise.value) };
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify({ emotions }) });
-  if (r && r.ok) toast('Lambdas sauvegardés', 'success'); else toast('Erreur sauvegarde', 'error');
-}
-
-async function saveBotGeneral() {
-  const triggers = document.getElementById('cfg-triggers').value
-    .split(',').map(s => s.trim()).filter(Boolean);
-  const r = await apiFetch('/api/admin/config', {
-    method: 'POST',
-    body: JSON.stringify({ bot: {
-      language_default: document.getElementById('cfg-lang').value,
-      journal_time:     document.getElementById('cfg-journal-time').value,
-      context_window_size: parseInt(document.getElementById('cfg-ctx-size').value),
-      trigger_names:    triggers,
-      cost_alert_threshold: parseFloat(document.getElementById('cfg-cost-threshold').value),
-      notification_channel_id: document.getElementById('cfg-notif-channel').value || null,
-    }}),
-  });
-  if (r && r.ok) toast('Config bot sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
-}
-
-// ── Anti-spam config ──────────────────────────────────────────────────────────
-
-async function saveSpamConfig() {
-  const exemptRaw = document.getElementById('cfg-spam-exempt').value;
-  // En CHAÎNES : un id Discord dépasse 2^53, et `Number` l'arrondit sans rien
-  // dire (1485380606224502844 devenait …800, l'exemption ne marchait plus).
-  const exempt = exemptRaw.split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
-  const r = await apiFetch('/api/admin/config', {
-    method: 'POST',
-    body: JSON.stringify({ discord: { spam_detection: {
-      enabled:          document.getElementById('cfg-spam-enabled').checked,
-      max_messages:     parseInt(document.getElementById('cfg-spam-max').value),
-      window_seconds:   parseInt(document.getElementById('cfg-spam-window').value),
-      mute_minutes:     parseInt(document.getElementById('cfg-spam-mute').value),
-      spam_anger_delta: parseFloat(document.getElementById('cfg-spam-anger').value),
-      exempt_channels:  exempt,
-    }}}),
-  });
-  if (r && r.ok) toast('Config anti-spam sauvegardée', 'success'); else toast('Erreur sauvegarde', 'error');
+function _dureeLisible(heures) {
+  if (heures === Infinity) return '\u221e';
+  return heures < 1 ? Math.round(heures * 60) + ' min' : Math.round(heures * 10) / 10 + ' h';
 }
 
 // ── Guest channels ─────────────────────────────────────────────────────────────
@@ -1356,20 +1276,17 @@ async function setEmotion(emotion, value) {
     method: 'POST',
     body: JSON.stringify({ emotion, value }),
   });
-  if (r && r.ok) toast(`${emotion}: ${value.toFixed(2)}`, 'success');
+  if (r && r.ok) toast((EMOTION_LABELS[emotion] || emotion) + ' : ' + value.toFixed(2), 'success');
   else toast('Erreur', 'error');
 }
 
 async function resetEmotions() {
   const r = await apiFetch('/api/admin/emotions/reset', { method: 'POST' });
   if (r && r.ok) {
-    for (const e of EMOTIONS) {
-      const s = document.getElementById(`slider-${e}`);
-      if (s) { s.value = 0; document.getElementById(`val-${e}`).textContent = '0.00'; }
-    }
+    for (const e of EMOTIONS) _poserCurseurEmotion(e, 0);
     toast('Émotions remises à zéro', 'success');
   } else {
-    toast('Erreur reset', 'error');
+    toast('Échec de la remise à zéro', 'error');
   }
 }
 
@@ -1977,7 +1894,7 @@ async function loadVisitorsInPanel() {
     }
     bansCard = `
       <div class="card" style="margin-bottom:16px;">
-        <div class="card-title">BANNIS (${bans.length})</div>
+        <div class="form-carte-titre">Bannis (${bans.length})</div>
         <div class="visitor-list">${brows}</div>
       </div>`;
   }
@@ -2065,7 +1982,7 @@ async function loadVisitorsInPanel() {
     }
     connCard = `
       <div class="card">
-        <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
+        <div class="form-carte-titre">Connexions récentes au chat web</div>
         <div class="visitor-list">${rows}</div>
       </div>`;
   }
@@ -2590,10 +2507,12 @@ function renderMedias() {
   if (!el) return;
 
   if (!document.getElementById('medias-overlays')) {
-    el.innerHTML = '<div class="page-section" id="medias-overlays"></div>';
+    el.innerHTML = '<div class="page-section" id="medias-overlays"></div>'
+      + '<div class="page-section" id="atelier-sons"></div>';
   }
 
   _renderPanelOnce(document.getElementById('medias-overlays'), _renderSystemeOverlay);
+  renderAtelierSons();
   poserSommaire('twitch/medias', _MEDIAS_SECTIONS, '');
 }
 
@@ -2701,7 +2620,6 @@ function renderVoix() {
 const _CNX_SECTIONS = [
   ['cnx-adaptateurs', 'Adaptateurs'],
   ['cnx-twitch', 'Comptes et chaînes Twitch'],
-  ['cnx-discord', 'Réglages généraux'],
   ['cnx-avance', 'Salons de service et chat web'],
 ];
 
@@ -2713,15 +2631,11 @@ function renderConnexions() {
     el.innerHTML = '<div class="page-section" id="cnx-adaptateurs"></div>'
       + '<div class="page-section" id="cnx-twitch">'
       + '<div class="page-section-titre">Comptes et chaînes Twitch</div>'
-      + '<div id="cnx-twitch-corps"></div></div>'
-      + '<div class="page-section" id="cnx-discord">'
-      + '<div class="page-section-titre">Réglages généraux</div>'
-      + '<div id="cnx-discord-corps"></div></div>';
+      + '<div id="cnx-twitch-corps"></div></div>';
   }
 
   chargerConnexions();
   _renderSystemeTwitch(document.getElementById('cnx-twitch-corps'));
-  _renderPanelOnce(document.getElementById('cnx-discord-corps'), _renderReglagesGeneraux);
   _extension(el, 'cnx-avance', 'renderConnexionsAvance');
   poserSommaire('systeme/connexions', _CNX_SECTIONS, '');
 }
@@ -3039,47 +2953,18 @@ async function chargerRecompenses() {
   recompenses.forEach(function (rec) { liste.appendChild(_carteRecompense(rec)); });
 }
 
-function _champ(libelle, input, aide) {
-  const bloc = document.createElement('label');
-  bloc.style.cssText = 'display:flex;flex-direction:column;gap:4px;min-width:0';
-  const t = document.createElement('span');
-  t.style.cssText = 'font-size:0.75rem;color:var(--text-secondary)';
-  t.textContent = libelle;
-  bloc.appendChild(t);
-  bloc.appendChild(input);
-  if (aide) {
-    const a = document.createElement('span');
-    a.style.cssText = 'font-size:0.7rem;color:var(--text-secondary)';
-    a.textContent = aide;
-    bloc.appendChild(a);
-  }
-  return bloc;
-}
-
-function _nombre(valeur, min, max, pas) {
-  const i = document.createElement('input');
-  i.type = 'number';
-  i.min = String(min);
-  if (max !== null) i.max = String(max);
-  i.step = String(pas);
-  i.value = String(valeur);
-  return i;
-}
-
 function _renderPrixDynamique(hote, pd, tts) {
   hote.replaceChildren();
-  const grille = document.createElement('div');
-  grille.className = 'recomp-grille';
-
-  const hausse = _nombre(pd.hausse_pct != null ? pd.hausse_pct : 20, 0, 1000, 1);
-  const demiVie = _nombre(pd.demi_vie_minutes != null ? pd.demi_vie_minutes : 10, 0.5, 1440, 0.5);
-  grille.appendChild(_champ('Hausse par achat (% du prix de base)', hausse));
-  grille.appendChild(_champ('Demi-vie (minutes)', demiVie,
+  const F = window.Formulaire;
+  const carte = F.carte();
+  const hausse = F.nombre(pd.hausse_pct != null ? pd.hausse_pct : 20, { min: 0, max: 1000, pas: 1 });
+  const demiVie = F.nombre(pd.demi_vie_minutes != null ? pd.demi_vie_minutes : 10, { min: 0.5, max: 1440, pas: 0.5 });
+  carte.corps.appendChild(F.champ('Hausse par achat (% du prix de base)', hausse));
+  carte.corps.appendChild(F.champ('Demi-vie (minutes)', demiVie,
     'Le temps pour que la hausse accumulée fonde de moitié.'));
-  hote.appendChild(grille);
 
-  const etat = document.createElement('p');
-  etat.style.cssText = 'color:var(--text-secondary);margin:8px 0';
+  const etat = document.createElement('div');
+  etat.className = 'form-estimation';
   if (tts && tts.active && tts.prix_courant != null) {
     etat.textContent = 'Prix actuel du TTS : ' + tts.prix_courant + ' points (base '
       + tts.cout + ')' + (tts.cout_twitch != null && tts.cout_twitch !== tts.prix_courant
@@ -3088,12 +2973,9 @@ function _renderPrixDynamique(hote, pd, tts) {
   } else {
     etat.textContent = 'Le TTS n\'est pas en ligne.';
   }
-  hote.appendChild(etat);
+  carte.el.appendChild(etat);
 
-  const btn = document.createElement('button');
-  btn.className = 'btn btn-success';
-  btn.textContent = 'Enregistrer';
-  btn.onclick = async function () {
+  const btn = F.bouton('Enregistrer', async function () {
     btn.disabled = true;
     const r = await apiFetch('/api/admin/recompenses/prix-dynamique', {
       method: 'PATCH',
@@ -3104,18 +2986,19 @@ function _renderPrixDynamique(hote, pd, tts) {
     });
     btn.disabled = false;
     await _signalerReponse(r, 'Prix dynamique enregistré');
-  };
-  hote.appendChild(btn);
+  });
+  carte.el.appendChild(F.actions(btn));
+  hote.appendChild(carte.el);
 }
 
 function _carteRecompense(rec) {
-  const carte = document.createElement('div');
-  carte.className = 'recomp-carte';
+  const F = window.Formulaire;
+  const carte = F.carte();
 
   const tete = document.createElement('div');
   tete.className = 'recomp-tete';
   const nom = document.createElement('span');
-  nom.className = 'tc-name';
+  nom.className = 'form-carte-titre';
   nom.textContent = rec.libelle;
   tete.appendChild(nom);
   const statut = document.createElement('span');
@@ -3131,55 +3014,36 @@ function _carteRecompense(rec) {
   }
   statut.dataset.etat = rec.active && rec.sur_twitch ? 'ok' : 'ko';
   tete.appendChild(statut);
-  carte.appendChild(tete);
+  carte.el.insertBefore(tete, carte.corps);
 
-  if (!rec.configuree) return carte;
+  if (!rec.configuree) return carte.el;
 
   if (!rec.active) {
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-success';
-    btn.textContent = 'Remettre en ligne';
-    btn.onclick = async function () {
+    const btn = F.bouton('Remettre en ligne', async function () {
       btn.disabled = true;
       const r = await apiFetch('/api/admin/recompenses/' + rec.cle + '/activer',
         { method: 'POST' });
       btn.disabled = false;
       await _signalerReponse(r, rec.libelle + ' remise en ligne');
-    };
-    carte.appendChild(btn);
-    return carte;
+    });
+    carte.el.appendChild(F.actions(btn));
+    return carte.el;
   }
 
-  const grille = document.createElement('div');
-  grille.className = 'recomp-grille';
-  const titre = document.createElement('input');
-  titre.type = 'text';
-  titre.maxLength = _recompLimites.titre_max;
-  titre.value = rec.titre;
-  const cout = _nombre(rec.cout, 1, null, 1);
-  const recharge = _nombre(rec.recharge_s, 0, _recompLimites.recharge_max_s, 1);
-  grille.appendChild(_champ('Titre', titre));
-  grille.appendChild(_champ(rec.cle === 'tts_viewer' ? 'Prix de base (points)' : 'Prix (points)', cout));
-  grille.appendChild(_champ('Recharge globale (secondes, 0 = aucune)', recharge,
+  const titre = F.texte(rec.titre, { max: _recompLimites.titre_max });
+  const cout = F.nombre(rec.cout, { min: 1, pas: 1 });
+  const recharge = F.nombre(rec.recharge_s, { min: 0, max: _recompLimites.recharge_max_s, pas: 1 });
+  carte.corps.appendChild(F.champ('Titre', titre));
+  carte.corps.appendChild(F.champ(rec.cle === 'tts_viewer' ? 'Prix de base (points)' : 'Prix (points)', cout));
+  carte.corps.appendChild(F.champ('Recharge globale (secondes, 0 = aucune)', recharge,
     rec.cle === 'tts_viewer'
       ? 'Bloque TOUT le chat après un achat. Le TTS a déjà sa recharge par personne.'
       : ''));
-  carte.appendChild(grille);
+  const prompt = F.zone(rec.prompt, { lignes: 2, max: _recompLimites.prompt_max });
+  carte.corps.appendChild(F.champ('Invite affichée au viewer', prompt,
+    rec.saisie_requise ? 'Le viewer écrit un texte à l\'achat.' : '', true));
 
-  const prompt = document.createElement('textarea');
-  prompt.rows = 2;
-  prompt.maxLength = _recompLimites.prompt_max;
-  prompt.value = rec.prompt;
-  prompt.style.width = '100%';
-  carte.appendChild(_champ('Invite affichée au viewer', prompt,
-    rec.saisie_requise ? 'Le viewer écrit un texte à l\'achat.' : ''));
-
-  const actions = document.createElement('div');
-  actions.className = 'recomp-actions';
-  const enregistrer = document.createElement('button');
-  enregistrer.className = 'btn btn-success';
-  enregistrer.textContent = 'Enregistrer';
-  enregistrer.onclick = async function () {
+  const enregistrer = F.bouton('Enregistrer', async function () {
     enregistrer.disabled = true;
     const r = await apiFetch('/api/admin/recompenses/' + rec.cle, {
       method: 'PATCH',
@@ -3192,22 +3056,17 @@ function _carteRecompense(rec) {
     });
     enregistrer.disabled = false;
     await _signalerReponse(r, rec.libelle + ' mise à jour sur Twitch');
-  };
-  const supprimer = document.createElement('button');
-  supprimer.className = 'btn btn-danger';
-  supprimer.textContent = 'Supprimer';
-  supprimer.onclick = async function () {
+  });
+  const supprimer = F.bouton('Supprimer', async function () {
     if (!confirm('Supprimer « ' + rec.titre + ' » de la chaîne Twitch ? '
       + 'Elle ne sera pas recréée au redémarrage.')) return;
     supprimer.disabled = true;
     const r = await apiFetch('/api/admin/recompenses/' + rec.cle, { method: 'DELETE' });
     supprimer.disabled = false;
     await _signalerReponse(r, rec.libelle + ' supprimée');
-  };
-  actions.appendChild(enregistrer);
-  actions.appendChild(supprimer);
-  carte.appendChild(actions);
-  return carte;
+  }, { danger: true });
+  carte.el.appendChild(F.actions(enregistrer, supprimer));
+  return carte.el;
 }
 
 /** Toast selon la réponse, puis rechargement : l'écran montre ce que Twitch a. */
@@ -3232,6 +3091,7 @@ async function _signalerReponse(r, succes) {
 
 const _PERSO_SECTIONS = [
   ['perso-etat', 'Humeur et tempérament'],
+  ['perso-general', 'Réglages généraux'],
   ['perso-avance', 'Rythmes et prise de parole'],
   ['perso-textes', 'Textes de référence'],
 ];
@@ -3242,6 +3102,7 @@ function renderPersonnalite() {
 
   if (!document.getElementById('perso-etat')) {
     el.innerHTML = '<div class="page-section" id="perso-etat"></div>'
+      + '<div class="page-section" id="perso-general"></div>'
       + '<div class="page-section" id="perso-avance"></div>'
       + '<div class="page-section" id="perso-textes">'
       + '<div class="page-section-titre">Textes de référence</div>'
@@ -3252,6 +3113,7 @@ function renderPersonnalite() {
   }
 
   _renderPanelOnce(document.getElementById('perso-etat'), _renderParametresEmotions);
+  _renderPanelOnce(document.getElementById('perso-general'), _renderReglagesGeneraux);
   renderPromptsTab(document.getElementById('perso-prompts'));
   _extension(el, 'perso-avance', 'renderPersonnaliteAvance');
   poserSommaire('cerveau/personnalite', _PERSO_SECTIONS, '');
@@ -3268,6 +3130,7 @@ function renderPersonnalite() {
 
 const _MOD_SECTIONS = [
   ['mod-modeles', 'Modèles'],
+  ['mod-alertes', 'Alertes'],
   ['mod-avance', 'Cognition, vision et recherche web'],
   ['mod-usage', 'Coûts par usage'],
   ['mod-jours', '14 derniers jours'],
@@ -3279,12 +3142,14 @@ function renderModeles() {
 
   if (!document.getElementById('mod-modeles')) {
     el.innerHTML = '<div class="page-section" id="mod-modeles"></div>'
+      + '<div class="page-section" id="mod-alertes"></div>'
       + '<div class="page-section" id="mod-avance"></div>'
       + '<div class="page-section" id="mod-usage"></div>'
       + '<div class="page-section" id="mod-jours"></div>';
   }
 
   _renderPanelOnce(document.getElementById('mod-modeles'), _renderParametresLLM);
+  _renderPanelOnce(document.getElementById('mod-alertes'), _renderAlertesCouts);
   _extension(el, 'mod-avance', 'renderModelesAvance');
   poserSommaire('cerveau/modeles', _MOD_SECTIONS, '');
   chargerCouts();
@@ -3319,7 +3184,8 @@ async function chargerCouts() {
     + (usages.length
       ? '<div class="liste">' + usages.map(function (u) {
           return '<div class="liste-ligne mod-ligne">'
-            + '<span class="mod-usage">' + escHtml(u.usage) + '</span>'
+            + '<span class="mod-usage" title="' + escAttr(u.usage) + '">'
+            + escHtml(_libelleUsage(u.usage)) + '</span>'
             + '<span class="mod-modele">' + escHtml((u.modeles || []).join(', ') || '—')
             + '</span>'
             + '<span class="mod-nb">' + Number(u.appels) + '</span>'
@@ -3331,13 +3197,46 @@ async function chargerCouts() {
   _rendreCourbeCouts(jours, d.jours || []);
 }
 
-/** Le coût, au cent près quand il compte, au dixième de cent quand il est
- *  petit — « 0.00 $ » partout ne dirait rien de la répartition. */
+/** Un coût, toujours au même format : « 0,0090 $ ». Quatre décimales partout,
+ *  sinon les petits usages s'affichent tous à « 0.00 $ » et les gros à une
+ *  autre précision, ce qui se compare mal d'une ligne à l'autre. */
 function _dollars(v) {
-  const n = Number(v) || 0;
-  if (n === 0) return '0 $';
-  if (n < 0.01) return n.toFixed(4) + ' $';
-  return n.toFixed(2) + ' $';
+  return (Number(v) || 0).toFixed(4).replace('.', ',') + ' $';
+}
+
+/** Le libellé lisible d'un usage de `cost_log` (`voice_stt_overflow`…). Le nom
+ *  brut reste en `title` : c'est lui qu'on cherche dans les logs. Un usage
+ *  absent de la table garde son nom, tirets bas remplacés. */
+function _libelleUsage(brut) {
+  const libelles = {
+    voice_stt_overflow: 'Transcription vocale (débordement xAI)',
+    response: 'Réponse', reasoning: 'Raisonnement (cognition)', embedding: 'Embeddings',
+    overlay_thought: 'Pensée affichée sur l\'overlay', overlay_voice: 'Voix sur l\'overlay',
+    fact_extraction: 'Extraction de faits', emotion_analysis: 'Analyse des émotions',
+    twitch_response: 'Réponse Twitch', twitch_spontaneous: 'Parole spontanée Twitch',
+    twitch_event: 'Événement Twitch', twitch_overlay_announce: 'Annonce Twitch sur l\'overlay',
+    twitch_visit_summary: 'Résumé de visite Twitch',
+    discord_response: 'Réponse Discord', discord_spontaneous: 'Parole spontanée Discord',
+    discord_ask: 'Commande /wally ask', discord_welcome: 'Bienvenue Discord',
+    discord_voice: 'Réponse vocale Discord', discord_voice_greeting: 'Salutation vocale',
+    discord_voice_search_filler: 'Attente vocale pendant une recherche',
+    voice_request: 'Demande vocale', web_response: 'Réponse du chat web',
+    user_model: 'Portrait des personnes', memory_evaluate: 'Évaluation de la mémoire',
+    memory_cleanup: 'Ménage de la mémoire', memory_consolidation: 'Consolidation nocturne',
+    topic_formation: 'Formation des sujets', opinion_formation: 'Formation des opinions',
+    session_analysis: 'Analyse de session', gate: 'Filtre de prise de parole',
+    response_mirror: 'Miroir de réponse', image_analysis: 'Analyse d\'image',
+    image_description: 'Description d\'image', image_generation: 'Génération d\'image',
+    image_title: 'Titre d\'image', meme_describe: 'Description de meme',
+    emote_description: 'Description d\'emote', daily_journal: 'Journal du jour',
+    journal_narrative_synthesis: 'Journal : synthèse', journal_voice_pass: 'Journal : passe vocale',
+    journal_chunk_summary: 'Journal : résumé partiel', journal_final_summary: 'Journal : résumé final',
+    context_summary: 'Résumé du contexte', context_summary_final: 'Résumé final du contexte',
+    scrape_summary: 'Résumé de page web', apex_duel: 'Duel Apex', jeu_fin: 'Fin de jeu',
+    deux_verites: 'Deux vérités, un mensonge', reminder: 'Rappel', spam_warning: 'Avertissement de spam',
+    debug: 'Débogage',
+  };
+  return libelles[brut] || String(brut || '—').replace(/_/g, ' ');
 }
 
 /** Une barre par jour. Le seuil est la MOYENNE de la période : une barre au
@@ -4372,55 +4271,6 @@ async function pollOverlayStatus() {
   }
 }
 
-// ── Visitors ────────────────────────────────────────────────────────────────
-
-async function loadVisitors() {
-  const el = document.getElementById('tab-admin-visitors');
-  if (!el) return;
-
-  const r = await apiFetch('/api/admin/chat-connections?limit=100');
-  if (!r || !r.ok) { el.textContent = 'Erreur de chargement'; return; }
-  const data = await r.json();
-  const conns = data.connections || [];
-
-  if (conns.length === 0) {
-    el.innerHTML = '<div class="card"><p style="color:var(--text-secondary)">Aucune connexion enregistrée</p></div>';
-    return;
-  }
-
-  // All user-provided fields escaped via escHtml()
-  let rows = '';
-  for (const c of conns) {
-    const connTime = new Date(c.connected_at * 1000);
-    const dateStr = connTime.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-    const timeStr = connTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const duration = c.disconnected_at
-      ? formatDuration(c.disconnected_at - c.connected_at)
-      : '<span style="color:#00E5A0">en ligne</span>';
-    const avatarHtml = c.avatar_url
-      ? `<img src="${escAttr(c.avatar_url)}" class="visitor-avatar" alt="">`
-      : '<div class="visitor-avatar-placeholder"></div>';
-    rows += `
-      <div class="visitor-row">
-        ${avatarHtml}
-        <div class="visitor-info">
-          <strong>${escHtml(c.username)}</strong>
-          <span class="visitor-date">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
-        </div>
-        <div class="visitor-meta">
-          <span class="visitor-msgs">${parseInt(c.message_count, 10)} msg</span>
-          <span class="visitor-duration">${duration}</span>
-        </div>
-      </div>`;
-  }
-
-  el.innerHTML = `
-    <div class="card">
-      <div class="card-title">CONNEXIONS RECENTES AU CHAT WEB</div>
-      <div class="visitor-list">${rows}</div>
-    </div>`;
-}
-
 function formatDuration(seconds) {
   const s = Math.floor(seconds);
   if (s < 60) return s + 's';
@@ -4499,17 +4349,20 @@ async function deleteMemQuestion(id) {
   }
 }
 
-// ── Paramètres Tab (Émotions · LLM · Images) ─────────────────────────────────
+// ── Sections de réglages (modèle `Formulaire`, formulaires.js) ──────────────
 
-
-function makeFormRow(labelText, inputEl) {
-  const row = document.createElement('div');
-  row.className = 'form-row';
-  const lbl = document.createElement('label');
-  lbl.textContent = labelText;
-  row.appendChild(lbl);
-  row.appendChild(inputEl);
-  return row;
+/** Le titre et le sous-titre d'une section de page, écrits par son rendu. */
+function _enteteSection(boite, titre, sous) {
+  const t = document.createElement('div');
+  t.className = 'page-section-titre';
+  t.textContent = titre;
+  boite.appendChild(t);
+  if (sous) {
+    const s = document.createElement('div');
+    s.className = 'page-section-sous';
+    s.textContent = sous;
+    boite.appendChild(s);
+  }
 }
 
 const _VOICE_OPTIONS = [
@@ -4530,230 +4383,186 @@ async function _renderParametresVoice(panel) {
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const cfg = await r.json();
   const v = cfg.voice || {};
+  const F = window.Formulaire;
 
-  const section = document.createElement('div');
-  section.className = 'overlay-section';
+  const carte = F.carte();
+  const actif = F.bascule(v.enabled);
+  const voix = F.choix(_VOICE_OPTIONS.map(function (o) { return [o[0], o[0] + ' — ' + o[1]]; }),
+                       v.azure_voice);
+  const depart = F.nombre(v.auto_leave_minutes != null ? v.auto_leave_minutes : 2, { min: 1, max: 60 });
+  const vad = F.choix([['0', '0 — tout passe'], ['1', '1'], ['2', '2'], ['3', '3 — strict']],
+                      v.vad_aggressiveness);
+  carte.corps.appendChild(F.champ('Vocal activé', actif));
+  carte.corps.appendChild(F.champ('Voix', voix));
+  carte.corps.appendChild(F.champ('Quitter le salon vide après (minutes)', depart));
+  carte.corps.appendChild(F.champ('Filtrage du bruit', vad, '0 = tout passe, 3 = strict.'));
 
-  // Activé (checkbox)
-  const chk = document.createElement('input');
-  chk.type = 'checkbox'; chk.id = 'voice-enabled-p'; chk.checked = !!v.enabled;
-  section.appendChild(makeFormRow('Activé', chk));
-
-  // Voix (select)
-  const sel = document.createElement('select');
-  sel.id = 'voice-azure-p'; sel.className = 'neo-select';
-  const opts = _VOICE_OPTIONS.slice();
-  if (v.azure_voice && !opts.some(function(o) { return o[0] === v.azure_voice; })) {
-    opts.unshift([v.azure_voice, '']);
-  }
-  opts.forEach(function(o) {
-    const opt = document.createElement('option');
-    opt.value = o[0];
-    opt.textContent = o[1] ? `${o[0]} — ${o[1]}` : o[0];
-    if (o[0] === v.azure_voice) opt.selected = true;
-    sel.appendChild(opt);
+  const enregistrer = F.bouton('Enregistrer', function () {
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { voice: {
+      enabled: actif.checked,
+      azure_voice: voix.value,
+      auto_leave_minutes: parseInt(depart.value, 10),
+      vad_aggressiveness: parseInt(vad.value, 10),
+    }}, 'Réglages vocaux enregistrés');
   });
-  section.appendChild(makeFormRow('Voix', sel));
-
-  // Auto-leave (minutes)
-  const al = document.createElement('input');
-  al.type = 'number'; al.id = 'voice-autoleave-p'; al.className = 'neo-input';
-  al.min = 1; al.max = 60; al.value = v.auto_leave_minutes != null ? v.auto_leave_minutes : 2;
-  section.appendChild(makeFormRow('Quitter le salon vide après (min)', al));
-
-  // VAD agressivité (0-3)
-  const vad = document.createElement('select');
-  vad.id = 'voice-vad-p'; vad.className = 'neo-select';
-  ['0', '1', '2', '3'].forEach(function(o) {
-    const opt = document.createElement('option');
-    opt.value = o; opt.textContent = o;
-    if (String(v.vad_aggressiveness) === o) opt.selected = true;
-    vad.appendChild(opt);
-  });
-  section.appendChild(makeFormRow('Filtrage du bruit (0 = tout passe, 3 = strict)', vad));
-
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'neo-btn'; saveBtn.textContent = 'Sauvegarder';
-  saveBtn.onclick = saveVoiceConfigParams;
-  section.appendChild(saveBtn);
-
-  const note = document.createElement('p');
-  note.style.cssText = 'opacity:.6;font-size:.85em;margin-top:8px';
-  note.textContent = 'La voix et les seuils s\'appliquent à chaud. Activer/désactiver le vocal nécessite un redémarrage.';
-  section.appendChild(note);
-
-  panel.appendChild(section);
-}
-
-async function saveVoiceConfigParams() {
-  const body = { voice: {
-    enabled: document.getElementById('voice-enabled-p').checked,
-    azure_voice: document.getElementById('voice-azure-p').value,
-    auto_leave_minutes: parseInt(document.getElementById('voice-autoleave-p').value, 10),
-    vad_aggressiveness: parseInt(document.getElementById('voice-vad-p').value, 10),
-  }};
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
-  if (r && r.ok) toast('Config vocale sauvegardée', 'success');
-  else toast('Échec de la sauvegarde', 'error');
+  carte.el.appendChild(F.actions(enregistrer));
+  carte.el.appendChild(F.note('La voix s\'applique à chaud ; le filtrage du bruit au prochain salon rejoint. Activer ou désactiver le vocal demande un redémarrage.'));
+  panel.appendChild(carte.el);
 }
 
 async function _renderParametresEmotions(panel) {
   if (!panel) return;
-
-  // Move config-form-container (emotions + lambdas + bot-general + spam sections) here
-  // We load config then render only the emotion-related cards
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const cfg = await r.json();
+  const F = window.Formulaire;
 
-  const wrapper = document.createElement('div');
-  wrapper.id = 'parametres-emotions-inner';
+  _enteteSection(panel, 'Humeur et tempérament',
+    'Ce que Wally ressent en ce moment, et la vitesse à laquelle il revient au calme.');
 
-  // Emotions sliders card
-  const emotCard = document.createElement('div');
-  emotCard.className = 'card config-section';
-  emotCard.innerHTML = `
-    <div class="config-section-title">Émotions</div>
-    <div id="gauges-parametres-inline" role="group" aria-label="Controle des emotions"></div>
-    <div class="mt-4">
-      <button class="btn btn-danger" onclick="resetEmotions()">Remettre à zéro</button>
-    </div>
-  `;
-  wrapper.appendChild(emotCard);
+  const humeur = F.carte('Émotions du moment', 'Un curseur relâché s\'applique aussitôt.');
+  humeur.corps.appendChild(construireCurseursEmotions());
+  humeur.el.appendChild(F.actions(F.bouton('Remettre à zéro', resetEmotions, { danger: true })));
+  panel.appendChild(humeur.el);
 
-  // Decay lambdas card
-  const lambdaCard = document.createElement('div');
-  lambdaCard.className = 'card config-section';
-  const lambdaRows = Object.entries(cfg.emotions).filter(function([name]) { return name !== 'boredom'; }).map(function([name, ec]) {
-    const lam = ec.decay_lambda;
-    const timeToZeroH = lam > 0 ? (Math.log(1/0.01)) / lam : Infinity;
-    const timeLabel = timeToZeroH === Infinity ? '∞' : timeToZeroH < 1 ? Math.round(timeToZeroH * 60) + ' min' : Math.round(timeToZeroH * 10) / 10 + ' h';
-    return `<div class="field-group" style="display:flex;align-items:center;gap:12px">
-      <label class="field-label" for="cfg-lambda-${name}" style="color:${EMOTION_COLORS[name] || 'var(--text-muted)'};min-width:100px">${EMOTION_LABELS[name] || name} λ</label>
-      <input type="number" id="cfg-lambda-${name}" min="0" max="10" step="0.001" value="${lam}" style="width:90px" oninput="updateDecayTime(this,'${name}')">
-      <span id="decay-time-${name}" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">100→0% en <strong style="color:#e2e8f0">${timeLabel}</strong></span>
-    </div>`;
-  }).join('');
-  const boredomRise = cfg.emotions.boredom && cfg.emotions.boredom.boredom_rise_per_hour != null ? cfg.emotions.boredom.boredom_rise_per_hour : 1.2;
-  const boredomH = boredomRise > 0 ? 1/boredomRise : Infinity;
-  const boredomLabel = boredomH === Infinity ? '∞' : boredomH < 1 ? Math.round(boredomH*60)+' min' : Math.round(boredomH*10)/10+' h';
-  lambdaCard.innerHTML = `
-    <div class="config-section-title">Vitesse à laquelle chaque émotion retombe (λ)</div>
-    <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px">λ = vitesse de décroissance par heure. Plus la valeur est élevée, plus l'émotion retombe vite. L'ennui monte avec l'inactivité et n'utilise pas ce paramètre.</p>
-    ${lambdaRows}
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:12px">
-        <label class="field-label" for="cfg-boredom-rise" style="color:${EMOTION_COLORS['boredom'] || 'var(--text-muted)'};min-width:100px">Ennui ↑/h</label>
-        <input type="number" id="cfg-boredom-rise" min="0" max="10" step="0.1" value="${boredomRise}" style="width:90px" oninput="updateBoredomTime(this)">
-        <span id="boredom-time-info" style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap">0→100% en <strong style="color:#e2e8f0">${boredomLabel}</strong></span>
-      </div>
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0">Vitesse de montée de l'ennui par heure d'inactivité. 1.2 = ennui max en ~50 min.</p>
-    </div>
-    <button class="btn btn-success" onclick="saveEmotionLambdas()">Enregistrer</button>
-  `;
-  wrapper.appendChild(lambdaCard);
+  const calme = F.carte('Retour au calme',
+    'λ = vitesse de décroissance par heure : plus il est élevé, plus l\'émotion retombe vite. '
+    + 'L\'ennui n\'utilise pas λ : il monte avec l\'inactivité.');
+  const lambdas = {};
+  Object.keys(cfg.emotions).filter(function (nom) { return nom !== 'boredom'; }).forEach(function (nom) {
+    const lam = cfg.emotions[nom].decay_lambda;
+    const champ = F.nombre(lam, { min: 0, max: 10, pas: 0.001 });
+    const bloc = F.champ((EMOTION_LABELS[nom] || nom) + ' (λ)', champ, _dureeRetombee(lam));
+    const aide = bloc.querySelector('.form-aide');
+    champ.addEventListener('input', function () { aide.textContent = _dureeRetombee(parseFloat(champ.value) || 0); });
+    lambdas[nom] = champ;
+    calme.corps.appendChild(bloc);
+  });
+  const montee = cfg.emotions.boredom && cfg.emotions.boredom.boredom_rise_per_hour != null
+    ? cfg.emotions.boredom.boredom_rise_per_hour : 1.2;
+  const ennui = F.nombre(montee, { min: 0, max: 10, pas: 0.1 });
+  const blocEnnui = F.champ('Montée de l\'ennui (par heure d\'inactivité)', ennui, _dureeMonteeEnnui(montee));
+  const aideEnnui = blocEnnui.querySelector('.form-aide');
+  ennui.addEventListener('input', function () { aideEnnui.textContent = _dureeMonteeEnnui(parseFloat(ennui.value) || 0); });
+  calme.corps.appendChild(blocEnnui);
 
-  panel.appendChild(wrapper);
+  const enregistrer = F.bouton('Enregistrer', function () {
+    const emotions = {};
+    for (const e of EMOTIONS) {
+      if (e !== 'boredom' && lambdas[e]) emotions[e] = { decay_lambda: parseFloat(lambdas[e].value) };
+    }
+    emotions.boredom = { decay_lambda: 0.01, boredom_rise_per_hour: parseFloat(ennui.value) };
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { emotions }, 'Retour au calme enregistré');
+  });
+  calme.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(calme.el);
 
   // Les curseurs, puis l'état RÉEL par-dessus. Sans le second appel, ils
   // restaient tous à zéro — `currentEmotions` n'était rempli par personne.
-  buildGauges('gauges-parametres-inline', true);
   await chargerEmotions();
 }
 
-/** Les réglages généraux du bot — langue par défaut, heure du journal,
- *  fenêtre de contexte, déclencheurs, alerte coûts, salon de notification.
- *  L'anti-spam, propre à Discord, a sa page : Discord › Anti-spam.
- */
+/** Cerveau › Personnalité › Réglages généraux : langue, noms qui l'appellent,
+ *  fenêtre de contexte, heure du journal. N'envoie QUE ces quatre champs — la
+ *  route n'écrit que les clés présentes. */
 async function _renderReglagesGeneraux(panel) {
   if (!panel) return;
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
-  const cfg = await r.json();
+  const b = (await r.json()).bot || {};
+  const F = window.Formulaire;
 
-  const wrapper = document.createElement('div');
-  const botCard = document.createElement('div');
-  botCard.className = 'card config-section';
-  botCard.innerHTML = `
-      <div class="field-group">
-      <label class="field-label" for="cfg-lang">Langue par défaut</label>
-      <input type="text" id="cfg-lang" value="${cfg.bot.language_default || ''}">
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-journal-time">Heure journal (HH:MM)</label>
-      <input type="text" id="cfg-journal-time" value="${cfg.bot.journal_time || ''}">
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-ctx-size">Taille fenêtre contexte</label>
-      <input type="number" id="cfg-ctx-size" value="${cfg.bot.context_window_size || 20}">
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-triggers">Noms qui l'interpellent (séparés par des virgules)</label>
-      <input type="text" id="cfg-triggers" value="${(cfg.bot.trigger_names || []).join(', ')}">
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-cost-threshold">Seuil d'alerte coûts ($)</label>
-      <input type="number" id="cfg-cost-threshold" min="0" max="1000" step="0.5" value="${cfg.bot.cost_alert_threshold ?? 0}">
-      <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">0 = veille des coûts désactivée</p>
-    </div>
-    <div class="field-group">
-      <label class="field-label">Notifications Discord</label>
-      <select id="cfg-notif-channel" style="width:100%">
-        <option value="">Désactivé</option>
-      </select>
-      <p style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">Alertes coûts et erreurs envoyées dans ce salon</p>
-    </div>
-    <button class="btn btn-success" onclick="saveBotGeneral()">Enregistrer</button>
-  `;
-  wrapper.appendChild(botCard);
+  _enteteSection(panel, 'Réglages généraux',
+    'La langue, les noms qui l\'interpellent, ce qu\'il garde de la conversation et l\'heure de son journal.');
+  const carte = F.carte();
+  const langue = F.texte(b.language_default);
+  const noms = F.texte((b.trigger_names || []).join(', '));
+  const fenetre = F.nombre(b.context_window_size || 20);
+  const journal = F.texte(b.journal_time, { placeholder: 'HH:MM' });
+  carte.corps.appendChild(F.champ('Langue par défaut', langue, 'Code de langue, par exemple fr.'));
+  carte.corps.appendChild(F.champ('Noms qui l\'interpellent', noms, 'Séparés par des virgules.'));
+  carte.corps.appendChild(F.champ('Taille de la fenêtre de contexte', fenetre, 'Messages récents relus avant de répondre.'));
+  carte.corps.appendChild(F.champ('Heure du journal', journal, 'Au format HH:MM.'));
 
-  panel.appendChild(wrapper);
-  loadNotificationChannels(cfg);
+  const enregistrer = F.bouton('Enregistrer', function () {
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { bot: {
+      language_default: langue.value,
+      journal_time: journal.value,
+      context_window_size: parseInt(fenetre.value),
+      trigger_names: noms.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+    }}, 'Réglages généraux enregistrés');
+  });
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
+}
+
+/** Cerveau › Modèles & coûts › Alertes : le seuil de la veille des coûts et le
+ *  salon où partent ses alertes. N'envoie QUE ces deux champs. */
+async function _renderAlertesCouts(panel) {
+  if (!panel) return;
+  const r = await apiFetch('/api/admin/config');
+  if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
+  const b = (await r.json()).bot || {};
+  const F = window.Formulaire;
+  await F.catalogueDiscord();
+
+  _enteteSection(panel, 'Alertes', 'Quand la dépense prévue dépasse le seuil, Wally prévient dans le salon choisi.');
+  const carte = F.carte();
+  const seuil = F.nombre(b.cost_alert_threshold ?? 0, { min: 0, max: 1000, pas: 0.5 });
+  const salon = F.salon(b.notification_channel_id, 'texte', 'Désactivé');
+  carte.corps.appendChild(F.champ('Seuil d\'alerte des coûts ($)', seuil, '0 = veille des coûts désactivée.'));
+  carte.corps.appendChild(F.champ('Salon des notifications', salon, 'Alertes de coûts et erreurs.'));
+
+  const enregistrer = F.bouton('Enregistrer', function () {
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { bot: {
+      cost_alert_threshold: parseFloat(seuil.value),
+      notification_channel_id: salon.value || null,
+    }}, 'Alertes enregistrées');
+  });
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
 }
 
 /** L'anti-spam Discord : combien de messages avant le mute, et ce que coûte
- *  en colère un muté qui continue de parler. Sorti de Connexions, où il
- *  cohabitait avec les réglages généraux sans rapport avec lui. */
+ *  en colère un muté qui continue de parler. */
 async function _renderAntiSpam(panel) {
   if (!panel) return;
   const r = await apiFetch('/api/admin/config');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
-  const cfg = await r.json();
+  const sd = ((await r.json()).discord || {}).spam_detection || {};
+  const F = window.Formulaire;
+  await F.catalogueDiscord();
 
-  const spamCard = document.createElement('div');
-  spamCard.className = 'card config-section';
-  spamCard.innerHTML = `
-    <div class="field-group" style="display:flex;align-items:center;gap:12px">
-      <label class="field-label" style="margin:0" for="cfg-spam-enabled">Activé</label>
-      <input type="checkbox" id="cfg-spam-enabled" ${(cfg.discord.spam_detection || {}).enabled !== false ? 'checked' : ''}>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-spam-max">Messages max</label>
-      <input type="number" id="cfg-spam-max" min="3" max="50" value="${(cfg.discord.spam_detection || {}).max_messages || 10}">
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Nombre de messages avant déclenchement</p>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-spam-window">Fenêtre (secondes)</label>
-      <input type="number" id="cfg-spam-window" min="30" max="600" value="${(cfg.discord.spam_detection || {}).window_seconds || 120}">
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Période de temps pour compter les messages</p>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-spam-mute">Durée mute (minutes)</label>
-      <input type="number" id="cfg-spam-mute" min="1" max="60" value="${(cfg.discord.spam_detection || {}).mute_minutes || 5}">
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-spam-anger">Delta colère par message muté</label>
-      <input type="number" id="cfg-spam-anger" min="0.01" max="0.2" step="0.01" value="${(cfg.discord.spam_detection || {}).spam_anger_delta || 0.05}">
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Augmentation de la colère quand un utilisateur muté continue de parler</p>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-spam-exempt">Salons exemptés (ids séparés par des virgules)</label>
-      <input type="text" id="cfg-spam-exempt" value="${((cfg.discord.spam_detection || {}).exempt_channels || []).join(', ')}">
-      <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0">Ces salons ignorent la détection de spam</p>
-    </div>
-    <button class="btn btn-success" onclick="saveSpamConfig()">Enregistrer</button>
-  `;
-  panel.appendChild(spamCard);
+  const carte = F.carte();
+  const actif = F.bascule(sd.enabled !== false);
+  actif.id = 'cfg-spam-enabled';
+  const max = F.nombre(sd.max_messages || 10, { min: 3, max: 50 });
+  const fenetre = F.nombre(sd.window_seconds || 120, { min: 30, max: 600 });
+  const mute = F.nombre(sd.mute_minutes || 5, { min: 1, max: 60 });
+  const colere = F.nombre(sd.spam_anger_delta || 0.05, { min: 0.01, max: 0.2, pas: 0.01 });
+  // En CHAÎNES : un id Discord dépasse 2^53, et `Number` l'arrondit sans rien
+  // dire (1485380606224502844 devenait …800, l'exemption ne marchait plus).
+  const exemptes = F.salons(sd.exempt_channels || [], 'texte');
+  carte.corps.appendChild(F.champ('Détection activée', actif));
+  carte.corps.appendChild(F.champ('Messages maximum', max, 'Nombre de messages avant déclenchement.'));
+  carte.corps.appendChild(F.champ('Fenêtre (secondes)', fenetre, 'Période sur laquelle les messages sont comptés.'));
+  carte.corps.appendChild(F.champ('Durée de la sourdine (minutes)', mute));
+  carte.corps.appendChild(F.champ('Colère par message en sourdine', colere,
+    'Ce que gagne la colère quand une personne en sourdine continue de parler.'));
+  carte.corps.appendChild(F.champ('Salons exemptés', exemptes, 'Ces salons ignorent la détection de spam.', true));
+
+  const enregistrer = F.bouton('Enregistrer', function () {
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { discord: { spam_detection: {
+      enabled: actif.checked,
+      max_messages: parseInt(max.value),
+      window_seconds: parseInt(fenetre.value),
+      mute_minutes: parseInt(mute.value),
+      spam_anger_delta: parseFloat(colere.value),
+      exempt_channels: exemptes.lireListe().filter(function (s) { return /^\d+$/.test(s); }),
+    }}}, 'Anti-spam enregistré');
+  });
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
 }
 
 // ── Discord › Anti-spam ─────────────────────────────────────────────────────
@@ -4797,61 +4606,49 @@ async function _renderParametresLLM(panel) {
         + escHtml(LIBELLES[v] || v) + '</option>';
     }).join('');
   }
+  function champ(id, libelle, controle, aide) {
+    return '<label class="form-champ"' + (id ? ' id="' + id + '"' : '') + '>'
+      + '<span class="form-libelle">' + libelle + '</span>' + controle
+      + (aide ? '<span class="form-aide">' + aide + '</span>' : '') + '</label>';
+  }
   const p = (cfg.llm && cfg.llm.primary) || {};
 
-  const card = document.createElement('div');
-  card.className = 'card config-section';
-  card.innerHTML = `
-    <div class="field-group">
-      <label class="field-label" for="cfg-primary-provider">Fournisseur principal</label>
-      <select id="cfg-primary-provider" onchange="onProviderChange()">
-        ${providerOptions(cfg, 'primary')}
-      </select>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-primary-model">Modèle principal</label>
-      <select id="cfg-primary-model"></select>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-secondary-provider">Fournisseur secondaire</label>
-      <select id="cfg-secondary-provider" onchange="onProviderChange()">
-        ${providerOptions(cfg, 'secondary')}
-      </select>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-secondary-model">Modèle secondaire</label>
-      <select id="cfg-secondary-model"></select>
-    </div>
-    <div id="openai-specific-settings" style="display:none">
-      <div class="field-group">
-        <label class="field-label" for="cfg-reasoning-effort">Effort de raisonnement</label>
-        <select id="cfg-reasoning-effort">${options(EFFORTS_OPENAI, cfg.openai.reasoning_effort)}</select>
-      </div>
-      <div class="field-group">
-        <label class="field-label" for="cfg-text-verbosity">Longueur des réponses</label>
-        <select id="cfg-text-verbosity">${options(VERBOSITES, cfg.openai.text_verbosity)}</select>
-      </div>
-    </div>
-    <div id="deepseek-specific-settings" style="display:none">
-      <div class="field-group">
-        <label class="field-label" for="cfg-thinking-type">Réflexion avant de répondre</label>
-        <select id="cfg-thinking-type" onchange="onThinkingTypeChange()">
-          <option value="disabled"${p.thinking_type === 'enabled' ? '' : ' selected'}>désactivée</option>
-          <option value="enabled"${p.thinking_type === 'enabled' ? ' selected' : ''}>activée</option>
-        </select>
-      </div>
-      <div id="thinking-effort-group" class="field-group" style="display:none">
-        <label class="field-label" for="cfg-thinking-effort">Effort de réflexion</label>
-        <select id="cfg-thinking-effort">${options(EFFORTS_DEEPSEEK, p.thinking_effort || 'low')}</select>
-      </div>
-    </div>
-    <div class="field-group">
-      <label class="field-label" for="cfg-max-tokens">Longueur maximale d'une réponse (tokens)</label>
-      <input type="number" id="cfg-max-tokens" min="100" max="32000" value="${cfg.openai.max_tokens}">
-    </div>
-    <button class="btn btn-success" onclick="saveOpenAI()">Enregistrer</button>
-  `;
-  panel.appendChild(card);
+  _enteteSection(panel, 'Modèles',
+    'Le modèle principal répond ; le secondaire sert aux tâches de fond (mémoire, journal, rappels). '
+    + 'Un changement s\'applique à chaud.');
+  const F = window.Formulaire;
+  const carte = F.carte();
+  carte.corps.innerHTML = ''
+    + champ('', 'Fournisseur principal',
+        '<select class="form-input" id="cfg-primary-provider" onchange="onProviderChange()">'
+        + providerOptions(cfg, 'primary') + '</select>')
+    + champ('', 'Modèle principal', '<select class="form-input" id="cfg-primary-model"></select>')
+    + champ('', 'Fournisseur secondaire',
+        '<select class="form-input" id="cfg-secondary-provider" onchange="onProviderChange()">'
+        + providerOptions(cfg, 'secondary') + '</select>')
+    + champ('', 'Modèle secondaire', '<select class="form-input" id="cfg-secondary-model"></select>')
+    + '<div class="form-sous-grille" id="openai-specific-settings" style="display:none">'
+    + champ('', 'Effort de raisonnement',
+        '<select class="form-input" id="cfg-reasoning-effort">' + options(EFFORTS_OPENAI, cfg.openai.reasoning_effort) + '</select>')
+    + champ('', 'Longueur des réponses',
+        '<select class="form-input" id="cfg-text-verbosity">' + options(VERBOSITES, cfg.openai.text_verbosity) + '</select>')
+    + '</div>'
+    + '<div class="form-sous-grille" id="deepseek-specific-settings" style="display:none">'
+    + champ('', 'Réflexion avant de répondre',
+        '<select class="form-input" id="cfg-thinking-type" onchange="onThinkingTypeChange()">'
+        + '<option value="disabled"' + (p.thinking_type === 'enabled' ? '' : ' selected') + '>désactivée</option>'
+        + '<option value="enabled"' + (p.thinking_type === 'enabled' ? ' selected' : '') + '>activée</option>'
+        + '</select>')
+    + champ('thinking-effort-group', 'Effort de réflexion',
+        '<select class="form-input" id="cfg-thinking-effort">' + options(EFFORTS_DEEPSEEK, p.thinking_effort || 'low') + '</select>')
+    + '</div>'
+    + champ('', 'Longueur maximale d\'une réponse (tokens)',
+        '<input class="form-input" type="number" id="cfg-max-tokens" min="100" max="32000" value="'
+        + escAttr(cfg.openai.max_tokens) + '">');
+  const enregistrer = F.bouton('Enregistrer', function () { saveOpenAI(enregistrer); });
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
+  document.getElementById('thinking-effort-group').style.display = 'none';
 
   // Le modèle CONFIGURÉ est retenu par fournisseur : repasser sur le fournisseur
   // d'origine le re-sélectionne, au lieu du premier modèle du catalogue.
@@ -4874,84 +4671,59 @@ async function _renderParametresImages(panel) {
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const cfg = await r.json();
   const ig = cfg.image_generation || {};
+  const F = window.Formulaire;
 
-  const section = document.createElement('div');
-  section.className = 'overlay-section';
-
-
-  function makeSelect(id, options, selected) {
-    const sel = document.createElement('select');
-    sel.id = id + '-p';
-    sel.className = 'neo-select';
-    // Les VALEURS restent celles de l'API ; seul le libellé est traduit.
-    const LIBELLES = { low: 'basse', medium: 'moyenne', high: 'haute',
-                       auto: 'automatique', transparent: 'transparent', opaque: 'opaque' };
-    options.forEach(function(o) {
-      const opt = document.createElement('option');
-      opt.value = o; opt.textContent = LIBELLES[o] || o;
-      if (o === selected) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    return sel;
+  // Les VALEURS restent celles de l'API ; seul le libellé est traduit.
+  const LIBELLES = { low: 'basse', medium: 'moyenne', high: 'haute',
+                     auto: 'automatique', transparent: 'transparent', opaque: 'opaque' };
+  function liste(valeurs) {
+    return valeurs.map(function (v) { return [v, LIBELLES[v] || v]; });
   }
 
-  section.appendChild(makeFormRow('Modèle', makeSelect('ig-model', ['gpt-image-1.5','gpt-image-1','gpt-image-1-mini'], ig.model)));
-  section.appendChild(makeFormRow('Qualité', makeSelect('ig-quality', ['low','medium','high'], ig.quality)));
-  section.appendChild(makeFormRow('Taille', makeSelect('ig-size', ['1024x1024','1024x1536','1536x1024'], ig.size)));
-  section.appendChild(makeFormRow('Format', makeSelect('ig-format', ['png','jpeg','webp'], ig.format)));
-  section.appendChild(makeFormRow('Fond', makeSelect('ig-background', ['auto','transparent','opaque'], ig.background)));
+  const carte = F.carte();
+  const modele = F.choix(liste(['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']), ig.model);
+  const qualite = F.choix(liste(['low', 'medium', 'high']), ig.quality);
+  const taille = F.choix(liste(['1024x1024', '1024x1536', '1536x1024']), ig.size);
+  const format = F.choix(liste(['png', 'jpeg', 'webp']), ig.format);
+  const fond = F.choix(liste(['auto', 'transparent', 'opaque']), ig.background);
+  const parJour = F.nombre(ig.daily_limit);
+  const parPersonne = F.nombre(ig.per_user_limit);
+  carte.corps.appendChild(F.champ('Modèle', modele));
+  carte.corps.appendChild(F.champ('Qualité', qualite));
+  carte.corps.appendChild(F.champ('Taille', taille));
+  carte.corps.appendChild(F.champ('Format', format));
+  carte.corps.appendChild(F.champ('Fond', fond));
+  carte.corps.appendChild(F.champ('Limite par jour (tout le monde)', parJour, '-1 = illimité.'));
+  carte.corps.appendChild(F.champ('Limite par jour (par personne)', parPersonne, '-1 = illimité.'));
 
-  const dlRow = document.createElement('div'); dlRow.className = 'form-row';
-  const dlLabel = document.createElement('label'); dlLabel.textContent = 'Limite/jour (global)'; dlRow.appendChild(dlLabel);
-  const dlInput = document.createElement('input'); dlInput.type = 'number'; dlInput.id = 'ig-daily-limit-p'; dlInput.className = 'neo-input'; dlInput.value = ig.daily_limit; dlInput.style.width = '80px'; dlRow.appendChild(dlInput);
-  const dlHint = document.createElement('span'); dlHint.style.color = 'rgba(255,255,255,0.35)'; dlHint.style.fontSize = '0.78rem'; dlHint.textContent = '-1 = illimité'; dlRow.appendChild(dlHint);
-  section.appendChild(dlRow);
+  const estimation = document.createElement('div');
+  estimation.className = 'form-estimation';
+  carte.el.appendChild(estimation);
 
-  const puRow = document.createElement('div'); puRow.className = 'form-row';
-  const puLabel = document.createElement('label'); puLabel.textContent = 'Limite/jour (par user)'; puRow.appendChild(puLabel);
-  const puInput = document.createElement('input'); puInput.type = 'number'; puInput.id = 'ig-per-user-limit-p'; puInput.className = 'neo-input'; puInput.value = ig.per_user_limit; puInput.style.width = '80px'; puRow.appendChild(puInput);
-  const puHint = document.createElement('span'); puHint.style.color = 'rgba(255,255,255,0.35)'; puHint.style.fontSize = '0.78rem'; puHint.textContent = '-1 = illimité'; puRow.appendChild(puHint);
-  section.appendChild(puRow);
+  const enregistrer = F.bouton('Enregistrer', function () {
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { image_generation: {
+      model: modele.value,
+      quality: qualite.value,
+      size: taille.value,
+      format: format.value,
+      background: fond.value,
+      daily_limit: parseInt(parJour.value),
+      per_user_limit: parseInt(parPersonne.value),
+    }}, 'Génération d\'images enregistrée');
+  });
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
 
-  const costEst = document.createElement('div'); costEst.className = 'form-row'; costEst.id = 'ig-cost-estimate-p'; costEst.style.color = 'var(--accent)'; costEst.style.fontWeight = '600'; costEst.style.fontSize = '0.85rem';
-  section.appendChild(costEst);
-
-  const saveBtn = document.createElement('button'); saveBtn.className = 'neo-btn'; saveBtn.textContent = 'Sauvegarder'; saveBtn.onclick = saveImageGenConfigParams;
-  section.appendChild(saveBtn);
-
-  panel.appendChild(section);
-
-  // Update cost estimate
-  async function updateCostEstimateParams() {
-    const model = document.getElementById('ig-model-p')?.value;
-    const quality = document.getElementById('ig-quality-p')?.value;
-    const size = document.getElementById('ig-size-p')?.value;
-    if (!model || !quality || !size) return;
-    const r2 = await fetch('/api/public/gallery/estimate-cost?model=' + model + '&quality=' + quality + '&size=' + size);
+  async function estimer() {
+    const r2 = await fetch('/api/public/gallery/estimate-cost?model=' + encodeURIComponent(modele.value)
+      + '&quality=' + encodeURIComponent(qualite.value) + '&size=' + encodeURIComponent(taille.value));
     if (r2.ok) {
       const data = await r2.json();
-      const elCost = document.getElementById('ig-cost-estimate-p');
-      if (elCost) elCost.textContent = 'Coût estimé : ' + data.cost_usd.toFixed(4) + ' $ par image';
+      estimation.textContent = 'Coût estimé : ' + _dollars(data.cost_usd) + ' par image';
     }
   }
-  updateCostEstimateParams();
-  document.getElementById('ig-model-p')?.addEventListener('change', updateCostEstimateParams);
-  document.getElementById('ig-quality-p')?.addEventListener('change', updateCostEstimateParams);
-  document.getElementById('ig-size-p')?.addEventListener('change', updateCostEstimateParams);
-}
-
-async function saveImageGenConfigParams() {
-  const body = { image_generation: {
-    model: document.getElementById('ig-model-p').value,
-    quality: document.getElementById('ig-quality-p').value,
-    size: document.getElementById('ig-size-p').value,
-    format: document.getElementById('ig-format-p').value,
-    background: document.getElementById('ig-background-p').value,
-    daily_limit: parseInt(document.getElementById('ig-daily-limit-p').value),
-    per_user_limit: parseInt(document.getElementById('ig-per-user-limit-p').value),
-  }};
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
-  if (r && r.ok) toast('Config image sauvegardée', 'success');
+  estimer();
+  [modele, qualite, taille].forEach(function (s) { s.addEventListener('change', estimer); });
 }
 
 
@@ -4982,7 +4754,7 @@ async function _renderSystemeTwitch(panel) {
     return '<div class="card" style="flex:1;min-width:220px;padding:20px">'
       + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
       + '<span style="font-size:1.5em">' + icon + '</span>'
-      + '<div><div class="card-title" style="margin:0">' + title + '</div>'
+      + '<div><div class="form-carte-titre">' + title + '</div>'
       + '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'
       + '<span style="width:8px;height:8px;border-radius:50%;background:' + dotColor + ';display:inline-block"></span>'
       + '<span style="font-size:0.85em;color:' + (connected ? 'var(--text-primary)' : 'var(--text-muted)') + '">' + statusText + '</span>'
@@ -5062,14 +4834,15 @@ async function _renderSystemeOverlay(panel) {
   const imageCmd = oi.command || '!image';
 
   panel.innerHTML = `
+    <div class="page-section-titre">Overlays</div>
+    <div class="page-section-sous">Les adresses à coller dans OBS, et ce que chaque overlay affiche.</div>
     <div class="overlay-cards-grid">
 
-      <!-- Overlay Émotions -->
-      <div class="card overlay-card">
+      <div class="form-carte overlay-card">
         <div class="overlay-card-header">
           <div class="overlay-card-icon" style="background:rgba(234,179,8,0.1);border-color:rgba(234,179,8,0.2)">🎭</div>
           <div>
-            <div class="card-title" style="margin:0">Overlay compagnon</div>
+            <div class="form-carte-titre">Overlay compagnon</div>
             <div class="overlay-card-sub">Bulles, réactions et widgets du live</div>
           </div>
         </div>
@@ -5102,22 +4875,21 @@ async function _renderSystemeOverlay(panel) {
         <div class="overlay-url-row">
           <span class="overlay-url-label">URL OBS</span>
           <code class="overlay-url-code" id="url-emotion">${urlEmotion}</code>
-          <button class="overlay-copy-btn" onclick="copyOverlayUrl('url-emotion')">Copier</button>
+          <button class="btn btn-outline btn-sm" onclick="copyOverlayUrl('url-emotion')">Copier</button>
         </div>
-        <div class="overlay-url-hint">Browser Source · Largeur 1920px · Hauteur 1080px · Fond transparent</div>
+        <div class="overlay-url-hint">Source navigateur · 1920 × 1080 · fond transparent</div>
       </div>
 
-      <!-- Overlay Images -->
-      <div class="card overlay-card">
+      <div class="form-carte overlay-card">
         <div class="overlay-card-header">
           <div class="overlay-card-icon" style="background:rgba(6,182,212,0.1);border-color:rgba(6,182,212,0.2)">🖼️</div>
           <div>
-            <div class="card-title" style="margin:0">Images du chat</div>
+            <div class="form-carte-titre">Images du chat</div>
             <div class="overlay-card-sub">Galerie via commande Twitch</div>
           </div>
         </div>
         <p class="overlay-card-desc">
-          Affiche une image de la galerie quand un viewer tape <code style="color:var(--accent)">${imageCmd}</code> dans le chat.
+          Affiche une image de la galerie quand un viewer tape <code style="color:var(--accent)">${escHtml(imageCmd)}</code> dans le chat.
           L'image s'affiche dans l'overlay compagnon : sa place, sa durée et ses
           animations se règlent dans « Scène &amp; overlays », par scène.
         </p>
@@ -5131,19 +4903,17 @@ async function _renderSystemeOverlay(panel) {
       </div>
     </div>
 
-      <div id="overlay-health-systeme" class="card" style="margin-top:12px">
-      <div class="card-title">Rendu chez le streamer</div>
-      <div id="overlay-health-line" class="muted">Mesure en cours…</div>
+    <div id="overlay-health-systeme" class="form-carte">
+      <div class="form-carte-titre">Rendu chez le streamer</div>
+      <div id="overlay-health-line" class="form-carte-sous">Mesure en cours…</div>
     </div>
     <div id="overlay-config-container-systeme"></div>
-    <div id="atelier-sons" class="card" style="margin-top:12px"></div>
   `;
 
   pollOverlayStatusForSysteme();
   refreshOverlayForceLive();
   refreshOverlayHealth();
   loadOverlayConfigInPanel(document.getElementById('overlay-config-container-systeme'));
-  renderAtelierSons();
 }
 
 // ── Mise en scène (onglet dédié) ─────────────────────────────────────────────
@@ -5338,65 +5108,34 @@ async function loadOverlayConfigInPanel(container) {
   if (!r || !r.ok) return;
   const cfg = await r.json();
   const oi = cfg.overlay_image || {};
-
-  const oiSection = document.createElement('div');
-  oiSection.className = 'overlay-section';
-  const oiTitle = document.createElement('h3');
-  oiTitle.textContent = 'Réglages des images du chat';
-  oiSection.appendChild(oiTitle);
-
-
-  function makeSelect(id, options, selected, libelles) {
-    const sel = document.createElement('select'); sel.id = id; sel.className = 'neo-select';
-    options.forEach(function(o) {
-      const opt = document.createElement('option'); opt.value = o; opt.textContent = (libelles || {})[o] || o;
-      if (o === selected) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    return sel;
-  }
-
-  const cmdRow = document.createElement('div'); cmdRow.className = 'form-row';
-  const cmdLabel = document.createElement('label'); cmdLabel.textContent = 'Commande Twitch'; cmdRow.appendChild(cmdLabel);
-  const cmdInput = document.createElement('input'); cmdInput.type = 'text'; cmdInput.id = 'oi-command-s'; cmdInput.className = 'neo-input'; cmdInput.value = oi.command || '!image'; cmdInput.style.width = '120px'; cmdRow.appendChild(cmdInput);
-  oiSection.appendChild(cmdRow);
+  const F = window.Formulaire;
 
   // Les quatre réglages d'AFFICHAGE — durée, animations d'entrée et de sortie,
   // durée d'animation — sont partis dans « Mise en scène », où ils se règlent
   // PAR SCÈNE comme ceux de tous les autres widgets. Ils vivaient ici,
   // globalement : deux endroits pour la même question, dont l'un que le panneau
   // de mise en scène ignorait. Laisser un champ mort rouvrirait le doublon.
-  const oiRenvoi = document.createElement('div');
-  oiRenvoi.className = 'form-row';
-  oiRenvoi.style.opacity = '0.75';
-  oiRenvoi.style.fontSize = '0.8rem';
-  oiRenvoi.textContent = "Durée d'affichage et animations : page « Scène & "
-    + "overlays », élément « Image de la galerie » — et par scène.";
-  oiSection.appendChild(oiRenvoi);
+  const carte = F.carte('Réglages des images du chat',
+    'Durée d\'affichage et animations : page « Scène & overlays », élément « Image de la galerie » — et par scène.');
+  const commande = F.texte(oi.command || '!image');
+  const filtre = F.choix([['all', 'toutes'], ['top', 'les plus aimées'], ['recent', 'les plus récentes']],
+                         oi.random_filter);
+  carte.corps.appendChild(F.champ('Commande Twitch', commande));
+  carte.corps.appendChild(F.champ('Images tirées', filtre));
 
-  oiSection.appendChild(makeFormRow('Filtre images', makeSelect('oi-filter-s', ['all','top','recent'], oi.random_filter, { all: 'toutes', top: 'les plus aimées', recent: 'les plus récentes' })));
-
-  const btnRow = document.createElement('div'); btnRow.className = 'form-row';
-  const oiSaveBtn = document.createElement('button'); oiSaveBtn.className = 'neo-btn'; oiSaveBtn.textContent = 'Sauvegarder'; oiSaveBtn.onclick = saveOverlayImageConfigSysteme; btnRow.appendChild(oiSaveBtn);
-  const oiTestBtn = document.createElement('button'); oiTestBtn.className = 'neo-btn'; oiTestBtn.textContent = 'Tester'; oiTestBtn.style.marginLeft = '8px'; oiTestBtn.onclick = testOverlayImage; btnRow.appendChild(oiTestBtn);
-  oiSection.appendChild(btnRow);
-
-  container.appendChild(oiSection);
-
-}
-
-async function saveOverlayImageConfigSysteme() {
-  const sw = document.getElementById('overlay-switch-image');
-  // Les quatre réglages d'affichage ne sont plus envoyés d'ici : ils vivent
-  // dans le layout. Les laisser partirait la valeur d'un champ disparu — donc
-  // `NaN` — et écraserait ce que la scène porte.
-  const body = { overlay_image: {
-    enabled: sw ? sw.classList.contains('on') : false,
-    command: document.getElementById('oi-command-s').value,
-    random_filter: document.getElementById('oi-filter-s').value,
-  }};
-  const r = await apiFetch('/api/admin/config', { method: 'POST', body: JSON.stringify(body) });
-  if (r && r.ok) toast('Config overlay sauvegardée', 'success');
+  const enregistrer = F.bouton('Enregistrer', function () {
+    const sw = document.getElementById('overlay-switch-image');
+    // Les quatre réglages d'affichage ne sont plus envoyés d'ici : ils vivent
+    // dans le layout. Les laisser partirait la valeur d'un champ disparu — donc
+    // `NaN` — et écraserait ce que la scène porte.
+    F.enregistrer(enregistrer, '/api/admin/config', 'POST', { overlay_image: {
+      enabled: sw ? sw.classList.contains('on') : false,
+      command: commande.value,
+      random_filter: filtre.value,
+    }}, 'Images du chat enregistrées');
+  });
+  carte.el.appendChild(F.actions(enregistrer, F.bouton('Tester', testOverlayImage, { discret: true })));
+  container.appendChild(carte.el);
 }
 
 function _fmtNum(n) {
@@ -6251,26 +5990,47 @@ async function apexUnlink(identity, name) {
 
 async function renderWallySelfTab(panel) {
   if (!panel) return;
-  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement...</p>';
+  panel.innerHTML = '<div class="page-section-titre">Dans sa tête</div>'
+    + '<div class="page-section-sous">Chargement…</div>';
   const r = await apiFetch('/api/admin/memory/self');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const d = await r.json();
 
-  function section(title, items, emptyMsg) {
-    var rows = (items && items.length)
-      ? items.map(function(it) { return '<li>' + escHtml(it) + '</li>'; }).join('')
-      : '<li style="color:var(--text-secondary)">' + emptyMsg + '</li>';
-    return '<div class="card" style="margin-bottom:16px">'
-      + '<h3 style="margin:0 0 10px">' + escHtml(title) + '</h3>'
-      + '<ul style="margin:0;padding-left:20px;line-height:1.7">' + rows + '</ul></div>';
+  // Une section longue (les pensées récentes font des paragraphes entiers) se
+  // replie : sans ça, « Dans sa tête » poussait le reste de la page trois
+  // écrans plus bas.
+  function section(titre, items, vide) {
+    const liste = items || [];
+    const long = liste.length > 4 || liste.join('').length > 400;
+    const lignes = liste.length
+      ? liste.map(function (it) { return '<li>' + escHtml(it) + '</li>'; }).join('')
+      : '<li class="tete-vide">' + escHtml(vide) + '</li>';
+    return '<div class="form-carte">'
+      + '<div class="form-carte-titre">' + escHtml(titre) + '</div>'
+      + '<ul class="tete-liste' + (long ? ' replie' : '') + '">' + lignes + '</ul>'
+      + (long ? '<button type="button" class="lien-doux" data-tete="plier">Voir plus</button>' : '')
+      + '</div>';
   }
 
-  panel.innerHTML = ''
-    + section('🎯 Ses buts', d.goals, 'aucun but actif')
-    + section('🔥 Ce qui le travaille (désirs)', d.desires, 'aucun désir actif')
-    + section('💭 Ses pensées récentes', d.thoughts, 'aucune pensée enregistrée')
-    + section('🤝 Ce qu\'il pense des gens (affinités)', d.relationships, 'aucune affinité formée')
-    + section('🧭 Sa préoccupation du moment', d.focus ? [d.focus] : [], 'rien ne le préoccupe');
+  panel.innerHTML = '<div class="page-section-titre">Dans sa tête</div>'
+    + '<div class="page-section-sous">Ce qu\'il poursuit, ce qui le travaille et ce qu\'il pense, '
+    + 'tel qu\'il l\'a écrit lui-même.</div>'
+    + section('Ses buts', d.goals, 'aucun but actif')
+    + section('Ce qui le travaille (désirs)', d.desires, 'aucun désir actif')
+    + section('Ses pensées récentes', d.thoughts, 'aucune pensée enregistrée')
+    + section('Ce qu\'il pense des gens (affinités)', d.relationships, 'aucune affinité formée')
+    + section('Sa préoccupation du moment', d.focus ? [d.focus] : [], 'rien ne le préoccupe');
+
+  if (!panel.dataset.cable) {
+    panel.dataset.cable = '1';
+    panel.addEventListener('click', function (ev) {
+      const b = ev.target.closest('[data-tete="plier"]');
+      if (!b) return;
+      const liste = b.previousElementSibling;
+      const replie = liste.classList.toggle('replie');
+      b.textContent = replie ? 'Voir plus' : 'Voir moins';
+    });
+  }
 }
 
 
@@ -6278,52 +6038,49 @@ async function renderWallySelfTab(panel) {
 
 async function loadNotesTab(panel) {
   if (!panel) return;
-  panel.innerHTML = '<p style="color:var(--text-secondary);padding:16px">Chargement...</p>';
+  panel.innerHTML = '<div class="page-section-titre">Notes du bot</div>'
+    + '<div class="page-section-sous">Chargement…</div>';
 
   const r = await apiFetch('/api/admin/notes');
   if (!r || !r.ok) { panel.textContent = 'Erreur de chargement'; return; }
   const data = await r.json();
   const notes = data.notes || [];
 
-  const addFormId = 'notes-add-form';
-  let html = '<div class="card mb-4">';
-  html += '<div class="card-title">AJOUTER UNE NOTE</div>';
-  html += '<div style="display:flex;flex-direction:column;gap:8px" id="' + addFormId + '">';
-  html += '<input id="note-new-title" class="input" placeholder="Titre" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff" />';
-  html += '<textarea id="note-new-content" class="input" rows="3" placeholder="Contenu" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#fff;resize:vertical"></textarea>';
-  html += '<button class="btn btn-sm" onclick="saveNewNote()">Enregistrer</button>';
-  html += '</div></div>';
-  html += '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 12px;padding:0 4px">Règles et engagements toujours injectés dans chaque conversation. Pour les infos critiques que le bot doit garder en tête.</p>';
+  panel.innerHTML = '<div class="page-section-titre">Notes du bot</div>'
+    + '<div class="page-section-sous">Règles et engagements injectés dans chaque conversation : '
+    + 'les informations critiques que Wally doit garder en tête.</div>'
+    + (notes.length
+        ? notes.map(renderNoteRow).join('')
+        : '<div class="page-section-sous">Aucune note persistante.</div>');
 
-  if (notes.length === 0) {
-    html += '<p style="color:var(--text-secondary);padding:8px">Aucune note persistante</p>';
-  } else {
-    html += '<div class="card"><div class="card-title">NOTES DU BOT (' + notes.length + ')</div><div id="notes-list">';
-    for (const n of notes) {
-      html += renderNoteRow(n);
-    }
-    html += '</div></div>';
-  }
-
-  panel.innerHTML = html;
+  const F = window.Formulaire;
+  const carte = F.carte('Ajouter une note');
+  const titre = F.texte('', { placeholder: 'Titre' });
+  titre.id = 'note-new-title';
+  const contenu = F.zone('');
+  contenu.id = 'note-new-content';
+  carte.corps.appendChild(F.champ('Titre', titre, '', true));
+  carte.corps.appendChild(F.champ('Contenu', contenu, '', true));
+  const enregistrer = F.bouton('Enregistrer', saveNewNote);
+  carte.el.appendChild(F.actions(enregistrer));
+  panel.appendChild(carte.el);
 }
 
+/** Une note, au même format que les questions de Wally : texte à gauche,
+ *  gestes en liens discrets à droite. */
 function renderNoteRow(n) {
   const id = parseInt(n.id, 10);
   const title = escHtml(n.title);
   const content = escHtml(n.content);
   const date = new Date(n.updated_at * 1000).toLocaleDateString('fr-FR');
-  return '<div class="mem-dash-q-row" id="note-row-' + id + '" style="flex-direction:column;align-items:flex-start;gap:6px">'
-    + '<div style="display:flex;justify-content:space-between;width:100%;align-items:center">'
-    + '<strong>' + title + '</strong>'
-    + '<span style="color:var(--text-muted);font-size:11px">' + date + '</span>'
-    + '</div>'
-    + '<div id="note-content-' + id + '" style="color:var(--text-primary);font-size:13px;white-space:pre-wrap">' + content + '</div>'
-    + '<div class="mem-dash-q-actions">'
-    + '<button class="btn btn-sm btn-outline" onclick="editNote(' + id + ')">Modifier</button>'
-    + '<button class="btn btn-sm btn-danger" onclick="deleteNote(' + id + ')">Supprimer</button>'
-    + '</div>'
-    + '</div>';
+  return '<div class="mc-question" id="note-row-' + id + '">'
+    + '<div class="mc-question-txt"><strong>' + title + '</strong>'
+    + '<div id="note-content-' + id + '" class="note-contenu">' + content + '</div>'
+    + '<div class="fiche-memoire-meta">modifiée le ' + date + '</div></div>'
+    + '<div class="fiche-memoire-actions">'
+    + '<button class="lien-doux" onclick="editNote(' + id + ')">Modifier</button>'
+    + '<button class="lien-danger" onclick="deleteNote(' + id + ')">Supprimer</button>'
+    + '</div></div>';
 }
 
 async function saveNewNote() {
@@ -6805,7 +6562,7 @@ function _buildPermRow(p) {
   twitchLabel.textContent = 'Twitch';
   twitchWrap.appendChild(twitchLabel);
   var twitchSelect = document.createElement('select');
-  twitchSelect.className = 'neo-select action-perm-select';
+  twitchSelect.className = 'form-input action-perm-select';
   TWITCH_ROLES.forEach(function(role) {
     var opt = document.createElement('option');
     opt.value = role;
@@ -6835,7 +6592,7 @@ function _buildPermRow(p) {
     chipsDiv.className = 'action-role-chips';
 
     var addSelect = document.createElement('select');
-    addSelect.className = 'neo-select action-perm-add-role';
+    addSelect.className = 'form-input action-perm-add-role';
 
     function renderChips() {
       chipsDiv.textContent = '';
@@ -7029,8 +6786,7 @@ function _renderPromptsUI(el) {
     <div style="display:flex;flex-direction:column;height:100%;gap:0">
       <!-- Toolbar -->
       <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <div class="card-title" style="margin:0;flex:0 0 auto">PROMPTS</div>
-        <div class="mem-subnav" style="margin-bottom:0;margin-left:auto">
+        <div class="mem-subnav" style="margin-bottom:0">
           <button class="mem-subnav-pill ${_promptsSection==='persona'?'active':''}" onclick="switchPromptsSection('persona')">Persona</button>
           <button class="mem-subnav-pill ${_promptsSection==='system'?'active':''}" onclick="switchPromptsSection('system')">Système</button>
         </div>
@@ -7046,7 +6802,7 @@ function _renderPromptsUI(el) {
           ${_promptsFile ? `
             <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
               <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">${_promptsFile}</span>
-              <button class="btn-primary" onclick="savePromptFile()" style="font-size:12px;padding:6px 14px">💾 Sauvegarder</button>
+              <button type="button" class="btn btn-success" onclick="savePromptFile()">Enregistrer</button>
             </div>
             <textarea id="prompt-editor" style="flex:1;background:var(--bg-canvas);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);padding:14px;font-size:13px;font-family:monospace;resize:vertical;line-height:1.6;outline:none;min-height:calc(100vh - 310px);width:100%;box-sizing:border-box" spellcheck="false">${escapeHtml(content)}</textarea>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:22px">
@@ -7174,7 +6930,7 @@ function _updatePromptTokenInfo(text) {
       costStr = '<strong style="color:var(--text-muted)">prix inconnu</strong>';
     } else {
       var cost = (tokens / 1_000_000) * p.usd;
-      var costFmt = cost < 0.0001 ? ('< 0.0001 $') : (cost.toFixed(4) + ' $');
+      var costFmt = cost < 0.0001 ? ('< ' + _dollars(0.0001)) : _dollars(cost);
       costStr = '<strong style="color:var(--text-secondary)">' + costFmt + '</strong>';
     }
     parts.push('<span>' + p.label + ' : ' + costStr + '/appel</span>');
@@ -7198,7 +6954,7 @@ async function savePromptFile() {
   var status = document.getElementById('prompt-save-status');
   if (!editor || !_promptsFile) return;
   var content = editor.value;
-  status.textContent = 'Sauvegarde...';
+  status.textContent = 'Enregistrement…';
   status.style.color = 'rgba(255,255,255,0.4)';
 
   var type = _promptsSection === 'persona' ? 'persona' : 'system';
@@ -7208,11 +6964,11 @@ async function savePromptFile() {
     // Mettre à jour le cache local
     if (_promptsSection === 'persona') _promptsData.persona[_promptsFile] = content;
     else _promptsData.system_prompts[_promptsFile] = content;
-    status.textContent = '✓ Sauvegardé';
+    status.textContent = 'Enregistré';
     status.style.color = 'rgb(34,197,94)';
     setTimeout(function() { if (status) status.textContent = ''; }, 3000);
   } else {
-    status.textContent = '✗ Erreur lors de la sauvegarde';
+    status.textContent = 'Échec de l\'enregistrement';
     status.style.color = 'rgb(239,68,68)';
   }
 }
@@ -7260,31 +7016,35 @@ function renderMemes() {
     el.innerHTML = `
       <div class="page-section" id="memes-ajout">
         <div class="page-section-titre">Ajouter</div>
-        <p class="muted" style="margin-top:0">
-          Wally ne VOIT pas ces images : la description est sa seule prise
-          dessus — c'est elle qui lui fait sortir celui qui tombe juste plutôt
+        <div class="page-section-sous">
+          Wally ne voit pas ces images : la description est sa seule prise
+          dessus, c'est elle qui lui fait sortir le meme qui tombe juste plutôt
           qu'un au hasard. Cliquez une vignette pour la décrire ou la retirer.
           Tout est pris en compte aussitôt, sans redémarrage.
-        </p>
-        <div class="meme-barre">
-          <input type="file" id="meme-fichier" multiple
-                 accept=".png,.jpg,.jpeg,.gif,.webp,.mp4,.webm">
-          <button class="btn" onclick="deposerMemes()">Déposer</button>
-          <span id="memes-etat" class="muted"></span>
+        </div>
+        <div class="form-carte">
+          <div class="form-actions" id="memes-ajout-barre">
+            <button type="button" class="btn btn-success" onclick="deposerMemes()">Déposer</button>
+            <span id="memes-etat" class="form-etat"></span>
+          </div>
         </div>
       </div>
       <div class="page-section" id="memes-galerie">
         <div class="page-section-titre">Galerie</div>
         <div class="meme-barre">
           <input type="text" id="meme-recherche" placeholder="Chercher un meme…">
-          <label class="muted" style="display:flex;align-items:center;gap:6px">
+          <label class="form-multi-ligne">
             <input type="checkbox" id="meme-muets"> Sans description
           </label>
-          <span id="memes-compte" class="muted"></span>
+          <span id="memes-compte" class="form-etat"></span>
         </div>
         <div id="memes-neufs" class="meme-annonce" hidden></div>
         <div id="meme-grille" class="meme-grille"></div>
       </div>`;
+    const fichier = window.Formulaire.fichier({
+      id: 'meme-fichier', multiple: true, accept: '.png,.jpg,.jpeg,.gif,.webp,.mp4,.webm' });
+    const barre = document.getElementById('memes-ajout-barre');
+    barre.insertBefore(fichier.el, barre.firstChild);
     _cablerPageMemes(el);
   }
   chargerMemes();
@@ -7517,7 +7277,7 @@ function ouvrirMeme(i) {
       <div class="meme-fiche-corps">
         <div class="meme-fiche-tete">
           <div>
-            <div class="card-title" style="margin:0">${escHtml(m.nom)}</div>
+            <div class="form-carte-titre">${escHtml(m.nom)}</div>
             <div class="muted" style="font-size:12px">
               ${m.genre === 'video' ? 'vidéo · ' : ''}${_octetsLisibles(m.taille || 0)}
               · ${i + 1} sur ${_memesVus.length}
@@ -7644,6 +7404,9 @@ async function deposerMemes() {
     refus.push(f.name + (raison ? ' — ' + raison : ''));
   }
   input.value = '';
+  // Le libellé du bouton de choix suit l'évènement `change`, que vider le
+  // champ par programme n'émet pas.
+  input.dispatchEvent(new Event('change'));
   // La liste ENTIÈRE est rechargée : le serveur renomme et peut convertir en
   // WebP. Deviner les noms ici, c'est afficher des vignettes mortes.
   await chargerMemes();
@@ -7685,62 +7448,58 @@ async function renderAtelierSons() {
     // Réseau coupé : on le DIT. Un panneau vide se lit comme « aucun son ».
   }
   if (!data) {
-    box.innerHTML = '<div class="card-title">SONS DU CHAT</div>'
-      + '<div class="muted">Liste indisponible — le bot ne répond pas.</div>';
+    box.innerHTML = '<div class="page-section-titre">Sons du chat</div>'
+      + '<div class="page-section-sous">Liste indisponible — le bot ne répond pas.</div>';
     return;
   }
   const sons = data.sons || [];
   const lignes = sons.map(function (s) {
     return `
-      <div class="son-ligne" data-commande="${_escHtml(s.commande)}"
-           style="display:grid;grid-template-columns:1fr auto;gap:8px;
-                  padding:10px 0;border-top:1px solid rgba(255,255,255,0.08)">
-        <div>
-          <div style="font-weight:600">!${_escHtml(s.commande)}
-            <span class="muted" style="font-weight:400">
-              · ${_escHtml(s.fichier)} · ${_octetsLisibles(s.taille)}</span>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;align-items:center">
-            <label class="muted">Pause
-              <input type="number" min="0" step="1" value="${Number(s.cooldown)}"
-                     data-champ="cooldown" style="width:72px"> s</label>
-            <label class="muted">Volume
-              <input type="number" min="0" max="2" step="0.05" value="${Number(s.volume)}"
-                     data-champ="volume" style="width:72px"></label>
-            <label class="muted" style="flex:1;min-width:220px">Autres noms
-              <input type="text" value="${_escHtml((s.alias || []).join(', '))}"
-                     data-champ="alias" placeholder="perk, perques"
-                     style="width:100%"></label>
-          </div>
+      <div class="form-carte son-ligne" data-commande="${_escHtml(s.commande)}">
+        <div class="form-carte-titre">!${_escHtml(s.commande)}</div>
+        <div class="form-carte-sous">${_escHtml(s.fichier)} · ${_octetsLisibles(s.taille)}</div>
+        <div class="form-grille">
+          <label class="form-champ"><span class="form-libelle">Pause (secondes)</span>
+            <input class="form-input" type="number" min="0" step="1" value="${Number(s.cooldown)}" data-champ="cooldown">
+            <span class="form-aide">0 = pas de limite.</span></label>
+          <label class="form-champ"><span class="form-libelle">Volume</span>
+            <input class="form-input" type="number" min="0" max="2" step="0.05" value="${Number(s.volume)}" data-champ="volume"></label>
+          <label class="form-champ"><span class="form-libelle">Autres noms</span>
+            <input class="form-input" type="text" value="${_escHtml((s.alias || []).join(', '))}"
+                   data-champ="alias" placeholder="perk, perques">
+            <span class="form-aide">Séparés par des virgules.</span></label>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-          <button class="btn" data-son-action="essai">▶ Écouter</button>
-          <button class="btn" data-son-action="enregistrer">Enregistrer</button>
-          <button class="btn" data-son-action="supprimer">Supprimer</button>
+        <div class="form-actions">
+          <button type="button" class="btn btn-success" data-son-action="enregistrer">Enregistrer</button>
+          <button type="button" class="btn btn-outline" data-son-action="essai">▶ Écouter</button>
+          <button type="button" class="btn btn-danger" data-son-action="supprimer">Supprimer</button>
         </div>
       </div>`;
   }).join('');
 
   box.innerHTML = `
-    <div class="card-title">SONS DU CHAT</div>
-    <p class="muted" style="margin-top:0">
-      Le nom du fichier EST la commande : <code>apero.mp3</code> répond à
-      <code>!apero</code>. Déposez-en un, il répond aussitôt — aucun redémarrage.
-      « Pause » à 0 = pas de limite. « Autres noms » sert aux fautes de frappe
-      courantes, elles partagent la pause et le volume du son.
-    </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
-      <input type="file" id="son-fichier" accept=".mp3,.wav,.ogg,.m4a">
-      <button class="btn" onclick="deposerSon()">Déposer</button>
-      <button class="btn" onclick="normaliserSons()"
-        title="Met tous les sons au même niveau perçu (EBU R128). L'original de chaque fichier est conservé.">
-        Égaliser les volumes</button>
-      <span id="atelier-sons-etat" class="muted"></span>
+    <div class="page-section-titre">Sons du chat</div>
+    <div class="page-section-sous">
+      Le nom du fichier est la commande : <code>apero.mp3</code> répond à
+      <code>!apero</code>, aussitôt, sans redémarrage. « Autres noms » sert aux
+      fautes de frappe courantes : ils partagent la pause et le volume du son.
     </div>
-    ${sons.length ? lignes : '<div class="muted">Aucun son. Déposez un mp3 pour commencer.</div>'}
-    <div class="muted" style="margin-top:10px;font-size:12px">
-      ${_octetsLisibles(data.max_octets || 0)} par fichier au maximum.
-    </div>`;
+    <div class="form-carte">
+      <div class="form-carte-titre">Ajouter un son</div>
+      <div class="form-carte-sous">${_octetsLisibles(data.max_octets || 0)} par fichier au maximum.</div>
+      <div class="form-actions" id="atelier-sons-ajout">
+        <button type="button" class="btn btn-success" onclick="deposerSon()">Déposer</button>
+        <button type="button" class="btn btn-outline" onclick="normaliserSons()"
+          title="Met tous les sons au même niveau perçu (EBU R128). L'original de chaque fichier est conservé.">
+          Égaliser les volumes</button>
+        <span id="atelier-sons-etat" class="form-etat"></span>
+      </div>
+    </div>
+    ${sons.length ? lignes : '<div class="page-section-sous">Aucun son. Déposez un mp3 pour commencer.</div>'}`;
+
+  const fichier = window.Formulaire.fichier({ id: 'son-fichier', accept: '.mp3,.wav,.ogg,.m4a' });
+  const ajout = document.getElementById('atelier-sons-ajout');
+  ajout.insertBefore(fichier.el, ajout.firstChild);
 
   _cablerAtelierSons(box);
 }

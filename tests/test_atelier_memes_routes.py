@@ -306,7 +306,9 @@ def test_la_galerie_nest_plus_dans_la_page_medias():
     sons hors d'atteinte — c'est ce qui a motivé la page dédiée."""
     js = (Path(__file__).resolve().parents[1]
           / "bot/dashboard/static/app.js").read_text(encoding="utf-8")
-    medias = js[js.index("// ── Twitch › Médias & sons"):js.index("// ── Mise en scène")]
+    # Bornée à la page Médias elle-même : la tranche allait jusqu'à « Mise en
+    # scène » et englobait Modèles & coûts, dont l'usage `meme_describe`.
+    medias = js[js.index("// ── Twitch › Médias & sons"):js.index("// ── Cerveau › Images")]
     assert "meme" not in medias.lower()
 
 

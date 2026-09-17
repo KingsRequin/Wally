@@ -139,6 +139,9 @@ class VoiceService:
         self._current_speaker_id: str | None = None
         self._stream_users: dict[str, object] = {}  # speaker_id → membre (streaming multi-locuteurs)
         self._maintain_task: asyncio.Task | None = None
+        # Un changement de moteur STT reçu PENDANT une session est différé :
+        # ce drapeau le fait appliquer au join suivant (cf. `reload_config`).
+        self._pipeline_a_refaire = False
         # Une seule parole à la fois : `is_speaking` est le seul filtre
         # anti-larsen, deux `speak()` concurrents le remettaient à False
         # pendant que l'autre parlait encore.
@@ -287,6 +290,10 @@ class VoiceService:
                 "quitte et rejoins le salon pour l'appliquer",
                 a=provider_avant, b=cfg.stt_provider,
             )
+            # Sans ce drapeau, « au prochain join » était faux : `join()` ne
+            # reconstruit pas le pipeline, et le moteur ne changeait qu'au
+            # prochain « Enregistrer » fait hors session, ou au redémarrage.
+            self._pipeline_a_refaire = True
             try:
                 self._tts = build_tts(cfg)
             except Exception as e:  # noqa: BLE001
@@ -379,6 +386,15 @@ class VoiceService:
             # Déplacement, pas départ : poser un congé ici l'aurait empêché de
             # revenir en écoute après une conversation.
             await self.leave(voluntary=False)
+        if getattr(self, "_pipeline_a_refaire", False):
+            self._pipeline_a_refaire = False
+            if self._streaming is not None:
+                self._detach_service(self._streaming.close_all())
+            try:
+                self._build_stt_pipeline(self._cfg, self._stt_phrases)
+                logger.info("voice: moteur STT {s} appliqué au join", s=self._cfg.stt_provider)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("voice: moteur STT différé non construit: {e!r}", e=e)
         # L'état n'est engagé qu'APRÈS une connexion réussie. `_channel` et
         # `listen_only` étaient posés avant : si `connect()` levait — timeout
         # 4006, salon plein, permission manquante — ils restaient pointés sur un

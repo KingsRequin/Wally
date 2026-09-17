@@ -775,14 +775,23 @@ exécute ce que Wally vient de déclarer raté).
 - `data/hf-cache` est monté : sans lui, chaque rebuild rejette les 145 Mo du modèle STT.
 - Un rebuild coupe le site ~15 s ; l'edge Cloudflare garde un 403 quelques secondes de plus.
 - Dashboard : FastAPI + SPA vanilla JS. Auth : Bearer token (admin), JWT Discord OAuth2 (chat web).
-- Sidebar admin — **16 pages : le Cockpit + 4 thèmes** (`ROUTES` d'`app.js`, `index.html`) :
+- Sidebar admin — **20 pages : le Cockpit + 4 thèmes** (`ROUTES` d'`app.js`, `index.html`) :
   **Cockpit** · **Cerveau** (Personnes · Mémoire commune · Personnalité · Modèles & coûts ·
-  Images · Automatisations) · **Discord** (Salons · Voix · Anti-spam) · **Twitch** (Scène & overlays · Médias & sons ·
-  Memes · Récompenses) · **Système** (Journal · Connexions). Route = `#/theme/page` ; les anciens hash
+  Images · Automatisations) · **Discord** (Salons · Voix · Anti-spam · Serveur communautaire) ·
+  **Twitch** (Scène & overlays · Médias & sons · Memes · Récompenses · Chat & événements · Apex) ·
+  **Système** (Journal · Connexions · Veille). Route = `#/theme/page` ; les anciens hash
   (`#admin-memoire`, `admin-overlay`…) et les routes de l'ex-thème « Live » (`live/scene`,
   `live/voix`…) redirigent par `ROUTES_LEGACY`, requête comprise, toujours vers la route FINALE.
   (L'onglet Coûts a été retiré : remplacé par Langfuse puis abandonné ; `log_cost()` écrit
   toujours en base, sans UI.)
+- **Un seul modèle de formulaire** : `static/formulaires.js` (`window.Formulaire`) + classes
+  `.form-*`. Aucun `neo-*`, titre en capitales ni « 💾 SAUVEGARDER ». Les ids Discord y voyagent
+  en CHAÎNES ; les sélecteurs de salon lisent `GET /api/admin/discord/catalogue`.
+- **Pages et sections par domaine** : `static/pages/{discord,twitch,cerveau,systeme}.js`
+  déclarent des `window.renderXxx`, nommées par `ROUTES[…].rendu` (page entière) ou
+  `_extension(parent, id, 'renderXxx')` (section d'une page d'app.js). Leurs routes :
+  `bot/dashboard/routes/config_{discord,twitch,cerveau,systeme}.py`. Chaque réglage dit s'il
+  s'applique à chaud ou au redémarrage — vérifié sur son LECTEUR, jamais supposé.
 - Une nouvelle page se câble à **4 endroits** — chercher les quatre avant de conclure.
 - ⚠️ Un `throw` dans un `mount()` casse tous les montages suivants ; `node --check` ne voit pas
   les TDZ. Vérifier le montage réel dans le navigateur, pas seulement les tests.

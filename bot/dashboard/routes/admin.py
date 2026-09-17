@@ -108,8 +108,12 @@ async def update_config(request: Request, body: dict) -> dict:
         return await _appliquer_config(request, body, state, cfg)
     except HTTPException:
         # On rend la config telle qu'elle était, y compris aux clients vivants.
-        state.config = _avant
-        _restaurer_clients_llm(state, _avant)
+        # Restaurée DANS l'objet existant, jamais remplacée : le bot et ses
+        # adaptateurs tiennent une référence à CET objet. `state.config = _avant`
+        # les détachait du panel — chaque écriture suivante partait sur disque
+        # sans jamais être vue par le bot avant un redémarrage.
+        vars(cfg).update(vars(_avant))
+        _restaurer_clients_llm(state, cfg)
         raise
 
 
@@ -456,7 +460,9 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
                 raise HTTPException(400, "vad_aggressiveness must be 0-3")
             v.vad_aggressiveness = vad_aggressiveness
         # Hot-reload de la voix/seuils si le service vocal tourne (sinon pris au prochain boot).
-        vs = getattr(request.app.state.wally, "voice_service", None)
+        # Le service vit sur le bot DISCORD (`setup_hook`), pas sur l'AppState :
+        # lu sur l'état, il valait toujours None et rien n'était rechargé.
+        vs = getattr(request.app.state.wally.discord_bot, "voice_service", None)
         if vs is not None:
             vs.reload_config(cfg.voice)
 
@@ -465,15 +471,26 @@ async def _appliquer_config(request: Request, body: dict, state, cfg) -> dict:
 
 
 def _restaurer_clients_llm(state, cfg) -> None:
-    """Remet la température d'origine sur les clients LLM déjà mutés."""
-    for attribut, role in (("llm", "primary"), ("llm_secondary", "secondary")):
+    """Remet sur les clients LLM vivants ce que la route a pu y écrire.
+
+    `AppState` les nomme `primary_llm` / `secondary_llm` : la version
+    précédente lisait `llm` / `llm_secondary`, absents en prod, et ne restaurait
+    donc rien — seul un `MagicMock` de test les « trouvait ».
+    """
+    for attribut, role in (("primary_llm", "primary"), ("secondary_llm", "secondary")):
         client = getattr(state, attribut, None)
         if client is None:
             continue
-        try:
-            client.temperature = getattr(cfg.llm, role).temperature
-        except Exception:  # noqa: BLE001 — la restauration ne doit jamais lever
-            pass
+        reglage = getattr(cfg.llm, role)
+        for champ in ("temperature", "model", "max_tokens", "reasoning_effort",
+                      "text_verbosity", "thinking_type", "thinking_effort"):
+            if not hasattr(client, champ) or not hasattr(reglage, champ):
+                continue
+            try:
+                setattr(client, champ, getattr(reglage, champ))
+            except Exception as exc:  # noqa: BLE001 — la restauration ne doit jamais lever
+                logger.warning("Restauration du client LLM {a}.{c} impossible : {e!r}",
+                               a=attribut, c=champ, e=exc)
 
 
 @router.get("/openai/models")

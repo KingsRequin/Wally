@@ -170,3 +170,24 @@ async def test_sans_sujet_lattribution_du_llm_est_gardee(contexte):
     )
 
     assert ranges == [("discord", "610", "Aime le café")]
+
+
+async def test_une_ligne_sans_plateforme_ne_vide_pas_la_liste_des_tiers(contexte):
+    """Mesuré le 2026-09-17 : trois lignes `memory_users` à l'id BRUT
+    (`610550333042589752`, posées en avril-mai) faisaient lever `split(":")[1]`,
+    et l'`except` rendait une liste de tiers VIDE à chaque extraction, sans un
+    mot. Wally ne résolvait plus aucun tiers absent de la conversation."""
+    extracteur, llm, _ = contexte
+    extracteur._db.list_memory_users = AsyncMock(return_value=[
+        {"user_id": "610550333042589752", "username": None},
+        {"user_id": "twitch:502342016", "username": "elhya__"},
+    ])
+    _reponse(llm, "elhya__", "twitch:502342016", "elhya__ joue à Valorant")
+
+    await extracteur._extract_facts(
+        _messages("610", "KingsRequin", "elhya__ est vraiment bonne à Valorant"),
+        "discord", "canal-1",
+    )
+
+    prompt = llm.complete_structured.call_args.args[1][0]["content"]
+    assert "elhya__ → twitch:502342016" in prompt

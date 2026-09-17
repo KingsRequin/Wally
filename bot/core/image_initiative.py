@@ -43,6 +43,16 @@ from loguru import logger
 AUTEUR_PAR_DEFAUT = "discord:0"
 
 
+def _plafond_du_jour(cfg) -> int:
+    """Le plafond d'images du jour ; -1 = pas de plafond.
+
+    `int(x or -1)` changeait un plafond de 0 en « illimité » : le réglage le
+    plus prudent ouvrait la dépense en grand. Seul `null` (ou l'absence) vaut -1.
+    """
+    brut = getattr(cfg, "autonomous_daily_limit", -1)
+    return -1 if brut is None else int(brut)
+
+
 class ImageInitiative:
     """Autorise (ou refuse) une génération d'image décidée par Wally seul."""
 
@@ -92,7 +102,7 @@ class ImageInitiative:
     def cadence_texte(self) -> str:
         """La contrainte de coût, dite en français — pour le prompt."""
         cfg = self._cfg()
-        par_jour = int(getattr(cfg, "autonomous_daily_limit", -1) or -1)
+        par_jour = _plafond_du_jour(cfg)
         delai = int(getattr(cfg, "autonomous_cooldown_minutes", 0) or 0)
         morceaux = []
         if par_jour >= 0:
@@ -132,7 +142,7 @@ class ImageInitiative:
             return f"salon {cid or '?'} interdit à l'initiative (ouverts : {ouverts})"
 
         auteur = self.auteur_id()
-        par_jour = int(getattr(cfg, "autonomous_daily_limit", -1) or -1)
+        par_jour = _plafond_du_jour(cfg)
         delai_min = int(getattr(cfg, "autonomous_cooldown_minutes", 0) or 0)
         try:
             if par_jour >= 0:

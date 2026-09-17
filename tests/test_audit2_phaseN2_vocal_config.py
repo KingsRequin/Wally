@@ -85,9 +85,9 @@ async def test_une_validation_ratee_ne_laisse_rien_derriere_elle():
 
     requete = MagicMock()
     etat = requete.app.state.wally
-    etat.config = _Cfg()
-    etat.llm = MagicMock(temperature=0.8)
-    etat.llm_secondary = MagicMock(temperature=0.8)
+    etat.config = config_avant = _Cfg()
+    etat.primary_llm = SimpleNamespace(temperature=0.8)
+    etat.secondary_llm = SimpleNamespace(temperature=0.8)
 
     # `temperature` valide (appliquée), puis `reasoning_effort` invalide (lève).
     with pytest.raises(HTTPException):
@@ -96,6 +96,8 @@ async def test_une_validation_ratee_ne_laisse_rien_derriere_elle():
         })
 
     assert etat.config.openai.temperature == 0.8, "mutation conservée après un 400"
+    assert etat.config is config_avant, "objet config remplacé : le bot ne voit plus le panel"
+    assert etat.primary_llm.temperature == 0.8, "client vivant non restauré"
 
 
 def test_la_restauration_couvre_aussi_les_clients_vivants():
@@ -103,4 +105,4 @@ def test_la_restauration_couvre_aussi_les_clients_vivants():
 
     src = inspect.getsource(admin.update_config)
     assert "copy.deepcopy(cfg)" in src
-    assert "_restaurer_clients_llm(state, _avant)" in src
+    assert "_restaurer_clients_llm(state, cfg)" in src

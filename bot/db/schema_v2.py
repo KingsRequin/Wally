@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS atomic_facts (
     last_seen_at  TEXT    NOT NULL
 );
 
+-- Tenue par `Database` (bot/db/database.py, migrations comprises). Redéclarée
+-- ICI parce que `SQLiteFactStore` y garantit la personne de chaque fait écrit :
+-- une base créée par ce seul script (tests, scripts) doit pouvoir la porter.
+-- Même DDL de départ que database.py ; les colonnes ajoutées depuis viennent
+-- de ses migrations, idempotentes.
+CREATE TABLE IF NOT EXISTS memory_users (
+    user_id      TEXT PRIMARY KEY,
+    platform     TEXT NOT NULL,
+    last_updated REAL NOT NULL,
+    username     TEXT
+);
+
 CREATE TABLE IF NOT EXISTS fact_relations (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     from_id       INTEGER NOT NULL REFERENCES atomic_facts(id),

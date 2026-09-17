@@ -134,3 +134,9 @@ def test_auteur_par_defaut_quand_le_bot_na_pas_encore_didentite():
 def test_cadence_texte_dit_les_deux_bornes():
     texte = _initiative().cadence_texte()
     assert "3 image(s) par jour" in texte and "90 minutes" in texte
+
+
+async def test_un_plafond_a_zero_ferme_au_lieu_douvrir():
+    """`int(0 or -1)` valait -1 : un plafond à zéro levait toute limite."""
+    motif = await _initiative(_Db(aujourd_hui=0), autonomous_daily_limit=0).refus(SHITPOST)
+    assert "plafond du jour" in motif

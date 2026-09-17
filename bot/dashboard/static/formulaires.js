@@ -107,7 +107,16 @@ window.Formulaire = (function () {
   async function catalogueDiscord(forcer) {
     if (_catalogue && !forcer) return _catalogue;
     const r = await window.apiFetch('/api/admin/discord/catalogue');
-    _catalogue = (r && r.ok) ? ((await r.json()) || {}).guilds || [] : [];
+    let guilds = [];
+    try {
+      guilds = (r && r.ok) ? ((await r.json()) || {}).guilds || [] : [];
+    } catch (e) {
+      // Route absente (bot pas encore reconstruit) : le catch-all SPA répond
+      // 200 en HTML, et `json()` lève. Un catalogue vide laisse les sélecteurs
+      // montrer les ids connus « (introuvable) » au lieu de casser la section.
+      guilds = [];
+    }
+    _catalogue = guilds;
     return _catalogue;
   }
 
@@ -161,13 +170,51 @@ window.Formulaire = (function () {
         boite.appendChild(ligne);
       });
     });
-    // Ids inconnus du catalogue : gardés tels quels, jamais perdus en silence.
+    // Ids inconnus du catalogue : montrés cochés, « (introuvable) ». Ni perdus
+    // en silence, ni gardés invisibles — on doit pouvoir les décocher.
     const orphelins = Array.from(coches);
+    if (orphelins.length) boite.appendChild(el('div', 'form-multi-groupe', 'Hors catalogue'));
+    orphelins.forEach(function (id) {
+      const ligne = el('label', 'form-multi-ligne');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.value = id;
+      cb.checked = true;
+      ligne.appendChild(cb);
+      ligne.appendChild(el('span', '', id + ' (introuvable)'));
+      boite.appendChild(ligne);
+    });
+    if (!(_catalogue || []).length && !orphelins.length) {
+      boite.appendChild(el('div', 'form-aide', 'Aucun salon disponible (bot Discord arrêté ?).'));
+    }
     boite.lireListe = function () {
       return Array.from(boite.querySelectorAll('input[type=checkbox]:checked'))
-        .map(function (cb) { return cb.value; }).concat(orphelins);
+        .map(function (cb) { return cb.value; });
     };
     return boite;
+  }
+
+  /** Choix de fichier(s) : un bouton en français à la place du champ natif
+   *  « Choose File / No file chosen ». Rend `{ el, input }` ; lire `input.files`. */
+  function fichier(opts) {
+    const o = opts || {};
+    const racine = el('label', 'form-fichier');
+    const input = el('input');
+    input.type = 'file';
+    if (o.id) input.id = o.id;
+    if (o.accept) input.accept = o.accept;
+    input.multiple = !!o.multiple;
+    const bouton_ = el('span', 'btn btn-outline', o.multiple ? 'Choisir des fichiers' : 'Choisir un fichier');
+    const nom = el('span', 'form-fichier-nom', 'Aucun fichier choisi');
+    input.addEventListener('change', function () {
+      const n = input.files ? input.files.length : 0;
+      nom.textContent = n === 0 ? 'Aucun fichier choisi'
+        : n === 1 ? input.files[0].name : n + ' fichiers choisis';
+    });
+    racine.appendChild(input);
+    racine.appendChild(bouton_);
+    racine.appendChild(nom);
+    return { el: racine, input: input };
   }
 
   function bouton(libelle, onclick, opts) {
@@ -211,6 +258,7 @@ window.Formulaire = (function () {
   return {
     carte: carte, champ: champ, texte: texte, nombre: nombre, bascule: bascule,
     choix: choix, zone: zone, lignes: lignes, salon: salon, salons: salons,
+    fichier: fichier,
     catalogueDiscord: catalogueDiscord, bouton: bouton, actions: actions,
     note: note, enregistrer: enregistrer,
   };

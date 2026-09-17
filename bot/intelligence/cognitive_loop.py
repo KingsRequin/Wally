@@ -214,6 +214,15 @@ class CognitiveLoop:
         # Durée réclamée par un `[SLEEP]` du dernier tick, consommée une fois.
         self._sleep_hint: float | None = None
 
+    def poser_chambre(self, channel_id: int | str | None) -> None:
+        """Change le salon « chambre » à chaud (réglage du panel admin).
+
+        Lu à chaque cycle : sans ce point d'entrée, la valeur copiée au
+        constructeur restait celle du boot, alors que les autres lecteurs de
+        `bot.bedroom_channel_id` (outils vocaux, annonce du live) la relisent.
+        """
+        self._bedroom_channel_id = str(channel_id) if channel_id else None
+
     def notify_activity(
         self, channel_id: int, author: str, content: str,
         message_id: str | None = None, is_dm: bool = False,

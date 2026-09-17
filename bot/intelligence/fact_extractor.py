@@ -688,7 +688,8 @@ class FactExtractor:
         if self._db is not None:
             try:
                 known_aliases = await self._db.list_aliases()
-            except Exception:
+            except Exception as e:
+                logger.warning("FactExtractor: alias illisibles, tiers non résolus : {e!r}", e=e)
                 known_aliases = []
 
         alias_hint = ""
@@ -711,12 +712,16 @@ class FactExtractor:
         if self._db is not None:
             try:
                 alias_map = await self._db.get_alias_map()
-            except Exception:
+            except Exception as e:
+                logger.warning("FactExtractor: comptes liés illisibles : {e!r}", e=e)
                 alias_map = {}
             try:
+                # Une ligne sans `plateforme:` (trois à l'id brut, posées au
+                # printemps) faisait lever le `split` plus bas : la liste des
+                # tiers partait VIDE à chaque extraction, sans un mot.
                 all_known_users = [
                     u for u in await self._db.list_memory_users()
-                    if not u["user_id"].startswith("unknown:")
+                    if ":" in u["user_id"] and not u["user_id"].startswith("unknown:")
                 ]
                 known_users = [
                     u for u in all_known_users
@@ -731,7 +736,8 @@ class FactExtractor:
                         "\nUtilisateurs connus en mémoire (pour résoudre les mentions de tiers):\n"
                         + "\n".join(user_lines)
                     )
-            except Exception:
+            except Exception as e:
+                logger.warning("FactExtractor: personnes connues illisibles : {e!r}", e=e)
                 known_users_hint = ""
 
         known_facts_hint = await self._known_facts_hint(

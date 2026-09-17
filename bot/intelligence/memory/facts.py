@@ -5,7 +5,7 @@ import re
 
 import aiosqlite
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from loguru import logger
@@ -62,6 +62,36 @@ def _fts_match_query(query: str) -> str:
         uniques = sorted(set(terms), key=lambda t: (-len(t), t))[:_FTS_MAX_TERMS]
         terms = sorted(uniques)
     return " OR ".join(f'"{t}"' for t in terms)
+
+
+async def _garantir_personne(
+    db: aiosqlite.Connection, user_id: str, pseudo: str | None, vu_le: datetime,
+) -> None:
+    """Pose la ligne `memory_users` de la personne d'un fait, si elle manque.
+
+    Posée au point d'écriture parce que les handlers de RÉPONSE étaient seuls à
+    la créer : l'import d'archives, la perception passive et les descriptions
+    d'images écrivaient des faits sur des gens absents de `memory_users`
+    (54 identités le 2026-09-17), donc absents de `list_memory_users()`.
+
+    N'écrase JAMAIS une ligne existante : `last_updated` y sert de « vu pour la
+    dernière fois », et le pseudo y est celui qu'a posé le handler. À la
+    création, la date est celle du FAIT (une archive de février ne se lit pas
+    comme une visite du jour). Les `unknown:` gardent un pseudo NULL, comme
+    toutes les lignes de ce namespace : le pseudo y est la clé. `wally:` n'est
+    personne — ce sont ses propres pensées et ses notes d'emotes.
+    """
+    platform = user_id.split(":", 1)[0] if ":" in user_id else ""
+    if not platform or platform == "wally":
+        return
+    if vu_le.tzinfo is None:
+        vu_le = vu_le.replace(tzinfo=timezone.utc)  # colonnes de faits = UTC naïf
+    await db.execute(
+        "INSERT OR IGNORE INTO memory_users(user_id, platform, last_updated, username)"
+        " VALUES (?, ?, ?, ?)",
+        (user_id, platform, vu_le.timestamp(),
+         None if platform == "unknown" else (pseudo or None)),
+    )
 
 
 class FactCategory(str, Enum):
@@ -217,6 +247,7 @@ class SQLiteFactStore:
                     fact.created_at.isoformat(), fact.last_seen_at.isoformat(),
                 ),
             )
+            await _garantir_personne(db, fact.user_id, fact.subject, fact.last_seen_at)
             await db.commit()
             fact.id = cursor.lastrowid
             return cursor.lastrowid
@@ -305,6 +336,19 @@ class SQLiteFactStore:
                 "UPDATE atomic_facts SET user_id = ? WHERE user_id = ?",
                 (to_user_id, from_user_id),
             )
+            if cursor.rowcount:
+                # La cible est une clé lue dans la table d'alias, qui peut viser
+                # une personne sans ligne `memory_users` (12 alias le 2026-09-17).
+                # Datée de son souvenir le plus récent. Une seule ligne, jamais
+                # NULL : on vient d'y déplacer au moins un fait.
+                async with db.execute(
+                    "SELECT MAX(created_at) FROM atomic_facts WHERE user_id = ?",
+                    (to_user_id,),
+                ) as dernier:
+                    async for (vu_le,) in dernier:
+                        await _garantir_personne(
+                            db, to_user_id, None, datetime.fromisoformat(vu_le),
+                        )
             await db.commit()
             return cursor.rowcount
 

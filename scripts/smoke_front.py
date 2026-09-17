@@ -1856,10 +1856,12 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     page.wait_for_timeout(2500)
     n = _attendre_contenu(page, "medias-overlays")
     rap.dire(n >= _CONTENU_MIN, "Médias → les overlays", f"{n} car.")
-    # L'atelier des sons vit DANS le panneau overlay : il a déjà disparu une
-    # fois d'un déplacement de section.
+    # L'atelier des sons a déjà disparu une fois d'un déplacement de section :
+    # il a désormais la sienne, et elle doit porter du contenu.
     sons = page.locator("#atelier-sons").count()
     rap.dire(sons == 1, "l'atelier des sons a suivi", f"{sons} conteneur(s)")
+    n = _attendre_contenu(page, "atelier-sons")
+    rap.dire(n >= _CONTENU_MIN, "Médias → les sons du chat", f"{n} car.")
     rap.dire(not erreurs, "aucune erreur JS sur Médias & sons", " · ".join(erreurs[:2]))
 
     # ── Twitch › Memes ──────────────────────────────────────────────────
@@ -1900,7 +1902,7 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     page.wait_for_timeout(2500)
     n = _attendre_contenu(page, "antispam-corps")
     rap.dire(n >= _CONTENU_MIN, "Anti-spam → les réglages", f"{n} car.")
-    rap.dire(page.locator("#cnx-discord-corps #cfg-spam-enabled").count() == 0
+    rap.dire(page.locator("#cfg-spam-enabled").count() == 1
              and page.locator("#antispam-corps #cfg-spam-enabled").count() == 1,
              "l'anti-spam n'existe qu'une fois, sur sa page")
     rap.dire(not erreurs, "aucune erreur JS sur Anti-spam", " · ".join(erreurs[:2]))
@@ -1924,10 +1926,11 @@ def _verifier_live_et_connexions(page, rap: Rapport, erreurs: list[str]) -> None
     faits = page.locator("#cnx-adaptateurs .cnx-fait").count()
     rap.dire(faits >= 3, "les cartes portent des faits, pas qu'un voyant",
              f"{faits} fait(s)")
-    for ident, libelle in (("cnx-twitch-corps", "les comptes Twitch"),
-                           ("cnx-discord-corps", "les réglages généraux")):
-        n = _attendre_contenu(page, ident)
-        rap.dire(n >= _CONTENU_MIN, f"Connexions → {libelle}", f"{n} car.")
+    n = _attendre_contenu(page, "cnx-twitch-corps")
+    rap.dire(n >= _CONTENU_MIN, "Connexions → les comptes Twitch", f"{n} car.")
+    # Les réglages généraux sont partis dans Personnalité et Modèles & coûts.
+    rap.dire(page.locator("#cnx-discord").count() == 0,
+             "les réglages généraux ont quitté Connexions")
     rap.dire(not erreurs, "aucune erreur JS sur Connexions", " · ".join(erreurs[:2]))
 
 
@@ -1942,6 +1945,9 @@ def _verifier_personnalite_et_couts(page, rap: Rapport, erreurs: list[str]) -> N
     etat = _attendre_contenu(page, "perso-etat")
     rap.dire(etat >= _CONTENU_MIN, "l'humeur et le tempérament sont rendus",
              f"{etat} car.")
+    general = _attendre_contenu(page, "perso-general")
+    rap.dire(general >= _CONTENU_MIN, "les réglages généraux sont rendus",
+             f"{general} car.")
     prompts = _attendre_contenu(page, "perso-prompts")
     rap.dire(prompts >= _CONTENU_MIN, "les textes de référence sont absorbés",
              f"{prompts} car.")
@@ -1961,6 +1967,8 @@ def _verifier_personnalite_et_couts(page, rap: Rapport, erreurs: list[str]) -> N
 
     modeles = _attendre_contenu(page, "mod-modeles")
     rap.dire(modeles >= _CONTENU_MIN, "le choix des modèles est rendu", f"{modeles} car.")
+    alertes = _attendre_contenu(page, "mod-alertes")
+    rap.dire(alertes >= _CONTENU_MIN, "les alertes de coûts sont rendues", f"{alertes} car.")
 
     lignes = page.locator("#mod-usage .mod-ligne").count()
     rap.dire(lignes > 0, "les coûts par usage sont enfin visibles", f"{lignes} usage(s)")
