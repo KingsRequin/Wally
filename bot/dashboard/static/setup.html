@@ -164,11 +164,6 @@
         <div id="openai_err" class="error-msg" style="display:none"></div>
       </div>
       <div>
-        <label class="text-xs font-semibold text-white/70 mb-1 block">Anthropic API Key <span class="text-white/30 font-normal">(optionnel)</span></label>
-        <div class="help-box" style="border-left-color: rgba(255,255,255,0.15)">Uniquement si tu veux utiliser Claude. Va sur <a href="https://console.anthropic.com" target="_blank" class="text-cyan-400 underline">console.anthropic.com</a> → API Keys. Laisse vide sinon.</div>
-        <input id="anthropic_api_key" type="password" class="field-input" placeholder="sk-ant-... (optionnel)">
-      </div>
-      <div>
         <label class="text-xs font-semibold text-white/70 mb-1 block">Tavily API Key <span class="text-white/30 font-normal">(optionnel)</span></label>
         <div class="help-box" style="border-left-color: rgba(255,255,255,0.15)">Permet la recherche web. Va sur <a href="https://app.tavily.com" target="_blank" class="text-cyan-400 underline">app.tavily.com</a>. Laisse vide sinon.</div>
         <input id="tavily_api_key" type="password" class="field-input" placeholder="tvly-... (optionnel)">
@@ -421,7 +416,6 @@ function gatherStepData(step) {
   };
   if (step === 3) return {
     openai_api_key: g('openai_api_key'),
-    anthropic_api_key: g('anthropic_api_key'),
     tavily_api_key: g('tavily_api_key'),
   };
   if (step === 4) return {
