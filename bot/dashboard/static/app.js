@@ -4497,7 +4497,8 @@ async function _renderReglagesGeneraux(panel) {
 }
 
 /** Cerveau › Modèles & coûts › Alertes : le seuil de la veille des coûts et le
- *  salon où partent ses alertes. N'envoie QUE ces deux champs. */
+ *  salon de REPLI de ses alertes — elles partent en MP au créateur d'abord.
+ *  N'envoie QUE ces deux champs. */
 async function _renderAlertesCouts(panel) {
   if (!panel) return;
   const r = await apiFetch('/api/admin/config');
@@ -4506,12 +4507,12 @@ async function _renderAlertesCouts(panel) {
   const F = window.Formulaire;
   await F.catalogueDiscord();
 
-  _enteteSection(panel, 'Alertes', 'Quand la dépense prévue dépasse le seuil, Wally prévient dans le salon choisi.');
+  _enteteSection(panel, 'Alertes', 'Wally prévient le créateur en message privé. Le salon ci-dessous n\'est qu\'un repli, quand le MP ne passe pas.');
   const carte = F.carte();
   const seuil = F.nombre(b.cost_alert_threshold ?? 0, { min: 0, max: 1000, pas: 0.5 });
   const salon = F.salon(b.notification_channel_id, 'texte', 'Désactivé');
   carte.corps.appendChild(F.champ('Seuil d\'alerte des coûts ($)', seuil, '0 = veille des coûts désactivée.'));
-  carte.corps.appendChild(F.champ('Salon des notifications', salon, 'Alertes de coûts et erreurs.'));
+  carte.corps.appendChild(F.champ('Salon de repli', salon, 'Sert seulement si le MP au créateur échoue. Vide = pas de repli.'));
 
   const enregistrer = F.bouton('Enregistrer', function () {
     F.enregistrer(enregistrer, '/api/admin/config', 'POST', { bot: {

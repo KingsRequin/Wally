@@ -1,4 +1,6 @@
 from __future__ import annotations
+import asyncio
+import gc
 import time
 from typing import Optional
 
@@ -543,6 +545,28 @@ async def migrer(conn: "aiosqlite.Connection", sql: str) -> bool:
         return False
 
 
+def _curseurs_vivants(conn: aiosqlite.Connection) -> list[str]:
+    """Les curseurs encore en vie sur `conn`, nommés par les colonnes de leur requête.
+
+    SQLite ne dit pas QUEL curseur oublié accroche l'instantané WAL, et c'est
+    tout le problème : deux pannes (2026-08-30, 2026-09-18) sans jamais pouvoir
+    désigner le site fautif. Un `sqlite3.Cursor`, lui, porte sa `description` —
+    les colonnes suffisent à reconnaître la requête.
+
+    Le balayage de `gc.get_objects()` coûte cher ; il ne tourne QUE pendant une
+    réparation, c'est-à-dire au plus une fois par panne.
+    """
+    trouves: list[str] = []
+    for objet in gc.get_objects():
+        if not isinstance(objet, aiosqlite.Cursor):
+            continue
+        if getattr(objet, "_conn", None) is not conn:
+            continue
+        description = getattr(getattr(objet, "_cursor", None), "description", None)
+        trouves.append(", ".join(c[0] for c in description) if description else "(sans colonnes)")
+    return trouves
+
+
 class Database(
     CostMixin,
     EmotionMixin,
@@ -559,11 +583,13 @@ class Database(
     SalonsMixin,
     JournalVocalMixin,
 ):
-    def __init__(self, conn: aiosqlite.Connection):
+    def __init__(self, conn: aiosqlite.Connection, path: str = "data/wally.db"):
         self._conn = conn
+        self._path = path
 
-    @classmethod
-    async def create(cls, path: str = "data/wally.db") -> "Database":
+    @staticmethod
+    async def _ouvrir(path: str) -> aiosqlite.Connection:
+        """Une connexion neuve, avec SES réglages. Seul endroit qui les pose."""
         conn = await aiosqlite.connect(path)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA foreign_keys = ON")
@@ -581,6 +607,52 @@ class Database(
         # immédiatement, le temps qu'un job nocturne long termine sa transaction.
         await conn.execute("PRAGMA journal_mode = WAL")
         await conn.execute("PRAGMA busy_timeout = 10000")
+        return conn
+
+    async def reparer_connexion(self) -> bool:
+        """Remplace la connexion partagée quand elle ne sait plus écrire.
+
+        Une connexion qui garde un curseur de LECTURE ouvert reste accrochée à
+        son instantané WAL. Dès qu'une autre connexion valide quelque chose,
+        SQLite refuse toutes ses écritures par `SQLITE_BUSY` — « database is
+        locked » — INSTANTANÉMENT, sans consommer le `busy_timeout`, et pour
+        toujours. Le fichier, lui, n'est verrouillé pour personne : un autre
+        processus écrit sans broncher, et les connexions ad hoc de la mémoire
+        continuaient d'enregistrer des faits pendant que tout le reste tombait.
+
+        Mesuré le 2026-09-18 pendant la panne : `PRAGMA wal_checkpoint(PASSIVE)`
+        rendait `(0, 2683, 574)` — le WAL avait grossi à 2 683 pages et le
+        rattrapage butait toujours sur la frame 574, celle de l'instantané
+        épinglé. Le 2026-08-30, le même état a tenu DIX HEURES.
+
+        Ni `rollback()` ni la fermeture d'un autre curseur n'en sortent
+        (vérifié) : il faut lâcher le curseur fautif. On ne sait pas lequel
+        c'est — alors on lâche la connexion entière, après avoir journalisé
+        ceux qui traînent pour que la PROCHAINE fois on sache où regarder.
+        """
+        ancienne = self._conn
+        for colonnes in _curseurs_vivants(ancienne):
+            logger.error("Curseur encore ouvert sur la connexion fautive : {c}", c=colonnes)
+        try:
+            self._conn = await self._ouvrir(self._path)
+        except Exception as exc:
+            logger.error("Connexion de secours impossible : {e!r}", e=exc)
+            return False
+        try:
+            # Borné : `close()` passe par la file de la connexion, et c'est
+            # justement celle dont on se méfie. La neuve est déjà en place —
+            # attendre indéfiniment ici gèlerait la veille qui nous appelle.
+            await asyncio.wait_for(ancienne.close(), timeout=10)
+        except Exception as exc:
+            # L'ancienne peut bien traîner : elle ne sert plus à personne, et
+            # le processus la rendra en s'arrêtant.
+            logger.warning("Ancienne connexion mal fermée : {e!r}", e=exc)
+        logger.info("Connexion à la base remplacée — les écritures reprennent")
+        return True
+
+    @classmethod
+    async def create(cls, path: str = "data/wally.db") -> "Database":
+        conn = await cls._ouvrir(path)
         await conn.executescript(SCHEMA)
         await conn.commit()
         # Migration: ajouter username à memory_users si absent
@@ -657,7 +729,7 @@ class Database(
         # retombe alors sur « Salon {id} ».
         await migrer(conn, "ALTER TABLE journal_cartes_vocales ADD COLUMN salon_nom TEXT NOT NULL DEFAULT ''")
         logger.info("Database initialized at {path}", path=path)
-        return cls(conn)
+        return cls(conn, path)
 
     async def close(self):
         await self._conn.close()

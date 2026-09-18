@@ -77,3 +77,46 @@ async def test_sans_service_de_notification_la_veille_tient_quand_meme():
     veille = VeilleVerrou(None, seuil=1)
     await veille.constater(_verrou())   # ne lève pas
     assert veille.alerte_posee is True
+
+
+async def test_la_veille_repare_au_lieu_de_demander_un_redemarrage(notifications):
+    """Le 2026-09-18, l'alerte disait « un redémarrage libère la connexion ».
+
+    Autrement dit elle attendait qu'un humain soit devant son écran : une
+    heure de prod sans une seule écriture. Elle appelle désormais la
+    réparation, et son message dit ce qui a été FAIT.
+    """
+    db = AsyncMock()
+    db.reparer_connexion = AsyncMock(return_value=True)
+    veille = VeilleVerrou(notifications, db, seuil=2)
+    await veille.constater(_verrou())
+    await veille.constater(_verrou())
+
+    db.reparer_connexion.assert_awaited_once()
+    assert notifications.send.await_count == 1
+    message = notifications.send.await_args[0][0]
+    assert "remplacée" in message and "redémarrage" not in message.lower()
+    # Pas d'alerte posée : le retour à la normale ne doit pas redoubler ce message.
+    assert veille.alerte_posee is False
+    await veille.constater(None)
+    assert notifications.send.await_count == 1
+
+
+async def test_une_reparation_ratee_redonne_la_consigne_de_redemarrage(notifications):
+    """Le repli doit rester utilisable : si on ne sait pas réparer, on le DIT."""
+    db = AsyncMock()
+    db.reparer_connexion = AsyncMock(return_value=False)
+    veille = VeilleVerrou(notifications, db, seuil=2)
+    await veille.constater(_verrou())
+    await veille.constater(_verrou())
+
+    assert veille.alerte_posee is True
+    assert "redémarrage" in notifications.send.await_args[0][0].lower()
+
+
+async def test_sans_base_la_veille_se_contente_de_prevenir(notifications):
+    """`db` est optionnel — l'ancienne consigne reste vraie dans ce cas."""
+    veille = VeilleVerrou(notifications, None, seuil=1)
+    await veille.constater(_verrou())
+    assert veille.alerte_posee is True
+    assert "redémarrage" in notifications.send.await_args[0][0].lower()

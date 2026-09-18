@@ -482,7 +482,7 @@ async def _snapshot_task(state: "AppState") -> None:
     l'apprenne. `VeilleVerrou` regarde le résultat de CETTE écriture-là plutôt
     que d'en inventer une à elle — elle mesure ce que la prod fait vraiment.
     """
-    veille = VeilleVerrou(state.notifications)
+    veille = VeilleVerrou(state.notifications, state.db)
     while True:
         await asyncio.sleep(300)
         echec: BaseException | None = None

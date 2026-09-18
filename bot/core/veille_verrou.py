@@ -24,6 +24,14 @@ qu'au bout de `seuil` échecs consécutifs, soit un quart d'heure aux réglages
 livrés. Et on ne parle qu'une fois, avec réarmement au retour à la normale :
 une alerte répétée toutes les cinq minutes pendant dix heures s'apprend à
 s'ignorer aussi vite qu'un warning.
+
+## Elle RÉPARE, elle ne se contente plus de prévenir
+
+Le 2026-09-18, le même état a repris : une heure sans qu'une seule écriture
+passe, et l'alerte demandait un redémarrage — c'est-à-dire qu'elle attendait
+qu'un humain soit devant son écran. `Database.reparer_connexion()` remplace la
+connexion épinglée sur place ; la veille l'appelle au moment où elle constate.
+Le message dit alors ce qui a été FAIT, pas ce qu'il reste à faire.
 """
 from __future__ import annotations
 
@@ -33,6 +41,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from bot.core.notifications import NotificationService
+    from bot.db.database import Database
 
 # Trois tours de la boucle des snapshots, soit un quart d'heure de base muette.
 SEUIL_ECHECS = 3
@@ -44,9 +53,11 @@ class VeilleVerrou:
     def __init__(
         self,
         notifications: "NotificationService | None",
+        db: "Database | None" = None,
         seuil: int = SEUIL_ECHECS,
     ) -> None:
         self._notifications = notifications
+        self._db = db
         self._seuil = seuil
         self._consecutifs = 0
         self.alerte_posee = False
@@ -73,16 +84,28 @@ class VeilleVerrou:
             )
 
     async def _alerter(self) -> None:
-        self.alerte_posee = True
         logger.error(
             "Veille du verrou : {n} écritures périodiques d'affilée refusées "
             "(« database is locked ») — plus rien n'est enregistré",
             n=self._consecutifs,
         )
+        if self._db is not None and await self._db.reparer_connexion():
+            # Réparé : le compteur repart de zéro et l'alerte n'est PAS posée,
+            # pour que le retour à la normale ne redouble pas ce message-ci.
+            self._consecutifs = 0
+            await self._dire(
+                "🔒 Plus une écriture ne passait (coûts, humeurs, profils Apex, "
+                "souvenirs) : une connexion restait accrochée à un vieil "
+                "instantané de la base. Je l'ai remplacée, ça repart."
+            )
+            return
+
+        self.alerte_posee = True
         await self._dire(
             "🔒 Un verrou tient la base depuis un moment : je ne peux plus rien "
-            "enregistrer (coûts, humeurs, profils Apex, souvenirs). Un "
-            "redémarrage libère la connexion fautive."
+            "enregistrer (coûts, humeurs, profils Apex, souvenirs), et je n'ai "
+            "pas réussi à remplacer la connexion fautive. Un redémarrage la "
+            "libère."
         )
 
     async def _dire(self, message: str) -> None:
