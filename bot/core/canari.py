@@ -26,6 +26,8 @@ from pathlib import Path
 import aiosqlite
 from loguru import logger
 
+from bot.core.notifications import salons_ou_l_on_parle
+
 # Index dont l'absence coûte cher en production, avec ce qu'elle provoque.
 _INDEX_ATTENDUS: dict[str, tuple[str, str]] = {
     "idx_facts_scheduled": (
@@ -103,6 +105,17 @@ def _verifier_identite(config) -> list[str]:
         alertes.append(
             "owner_discord_id vide, self-fix, DM cognitifs et bouton ADMIN "
             "resteront inaccessibles, sans message d'erreur"
+        )
+    salon_repli = getattr(bot_cfg, "notification_channel_id", None) if bot_cfg else None
+    if salon_repli and int(salon_repli) in salons_ou_l_on_parle(config):
+        # Le repli ne sert qu'aux ratés du MP, donc presque jamais : mal réglé,
+        # il resterait faux des mois sans que rien ne le dise. Le 2026-09-18 il
+        # pointait sur `#chambre-de-wally` et une panne y a été annoncée devant
+        # tout le monde.
+        alertes.append(
+            f"notification_channel_id ({salon_repli}) est un salon où l'on PARLE "
+            "avec Wally : les alertes techniques y seront refusées, et le repli "
+            "du MP n'existe donc pas"
         )
     openai_cfg = getattr(config, "openai", None)
     if openai_cfg is not None and not getattr(openai_cfg, "vision_model", ""):

@@ -4507,12 +4507,12 @@ async function _renderAlertesCouts(panel) {
   const F = window.Formulaire;
   await F.catalogueDiscord();
 
-  _enteteSection(panel, 'Alertes', 'Wally prévient le créateur en message privé. Le salon ci-dessous n\'est qu\'un repli, quand le MP ne passe pas.');
+  _enteteSection(panel, 'Alertes', 'Wally prévient le créateur en message privé. Le salon ci-dessous ne sert que si le MP ne passe pas — un salon TECHNIQUE : tout salon où l\'on parle avec Wally est refusé.');
   const carte = F.carte();
   const seuil = F.nombre(b.cost_alert_threshold ?? 0, { min: 0, max: 1000, pas: 0.5 });
   const salon = F.salon(b.notification_channel_id, 'texte', 'Désactivé');
   carte.corps.appendChild(F.champ('Seuil d\'alerte des coûts ($)', seuil, '0 = veille des coûts désactivée.'));
-  carte.corps.appendChild(F.champ('Salon de repli', salon, 'Sert seulement si le MP au créateur échoue. Vide = pas de repli.'));
+  carte.corps.appendChild(F.champ('Salon technique de repli', salon, 'Sert seulement si le MP au créateur échoue. Un salon de discussion y est refusé. Vide = pas de repli.'));
 
   const enregistrer = F.bouton('Enregistrer', function () {
     F.enregistrer(enregistrer, '/api/admin/config', 'POST', { bot: {

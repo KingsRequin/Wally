@@ -18,10 +18,18 @@ import pytest
 from bot.core.canari import verifier_invariants
 
 
-def _config(owner="610550333042589752", vision="gpt-5-nano"):
+def _config(owner="610550333042589752", vision="gpt-5-nano",
+            repli=1416714887849185340, chambre=1485380606224502844):
     return SimpleNamespace(
-        bot=SimpleNamespace(owner_discord_id=owner),
+        bot=SimpleNamespace(
+            owner_discord_id=owner,
+            notification_channel_id=repli,
+            bedroom_channel_id=chambre,
+            partie_privee_channel_id=None,
+        ),
         openai=SimpleNamespace(vision_model=vision),
+        discord=SimpleNamespace(per_guild_channel_whitelist={}),
+        image_generation=SimpleNamespace(autonomous_channel_ids=[]),
     )
 
 
@@ -259,3 +267,19 @@ async def test_un_canari_qui_explose_ne_remonte_pas_dans_le_boot(monkeypatch, tm
     tache = mod.lancer_canari(_config(), str(tmp_path / "sans_importance.db"))
     await tache                            # ne relève pas : c'est le contrat
     assert tache.done() and tache.exception() is None
+
+
+async def test_un_salon_de_repli_ou_l_on_parle_est_signale_au_boot(tmp_path):
+    """Le repli ne sert qu'aux ratés du MP : mal réglé, il reste faux des mois.
+
+    Le 2026-09-18 il valait `#chambre-de-wally`, et une panne y a été annoncée
+    devant tout le monde. Un salon de conversation y est désormais refusé — il
+    faut donc le DIRE au démarrage, pas au moment de la panne suivante.
+    """
+    chemin = _base(tmp_path)
+    alertes = await verifier_invariants(
+        _config(repli=1485380606224502844, chambre=1485380606224502844), chemin)
+    assert any("notification_channel_id" in a and "PARLE" in a for a in alertes)
+
+    sain = await verifier_invariants(_config(), chemin, racine=tmp_path)
+    assert not any("notification_channel_id" in a for a in sain)
